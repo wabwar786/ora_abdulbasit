@@ -1,0 +1,438 @@
+@model YourHotelsPageViewModel
+@using System.Text.Json
+@{
+    Layout = null;
+    var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+    var occupancyLabelsJson = JsonSerializer.Serialize(Model.OccupancyLabels, jsonOptions);
+    var occupancyDatasetsJson = JsonSerializer.Serialize(Model.OccupancyDatasets, jsonOptions);
+    var bookingSourceLabelsJson = JsonSerializer.Serialize(Model.BookingSourceLabels, jsonOptions);
+    var bookingSourceDatasetsJson = JsonSerializer.Serialize(Model.BookingSourceDatasets, jsonOptions);
+    var bookingSourceFilterJson = JsonSerializer.Serialize(Model.BookingSourceFilter, jsonOptions);
+    var messageJson = JsonSerializer.Serialize(Model.Message ?? string.Empty, jsonOptions);
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Hotel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="~/css/your-hotels.css" rel="stylesheet" asp-append-version="true" />
+
+    <script>
+        function toggleDetails(evt, id) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            var el = document.getElementById(id);
+            if (!el) return;
+
+            var btn = evt.currentTarget;
+            var isOpen = el.classList.contains('open');
+
+            if (isOpen) {
+                el.classList.remove('open');
+                btn.setAttribute('title', 'Open details');
+                btn.innerHTML = getDownIcon();
+            } else {
+                el.classList.add('open');
+                btn.setAttribute('title', 'Close details');
+                btn.innerHTML = getUpIcon();
+            }
+        }
+
+        function getDownIcon() {
+            return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path d="M6 9l6 6 6-6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>`;
+        }
+        function getUpIcon() {
+            return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path d="M6 15l6-6 6 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>`;
+        }
+
+        function submitHotelCard(card) {
+            if (!card) return;
+
+            if (card.getAttribute('data-can-open') !== '1') {
+                alert('You do not have permission to open this hotel dashboard.');
+                return;
+            }
+
+            var form = document.getElementById('openHotelForm');
+            var input = document.getElementById('openHotelId');
+            if (!form || !input) return;
+
+            input.value = card.getAttribute('data-hotel-id') || '';
+            form.submit();
+        }
+
+        function hotelCardClick(evt, card) {
+            if (evt.defaultPrevented) return;
+            submitHotelCard(card);
+        }
+
+        function hotelCardKeydown(evt, card) {
+            if (evt.key === 'Enter' || evt.key === ' ') {
+                evt.preventDefault();
+                submitHotelCard(card);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.toggle-btn').forEach(b => b.innerHTML = getDownIcon());
+
+            var pageMessage = @Html.Raw(messageJson);
+            if (pageMessage) alert(pageMessage);
+        });
+    </script>
+</head>
+
+<body>
+    <div class="bg-blobs">
+        <div class="blob b1"></div>
+        <div class="blob b2"></div>
+        <div class="blob b3"></div>
+    </div>
+
+    <form id="openHotelForm" asp-controller="YourHotels" asp-action="OpenHotel" method="post" target="_blank" style="display:none;">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="hotelId" id="openHotelId" value="" />
+    </form>
+
+    <div class="hotel-select-wrapper">
+
+        <div class="top-card">
+            <div>
+                <h2 class="hotel-select-title">Select a Hotel to Manage</h2>
+                <div class="hotel-select-subtitle">Click arrow to open/close details. Click card to open dashboard.</div>
+            </div>
+            <div class="pill" title="Secure access">
+                <span class="dot"></span>
+                Live stats enabled
+            </div>
+        </div>
+
+        <div class="hotel-list">
+            @for (var index = 0; index < Model.Hotels.Count; index++)
+            {
+                var hotel = Model.Hotels[index];
+                var detailsId = "details_" + index;
+                var permissionClass = hotel.CanOpenDashboard ? string.Empty : " no-open-permission";
+                var permissionTitle = hotel.CanOpenDashboard
+                    ? string.Empty
+                    : "You can view hotel stats, but you do not have permission to open this hotel dashboard.";
+
+                <div class="hotel-card@permissionClass"
+                     role="button"
+                     tabindex="0"
+                     title="@permissionTitle"
+                     data-hotel-id="@hotel.HotelId"
+                     data-can-open="@(hotel.CanOpenDashboard ? "1" : "0")"
+                     onclick="hotelCardClick(event, this);"
+                     onkeydown="hotelCardKeydown(event, this);">
+
+                    <div class="hotel-card-head">
+                        <div class="hotel-logo-circle">
+                            <img src="@hotel.ImageUrl" alt="Hotel Logo" />
+                        </div>
+
+                        <div style="min-width:0;">
+                            <div class="hotel-name">@hotel.DisplayName</div>
+                            <div class="hotel-sub">@hotel.CityInfo</div>
+                        </div>
+
+                        <div class="toggle-btn"
+                             onclick="toggleDetails(event,'@detailsId');"
+                             title="Open details">
+                        </div>
+                    </div>
+
+                    <div class="donut-row details" id="@detailsId">
+
+                        <div class="donut-card">
+                            <div class="donut-head">
+                                <div class="donut-title">
+                                    Check-ins
+                                    <span class="info-icon" title="Checked-in today / Total expected check-ins today">i</span>
+                                </div>
+                            </div>
+
+                            <div class="donut-ring">
+                                <svg viewBox="0 0 120 120" aria-hidden="true">
+                                    <circle class="donut-bg" cx="60" cy="60" r="54"></circle>
+                                    <circle class="donut-progress checkin" cx="60" cy="60" r="54"
+                                            style="stroke-dashoffset:@hotel.CheckInDashOffset"></circle>
+                                </svg>
+                                <div class="donut-center">
+                                    <div class="donut-value">@hotel.TodayCheckIns</div>
+                                    <div class="donut-sub">of @hotel.ExpectedCheckIns</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="donut-card">
+                            <div class="donut-head">
+                                <div class="donut-title">
+                                    Available Rooms
+                                    <span class="info-icon" title="Free rooms today / Total rooms">i</span>
+                                </div>
+                            </div>
+
+                            <div class="donut-ring">
+                                <svg viewBox="0 0 120 120" aria-hidden="true">
+                                    <circle class="donut-bg" cx="60" cy="60" r="54"></circle>
+                                    <circle class="donut-progress rooms" cx="60" cy="60" r="54"
+                                            style="stroke-dashoffset:@hotel.FreeDashOffset"></circle>
+                                </svg>
+                                <div class="donut-center">
+                                    <div class="donut-value">@hotel.FreeRoomsToday</div>
+                                    <div class="donut-sub">of @hotel.TotalRooms</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="top-card" style="margin-top:18px;">
+            <div>
+                <h2 class="hotel-select-title">Year Occupancy Comparison (Month-wise)</h2>
+            </div>
+
+            <div class="pill" title="Select year">
+                <span class="dot"></span>
+                <span style="margin-right:6px;">Year:</span>
+                <select id="ddlOccYear" aria-label="Select occupancy year" onchange="changeOccupancyYear(this.value)">
+                    @foreach (var year in Model.Years)
+                    {
+                        if (year == Model.SelectedYear)
+                        {
+                            <option value="@year" selected>@year</option>
+                        }
+                        else
+                        {
+                            <option value="@year">@year</option>
+                        }
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="top-card" style="padding:16px;">
+            <div style="width:100%; height:320px;">
+                <canvas id="occYearChart"></canvas>
+            </div>
+        </div>
+
+        <div class="top-card" style="margin-top:18px;">
+            <div>
+                <h2 class="hotel-select-title">Bookings - Hotel Wise + Source Wise (Month-wise)</h2>
+                <p class="hotel-select-subtitle">Users without OpenHotelDashboard see only BNBUK and GoogleHotelARI. Users with permission see all assigned-hotel sources.</p>
+            </div>
+
+            <div class="pill" title="Select source">
+                <span class="dot"></span>
+                <span style="margin-right:6px;">Source:</span>
+                <select id="ddlBookingSourceFilter"></select>
+            </div>
+        </div>
+
+        <div class="top-card" style="padding:16px;">
+            <div style="width:100%; height:520px;">
+                <canvas id="bookingSourceChart"></canvas>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+        <script>
+            function changeOccupancyYear(value) {
+                var url = new URL(window.location.href);
+                url.pathname = '/YourHotels';
+                url.searchParams.set('year', value);
+                url.searchParams.delete('UD');
+                window.location.href = url.pathname + url.search;
+            }
+
+            document.addEventListener('DOMContentLoaded', function () {
+                const labels = @Html.Raw(occupancyLabelsJson);
+                const datasets = @Html.Raw(occupancyDatasetsJson);
+
+                const ctx = document.getElementById('occYearChart');
+                if (!ctx) return;
+
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { labels: { color: '#fff', boxWidth: 12, boxHeight: 12 } },
+                            tooltip: {
+                                callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(2)}%` }
+                            }
+                        },
+                        scales: {
+                            x: { ticks: { color: 'rgba(255,255,255,.85)' }, grid: { color: 'rgba(255,255,255,.08)' } },
+                            y: {
+                                min: 0, max: 100,
+                                ticks: { color: 'rgba(255,255,255,.85)', callback: (v) => v + '%' },
+                                grid: { color: 'rgba(255,255,255,.08)' }
+                            }
+                        }
+                    }
+                });
+
+                const sourceLabels = @Html.Raw(bookingSourceLabelsJson);
+                const sourceDatasets = @Html.Raw(bookingSourceDatasetsJson);
+                const bookingSourceList = @Html.Raw(bookingSourceFilterJson);
+                const sourceCtx = document.getElementById('bookingSourceChart');
+                const ddlSourceFilter = document.getElementById('ddlBookingSourceFilter');
+
+                let bookingSourceChart = null;
+
+                if (ddlSourceFilter && Array.isArray(bookingSourceList)) {
+                    ddlSourceFilter.innerHTML = '';
+
+                    bookingSourceList.forEach(function (src) {
+                        const opt = document.createElement('option');
+                        opt.value = src;
+                        opt.textContent = src;
+                        ddlSourceFilter.appendChild(opt);
+                    });
+
+                    if (bookingSourceList.length > 0) {
+                        ddlSourceFilter.value = bookingSourceList[0];
+                    }
+                }
+
+                function getFilteredBookingDatasets() {
+                    const selectedSource = ddlSourceFilter ? ddlSourceFilter.value : '';
+
+                    return sourceDatasets.filter(function (ds) {
+                        return ds.sourceName === selectedSource;
+                    });
+                }
+
+                function renderBookingSourceChart() {
+                    if (!sourceCtx) return;
+
+                    if (bookingSourceChart) {
+                        bookingSourceChart.destroy();
+                    }
+
+                    bookingSourceChart = new Chart(sourceCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: sourceLabels,
+                            datasets: getFilteredBookingDatasets()
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: { mode: 'index', intersect: false },
+                            plugins: {
+                                legend: {
+                                    labels: {
+                                        color: '#fff',
+                                        boxWidth: 12,
+                                        boxHeight: 12,
+                                        generateLabels: function (chart) {
+                                            const used = {};
+                                            const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+
+                                            return labels.filter(function (item) {
+                                                const hotel = chart.data.datasets[item.datasetIndex].hotelName || item.text;
+
+                                                if (used[hotel]) return false;
+
+                                                used[hotel] = true;
+                                                item.text = hotel;
+                                                return true;
+                                            });
+                                        }
+                                    },
+                                    onClick: function (e, legendItem, legend) {
+                                        const chart = legend.chart;
+                                        const hotel = legendItem.text;
+
+                                        chart.data.datasets.forEach(function (ds, i) {
+                                            if ((ds.hotelName || ds.label) === hotel) {
+                                                chart.setDatasetVisibility(i, !chart.isDatasetVisible(i));
+                                            }
+                                        });
+
+                                        chart.update();
+                                    }
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        title: function (items) {
+                                            return items.length ? items[0].label : '';
+                                        },
+                                        label: function (c) {
+                                            const ds = c.dataset;
+                                            const value = Number(c.parsed.y || 0);
+
+                                            return (ds.hotelName || ds.label) +
+                                                ': ' +
+                                                value.toLocaleString() +
+                                                ' booking(s)';
+                                        },
+                                        footer: function (items) {
+                                            let total = 0;
+
+                                            items.forEach(function (item) {
+                                                total += Number(item.parsed.y || 0);
+                                            });
+
+                                            return 'Selected total: ' + total.toLocaleString() + ' booking(s)';
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    stacked: false,
+                                    ticks: {
+                                        color: 'rgba(255,255,255,.85)',
+                                        autoSkip: true,
+                                        maxTicksLimit: 12,
+                                        maxRotation: 35,
+                                        minRotation: 35,
+                                        font: { size: 10, family: 'Montserrat' }
+                                    },
+                                    grid: { color: 'rgba(255,255,255,.08)' }
+                                },
+                                y: {
+                                    stacked: false,
+                                    beginAtZero: true,
+                                    ticks: {
+                                        color: 'rgba(255,255,255,.85)',
+                                        precision: 0,
+                                        callback: function (v) {
+                                            return Number(v).toLocaleString();
+                                        }
+                                    },
+                                    grid: { color: 'rgba(255,255,255,.08)' }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                if (ddlSourceFilter) {
+                    ddlSourceFilter.addEventListener('change', renderBookingSourceChart);
+                }
+
+                renderBookingSourceChart();
+            });
+        </script>
+
+    </div>
+</body>
+</html>

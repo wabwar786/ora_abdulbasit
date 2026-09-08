@@ -1,0 +1,37 @@
+@{
+    Layout = null;
+    var userName = Convert.ToString(ViewBag.UserName);
+    var hotelName = Convert.ToString(ViewBag.HotelName);
+    var targetUrl = Convert.ToString(ViewBag.TargetUrl);
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ORAPMS - Login Successful</title>
+    <link href="~/css/pms-ui.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100..900&display=swap" rel="stylesheet" />
+</head>
+<body class="pms-auth-body">
+    <main class="pms-auth-shell">
+        <section class="pms-auth-card pms-login-success-card">
+            <div class="pms-auth-panel pms-login-success-panel">
+                <div class="pms-auth-box">
+                    <div class="text-center"><img class="pms-auth-logo" src="~/img/smartpmslogo.png" alt="ORAPMS" /></div>
+                    <h2 class="pms-auth-title">Login successful</h2>
+                    <p class="pms-auth-desc">Welcome @userName@(string.IsNullOrWhiteSpace(hotelName) ? "" : " · " + hotelName)</p>
+                    @if (!string.IsNullOrWhiteSpace(targetUrl))
+                    {
+                        <div class="pms-alert pms-alert-success">Login completed successfully.</div>
+                    }
+                    <form asp-action="Logout" method="post">
+                        @Html.AntiForgeryToken()
+                        <button class="btn pms-btn pms-btn-primary w-100" type="submit">Logout</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

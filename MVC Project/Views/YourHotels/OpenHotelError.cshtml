@@ -1,0 +1,28 @@
+@{
+    Layout = null;
+    var message = Convert.ToString(ViewBag.Message) ?? "Unable to open this hotel dashboard.";
+    var json = System.Text.Json.JsonSerializer.Serialize(message);
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ORAPMS</title>
+</head>
+<body>
+    <script>
+        (function () {
+            var message = @Html.Raw(json);
+            if (window.opener && !window.opener.closed) {
+                window.opener.alert(message);
+                window.close();
+                return;
+            }
+            alert(message);
+            history.back();
+        })();
+    </script>
+    <noscript>@message</noscript>
+</body>
+</html>

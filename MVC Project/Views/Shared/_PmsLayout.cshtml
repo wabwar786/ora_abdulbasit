@@ -1,0 +1,298 @@
+@using Orapmshms.Services
+@inject IPmsMasterService PmsMasterService
+@{
+    var master = await PmsMasterService.GetOrBuildAsync(Context, Context.RequestAborted);
+    var currentUrl = Context.Request.Path.ToString() + Context.Request.QueryString.ToString();
+    var pageTitle = ViewData["Title"]?.ToString();
+    if (string.IsNullOrWhiteSpace(pageTitle)) pageTitle = "ORAPMS";
+    var toastMessage = TempData["PmsMasterMessage"]?.ToString() ?? string.Empty;
+    var toastType = TempData["PmsMasterMessageType"]?.ToString() ?? "info";
+    var openNotifications = string.Equals(TempData["PmsOpenNotifications"]?.ToString(), "1", StringComparison.Ordinal);
+    var openChangePassword = string.Equals(TempData["PmsOpenChangePassword"]?.ToString(), "1", StringComparison.Ordinal);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@pageTitle - ORAPMS</title>
+    <meta name="description" content="ORAPMS comprehensive property management software." />
+    <link rel="icon" type="image/png" href="~/img/smartPMS-01.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@300;400;600&display=swap" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/pms-master.css" asp-append-version="true" />
+    @await RenderSectionAsync("Styles", required: false)
+</head>
+<body class="pms-master-body"
+      data-open-notifications="@(openNotifications ? "1" : "0")"
+      data-open-change-password="@(openChangePassword ? "1" : "0")">
+
+    <button type="button" class="pms-master-toggle" onclick="pmsToggleNav(); return false;" aria-label="Toggle navigation">
+        <i class="fa-solid fa-bars-staggered"></i>
+    </button>
+
+    <header id="header" class="pms-master-header">
+        <div class="pms-header-row">
+            <div class="pms-topbar" id="topbar">
+                <button type="button"
+                        id="pmsTopbarPrev"
+                        class="pms-scroll-button"
+                        onclick="pmsScrollTopbar('left'); return false;"
+                        aria-label="Previous menu items"
+                        hidden>
+                    <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                <div class="pms-topbar-scroll">
+                    <ul class="pms-topbar-list" id="pmsTopbarList">
+                        @foreach (var item in master.TopNavigation)
+                        {
+                            <li>
+                                <a class="pms-topbar-link"
+                                   href="@item.Url"
+                                   data-page="@item.PageName"
+                                   target="@(item.OpenInNewTab ? "_blank" : null)"
+                                   rel="@(item.OpenInNewTab ? "noopener" : null)">
+                                    <span class="material-symbols-outlined">open_in_new</span>
+                                    <p>@item.Menu</p>
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                </div>
+                <button type="button"
+                        id="pmsTopbarNext"
+                        class="pms-scroll-button"
+                        onclick="pmsScrollTopbar('right'); return false;"
+                        aria-label="More menu items"
+                        hidden>
+                    <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                </button>
+            </div>
+
+            <div class="pms-top-actions">
+                <div class="pms-icon-wrap">
+                    <button type="button" class="pms-icon-btn" onclick="pmsOpenNotifications(); return false;" aria-label="Notifications">
+                        <i class="fa-regular fa-bell"></i>
+                    </button>
+                    @if (master.NotificationCount > 0)
+                    {
+                        <span class="pms-notif-badge">@master.NotificationCount</span>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(master.CurrencySymbol))
+                {
+                    <span class="pms-currency-pill">@master.CurrencySymbol</span>
+                }
+
+                <a class="pms-icon-btn pms-help" href="@master.HelpUrl" target="_blank" rel="noopener" title="Help" aria-label="Help">
+                    <i class="fa-regular fa-circle-question"></i>
+                </a>
+
+                @if (master.Properties.Count > 0)
+                {
+                    <form class="pms-property-form" asp-controller="PmsMaster" asp-action="ChangeProperty" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="returnUrl" value="@currentUrl" />
+                        <select name="hotelId" class="pms-property-select" onchange="this.form.submit()" aria-label="Property">
+                            @foreach (var property in master.Properties)
+                            {
+                                if (property.Selected)
+                                {
+                                    <option value="@property.HotelId" selected>@property.Name</option>
+                                }
+                                else
+                                {
+                                    <option value="@property.HotelId">@property.Name</option>
+                                }
+                            }
+                        </select>
+                    </form>
+                }
+
+                <div class="pms-profile-wrap">
+                    <button type="button" id="pmsProfileButton" class="pms-icon-btn pms-profile-button" onclick="pmsToggleProfile(); return false;" aria-label="Profile">
+                        <i class="fa-regular fa-user"></i>
+                    </button>
+
+                    <div id="pmsProfilePopup" class="pms-profile-popup">
+                        <div class="pms-profile-popup-inner">
+                            <div class="pms-profile-head">
+                                <div class="pms-profile-avatar"><i class="fa-regular fa-user"></i></div>
+                                <div class="pms-profile-meta">
+                                    <div class="pms-profile-name">@master.UserName</div>
+                                    <div class="pms-profile-sub">@master.Role</div>
+                                </div>
+                                <button type="button" class="pms-popup-x" onclick="pmsToggleProfile(); return false;">×</button>
+                            </div>
+
+                            <div class="pms-profile-actions">
+                                <div class="pms-mobile-top-links">
+                                    @foreach (var item in master.TopNavigation)
+                                    {
+                                        <a class="pms-profile-link" href="@item.Url" target="@(item.OpenInNewTab ? "_blank" : null)" rel="@(item.OpenInNewTab ? "noopener" : null)">
+                                            <span class="pms-plink-ico"><i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+                                            <span class="pms-plink-text">@item.Menu</span>
+                                            <span class="pms-plink-arrow">›</span>
+                                        </a>
+                                    }
+                                </div>
+
+                                <button type="button" class="pms-profile-link" onclick="pmsOpenChangePassword(); return false;">
+                                    <span class="pms-plink-ico"><i class="fa-solid fa-key"></i></span>
+                                    <span class="pms-plink-text">Change Password</span>
+                                    <span class="pms-plink-arrow">›</span>
+                                </button>
+
+                                <form asp-controller="LoginHMS" asp-action="Logout" method="post" style="border-top:1px solid rgba(15,23,42,.10);padding-top:6px;">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="pms-profile-link danger">
+                                        <span class="pms-plink-ico"><i class="fa-solid fa-arrow-right-from-bracket"></i></span>
+                                        <span class="pms-plink-text">Logout</span>
+                                        <span class="pms-plink-arrow">›</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <aside id="sidebar" class="pms-master-sidebar">
+        <div class="pms-sidebar-brand">
+            <img src="~/img/smartpmslogo.png" class="pms-sidebar-logo" alt="ORAPMS" />
+        </div>
+
+        @foreach (var category in master.LeftNavigation)
+        {
+            <a href="#" class="pms-category-link" onclick="pmsToggleMenu(this); return false;">
+                <i class="pms-cat-ico fa-solid fa-layer-group"></i>
+                <span class="pms-cat-text">@category.Name</span>
+                <span class="pms-cat-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+            </a>
+            <div class="pms-submenu">
+                @foreach (var item in category.Items)
+                {
+                    <a class="pms-sidebar-menu-link"
+                       data-page="@item.PageName"
+                       href="@item.Url"
+                       onclick="pmsSetSelectedSidebar(this)"
+                       target="@(item.OpenInNewTab ? "_blank" : null)"
+                       rel="@(item.OpenInNewTab ? "noopener" : null)">
+                        <i class="pms-menu-ico fa-regular fa-circle-dot"></i>
+                        <span class="pms-menu-text">@item.Menu</span>
+                    </a>
+                }
+            </div>
+        }
+
+        <div class="pms-sidebar-credits">
+            Powered By
+            <a href="https://techgeni.co.uk" target="_blank" rel="noopener">Tech Geni Ltd.</a>
+        </div>
+    </aside>
+
+    <div id="main" class="pms-master-content">
+        @if (master.ShowSubscriptionWarning)
+        {
+            <div class="pms-sub-expiry-alert">
+                <div class="pms-sub-expiry-inner">
+                    <div class="pms-sub-expiry-left">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span>
+                            Your subscription will expire in <strong>@master.SubscriptionDaysRemaining day(s)</strong>
+                            on <strong>@master.SubscriptionExpiryDate?.ToString("dd MMM yyyy")</strong>.
+                            Please renew now to avoid interruption.
+                        </span>
+                    </div>
+                    <a class="pms-sub-renew-btn" href="@master.RenewUrl">Renew Now</a>
+                </div>
+            </div>
+        }
+
+        @RenderBody()
+    </div>
+
+    <div id="pmsMasterOverlay" class="pms-screenblur" onclick="pmsCloseMasterModal();"></div>
+
+    <section id="pmsChangePasswordModal" class="pms-master-modal pms-password-modal" role="dialog" aria-modal="true" aria-label="Change Password">
+        <div class="pms-modal-head">
+            <h4>CHANGE PASSWORD</h4>
+            <button type="button" class="pms-modal-close" onclick="pmsCloseMasterModal(); return false;">×</button>
+        </div>
+        <form asp-controller="PmsMaster" asp-action="ChangePassword" method="post" autocomplete="off">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="returnUrl" value="@currentUrl" />
+            <div class="pms-modal-body">
+                <div class="pms-field">
+                    <label>Current Password</label>
+                    <input type="password" name="currentPassword" autocomplete="current-password" required />
+                </div>
+                <div class="pms-field">
+                    <label>New Password</label>
+                    <input type="password" name="newPassword" autocomplete="new-password" required />
+                </div>
+                <div class="pms-field">
+                    <label>Confirm New Password</label>
+                    <input type="password" name="confirmPassword" autocomplete="new-password" required />
+                </div>
+            </div>
+            <button type="submit" class="pms-change-submit">CHANGE PASSWORD</button>
+        </form>
+    </section>
+
+    <section id="pmsNotificationModal" class="pms-master-modal pms-notification-modal" role="dialog" aria-modal="true" aria-label="Notifications">
+        <div class="pms-modal-head">
+            <h4>Notifications</h4>
+            <button type="button" class="pms-modal-close" onclick="pmsCloseMasterModal(); return false;">×</button>
+        </div>
+
+        <div class="pms-notification-toolbar">
+            <form asp-controller="PmsMaster" asp-action="ClearNotifications" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="returnUrl" value="@currentUrl" />
+                <button type="submit" class="pms-clear-btn">Clear All</button>
+            </form>
+        </div>
+
+        <div class="pms-notification-list">
+            @if (master.Notifications.Count == 0)
+            {
+                <div class="pms-empty-notifications">No new notifications.</div>
+            }
+            else
+            {
+                @foreach (var notification in master.Notifications)
+                {
+                    <div class="pms-notification-item">
+                        <div class="pms-notification-text">@notification.Description</div>
+                        <div class="pms-notification-meta">
+                            <form asp-controller="PmsMaster" asp-action="DismissNotification" method="post">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="notificationId" value="@notification.Id" />
+                                <input type="hidden" name="returnUrl" value="@currentUrl" />
+                                <button type="submit" class="pms-notification-delete" title="Dismiss"><i class="fa-solid fa-xmark"></i></button>
+                            </form>
+                            <span class="pms-notification-time">@notification.TimeAgo</span>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(toastMessage))
+    {
+        <div id="pmsMasterToast" class="pms-master-toast @toastType">@toastMessage</div>
+    }
+
+    <script src="~/js/pms-master.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

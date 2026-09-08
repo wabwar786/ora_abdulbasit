@@ -1,0 +1,162 @@
+@model LoginPageViewModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ORAPMS Login - Property Management Software</title>
+    <meta name="description" content="Secure ORAPMS login for hotel property management, reservations, front desk, reporting, payments, and operations." />
+    <link rel="website icon" type="image/png" href="~/img/smartPMS-01.png" />
+    <link href="~/css/pms-ui.css" rel="stylesheet" asp-append-version="true" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100..900&display=swap" rel="stylesheet" />
+    <script src="~/js/pms-common.js" asp-append-version="true" defer></script>
+</head>
+<body class="pms-auth-body">
+    <form asp-controller="LoginHMS"
+          asp-action="Index"
+          method="post"
+          id="Form1"
+          class="pms-auth-form"
+          data-pms-loader-message="Processing request...">
+        @Html.AntiForgeryToken()
+        <input asp-for="ReturnUrl" type="hidden" />
+
+        <div id="pmsGlobalLoader" class="pms-loader-overlay pms-login-loader-overlay" aria-hidden="true">
+            <div class="pms-loader-card pms-login-loader-card" role="status" aria-live="polite" aria-label="Loading">
+                <div class="pms-login-loader-logo-wrap" aria-hidden="true">
+                    <img src="~/img/smartpmslogo.png" alt="" class="pms-login-loader-logo" />
+                    <span class="pms-login-loader-pulse"></span>
+                </div>
+                <div class="pms-loader-copy pms-login-loader-copy">
+                    <strong>Securely connecting to ORAPMS</strong>
+                    <span id="pmsGlobalLoaderText">Please wait...</span>
+                </div>
+                <div class="pms-login-loader-progress" aria-hidden="true"><span></span></div>
+                <div class="pms-login-loader-dots" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        </div>
+
+        <main class="pms-auth-shell">
+            <section class="pms-auth-card" aria-label="ORAPMS secure login">
+                <div class="pms-auth-grid">
+                    <aside class="pms-auth-visual">
+                        <div class="pms-auth-brand-row">
+                            <div class="pms-auth-brand-mark">
+                                <img src="~/img/smartPMS-01.png" alt="ORAPMS" />
+                            </div>
+                            <div>
+                                <p class="pms-auth-brand-title">ORAPMS</p>
+                                <p class="pms-auth-brand-subtitle">Smart hotel operations platform</p>
+                            </div>
+                        </div>
+
+                        <div class="pms-auth-hero">
+                            <span class="pms-auth-eyebrow">SECURE PMS ACCESS</span>
+                            <h1 class="pms-auth-heading">Run your property with speed, control, and confidence.</h1>
+                            <p class="pms-auth-copy">Manage reservations, guest check-in, payments, reports, housekeeping, and daily hotel operations from one secure workspace.</p>
+                        </div>
+
+                        <div class="pms-auth-metrics">
+                            <div class="pms-auth-metric">
+                                <strong>24/7</strong>
+                                <span>Cloud access</span>
+                            </div>
+                            <div class="pms-auth-metric">
+                                <strong>Fast</strong>
+                                <span>Front desk flow</span>
+                            </div>
+                            <div class="pms-auth-metric">
+                                <strong>Secure</strong>
+                                <span>Role-based menus</span>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <section class="pms-auth-panel">
+                        <div class="pms-auth-box">
+                            <div class="text-center">
+                                <img class="pms-auth-logo" src="~/img/smartpmslogo.png" alt="ORAPMS logo" />
+                            </div>
+
+                            <h2 class="pms-auth-title">Welcome back</h2>
+                            <p class="pms-auth-desc">Enter your username or email to continue securely.</p>
+
+                            @if (!string.IsNullOrWhiteSpace(Model.Message))
+                            {
+                                <div class="pms-alert @(Model.MessageIsSuccess ? "pms-alert-success" : "pms-alert-error")" role="alert">
+                                    @Model.Message
+                                </div>
+                            }
+
+                            <div class="pms-auth-field-group">
+                                <label class="pms-label" asp-for="EmailOrUsername">Username / Email</label>
+                                <input asp-for="EmailOrUsername"
+                                       class="form-control pms-field"
+                                       placeholder="Username or email"
+                                       autocomplete="off"
+                                       maxlength="200" />
+                            </div>
+
+                            <div class="pms-auth-field-group">
+                                <label class="pms-label" asp-for="Password">Password</label>
+                                <div class="pms-password-wrap">
+                                    <input asp-for="Password"
+                                           class="form-control pms-field"
+                                           placeholder="Enter password"
+                                           type="password"
+                                           autocomplete="off"
+                                           maxlength="100" />
+                                    <button type="button"
+                                            class="pms-password-toggle"
+                                            data-password-target="Password"
+                                            data-pms-no-loader="true"
+                                            aria-label="Show password"
+                                            aria-pressed="false">
+                                        <img src="~/img/icons8-eye-30.png" alt="" aria-hidden="true" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="pms-auth-actions">
+                                <button type="submit"
+                                        name="submitAction"
+                                        value="login"
+                                        class="btn pms-btn pms-btn-primary w-100"
+                                        data-pms-loader="full"
+                                        data-pms-loader-message="Signing you in..."
+                                        data-pms-default="login">
+                                    Login
+                                </button>
+                            </div>
+
+                            <div class="pms-auth-divider">Need help?</div>
+
+                            <div class="pms-auth-help-row">
+                                <button type="submit"
+                                        name="submitAction"
+                                        value="forgot"
+                                        class="pms-auth-link"
+                                        formnovalidate
+                                        data-pms-loader="full"
+                                        data-pms-loader-message="Preparing password reset...">
+                                    Forgot Password
+                                </button>
+                                <span class="pms-auth-note">Secure login area</span>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </section>
+        </main>
+
+        <div class="pms-auth-credits">
+            Powered By <a href="https://techgeni.co.uk" target="_blank" rel="noopener">Tech Geni Ltd.</a>
+        </div>
+    </form>
+</body>
+</html>
