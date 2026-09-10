@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "DZIRaQ1GDMw=",
+  "dgSpecHash": "oei/DxBOFXA=",
   "success": true,
-  "projectFilePath": "D:\\Softwares\\Github\\mvc_maryam\\ora_maryam\\MVC Project\\Orapmshms.csproj",
+  "projectFilePath": "D:\\Softwares\\Github\\mvc_abdulbasit\\ora_abdulbasit\\MVC Project\\Orapmshms.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\NEX GEN\\.nuget\\packages\\microsoft.bcl.cryptography\\8.0.0\\microsoft.bcl.cryptography.8.0.0.nupkg.sha512",
     "C:\\Users\\NEX GEN\\.nuget\\packages\\microsoft.data.sqlclient\\7.0.2\\microsoft.data.sqlclient.7.0.2.nupkg.sha512",

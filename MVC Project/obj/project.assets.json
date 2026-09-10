@@ -1207,11 +1207,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\Softwares\\Github\\mvc_maryam\\ora_maryam\\MVC Project\\Orapmshms.csproj",
+      "projectUniqueName": "D:\\Softwares\\Github\\mvc_abdulbasit\\ora_abdulbasit\\MVC Project\\Orapmshms.csproj",
       "projectName": "Orapmshms",
-      "projectPath": "D:\\Softwares\\Github\\mvc_maryam\\ora_maryam\\MVC Project\\Orapmshms.csproj",
+      "projectPath": "D:\\Softwares\\Github\\mvc_abdulbasit\\ora_abdulbasit\\MVC Project\\Orapmshms.csproj",
       "packagesPath": "C:\\Users\\NEX GEN\\.nuget\\packages\\",
-      "outputPath": "D:\\Softwares\\Github\\mvc_maryam\\ora_maryam\\MVC Project\\obj\\",
+      "outputPath": "D:\\Softwares\\Github\\mvc_abdulbasit\\ora_abdulbasit\\MVC Project\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
