@@ -72,18 +72,25 @@
         });
     }
 
+    function canonicalPageName(value) {
+        const compact = normalize((value || '').replace(/\.aspx$/i, '')).replace(/[^a-z0-9]/g, '');
+        if (['availability', 'availabilitysetup', 'availibilty', 'availibiltysetup'].includes(compact)) return 'availability';
+        if (['calendar', 'calender', 'frontdeskcalendar', 'frontdeskcalender'].includes(compact)) return 'calendar';
+        if (['createreservation', 'newreservation', 'extendedreservation'].includes(compact)) return 'createreservation';
+        return compact;
+    }
+
     function currentPageName() {
         const path = (window.location.pathname || '').replace(/\/+$/, '');
         let name = path.substring(path.lastIndexOf('/') + 1) || 'Dashboard';
-        name = name.replace(/\.aspx$/i, '');
-        return normalize(name);
+        return canonicalPageName(name);
     }
 
 
     function activateCurrentTopbarPage() {
         const current = currentPageName();
         document.querySelectorAll('#pmsTopbarList .pms-topbar-link').forEach(function (link) {
-            const page = normalize((link.getAttribute('data-page') || '').replace(/\.aspx$/i, ''));
+            const page = canonicalPageName(link.getAttribute('data-page') || '');
             link.classList.toggle('active-menu', page === current);
         });
     }
@@ -106,7 +113,7 @@
 
         let matched = null;
         document.querySelectorAll('#sidebar .pms-sidebar-menu-link').forEach(function (menu) {
-            const page = normalize((menu.getAttribute('data-page') || '').replace(/\.aspx$/i, ''));
+            const page = canonicalPageName(menu.getAttribute('data-page') || '');
             if (page === current) matched = menu;
         });
 
@@ -143,18 +150,44 @@
         return false;
     };
 
+    function syncNavButtons() {
+        const mobileOpen = document.body.classList.contains('mobile-sidebar-open');
+        const desktopCollapsed = document.body.classList.contains('sidebar-collapsed');
+        const desktopToggle = document.getElementById('pmsDesktopNavToggle');
+        const mobileToggle = document.getElementById('pmsMobileNavToggle');
+
+        if (desktopToggle) {
+            desktopToggle.setAttribute('aria-expanded', desktopCollapsed ? 'false' : 'true');
+            desktopToggle.setAttribute('aria-label', desktopCollapsed ? 'Expand navigation' : 'Collapse navigation');
+        }
+        if (mobileToggle) {
+            mobileToggle.setAttribute('aria-expanded', mobileOpen ? 'true' : 'false');
+            mobileToggle.setAttribute('aria-label', mobileOpen ? 'Close navigation' : 'Open navigation');
+        }
+    }
+
+    window.pmsCloseMobileNav = function () {
+        document.body.classList.remove('mobile-sidebar-open');
+        syncNavButtons();
+    };
+
     window.pmsSetSelectedSidebar = function (element) {
         if (!element) return;
         localStorage.setItem('sidebar_current_page', normalize(element.getAttribute('data-page') || ''));
+        if (window.innerWidth <= 900) window.pmsCloseMobileNav();
     };
 
     window.pmsToggleNav = function () {
-        if (window.innerWidth <= 768) {
+        if (window.innerWidth <= 900) {
+            // Desktop collapsed state must never block the mobile drawer.
+            document.body.classList.remove('sidebar-collapsed');
             document.body.classList.toggle('mobile-sidebar-open');
         } else {
+            document.body.classList.remove('mobile-sidebar-open');
             document.body.classList.toggle('sidebar-collapsed');
             localStorage.setItem('sidebar_collapsed', document.body.classList.contains('sidebar-collapsed') ? '1' : '0');
         }
+        syncNavButtons();
     };
 
     function updateTopbarScrollControls() {
@@ -219,13 +252,6 @@
         if (popup) popup.classList.add('open');
     };
 
-    window.pmsOpenNotifications = function () {
-        const overlay = document.getElementById('pmsMasterOverlay');
-        const popup = document.getElementById('pmsNotificationModal');
-        if (overlay) overlay.classList.add('open');
-        if (popup) popup.classList.add('open');
-    };
-
     window.pmsCloseMasterModal = function () {
         const overlay = document.getElementById('pmsMasterOverlay');
         if (overlay) overlay.classList.remove('open');
@@ -245,12 +271,16 @@
     }
 
     function restoreShellState() {
-        if (localStorage.getItem('sidebar_collapsed') === '1' && window.innerWidth > 768) {
+        document.body.classList.remove('mobile-sidebar-open');
+        if (window.innerWidth > 900 && localStorage.getItem('sidebar_collapsed') === '1') {
             document.body.classList.add('sidebar-collapsed');
+        } else {
+            document.body.classList.remove('sidebar-collapsed');
         }
         if (localStorage.getItem('header_hidden') === '1') {
             document.body.classList.add('header-hidden');
         }
+        syncNavButtons();
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -261,9 +291,6 @@
         wireTopbarScrollControls();
         wireOutsideProfileClose();
 
-        if (document.body.getAttribute('data-open-notifications') === '1') {
-            window.pmsOpenNotifications();
-        }
         if (document.body.getAttribute('data-open-change-password') === '1') {
             window.pmsOpenChangePassword();
         }
@@ -278,7 +305,20 @@
     });
 
     window.addEventListener('resize', function () {
-        if (window.innerWidth > 768) document.body.classList.remove('mobile-sidebar-open');
+        if (window.innerWidth > 900) {
+            document.body.classList.remove('mobile-sidebar-open');
+            if (localStorage.getItem('sidebar_collapsed') === '1') document.body.classList.add('sidebar-collapsed');
+        } else {
+            // Mobile always uses the slide-out drawer, never the desktop 68px state.
+            document.body.classList.remove('sidebar-collapsed');
+        }
+        syncNavButtons();
         updateTopbarScrollControls();
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && document.body.classList.contains('mobile-sidebar-open')) {
+            window.pmsCloseMobileNav();
+        }
     });
 })();

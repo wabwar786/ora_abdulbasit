@@ -1,12 +1,190 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "D:\\Softwares\\Github\\mvc_abdulbasit\\ora_abdulbasit\\MVC Project\\",
-  "Documents": [],
+  "WorkspaceRootPath": "D:\\ora_abdulbasit\\MVC Project\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\wwwroot\\css\\pms-master.css||{A5401142-F49D-43DB-90B1-F57BA349E55C}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:wwwroot\\css\\pms-master.css||{A5401142-F49D-43DB-90B1-F57BA349E55C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\wwwroot\\css\\pms-ui.css||{A5401142-F49D-43DB-90B1-F57BA349E55C}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:wwwroot\\css\\pms-ui.css||{A5401142-F49D-43DB-90B1-F57BA349E55C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\wwwroot\\css\\availability.css||{A5401142-F49D-43DB-90B1-F57BA349E55C}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:wwwroot\\css\\availability.css||{A5401142-F49D-43DB-90B1-F57BA349E55C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\views\\availability\\index.cshtml||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:views\\availability\\index.cshtml||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\controllers\\availabilitycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:controllers\\availabilitycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\models\\availabilitypageviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:models\\availabilitypageviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\views\\shared\\_pmslayout.cshtml||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:views\\shared\\_pmslayout.cshtml||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|d:\\ora_abdulbasit\\mvc project\\controllers\\loginhmscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3CB03F03-CF4A-452E-A813-360CB6C18730}|Orapmshms.csproj|solutionrelative:controllers\\loginhmscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "pms-master.css",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\pms-master.css",
+              "RelativeDocumentMoniker": "wwwroot\\css\\pms-master.css",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\pms-master.css",
+              "RelativeToolTip": "wwwroot\\css\\pms-master.css",
+              "ViewState": "AgIAAJQAAAAAAAAAAAAcwKgAAAAWAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003000|",
+              "WhenOpened": "2026-09-11T07:41:56.015Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "pms-ui.css",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\pms-ui.css",
+              "RelativeDocumentMoniker": "wwwroot\\css\\pms-ui.css",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\pms-ui.css",
+              "RelativeToolTip": "wwwroot\\css\\pms-ui.css",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAbAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003000|",
+              "WhenOpened": "2026-09-11T07:41:50.08Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "availability.css",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\availability.css",
+              "RelativeDocumentMoniker": "wwwroot\\css\\availability.css",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\availability.css",
+              "RelativeToolTip": "wwwroot\\css\\availability.css",
+              "ViewState": "AgIAAA8CAAAAAAAAAAAcwCECAABJAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003000|",
+              "WhenOpened": "2026-09-11T07:40:12.797Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "AvailabilityPageViewModel.cs",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\Models\\AvailabilityPageViewModel.cs",
+              "RelativeDocumentMoniker": "Models\\AvailabilityPageViewModel.cs",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\Models\\AvailabilityPageViewModel.cs",
+              "RelativeToolTip": "Models\\AvailabilityPageViewModel.cs",
+              "ViewState": "AgIAAB0AAAAAAAAAAAAAAB0AAAASAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-11T06:25:39.195Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Index.cshtml",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\Views\\Availability\\Index.cshtml",
+              "RelativeDocumentMoniker": "Views\\Availability\\Index.cshtml",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\Views\\Availability\\Index.cshtml",
+              "RelativeToolTip": "Views\\Availability\\Index.cshtml",
+              "ViewState": "AgIAAA4BAAAAAAAAAAAAABIBAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000759|",
+              "WhenOpened": "2026-09-11T06:25:10.165Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "AvailabilityController.cs",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\Controllers\\AvailabilityController.cs",
+              "RelativeDocumentMoniker": "Controllers\\AvailabilityController.cs",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\Controllers\\AvailabilityController.cs",
+              "RelativeToolTip": "Controllers\\AvailabilityController.cs",
+              "ViewState": "AgIAALwAAAAAAAAAAAA5wOIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-11T06:22:01.496Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\appsettings.json",
+              "RelativeDocumentMoniker": "appsettings.json",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\appsettings.json",
+              "RelativeToolTip": "appsettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-09-11T05:05:33.126Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\Program.cs",
+              "RelativeToolTip": "Program.cs",
+              "ViewState": "AgIAAEQAAAAAAAAAAAAAwGYAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-11T05:05:31.776Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "_PmsLayout.cshtml",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\Views\\Shared\\_PmsLayout.cshtml",
+              "RelativeDocumentMoniker": "Views\\Shared\\_PmsLayout.cshtml",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\Views\\Shared\\_PmsLayout.cshtml",
+              "RelativeToolTip": "Views\\Shared\\_PmsLayout.cshtml",
+              "ViewState": "AgIAAEIAAAAAAAAAAAAtwFIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000759|",
+              "WhenOpened": "2026-09-11T05:01:57.944Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "LoginHMSController.cs",
+              "DocumentMoniker": "D:\\ora_abdulbasit\\MVC Project\\Controllers\\LoginHMSController.cs",
+              "RelativeDocumentMoniker": "Controllers\\LoginHMSController.cs",
+              "ToolTip": "D:\\ora_abdulbasit\\MVC Project\\Controllers\\LoginHMSController.cs",
+              "RelativeToolTip": "Controllers\\LoginHMSController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAGkAAAAgAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-11T04:34:03.907Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }

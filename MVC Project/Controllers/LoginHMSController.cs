@@ -103,6 +103,9 @@ public sealed class LoginHMSController : Controller
         if (IsCreateReservationTarget(login.RedirectUrl))
             return RedirectToAction("Index", "CreateReservation");
 
+        if (IsAvailabilityTarget(login.RedirectUrl))
+            return RedirectToAction("Index", "Availability");
+
         var redirectToLegacy = _configuration.GetValue("Login:RedirectToLegacyPageAfterLogin", false);
         if (redirectToLegacy && !string.IsNullOrWhiteSpace(login.RedirectUrl))
             return Redirect(login.RedirectUrl);
@@ -220,7 +223,16 @@ public sealed class LoginHMSController : Controller
         var isCreateReservation = string.Equals(path, "/CreateReservation", StringComparison.OrdinalIgnoreCase) ||
                                   string.Equals(path, "/ExtendedReservation", StringComparison.OrdinalIgnoreCase) ||
                                   string.Equals(path, "/ExtendedReservation.aspx", StringComparison.OrdinalIgnoreCase);
-        if (!isYourHotels && !isDashboard && !isCalendar && !isCreateReservation)
+        var isAvailability = string.Equals(path, "/Availability", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/Availability/Index", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/Availability.aspx", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/AvailabilitySetup", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/AvailabilitySetup.aspx", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/Availibility", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/Availibility.aspx", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/Availibilty", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(path, "/Availibilty.aspx", StringComparison.OrdinalIgnoreCase);
+        if (!isYourHotels && !isDashboard && !isCalendar && !isCreateReservation && !isAvailability)
             return string.Empty;
 
         // Legacy identity/hotel query values are intentionally discarded. The authenticated
@@ -252,6 +264,7 @@ public sealed class LoginHMSController : Controller
         }
 
         if (isCreateReservation) return "/CreateReservation";
+        if (isAvailability) return "/Availability";
         return isDashboard ? "/Dashboard" : "/YourHotels";
     }
 
@@ -322,6 +335,31 @@ public sealed class LoginHMSController : Controller
         return string.Equals(path, "ExtendedReservation.aspx", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(path, "ExtendedReservation", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(path, "CreateReservation", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAvailabilityTarget(string? targetUrl)
+    {
+        if (string.IsNullOrWhiteSpace(targetUrl))
+            return false;
+
+        var path = targetUrl.Trim();
+        var queryIndex = path.IndexOf('?');
+        if (queryIndex >= 0)
+            path = path[..queryIndex];
+
+        path = path.Trim().Trim('/');
+        var lastSlash = path.LastIndexOf('/');
+        if (lastSlash >= 0)
+            path = path[(lastSlash + 1)..];
+
+        return string.Equals(path, "Availability", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(path, "Availability.aspx", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(path, "AvailabilitySetup", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(path, "AvailabilitySetup.aspx", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(path, "Availibility", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(path, "Availibility.aspx", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(path, "Availibilty", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(path, "Availibilty.aspx", StringComparison.OrdinalIgnoreCase);
     }
 
     private string GetClientIpAddress()

@@ -1,59 +1,67 @@
 {
   "Files": [
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\css\\create-reservation.css",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\availability.css",
+      "PackagePath": "staticwebassets\\css\\availability.css"
+    },
+    {
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\create-reservation.css",
       "PackagePath": "staticwebassets\\css\\create-reservation.css"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\css\\dashboard.css",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\dashboard.css",
       "PackagePath": "staticwebassets\\css\\dashboard.css"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\css\\frontdesk-calendar.css",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\frontdesk-calendar.css",
       "PackagePath": "staticwebassets\\css\\frontdesk-calendar.css"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\css\\pms-master.css",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\pms-master.css",
       "PackagePath": "staticwebassets\\css\\pms-master.css"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\css\\pms-ui.css",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\pms-ui.css",
       "PackagePath": "staticwebassets\\css\\pms-ui.css"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\css\\your-hotels.css",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\css\\your-hotels.css",
       "PackagePath": "staticwebassets\\css\\your-hotels.css"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\img\\icons8-eye-30.png",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\img\\icons8-eye-30.png",
       "PackagePath": "staticwebassets\\img\\icons8-eye-30.png"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\img\\smartPMS-01.png",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\img\\smartPMS-01.png",
       "PackagePath": "staticwebassets\\img\\smartPMS-01.png"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\img\\smartpmslogo.png",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\img\\smartpmslogo.png",
       "PackagePath": "staticwebassets\\img\\smartpmslogo.png"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\js\\create-reservation.js",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\js\\availability.js",
+      "PackagePath": "staticwebassets\\js\\availability.js"
+    },
+    {
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\js\\create-reservation.js",
       "PackagePath": "staticwebassets\\js\\create-reservation.js"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\js\\dashboard.js",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\js\\dashboard.js",
       "PackagePath": "staticwebassets\\js\\dashboard.js"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\js\\frontdesk-calendar.js",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\js\\frontdesk-calendar.js",
       "PackagePath": "staticwebassets\\js\\frontdesk-calendar.js"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\js\\pms-common.js",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\js\\pms-common.js",
       "PackagePath": "staticwebassets\\js\\pms-common.js"
     },
     {
-      "Id": "D:\\Orapmshms\\wwwroot\\js\\pms-master.js",
+      "Id": "D:\\ora_abdulbasit\\MVC Project\\wwwroot\\js\\pms-master.js",
       "PackagePath": "staticwebassets\\js\\pms-master.js"
     },
     {

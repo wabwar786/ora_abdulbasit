@@ -1,0 +1,359 @@
+@model Orapmshms.Models.AvailabilityPageViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Availability";
+    Layout = "_PmsLayout";
+
+    const int navigationDays = 15;
+    var previousStart = Model.StartDate.AddDays(-navigationDays).ToString("yyyy-MM-dd");
+    var previousEnd = Model.EndDate.AddDays(-navigationDays).ToString("yyyy-MM-dd");
+    var nextStart = Model.StartDate.AddDays(navigationDays).ToString("yyyy-MM-dd");
+    var nextEnd = Model.EndDate.AddDays(navigationDays).ToString("yyyy-MM-dd");
+    string CatQuery(string id) => string.IsNullOrWhiteSpace(id) ? string.Empty : "&categoryId=" + Uri.EscapeDataString(id);
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/availability.css" asp-append-version="true" />
+}
+
+<div class="inventory-page" id="availabilityPage"
+     data-hotel="@Model.HotelId"
+     data-save-url="@Url.Action("Save", "Availability")"
+     data-auto-update-url="@Url.Action("AutoUpdate", "Availability")"
+     data-log-url="@Url.Action("ChangeLog", "Availability")"
+     data-bulk-preview-url="@Url.Action("PreviewBulkRate", "Availability")"
+     data-bulk-rate-save-url="@Url.Action("SaveBulkRates", "Availability")"
+     data-restriction-range-url="@Url.Action("RestrictionRange", "Availability")"
+     data-bulk-restriction-save-url="@Url.Action("SaveBulkRestriction", "Availability")">
+
+    <form id="availabilityAntiForgery" class="inventory-hidden-form">@Html.AntiForgeryToken()</form>
+
+    @if (!string.IsNullOrWhiteSpace(ViewBag.LoadError as string))
+    {
+        <div class="inventory-alert inventory-alert-error">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            <span>@ViewBag.LoadError</span>
+        </div>
+    }
+
+    <section class="inventory-toolbar-card">
+        <form method="get" action="@Url.Action("Index", "Availability")" id="inventoryFilterForm" class="inventory-toolbar-row">
+            <div class="inventory-category-control">
+                <label for="categoryId">Category</label>
+                <div class="inventory-select-wrap">
+                    <select id="categoryId" name="categoryId" aria-label="Room category">
+                        <option value="">All Categories</option>
+                        @foreach (var option in Model.CategoryOptions)
+                        {
+                            if (option.CategoryId.Equals(Model.SelectedCategoryId, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <option value="@option.CategoryId" selected>@option.Name</option>
+                            }
+                            else
+                            {
+                                <option value="@option.CategoryId">@option.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="inventory-primary-actions">
+                @if (Model.CanRunAutoUpdate)
+                {
+                    <button type="button" id="autoUpdateButton" class="inventory-btn inventory-auto-btn">
+                        <i class="fa-solid fa-gear"></i><span>Auto Update</span>
+                    </button>
+                }
+
+                @if (Model.CanEdit)
+                {
+                    <button type="button" id="saveChangesButton" class="inventory-btn inventory-save-btn" disabled>
+                        <i class="fa-regular fa-floppy-disk"></i><span>Save</span>
+                        <span class="inventory-save-count" id="dirtyCount">0</span>
+                    </button>
+                }
+            </div>
+
+            <div class="inventory-date-nav">
+                <a class="inventory-nav-btn" href="@($"/Availability?start={previousStart}&end={previousEnd}{CatQuery(Model.SelectedCategoryId)}")"
+                   title="Previous 15 days" aria-label="Previous 15 days">«</a>
+
+                <div class="inventory-range-picker" id="inventoryRangePicker">
+                    <input type="hidden" id="start" name="start" value="@Model.StartDate.ToString("yyyy-MM-dd")" />
+                    <input type="hidden" id="end" name="end" value="@Model.EndDate.ToString("yyyy-MM-dd")" />
+                    <button type="button" class="inventory-range-display" id="inventoryRangeDisplay" aria-expanded="false">
+                        <span id="inventoryRangeText">@Model.StartDate.ToString("dd/MM/yyyy") - @Model.EndDate.ToString("dd/MM/yyyy")</span>
+                        <span class="inventory-calendar-icon"><i class="fa-regular fa-calendar-days"></i></span>
+                    </button>
+
+                    <div class="inventory-range-popover inventory-calendar-popover" id="inventoryRangePopover" hidden>
+                        <div class="inventory-calendar-popover-head">
+                            <div><strong>Select date range</strong><span>Choose a start and end date</span></div>
+                            <button type="button" class="inventory-calendar-close" id="rangeCloseButton" aria-label="Close date picker">×</button>
+                        </div>
+                        <div class="inventory-calendar-months">
+                            <section class="inventory-calendar-month">
+                                <div class="inventory-calendar-month-head">
+                                    <button type="button" class="inventory-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                                    <strong id="leftMonthLabel"></strong>
+                                    <button type="button" class="inventory-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                                </div>
+                                <div class="inventory-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                                <div class="inventory-calendar-grid" id="leftCalendarGrid"></div>
+                            </section>
+                            <section class="inventory-calendar-month">
+                                <div class="inventory-calendar-month-head">
+                                    <button type="button" class="inventory-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                                    <strong id="rightMonthLabel"></strong>
+                                    <button type="button" class="inventory-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                                </div>
+                                <div class="inventory-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                                <div class="inventory-calendar-grid" id="rightCalendarGrid"></div>
+                            </section>
+                        </div>
+                        <div class="inventory-calendar-footer">
+                            <span id="selectedRangeText">@Model.StartDate.ToString("dd/MM/yyyy") - @Model.EndDate.ToString("dd/MM/yyyy")</span>
+                            <div>
+                                <button type="button" class="inventory-range-clear" id="rangeClearButton">Clear</button>
+                                <button type="button" class="inventory-range-apply" id="rangeApplyButton">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="inventory-search-btn" title="View selected date range" aria-label="View selected date range">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+                <a class="inventory-nav-btn" href="@($"/Availability?start={nextStart}&end={nextEnd}{CatQuery(Model.SelectedCategoryId)}")"
+                   title="Next 15 days" aria-label="Next 15 days">»</a>
+            </div>
+        </form>
+    </section>
+
+    @if (Model.Categories.Count == 0)
+    {
+        <section class="inventory-empty">
+            <i class="fa-regular fa-calendar-xmark"></i>
+            <strong>No availability rows found</strong>
+            <span>No Room Rent categories/rate plans were found for this property.</span>
+        </section>
+    }
+    else
+    {
+        <section class="inventory-grid-card">
+            <div class="inventory-grid-scroll" id="inventoryGridScroll">
+                <table class="inventory-grid" aria-label="Availability and rate inventory">
+                    <thead>
+                        <tr>
+                            <th class="inventory-plan-heading sticky-col">Room / Rate Plan</th>
+                            @foreach (var date in Model.Dates)
+                            {
+                                <th class="inventory-date-heading @(date.IsWeekend ? "weekend" : "") @(date.IsToday ? "today" : "")">
+                                    <span>@date.Date.ToString("ddd", CultureInfo.InvariantCulture)</span>
+                                    <strong>@date.Date.ToString("dd")</strong>
+                                    <small>@date.Date.ToString("MMM", CultureInfo.InvariantCulture)</small>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var category in Model.Categories)
+                        {
+                            var availabilityRow = category.Rows.FirstOrDefault(x => x.RowType == "availability");
+                            var rateRows = category.Rows.Where(x => x.RowType == "rate").ToList();
+                            var netRow = category.Rows.FirstOrDefault(x => x.RowType == "net");
+
+                            if (availabilityRow != null)
+                            {
+                                <tr class="inventory-category-row" data-rowtype="availability" data-category="@category.CategoryId">
+                                    <th class="sticky-col inventory-category-cell">
+                                        <div class="inventory-category-cell-inner">
+                                            <span class="inventory-category-name">@($"{category.Name}({category.TotalRooms})")</span>
+                                            <span class="inventory-avl-caption">AVL</span>
+                                        </div>
+                                    </th>
+                                    @foreach (var cell in availabilityRow.Cells)
+                                    {
+                                        var isZero = int.TryParse(cell.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var av) && av == 0;
+                                        <td class="inventory-value-cell availability-value-cell availability-log-cell @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "") @(isZero ? "availability-zero" : "")"
+                                            data-rowtype="availability" data-category="@category.CategoryId" data-categoryname="@category.Name"
+                                            data-date="@cell.Date.ToString("yyyy-MM-dd")" title="View availability change log">
+                                            <input class="inventory-cell-input availability-cell-input availability-log-value @(isZero ? "zero-badge" : "")"
+                                                   type="number" inputmode="numeric" step="1" min="0" value="@cell.Value"
+                                                   data-original="@cell.Value" tabindex="-1" readonly aria-label="@category.Name availability @cell.Date.ToString("dd MMM yyyy")" />
+                                        </td>
+                                    }
+                                </tr>
+                            }
+
+                            @foreach (var row in rateRows)
+                            {
+                                <tr class="inventory-rate-row" data-rowtype="rate" data-plan="@row.PlanId" data-category="@category.CategoryId">
+                                    <th class="sticky-col inventory-rate-label">
+                                        <div class="inventory-rate-label-inner">
+                                            @if (row.Restrictions.Count > 0)
+                                            {
+                                                <button type="button" class="restriction-toggle" data-plan="@row.PlanId" data-category="@category.CategoryId" title="Show restrictions" aria-label="Show restrictions for @row.PlanName">
+                                                    <i class="fa-solid fa-chevron-right"></i>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="restriction-toggle-spacer"></span>
+                                            }
+                                            <span class="inventory-rate-name">@row.PlanName (Rate)</span>
+                                            @if (row.IsDerived && !row.Editable)
+                                            {
+                                                <span class="inventory-lock" title="Derived rate plan is read only"><i class="fa-solid fa-lock"></i></span>
+                                            }
+                                        </div>
+                                    </th>
+                                    @foreach (var cell in row.Cells)
+                                    {
+                                        var editable = row.Editable && !cell.IsPast;
+                                        var bulkEditable = row.BulkEditable && !cell.IsPast;
+                                        var stateClass = string.IsNullOrWhiteSpace(cell.VisualState) ? "rate-normal" : cell.VisualState;
+                                        <td class="inventory-value-cell rate-value-cell inventory-drag-cell state-@stateClass @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "")"
+                                            data-rowtype="rate" data-category="@category.CategoryId" data-categoryname="@category.Name"
+                                            data-plan="@row.PlanId" data-planname="@row.PlanName" data-date="@cell.Date.ToString("yyyy-MM-dd")"
+                                            data-can-rate="@(editable ? "1" : "0")" data-can-bulk="@(bulkEditable ? "1" : "0")"
+                                            data-derived="@(row.IsDerived ? "1" : "0")" data-derivedlocked="@(row.IsDerived && !Model.AllowDerivedRateEditing ? "1" : "0")">
+                                            <input class="inventory-cell-input rate-cell-input" type="number" inputmode="decimal" step="0.01" min="0"
+                                                   value="@cell.Value" data-original="@cell.Value" data-category="@category.CategoryId" data-plan="@row.PlanId"
+                                                   data-rowtype="rate" data-date="@cell.Date.ToString("yyyy-MM-dd")"
+                                                   aria-label="@row.PlanName rate @cell.Date.ToString("dd MMM yyyy")"
+                                                   disabled="@(editable ? null : "disabled")" />
+                                        </td>
+                                    }
+                                </tr>
+
+                                @foreach (var restriction in row.Restrictions)
+                                {
+                                    <tr class="restriction-row" hidden data-restriction-plan="@row.PlanId" data-category="@category.CategoryId" data-restriction="@restriction.Key">
+                                        <th class="sticky-col restriction-label"><span class="restriction-tree">↳</span><span>@restriction.Label</span></th>
+                                        @foreach (var cell in restriction.Cells)
+                                        {
+                                            var editableRestriction = restriction.Editable && !cell.IsPast;
+                                            <td class="restriction-cell inventory-drag-cell @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "") @(cell.ManualStopSell && restriction.Key == "stop_sell" ? "stop-sell" : "")"
+                                                data-rowtype="@restriction.Key" data-category="@category.CategoryId" data-categoryname="@category.Name"
+                                                data-plan="@row.PlanId" data-planname="@row.PlanName" data-date="@cell.Date.ToString("yyyy-MM-dd")"
+                                                data-current="@cell.Value" data-key="@restriction.Key" data-label="@restriction.Label"
+                                                data-boolean="@(restriction.IsBoolean ? "1" : "0")" data-min="@restriction.Minimum" data-max="@restriction.Maximum"
+                                                data-can-restriction="@(editableRestriction ? "1" : "0")">
+                                                <button type="button" class="restriction-cell-button" tabindex="-1" disabled="@(editableRestriction ? null : "disabled")">
+                                                    @if (restriction.IsBoolean)
+                                                    {
+                                                        <span>@(cell.Value == "1" ? "Closed" : "Open")</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>@(string.IsNullOrWhiteSpace(cell.Value) ? "—" : cell.Value)</span>
+                                                    }
+                                                </button>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            }
+
+                            if (netRow != null)
+                            {
+                                <tr class="inventory-net-row" data-rowtype="net" data-category="@category.CategoryId">
+                                    <th class="sticky-col inventory-net-label">Net Booking</th>
+                                    @foreach (var cell in netRow.Cells)
+                                    {
+                                        <td class="inventory-value-cell net-value-cell @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "")"><span>@cell.Value</span></td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+
+    <div id="availabilityToast" class="inventory-toast" role="status" aria-live="polite"></div>
+
+    <div id="availabilityLogModal" class="availability-log-overlay" aria-hidden="true">
+        <aside class="availability-log-drawer" role="dialog" aria-modal="true" aria-labelledby="availabilityLogTitle">
+            <header class="availability-log-header">
+                <div><h3 id="availabilityLogTitle">Availability Change Log</h3><p id="availabilityLogSubtitle">Select an availability cell</p></div>
+                <button type="button" id="availabilityLogClose" class="availability-log-close" aria-label="Close">×</button>
+            </header>
+            <div class="availability-log-body">
+                <div class="availability-log-summary">
+                    <div><span>Selected date</span><strong id="availabilityLogDate">—</strong></div>
+                    <div><span>Category</span><strong id="availabilityLogCategory">—</strong></div>
+                    <div class="availability-log-count"><strong id="availabilityLogCount">—</strong><span>Changes</span></div>
+                </div>
+                <div id="availabilityLogLoading" class="availability-log-state"><span class="availability-log-spinner"></span>Loading availability changes...</div>
+                <div id="availabilityLogError" class="availability-log-state is-error" hidden></div>
+                <div id="availabilityLogEmpty" class="availability-log-state" hidden>No availability change was found for this date.</div>
+                <div id="availabilityLogTimeline" class="availability-log-timeline" hidden></div>
+            </div>
+        </aside>
+    </div>
+
+    <div class="inventory-modal-backdrop inventory-bulk-backdrop" id="bulkEditorModal" hidden>
+        <section class="inventory-modal inventory-bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulkEditorTitle">
+            <header>
+                <div><span>Inventory</span><h3 id="bulkEditorTitle">Bulk Update</h3></div>
+                <button type="button" class="inventory-modal-x" data-close-modal="bulkEditorModal">×</button>
+            </header>
+            <div class="inventory-modal-body">
+                <input type="hidden" id="bulkCategory" /><input type="hidden" id="bulkPlan" />
+                <input type="hidden" id="bulkStart" /><input type="hidden" id="bulkEnd" /><input type="hidden" id="bulkUpdateType" />
+
+                <div class="bulk-editor-summary">
+                    <span id="bulkCategoryPill">Category</span><span id="bulkPlanPill">Plan</span><strong id="bulkDatesPretty">—</strong>
+                </div>
+                <div class="bulk-current-line">Current value: <strong id="bulkCurrentValue">—</strong></div>
+
+                <div class="bulk-weekdays" aria-label="Applicable weekdays">
+                    @foreach (var day in new[] { (0,"Sun"),(1,"Mon"),(2,"Tue"),(3,"Wed"),(4,"Thu"),(5,"Fri"),(6,"Sat") })
+                    {
+                        <label><input type="checkbox" class="bulk-day" value="@day.Item1" checked /> <span>@day.Item2</span></label>
+                    }
+                </div>
+
+                <section id="bulkRateEditor">
+                    <label class="bulk-field"><span>Base Rate</span><input type="number" id="bulkBaseRate" min="0.01" step="0.01" inputmode="decimal" /></label>
+                    <div class="bulk-preview-head"><strong>Rate Preview</strong><span>Parent and derived rate plans</span></div>
+                    <div class="bulk-table-wrap">
+                        <table class="bulk-preview-table"><thead><tr><th>Plan</th><th>Adjustment</th><th>Type</th><th>New Rate</th></tr></thead><tbody id="bulkPreviewTbody"><tr><td colspan="4">Enter Base Rate to preview.</td></tr></tbody></table>
+                    </div>
+                </section>
+
+                <section id="bulkRestrictionEditor" hidden>
+                    <div id="bulkRestrictionBooleanWrap" class="bulk-field" hidden>
+                        <label><span>Status</span><select id="bulkRestrictionBoolean"><option value="false">Open</option><option value="true">Closed</option></select></label>
+                    </div>
+                    <div id="bulkRestrictionNumberWrap" class="bulk-field" hidden>
+                        <label><span id="bulkRestrictionValueLabel">Value</span><input type="number" id="bulkRestrictionNumber" min="0" step="1" /></label>
+                    </div>
+                    <div id="bulkCutoffEditor" class="bulk-cutoff-editor" hidden>
+                        <label class="bulk-field"><span>Booking Cutoff</span>
+                            <select id="bulkCutoffMode"><option value="default">Rate Plan Default</option><option value="disabled">Disabled</option><option value="custom">Custom Days</option></select>
+                        </label>
+                        <label class="bulk-field" id="bulkCutoffDaysWrap" hidden><span>Custom days</span><input type="number" id="bulkCutoffDays" min="1" max="365" step="1" /></label>
+                    </div>
+                    <p class="bulk-hint" id="bulkRestrictionHint"></p>
+                    <div class="bulk-preview-head"><strong>Restriction Details</strong><span id="bulkDetailsLoading">Loading selected dates...</span></div>
+                    <div class="bulk-table-wrap restriction-detail-wrap">
+                        <table class="bulk-preview-table"><thead><tr><th>Date</th><th>Min Arrival</th><th>Min Through</th><th>Max Stay</th><th>CTA</th><th>CTD</th><th>Stop Sell</th></tr></thead><tbody id="bulkRestrictionDetailsBody"><tr><td colspan="7">—</td></tr></tbody></table>
+                    </div>
+                </section>
+            </div>
+            <footer>
+                <button type="button" class="inventory-btn inventory-cancel-btn" data-close-modal="bulkEditorModal">Cancel</button>
+                <button type="button" class="inventory-btn inventory-auto-btn" id="bulkSaveButton">Save</button>
+            </footer>
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/availability.js" asp-append-version="true"></script>
+}

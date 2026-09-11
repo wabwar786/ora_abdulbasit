@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Orapmshms.Services;
 using Orapmshms.Filters;
+using Orapmshms.Services.AvailabilityJobs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,6 +62,13 @@ builder.Services.AddSingleton<ILoginBackgroundQueue>(sp => sp.GetRequiredService
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LoginBackgroundWorker>());
 builder.Services.AddScoped<ILoginService, LoginService>();
 builder.Services.AddScoped<IYourHotelsService, YourHotelsService>();
+builder.Services.AddScoped<IAvailabilityService, AvailabilityService>();
+builder.Services.AddSingleton<AvailabilityAutoUpdateWorker>();
+builder.Services.AddSingleton<IAvailabilityAutoUpdateQueue>(sp => sp.GetRequiredService<AvailabilityAutoUpdateWorker>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AvailabilityAutoUpdateWorker>());
+builder.Services.AddSingleton<AvailabilityChannelSyncWorker>();
+builder.Services.AddSingleton<IAvailabilityChannelSyncQueue>(sp => sp.GetRequiredService<AvailabilityChannelSyncWorker>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AvailabilityChannelSyncWorker>());
 
 
 

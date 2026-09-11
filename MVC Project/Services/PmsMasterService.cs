@@ -146,12 +146,7 @@ public sealed class PmsMasterService : IPmsMasterService
                 scope.AccountHotelId,
                 cancellationToken);
 
-            model.Notifications = await LoadNotificationsAsync(
-                connection,
-                model.UserId,
-                model.HotelId,
-                model.Role,
-                cancellationToken);
+            // Notifications are intentionally not loaded by the shared layout right now.
 
             model.HelpUrl = BuildPageUrl("Docs.aspx", model);
             model.RenewUrl = BuildPageUrl("SubscriptionCenter.aspx", model);
@@ -880,6 +875,12 @@ EXISTS
             compactPageName.Equals("Calendar", StringComparison.OrdinalIgnoreCase) ||
             compactPageName.Equals("Calender", StringComparison.OrdinalIgnoreCase))
             return "/Calendar";
+        if (compactPageName.Equals("AvailabilitySetup", StringComparison.OrdinalIgnoreCase) ||
+            compactPageName.Equals("AvailibiltySetup", StringComparison.OrdinalIgnoreCase) ||
+            compactPageName.Equals("Availability", StringComparison.OrdinalIgnoreCase) ||
+            compactPageName.Equals("Availibilty", StringComparison.OrdinalIgnoreCase))
+            return "/Availability";
+
         if (string.Equals(normalized, "YourHotels", StringComparison.OrdinalIgnoreCase))
             return "/YourHotels";
         if (string.Equals(normalized, "ExtendedReservation", StringComparison.OrdinalIgnoreCase) ||
