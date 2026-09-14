@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ORAPMS — Dashboard, Urban Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0D2B2E; --ink-2:#3D5A5C; --ink-3:#728A8B;
+  --canvas:#EEF4F2; --surface:#FFFFFF; --line:#DCE7E4; --line-soft:#EDF3F1;
+  --teal:#0E8F86; --teal-deep:#0A6B64; --teal-wash:#E3F2EF;
+  --amber:#D99413; --amber-wash:#FBF0DC;
+  --orange:#D9581E; --orange-wash:#FBE9E1;
+  --red:#D6453D; --red-wash:#FBE6E5;
+  --indigo:#3B5BDB; --indigo-wash:#E6EAFB;
+  --r:12px; --r-lg:16px;
+  --shadow:0 1px 2px rgba(13,43,46,.05), 0 6px 18px -14px rgba(13,43,46,.28);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--ink);font-family:"Manrope",-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:12.5px;line-height:1.4;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+h1,h2,p{margin:0}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.page{max-width:1380px;margin:0 auto;padding:16px 16px 30px;display:flex;flex-direction:column;gap:12px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
+.ch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px 8px;flex-wrap:wrap}
+.ch h2{font-size:13px;font-weight:700;letter-spacing:-.01em}
+.ch .sub{font-size:11px;color:var(--ink-3);font-weight:500}
+.cb{padding:0 14px 13px}
+
+.pill{border:1px solid var(--line);background:#fff;color:var(--ink-2);font:inherit;font-size:11px;font-weight:700;
+  padding:4px 9px;border-radius:999px;cursor:pointer}
+.pill:hover{border-color:var(--teal);color:var(--teal-deep)}
+.pill[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.pill:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+select.sel{font:inherit;font-size:11px;font-weight:700;color:var(--ink-2);border:1px solid var(--line);
+  border-radius:999px;padding:4px 8px;background:#fff;cursor:pointer}
+.delta{font-size:11px;font-weight:700}
+.up{color:var(--teal)} .down{color:var(--orange)} .flat{color:var(--ink-3)}
+
+/* ---------- hero ---------- */
+.hero{position:relative;overflow:hidden;border-radius:var(--r-lg);color:#fff;padding:14px 16px;
+  background:linear-gradient(120deg,#0D2B2E 0%,#0F3E3D 55%,#0C5B54 100%);
+  display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:18px;align-items:center}
+.hero::after{content:"";position:absolute;right:-60px;bottom:-130px;width:290px;height:290px;border-radius:50%;
+  background:radial-gradient(circle,rgba(217,148,19,.26),transparent 62%)}
+.hero>*{position:relative;z-index:1}
+.hero h1{font-size:20px;font-weight:800;letter-spacing:-.03em}
+.hero .meta{font-size:11.5px;color:#B9D6D1;font-weight:600;margin-top:3px}
+.hero .meta b{color:#fff}
+.hstats{display:flex;align-items:center;gap:14px}
+.dial{display:flex;align-items:center;gap:10px}
+.dial .t{font-size:11px;color:#B9D6D1;font-weight:700}
+.dial .v{font-size:15px;font-weight:800;margin-top:1px}
+.dial .d{font-size:10.5px;font-weight:700;color:#7FE3CE}
+.hm{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:7px 11px;min-width:92px}
+.hm .k{font-size:10.5px;color:#B9D6D1;font-weight:700}
+.hm .v{font-size:16px;font-weight:800;letter-spacing:-.03em;margin-top:1px}
+.hm .d{font-size:10.5px;font-weight:700;color:#7FE3CE}
+.hm .d.neg{color:#FFC08A}
+.hactions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font:inherit;font-weight:800;font-size:12.5px;border-radius:11px;padding:9px 14px;cursor:pointer;border:1px solid transparent}
+.btn-primary{background:var(--red);color:#fff}
+.btn-primary:hover{background:#E4544B}
+.btn-ghost{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.22);color:#fff}
+.btn-ghost:hover{background:rgba(255,255,255,.17)}
+
+/* ---------- kpis ---------- */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:9px 11px 6px;
+  box-shadow:var(--shadow);border-left:3px solid var(--teal)}
+.kpi.b-amber{border-left-color:var(--amber)} .kpi.b-orange{border-left-color:var(--orange)}
+.kpi.b-indigo{border-left-color:var(--indigo)} .kpi.b-red{border-left-color:var(--red)}
+.kpi.b-slate{border-left-color:#A9BCBB}
+.kpi .k{font-size:10.5px;color:var(--ink-3);font-weight:700}
+.kpi .v{font-size:17px;font-weight:800;letter-spacing:-.03em;margin-top:1px}
+.kpi .f{display:flex;align-items:flex-end;justify-content:space-between;gap:6px;margin-top:1px}
+.kpi .ly{font-size:10.5px;color:var(--ink-3);font-weight:600}
+.kpi svg{display:block;margin-top:2px}
+
+/* ---------- grid ---------- */
+.g{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;align-items:start}
+.s8{grid-column:span 8} .s7{grid-column:span 7} .s6{grid-column:span 6}
+.s5{grid-column:span 5} .s4{grid-column:span 4} .s3{grid-column:span 3}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* ---------- room status ---------- */
+.rooms{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:6px;margin-top:10px}
+.room{position:relative;border:1px solid var(--line);border-radius:9px;padding:9px 4px;background:#fff;cursor:pointer;
+  font:inherit;display:flex;align-items:center;justify-content:center;transition:transform .12s ease}
+.room:hover{transform:translateY(-2px)}
+.room .no{font-size:13px;font-weight:800;letter-spacing:-.02em}
+.room .dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;box-shadow:0 0 0 2px #fff}
+.dot.pending{background:#E0655C}
+.dot.partial{background:#E8B23A}
+.room.dim{opacity:.2}
+.room.checkin{background:#E9F5EE;border-color:#CDE7D9;color:#2F6B52}
+.room.checkout{background:#F1F4F4;border-color:#E1E7E6;color:#7E8F8F}
+.room.reservation{background:#EAEFFB;border-color:#D3DCF6;color:#3F5FCF}
+.room.vacant{background:#fff;color:#8FA3A2}
+.room.ooo{background:repeating-linear-gradient(135deg,#F4F6F6,#F4F6F6 5px,#E9EDEC 5px,#E9EDEC 10px);color:#93A6A5}
+.tip{position:absolute;bottom:calc(100% + 9px);left:50%;transform:translateX(-50%);min-width:186px;
+  background:var(--ink);color:#fff;border-radius:10px;padding:9px 11px;font-size:11px;font-weight:600;line-height:1.5;
+  text-align:left;opacity:0;visibility:hidden;transition:opacity .12s ease;z-index:30;pointer-events:none;
+  box-shadow:0 12px 26px -14px rgba(0,0,0,.6)}
+.tip::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  border:5px solid transparent;border-top-color:var(--ink)}
+.room:hover .tip,.room:focus .tip{opacity:1;visibility:visible}
+.tip .n{font-size:12px;font-weight:800}
+.tip .r{color:#9FC3BE;font-weight:700}
+.tip .b{margin-top:4px;font-weight:800}
+.tip .b.due{color:#FFB1AB} .tip .b.part{color:#FFD98A} .tip .b.ok{color:#7FE3CE}
+.lgnd{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;padding-top:9px;border-top:1px solid var(--line-soft)}
+.lg{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:var(--ink-2);
+  border:1px solid var(--line);border-radius:999px;padding:3px 8px}
+.lg i{width:8px;height:8px;border-radius:2px;display:block}
+.lg b{font-weight:800}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse}
+th{font-size:10.5px;color:var(--ink-3);font-weight:700;text-align:left;padding:0 8px 6px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 8px 7px 0;border-bottom:1px solid var(--line-soft);font-size:12px;font-weight:600}
+tbody tr:last-child td{border-bottom:0}
+tfoot td{border-top:1px solid var(--line);border-bottom:0;font-weight:800;padding-top:8px}
+.tr-r{text-align:right}
+.bar{height:6px;border-radius:999px;background:#EDF1F0;overflow:hidden;min-width:48px;flex:1}
+.bar span{display:block;height:100%;border-radius:999px;background:var(--teal)}
+.bar.l span{background:var(--orange)}
+.chip{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.chip.hi{background:var(--teal-wash);color:var(--teal-deep)}
+.chip.md{background:var(--amber-wash);color:#8F6206}
+.chip.lo{background:var(--orange-wash);color:var(--orange)}
+.chip.in{background:var(--teal-wash);color:var(--teal-deep)}
+.chip.out{background:var(--amber-wash);color:#8F6206}
+.chip.arr{background:var(--indigo-wash);color:var(--indigo)}
+.chip.done{background:#EDF1F0;color:var(--ink-3)}
+.act{font:inherit;font-size:10.5px;font-weight:800;border-radius:8px;padding:4px 9px;cursor:pointer;
+  border:1px solid var(--teal);background:var(--teal);color:#fff}
+.act.sec{background:#fff;color:var(--teal-deep)}
+.act.mut{background:#fff;color:var(--ink-3);border-color:var(--line);cursor:default}
+.gsub{font-size:10px;color:var(--ink-3);font-weight:700;margin-top:1px}
+
+/* ---------- ops ---------- */
+.ops{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.op{border:1px solid var(--line);border-radius:10px;padding:8px 9px;text-decoration:none;color:inherit;display:block}
+.op:hover{border-color:var(--teal);background:var(--teal-wash)}
+.op .k{font-size:10px;color:var(--ink-3);font-weight:700;line-height:1.25}
+.op .v{font-size:17px;font-weight:800;letter-spacing:-.03em;margin-top:2px}
+.op.warn .v{color:var(--orange)} .op.alert .v{color:var(--red)}
+
+.foot{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line-soft)}
+.foot .k{font-size:10.5px;color:var(--ink-3);font-weight:700}
+.foot .v{font-size:15px;font-weight:800;letter-spacing:-.02em}
+.foot .d{font-size:10.5px;font-weight:700}
+.key{display:flex;gap:10px;font-size:10.5px;font-weight:700;color:var(--ink-2);flex-wrap:wrap}
+.key i{width:12px;height:3px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:3px}
+.key i.dash{background:repeating-linear-gradient(90deg,#8FA9FF,#8FA9FF 4px,transparent 4px,transparent 7px)}
+.key i.sq{width:9px;height:9px;border-radius:2px;vertical-align:0}
+
+/* ---------- mini stats ---------- */
+.ms{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ms .b{border:1px solid var(--line);border-radius:10px;padding:8px 9px}
+.ms .k{font-size:10px;color:var(--ink-3);font-weight:700}
+.ms .v{font-size:16px;font-weight:800;letter-spacing:-.03em;margin-top:1px}
+.ms .v small{font-size:10px;font-weight:700;color:var(--ink-3);letter-spacing:0}
+
+/* ---------- alerts ---------- */
+.alerts{list-style:none;margin:0;padding:0}
+.alerts li{display:grid;grid-template-columns:3px 1fr;gap:9px;padding:7px 0;border-top:1px solid var(--line-soft)}
+.alerts li:first-child{border-top:0}
+.alerts .mk{border-radius:2px}
+.alerts .t{font-size:11.5px;font-weight:800}
+.alerts .d{font-size:10.5px;color:var(--ink-3);font-weight:600;margin-top:1px}
+
+/* ---------- prices ---------- */
+.prices{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.price{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.price .k{font-size:10.5px;color:var(--ink-3);font-weight:700}
+.price .v{font-size:15px;font-weight:800;margin-top:2px;display:flex;align-items:center;gap:6px}
+.price .v s{color:var(--ink-3);font-weight:700;text-decoration:line-through;font-size:12px}
+.price .d{font-size:10.5px;font-weight:800;margin-top:1px}
+.signals{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+.sig{display:flex;gap:7px;align-items:flex-start;border-radius:10px;padding:7px 10px;font-size:10.5px;font-weight:700;flex:1;min-width:180px}
+.sig.good{background:var(--teal-wash);color:var(--teal-deep)}
+.sig.warn{background:var(--amber-wash);color:#8F6206}
+
+@media (max-width:1220px){
+  .kpis{grid-template-columns:repeat(3,1fr)}
+  .s8,.s7,.s6,.s5,.s4,.s3{grid-column:span 12}
+  .hero{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .ops{grid-template-columns:repeat(2,1fr)}
+  .ms{grid-template-columns:repeat(2,1fr)}
+  .prices{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div>
+      <h1>Today at Urban Hotel</h1>
+      <p class="meta">Tuesday, 9 September 2026 · <b>43 of 55 rooms</b> sold tonight · 8 arrivals and 6 departures to handle · <b>71%</b> on the books for the next 30 days</p>
+    </div>
+    <div class="hstats">
+      <div class="dial">
+        <svg width="62" height="62" viewBox="0 0 62 62" role="img" aria-label="Occupancy 78 percent">
+          <circle cx="31" cy="31" r="25" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="7"/>
+          <circle cx="31" cy="31" r="25" fill="none" stroke="#3FD0BC" stroke-width="7" stroke-linecap="round"
+                  stroke-dasharray="157" stroke-dashoffset="34.5" transform="rotate(-90 31 31)"/>
+          <text x="31" y="35" text-anchor="middle" font-size="15" font-weight="800" fill="#fff" font-family="Manrope,sans-serif">78%</text>
+        </svg>
+        <div>
+          <div class="t">Occupancy</div>
+          <div class="v num">43 / 55 rooms</div>
+          <div class="d">+6 pts vs last Tuesday</div>
+        </div>
+      </div>
+      <div class="hm"><div class="k">Revenue today</div><div class="v num">£6,115</div><div class="d">+12% vs LY</div></div>
+      <div class="hm"><div class="k">ADR</div><div class="v num">£102</div><div class="d">+£7 vs LY</div></div>
+      <div class="hm"><div class="k">RevPAR</div><div class="v num">£80</div><div class="d">+11%</div></div>
+    </div>
+    <div class="hactions">
+      <button class="btn btn-primary">+ New reservation</button>
+    </div>
+  </section>
+
+  <!-- ================= KPI STRIP ================= -->
+  <section class="kpis" aria-label="Key figures">
+    <div class="kpi">
+      <div class="k">Total revenue today</div><div class="v num">£6,115.24</div>
+      <div class="f"><span class="ly">LY £5,460</span><span class="delta up">+12%</span></div>
+      <svg class="spark" data-points="18,22,20,26,24,30,28,34,31,36,33,38" data-color="#0E8F86" height="20"></svg>
+    </div>
+    <div class="kpi b-amber">
+      <div class="k">Receivables</div><div class="v num">£8,077.25</div>
+      <div class="f"><span class="ly">£3,120 over 30 days</span><span class="delta down">+8%</span></div>
+      <svg class="spark" data-points="20,22,25,24,28,30,29,33,35,36,38,41" data-color="#D99413" height="20"></svg>
+    </div>
+    <div class="kpi b-indigo">
+      <div class="k">Total expenses today</div><div class="v num">£50.00</div>
+      <div class="f"><span class="ly">£61,870 last 30 days</span><span class="delta up">−23%</span></div>
+      <svg class="spark" data-points="40,38,36,33,34,30,28,27,24,22,20,18" data-color="#3B5BDB" height="20"></svg>
+    </div>
+    <div class="kpi">
+      <div class="k">Profit today</div><div class="v num">£6,065.24</div>
+      <div class="f"><span class="ly">margin 34% MTD</span><span class="delta up">+15%</span></div>
+      <svg class="spark" data-points="16,20,19,24,27,26,31,33,32,37,39,42" data-color="#0E8F86" height="20"></svg>
+    </div>
+    <div class="kpi b-slate">
+      <div class="k">No shows</div><div class="v num">0 <span style="font-size:11px;color:var(--ink-3)">today · 4 this month</span></div>
+      <div class="f"><span class="ly">£490 lost this month</span><span class="delta flat">0%</span></div>
+      <svg class="spark" data-points="24,24,24,24,24,24,24,24,24,24,24,24" data-color="#A9BCBB" height="20"></svg>
+    </div>
+
+    <div class="kpi b-red">
+      <div class="k">Cancellations</div><div class="v num">5 <span style="font-size:11px;color:var(--ink-3)">today · 36 this month</span></div>
+      <div class="f"><span class="ly">rate 6.4% vs LY 9.1%</span><span class="delta up">−50%</span></div>
+      <svg class="spark" data-points="38,36,34,30,31,28,26,24,22,21,19,18" data-color="#D6453D" height="20"></svg>
+    </div>
+    <div class="kpi">
+      <div class="k">Occupancy next 30 days</div><div class="v num">71%</div>
+      <div class="f"><span class="ly">LY 66%</span><span class="delta up">+5 pts</span></div>
+      <svg class="spark" data-points="20,23,25,24,28,30,33,32,36,38,40,41" data-color="#0E8F86" height="20"></svg>
+    </div>
+    <div class="kpi b-orange">
+      <div class="k">Profit margin MTD</div><div class="v num">34%</div>
+      <div class="f"><span class="ly">LY 31%</span><span class="delta up">+3 pts</span></div>
+      <svg class="spark" data-points="22,24,23,26,28,27,30,31,33,34,36,37" data-color="#D9581E" height="20"></svg>
+    </div>
+  </section>
+
+  <!-- ================= ROOM STATUS + GUESTS / OPS ================= -->
+  <div class="g">
+    <section class="card s7">
+      <div class="ch">
+        <div><h2>Room status</h2><p class="sub">Hover a room for guest details · updated 09:42</p></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <button class="pill" data-filter="all" aria-pressed="true">All</button>
+          <button class="pill" data-filter="checkin">Check in</button>
+          <button class="pill" data-filter="reservation">Reservation</button>
+          <button class="pill" data-filter="checkout">Check out</button>
+          <button class="pill" data-filter="vacant">Vacant</button>
+          <select class="sel" aria-label="Date"><option>Today</option><option>Tomorrow</option><option>This week</option></select>
+        </div>
+      </div>
+      <div class="cb">
+        <div id="rack"></div>
+        <div class="lgnd" id="legend"></div>
+      </div>
+    </section>
+
+    <div class="s5 stack">
+      <section class="card">
+        <div class="ch"><div><h2>Today's operations</h2><p class="sub">Live status for today</p></div>
+          <button class="pill">Front desk</button></div>
+        <div class="cb">
+          <div class="ops">
+            <a class="op" href="#"><div class="k">Arrivals today</div><div class="v num">8</div></a>
+            <a class="op" href="#"><div class="k">Departures today</div><div class="v num">6</div></a>
+            <a class="op" href="#"><div class="k">In-house guests</div><div class="v num">42</div></a>
+            <a class="op" href="#"><div class="k">Available rooms</div><div class="v num">11</div></a>
+            <a class="op warn" href="#"><div class="k">Dirty rooms</div><div class="v num">2</div></a>
+            <a class="op alert" href="#"><div class="k">Blocked / out of order</div><div class="v num">1</div></a>
+          </div>
+          <div class="ms" style="margin-top:8px">
+            <div class="b"><div class="k">Average stay</div><div class="v num">2.4 <small>nights</small></div></div>
+            <div class="b"><div class="k">Repeat guests</div><div class="v num">31% <small>of stays</small></div></div>
+            <div class="b"><div class="k">Guests per room</div><div class="v num">1.4</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="ch"><div><h2>In-house guests</h2><p class="sub">42 guests in 43 rooms · check out or take payment from here</p></div>
+          <div style="display:flex;gap:6px">
+            <button class="pill" data-guests="all" aria-pressed="true">All</button>
+            <button class="pill" data-guests="due">Due out</button>
+            <button class="pill" data-guests="balance">Balance owed</button>
+          </div></div>
+        <div class="cb">
+          <table>
+            <thead><tr><th>Room</th><th>Guest</th><th>Stay</th><th>Nights</th><th class="tr-r">Balance</th><th class="tr-r">Quick action</th></tr></thead>
+            <tbody id="inhouse">
+              <tr data-due="1" data-bal="145"><td class="num">103</td><td>James Wilson<div class="gsub">RSV7291 · Double · 2 guests</div></td><td class="num">09–11 Sep</td><td class="num">2</td><td class="tr-r"><span class="chip lo">£145 pending</span></td><td class="tr-r"><button class="act">Receive payment</button></td></tr>
+              <tr data-due="1" data-bal="0"><td class="num">105</td><td>Sarah Khan<div class="gsub">RSV7302 · Deluxe · 1 guest</div></td><td class="num">07–10 Sep</td><td class="num">3</td><td class="tr-r"><span class="chip hi">Settled</span></td><td class="tr-r"><button class="act sec">Check out</button></td></tr>
+              <tr data-due="0" data-bal="78"><td class="num">117</td><td>Riya Patel<div class="gsub">RSV7317 · Double · 2 guests</div></td><td class="num">08–13 Sep</td><td class="num">5</td><td class="tr-r"><span class="chip md">£78 part paid</span></td><td class="tr-r"><button class="act">Receive payment</button></td></tr>
+              <tr data-due="0" data-bal="0"><td class="num">101</td><td>Emily Carter<div class="gsub">RSV7285 · Single · 1 guest</div></td><td class="num">08–12 Sep</td><td class="num">4</td><td class="tr-r"><span class="chip hi">Settled</span></td><td class="tr-r"><button class="act sec">Check out</button></td></tr>
+              <tr data-due="1" data-bal="212"><td class="num">122</td><td>Tomas Novak<div class="gsub">RSV7322 · Suite · 2 guests</div></td><td class="num">06–11 Sep</td><td class="num">5</td><td class="tr-r"><span class="chip lo">£212 pending</span></td><td class="tr-r"><button class="act">Receive payment</button></td></tr>
+              <tr data-due="0" data-bal="0"><td class="num">130</td><td>Ana Silva<div class="gsub">RSV7330 · Deluxe · 2 guests</div></td><td class="num">09–14 Sep</td><td class="num">5</td><td class="tr-r"><span class="chip hi">Settled</span></td><td class="tr-r"><button class="act sec">Check out</button></td></tr>
+              <tr data-due="1" data-bal="0"><td class="num">140</td><td>Paul Dubois<div class="gsub">RSV7340 · Double · 1 guest</div></td><td class="num">05–11 Sep</td><td class="num">6</td><td class="tr-r"><span class="chip hi">Settled</span></td><td class="tr-r"><button class="act sec">Check out</button></td></tr>
+            </tbody>
+            <tfoot><tr><td colspan="4">7 of 43 rooms shown</td><td class="tr-r num">£435 owed</td><td class="tr-r"><button class="pill">Open all reservations</button></td></tr></tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= ON THE BOOKS + CHANNELS ================= -->
+  <div class="g">
+    <section class="card s8">
+      <div class="ch">
+        <div><h2>Occupancy on the books</h2><p class="sub">Rooms sold per night, with the last 7 days of pickup and the same nights last year</p></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="key"><span><i class="sq" style="background:#0E8F86"></i>Sold</span><span><i class="sq" style="background:#8FA9FF"></i>Picked up</span><span><i class="dash"></i>Last year</span></span>
+          <button class="pill" data-range="30" aria-pressed="true">30 days</button>
+          <button class="pill" data-range="60">60 days</button>
+          <button class="pill" data-range="90">90 days</button>
+        </div>
+      </div>
+      <div class="cb">
+        <svg id="obChart" viewBox="0 0 760 180" width="100%" height="172" role="img" aria-label="Occupancy on the books"></svg>
+        <div class="foot">
+          <div><div class="k">Rooms on the books</div><div class="v num">1,172</div><div class="d up">+14% vs LY</div></div>
+          <div><div class="k">Pickup last 7 days</div><div class="v num">+186 rooms</div><div class="d up">£19,400 added</div></div>
+          <div><div class="k">Weakest window</div><div class="v num">22–26 Sep · 48%</div><div class="d down">63 rooms to fill</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card s4">
+      <div class="ch"><div><h2>Where the money comes from</h2><p class="sub">Revenue on the books, next 30 days</p></div></div>
+      <div class="cb">
+        <table>
+          <thead><tr><th>Channel</th><th class="tr-r">Rooms</th><th class="tr-r">ADR</th><th class="tr-r">Revenue</th><th class="tr-r">Share</th></tr></thead>
+          <tbody>
+            <tr><td>Direct website</td><td class="tr-r num">402</td><td class="tr-r num">£112</td><td class="tr-r num">£45,024</td><td class="tr-r num">35%</td></tr>
+            <tr><td>Booking.com</td><td class="tr-r num">387</td><td class="tr-r num">£99</td><td class="tr-r num">£38,313</td><td class="tr-r num">30%</td></tr>
+            <tr><td>Expedia</td><td class="tr-r num">198</td><td class="tr-r num">£96</td><td class="tr-r num">£19,008</td><td class="tr-r num">15%</td></tr>
+            <tr><td>Corporate</td><td class="tr-r num">126</td><td class="tr-r num">£125</td><td class="tr-r num">£15,750</td><td class="tr-r num">12%</td></tr>
+            <tr><td>Walk-in and phone</td><td class="tr-r num">59</td><td class="tr-r num">£175</td><td class="tr-r num">£10,305</td><td class="tr-r num">8%</td></tr>
+          </tbody>
+          <tfoot><tr><td>Total</td><td class="tr-r num">1,172</td><td class="tr-r num">£110</td><td class="tr-r num">£128,400</td><td class="tr-r num">100%</td></tr></tfoot>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= ROOM TYPE + CANCELLATIONS ================= -->
+  <div class="g">
+    <section class="card s8">
+      <div class="ch"><div><h2>Room type performance</h2><p class="sub">Tonight and the next 30 days, by category</p></div>
+        <div style="display:flex;gap:6px">
+          <select class="sel" aria-label="Period"><option>Last 30 days</option><option>This month</option><option>Year to date</option></select>
+          <button class="pill">Full report</button></div></div>
+      <div class="cb">
+        <table>
+          <thead><tr><th>Room type</th><th class="tr-r">Rooms</th><th style="width:130px">Occupancy tonight</th><th class="tr-r">Next 30d</th><th class="tr-r">ADR</th><th class="tr-r">RevPAR</th><th class="tr-r">Revenue</th><th class="tr-r">Contribution</th><th class="tr-r">Pace vs LY</th><th class="tr-r">Demand</th></tr></thead>
+          <tbody>
+            <tr><td>Single room</td><td class="tr-r num">16</td>
+              <td><div style="display:flex;align-items:center;gap:7px"><div class="bar"><span style="width:68%"></span></div><span class="num">68%</span></div></td>
+              <td class="tr-r num">63%</td><td class="tr-r num">£72</td><td class="tr-r num">£49</td><td class="tr-r num">£5,200</td><td class="tr-r num">18%</td>
+              <td class="tr-r"><span class="chip md">+2%</span></td><td class="tr-r"><span class="chip md">Medium</span></td></tr>
+            <tr><td>Double room</td><td class="tr-r num">22</td>
+              <td><div style="display:flex;align-items:center;gap:7px"><div class="bar"><span style="width:82%"></span></div><span class="num">82%</span></div></td>
+              <td class="tr-r num">79%</td><td class="tr-r num">£95</td><td class="tr-r num">£78</td><td class="tr-r num">£12,450</td><td class="tr-r num">42%</td>
+              <td class="tr-r"><span class="chip hi">+14%</span></td><td class="tr-r"><span class="chip hi">High</span></td></tr>
+            <tr><td>Deluxe room</td><td class="tr-r num">13</td>
+              <td><div style="display:flex;align-items:center;gap:7px"><div class="bar"><span style="width:61%"></span></div><span class="num">61%</span></div></td>
+              <td class="tr-r num">74%</td><td class="tr-r num">£118</td><td class="tr-r num">£72</td><td class="tr-r num">£9,100</td><td class="tr-r num">31%</td>
+              <td class="tr-r"><span class="chip hi">+9%</span></td><td class="tr-r"><span class="chip hi">High</span></td></tr>
+            <tr><td>Suite</td><td class="tr-r num">4</td>
+              <td><div style="display:flex;align-items:center;gap:7px"><div class="bar l"><span style="width:35%"></span></div><span class="num">35%</span></div></td>
+              <td class="tr-r num">41%</td><td class="tr-r num">£145</td><td class="tr-r num">£51</td><td class="tr-r num">£1,900</td><td class="tr-r num">9%</td>
+              <td class="tr-r"><span class="chip lo">−12%</span></td><td class="tr-r"><span class="chip lo">Low</span></td></tr>
+          </tbody>
+          <tfoot><tr><td>All rooms</td><td class="tr-r num">55</td><td>78%</td><td class="tr-r num">71%</td><td class="tr-r num">£102</td><td class="tr-r num">£80</td><td class="tr-r num">£28,650</td><td class="tr-r num">100%</td><td class="tr-r"><span class="chip hi">+8%</span></td><td class="tr-r">—</td></tr></tfoot>
+        </table>
+      </div>
+    </section>
+
+    <section class="card s4">
+      <div class="ch"><div><h2>Cancellations and no-shows</h2><p class="sub">Last 30 days · £4,180 of revenue lost</p></div></div>
+      <div class="cb">
+        <svg id="cxChart" viewBox="0 0 420 106" width="100%" height="100" role="img" aria-label="Cancellations per week"></svg>
+        <table style="margin-top:6px">
+          <thead><tr><th>Source</th><th class="tr-r">Cancelled</th><th class="tr-r">Rate</th><th class="tr-r">Lost</th></tr></thead>
+          <tbody>
+            <tr><td>Booking.com</td><td class="tr-r num">21</td><td class="tr-r num">11.4%</td><td class="tr-r num">£2,090</td></tr>
+            <tr><td>Expedia</td><td class="tr-r num">9</td><td class="tr-r num">7.2%</td><td class="tr-r num">£880</td></tr>
+            <tr><td>Direct website</td><td class="tr-r num">6</td><td class="tr-r num">2.1%</td><td class="tr-r num">£720</td></tr>
+            <tr><td>No-shows</td><td class="tr-r num">4</td><td class="tr-r num">1.1%</td><td class="tr-r num">£490</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= TRENDS ================= -->
+  <div class="g">
+    <section class="card s6">
+      <div class="ch"><div><h2>Revenue and profit trend</h2><p class="sub">Last 30 days against last year</p></div>
+        <span class="key"><span><i style="background:#0E8F86"></i>Revenue</span><span><i style="background:#D99413"></i>Profit</span><span><i class="dash"></i>Last year</span></span></div>
+      <div class="cb">
+        <svg id="revChart" viewBox="0 0 560 165" width="100%" height="158" role="img" aria-label="Revenue and profit trend"></svg>
+        <div class="foot">
+          <div><div class="k">Total revenue</div><div class="v num">£94,280</div><div class="d up">+14%</div></div>
+          <div><div class="k">Total profit</div><div class="v num">£32,410</div><div class="d up">+11%</div></div>
+          <div><div class="k">Profit margin</div><div class="v num">34%</div><div class="d up">+2 pts</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card s6">
+      <div class="ch"><div><h2>Occupancy trend and forecast</h2><p class="sub">Last 15 days and the next 14 days</p></div>
+        <span class="key"><span><i style="background:#0E8F86"></i>Actual</span><span><i class="dash"></i>Forecast</span></span></div>
+      <div class="cb">
+        <svg id="occChart" viewBox="0 0 560 165" width="100%" height="158" role="img" aria-label="Occupancy trend and forecast"></svg>
+        <div class="foot">
+          <div><div class="k">Current occupancy</div><div class="v num">78%</div><div class="d up">+6%</div></div>
+          <div><div class="k">Forecast next 7 days</div><div class="v num">82%</div><div class="d up">+4%</div></div>
+          <div><div class="k">Expected ADR</div><div class="v num">£102</div><div class="d up">+9%</div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= PRICES + DECISIONS ================= -->
+  <div class="g">
+    <section class="card s7">
+      <div class="ch">
+        <div><h2>Today's prices</h2><p class="sub">Rate suggestions based on occupancy, demand, seasonality and forecast</p></div>
+        <div style="display:flex;gap:8px"><button class="pill">Dismiss</button><button class="btn btn-primary" style="padding:7px 13px;font-size:12px">Apply all</button></div>
+      </div>
+      <div class="cb">
+        <div class="prices">
+          <div class="price"><div class="k">Single</div><div class="v num"><s>£72</s> → £68</div><div class="d down">Drop 5.6% · fills an estimated 2 nights</div></div>
+          <div class="price"><div class="k">Double</div><div class="v num"><s>£95</s> → £106</div><div class="d up">Raise 11.6% · adds an estimated £2,300</div></div>
+          <div class="price"><div class="k">Deluxe</div><div class="v num"><s>£118</s> → £132</div><div class="d up">Raise 11.9% · adds an estimated £1,450</div></div>
+          <div class="price"><div class="k">Suite</div><div class="v num"><s>£145</s> → £134</div><div class="d down">Drop 7.6% · clears an estimated 3 nights</div></div>
+        </div>
+        <div class="signals">
+          <div class="sig good"><span>↗</span><span>High demand on 12–14 Sep. Doubles and deluxes are 79% sold, so raise by 12%.</span></div>
+          <div class="sig warn"><span>↘</span><span>Low occupancy on 22–26 Sep. Suites sit at 41%, so reduce by 8% and push a direct offer.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card s5">
+      <div class="ch"><div><h2>Decisions waiting on you</h2><p class="sub">Ranked by revenue impact</p></div>
+        <button class="pill">Review all</button></div>
+      <div class="cb">
+        <ul class="alerts">
+          <li><span class="mk" style="background:#D9581E"></span>
+            <div><div class="t">Suites are 12% behind last year</div>
+              <div class="d">All four free on 22–26 Sep. Moving £145 to £134 should clear about three nights.</div></div></li>
+          <li><span class="mk" style="background:#D99413"></span>
+            <div><div class="t">Booking.com cancels at 11.4%</div>
+              <div class="d">Five times your direct rate. A non-refundable rate there protects roughly £1,900 a month.</div></div></li>
+          <li><span class="mk" style="background:#0E8F86"></span>
+            <div><div class="t">Doubles are pacing 14% ahead</div>
+              <div class="d">79% on the books for 30 days. £95 to £106 on peak nights adds about £2,300.</div></div></li>
+          <li><span class="mk" style="background:#D6453D"></span>
+            <div><div class="t">£3,120 of receivables past 30 days</div>
+              <div class="d">Two corporate accounts hold 74% of the overdue balance.</div></div></li>
+          <li><span class="mk" style="background:#3B5BDB"></span>
+            <div><div class="t">Direct now leads at 35% of revenue</div>
+              <div class="d">£13 higher ADR than the OTAs. Each point moved from OTA to direct is worth about £420 a month.</div></div></li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<script>
+/* ---------- chart helpers ---------- */
+function axis(labels,y0,y1,x0,x1){
+  return labels.map(function(t,i){
+    var y=y0+i*((y1-y0)/(labels.length-1));
+    return '<line x1="'+x0+'" y1="'+y+'" x2="'+x1+'" y2="'+y+'" stroke="#EDF3F1"/>'+
+      '<text x="0" y="'+(y+3.5)+'" font-size="9.5" fill="#728A8B" font-weight="700" font-family="Manrope,sans-serif">'+t+'</text>';
+  }).join('');
+}
+function xlabels(items,y){
+  return items.map(function(l){
+    return '<text x="'+l.x+'" y="'+y+'" font-size="9.5" fill="#728A8B" text-anchor="middle" font-weight="700" font-family="Manrope,sans-serif">'+l.t+'</text>';
+  }).join('');
+}
+function path(v,x0,x1,y0,y1,min,max){
+  var s=(x1-x0)/(v.length-1);
+  return v.map(function(p,i){return (i?'L':'M')+(x0+i*s).toFixed(1)+' '+(y1-((p-min)/(max-min))*(y1-y0)).toFixed(1);}).join(' ');
+}
+
+/* ---------- sparklines ---------- */
+Array.prototype.forEach.call(document.querySelectorAll('.spark'),function(svg){
+  var pts=svg.dataset.points.split(',').map(Number),w=120,h=20;
+  var max=Math.max.apply(null,pts),min=Math.min.apply(null,pts),r=(max-min)||1;
+  var d=pts.map(function(p,i){return (i?'L':'M')+(i*(w/(pts.length-1))).toFixed(1)+' '+(h-2-((p-min)/r)*(h-5)).toFixed(1);}).join(' ');
+  svg.setAttribute('viewBox','0 0 '+w+' '+h); svg.setAttribute('width','100%');
+  svg.innerHTML='<path d="'+d+' L '+w+' '+h+' L 0 '+h+' Z" fill="'+svg.dataset.color+'" opacity=".09"/>'+
+                '<path d="'+d+'" fill="none" stroke="'+svg.dataset.color+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+});
+
+/* ---------- room rack ---------- */
+var STATUS={
+  checkin:{name:'Checked in',color:'#A8D9BE'},
+  reservation:{name:'Reservation',color:'#AFC0F0'},
+  checkout:{name:'Checked out',color:'#CBD4D3'},
+  vacant:{name:'Vacant',color:'#FFFFFF'},
+  ooo:{name:'Out of order',color:'#E2E8E7'}
+};
+var GUESTS=['Emily Carter','James Wilson','Sarah Khan','Michael Lee','Olivia Brown','Daniel Ahmed','Riya Patel','Laura Moore','Hina Begum','Tomas Novak','Ana Silva','Kwame Owusu','Nadia Haider','Paul Dubois','Chiara Rossi','Greta Meyer','Femi Okafor','Bo Larsen'];
+var TYPES=['Single','Double','Deluxe','Suite'];
+var PLAN={13:'checkout',22:'checkout',31:'checkout',40:'checkout',53:'checkout',
+          4:'reservation',9:'reservation',14:'reservation',15:'reservation',19:'reservation',27:'reservation',
+          2:'vacant',7:'vacant',11:'vacant',26:'vacant',36:'vacant',48:'vacant',49:'ooo'};
+var PENDING=[3,17,22,30,44], PARTIAL=[6,13,25,38,51];
+
+var rack=document.getElementById('rack');
+var grid=document.createElement('div'); grid.className='rooms';
+var counts={checkin:0,reservation:0,checkout:0,vacant:0,ooo:0}, pay={pending:0,partial:0}, n;
+
+for(n=1;n<=55;n++){
+  var st=PLAN[n]||'checkin';
+  counts[st]++;
+  var b=document.createElement('button');
+  b.className='room '+st; b.dataset.status=st;
+  var guest=GUESTS[n%GUESTS.length], type=TYPES[n%TYPES.length];
+  var resv='RSV'+(7200+n);
+  var dot='', bal='', balCls='ok', balTxt='Settled';
+  if(st!=='vacant'&&st!=='ooo'){
+    if(PENDING.indexOf(n)>-1){dot='<span class="dot pending"></span>';pay.pending++;balCls='due';balTxt='£'+(90+n*3)+' pending';}
+    else if(PARTIAL.indexOf(n)>-1){dot='<span class="dot partial"></span>';pay.partial++;balCls='part';balTxt='£'+(40+n*2)+' part paid';}
+  }
+  var tip;
+  if(st==='vacant') tip='<span class="n">Room '+n+'</span><br><span class="r">'+type+' · vacant and ready</span>';
+  else if(st==='ooo') tip='<span class="n">Room '+n+'</span><br><span class="r">'+type+' · out of order, maintenance</span>';
+  else tip='<span class="n">'+guest+'</span><br><span class="r">Room '+n+' · '+type+' · '+resv+'</span><br>'+
+           '<span class="r">'+STATUS[st].name+' · 08–12 Sep · 2 guests</span>'+
+           '<span class="b '+balCls+'">'+balTxt+'</span>';
+  b.innerHTML='<span class="no num">'+(n<10?'0'+n:n)+'</span>'+dot+'<span class="tip">'+tip+'</span>';
+  grid.appendChild(b);
+}
+rack.appendChild(grid);
+
+var legend=document.getElementById('legend');
+Object.keys(STATUS).forEach(function(k){
+  var el=document.createElement('span'); el.className='lg';
+  el.innerHTML='<i style="background:'+STATUS[k].color+';border:1px solid #DCE7E4"></i>'+STATUS[k].name+' <b class="num">'+counts[k]+'</b>';
+  legend.appendChild(el);
+});
+['<i style="background:#E0655C;border-radius:50%"></i>Pending payment <b class="num">'+pay.pending+'</b>',
+ '<i style="background:#E8B23A;border-radius:50%"></i>Partial payment <b class="num">'+pay.partial+'</b>'].forEach(function(h){
+  var el=document.createElement('span'); el.className='lg'; el.innerHTML=h; legend.appendChild(el);
+});
+
+Array.prototype.forEach.call(document.querySelectorAll('[data-filter]'),function(btn){
+  btn.addEventListener('click',function(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-filter]'),function(b){b.setAttribute('aria-pressed','false');});
+    btn.setAttribute('aria-pressed','true');
+    var f=btn.dataset.filter;
+    Array.prototype.forEach.call(document.querySelectorAll('.room'),function(r){
+      r.classList.toggle('dim', f!=='all' && r.dataset.status!==f);
+    });
+  });
+});
+
+/* ---------- in-house guest filters ---------- */
+Array.prototype.forEach.call(document.querySelectorAll('[data-guests]'),function(btn){
+  btn.addEventListener('click',function(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-guests]'),function(b){b.setAttribute('aria-pressed','false');});
+    btn.setAttribute('aria-pressed','true');
+    var f=btn.dataset.guests;
+    Array.prototype.forEach.call(document.querySelectorAll('#inhouse tr'),function(r){
+      var show = f==='all' || (f==='due' && r.dataset.due==='1') || (f==='balance' && +r.dataset.bal>0);
+      r.style.display = show ? '' : 'none';
+    });
+  });
+});
+
+/* ---------- occupancy on the books ---------- */
+var OB={
+  30:{sold:[43,41,38,35,44,46,40,37,35,33,42,45,39,34,30,28,26,27,38,41,36,32,29,27,25,34,40,37,33,31],
+      pick:[0,1,2,3,2,1,3,4,4,5,2,1,3,5,6,7,8,7,4,3,5,6,7,8,9,6,4,5,6,7],
+      ly:[39,38,35,33,40,42,37,34,33,31,38,41,36,31,29,27,26,25,34,37,33,30,28,26,25,31,36,34,30,28],
+      labels:[{x:70,t:'9 Sep'},{x:240,t:'16 Sep'},{x:410,t:'23 Sep'},{x:580,t:'30 Sep'},{x:730,t:'8 Oct'}]},
+  60:{labels:[{x:70,t:'9 Sep'},{x:250,t:'24 Sep'},{x:420,t:'9 Oct'},{x:590,t:'24 Oct'},{x:730,t:'8 Nov'}]},
+  90:{labels:[{x:70,t:'9 Sep'},{x:250,t:'1 Oct'},{x:420,t:'24 Oct'},{x:590,t:'16 Nov'},{x:730,t:'8 Dec'}]}
+};
+(function(){
+  function ext(base,n,f){var a=[],i;for(i=0;i<n;i++){a.push(Math.max(5,Math.round(base[i%base.length]*f(i))));}return a;}
+  [60,90].forEach(function(n){
+    OB[n].sold=ext(OB[30].sold,n,function(i){return 1-(i/n)*0.45;});
+    OB[n].pick=ext(OB[30].pick,n,function(i){return 0.8-(i/n)*0.4;});
+    OB[n].ly  =ext(OB[30].ly ,n,function(i){return 0.95-(i/n)*0.42;});
+  });
+})();
+function drawOB(range){
+  var d=OB[range],svg=document.getElementById('obChart');
+  var x0=34,x1=752,y0=12,y1=142,cap=55,n=d.sold.length,step=(x1-x0)/n,bw=Math.max(2.2,step*0.62),bars='',i;
+  for(i=0;i<n;i++){
+    var x=x0+i*step+(step-bw)/2, hs=(d.sold[i]/cap)*(y1-y0), hp=(d.pick[i]/cap)*(y1-y0);
+    bars+='<rect x="'+x.toFixed(1)+'" y="'+(y1-hs).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hs.toFixed(1)+'" rx="1.5" fill="#0E8F86"/>'+
+          '<rect x="'+x.toFixed(1)+'" y="'+(y1-hs-hp).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hp.toFixed(1)+'" rx="1.5" fill="#8FA9FF"/>';
+  }
+  svg.innerHTML=axis(['55','41','28','14','0'],y0,y1,x0,x1)+bars+
+    '<path d="'+path(d.ly,x0+step/2,x1-step/2,y0,y1,0,cap)+'" fill="none" stroke="#3D5A5C" stroke-width="1.6" stroke-dasharray="5 4" opacity=".55"/>'+
+    xlabels(d.labels,162);
+}
+drawOB(30);
+Array.prototype.forEach.call(document.querySelectorAll('[data-range]'),function(b){
+  b.addEventListener('click',function(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-range]'),function(x){x.setAttribute('aria-pressed','false');});
+    b.setAttribute('aria-pressed','true'); drawOB(+b.dataset.range);
+  });
+});
+
+/* ---------- revenue and profit ---------- */
+(function(){
+  var rev=[2.6,3.0,2.8,3.4,3.1,3.6,3.2,3.9,3.5,4.0,3.3,3.8,3.4,4.1,3.7,4.2,3.6,4.0,3.5,4.3,3.9,4.4,3.8,4.2,3.7,4.4,4.0,4.5,4.1,4.3];
+  var prf=[0.9,1.1,1.0,1.3,1.1,1.4,1.2,1.5,1.3,1.6,1.2,1.4,1.3,1.6,1.4,1.7,1.3,1.5,1.3,1.7,1.5,1.8,1.4,1.6,1.4,1.7,1.5,1.8,1.6,1.7];
+  var ly =[2.4,2.7,2.6,3.0,2.9,3.2,2.9,3.4,3.1,3.5,3.0,3.3,3.1,3.6,3.3,3.7,3.2,3.5,3.1,3.8,3.4,3.9,3.3,3.7,3.2,3.8,3.5,3.9,3.6,3.8];
+  var x0=32,x1=552,y0=10,y1=128;
+  document.getElementById('revChart').innerHTML=
+    axis(['£5k','£3.8k','£2.5k','£1.3k','£0'],y0,y1,x0,x1)+
+    '<path d="'+path(rev,x0,x1,y0,y1,0,5)+' L '+x1+' '+y1+' L '+x0+' '+y1+' Z" fill="#0E8F86" opacity=".07"/>'+
+    '<path d="'+path(ly ,x0,x1,y0,y1,0,5)+'" fill="none" stroke="#8FA9FF" stroke-width="1.8" stroke-dasharray="5 4"/>'+
+    '<path d="'+path(rev,x0,x1,y0,y1,0,5)+'" fill="none" stroke="#0E8F86" stroke-width="2.2" stroke-linejoin="round"/>'+
+    '<path d="'+path(prf,x0,x1,y0,y1,0,5)+'" fill="none" stroke="#D99413" stroke-width="2.2" stroke-linejoin="round"/>'+
+    xlabels([{x:70,t:'12 Aug'},{x:200,t:'19 Aug'},{x:330,t:'26 Aug'},{x:450,t:'2 Sep'},{x:535,t:'9 Sep'}],148);
+})();
+
+/* ---------- occupancy trend and forecast ---------- */
+(function(){
+  var act=[62,68,64,72,70,75,71,78,74,80,76,79,75,82,78];
+  var fc =[78,80,83,81,85,84,88,86,84,82,85,83,86,84];
+  var x0=32,x1=552,y0=10,y1=128,min=40,max=100;
+  var split=x0+((act.length-1)/(act.length-1+fc.length-1))*(x1-x0);
+  document.getElementById('occChart').innerHTML=
+    axis(['100%','85%','70%','55%','40%'],y0,y1,x0,x1)+
+    '<rect x="'+split+'" y="'+y0+'" width="'+(x1-split)+'" height="'+(y1-y0)+'" fill="#3B5BDB" opacity=".04"/>'+
+    '<path d="'+path(act,x0,split,y0,y1,min,max)+' L '+split+' '+y1+' L '+x0+' '+y1+' Z" fill="#0E8F86" opacity=".07"/>'+
+    '<path d="'+path(act,x0,split,y0,y1,min,max)+'" fill="none" stroke="#0E8F86" stroke-width="2.2" stroke-linejoin="round"/>'+
+    '<path d="'+path(fc,split,x1,y0,y1,min,max)+'" fill="none" stroke="#8FA9FF" stroke-width="2.2" stroke-dasharray="5 4" stroke-linejoin="round"/>'+
+    '<text x="'+(split+6)+'" y="'+(y0+10)+'" font-size="9.5" fill="#3B5BDB" font-weight="800" font-family="Manrope,sans-serif">Forecast</text>'+
+    xlabels([{x:70,t:'26 Aug'},{x:180,t:'1 Sep'},{x:300,t:'9 Sep'},{x:420,t:'16 Sep'},{x:530,t:'23 Sep'}],148);
+})();
+
+/* ---------- cancellations ---------- */
+(function(){
+  var wk=[{t:'Week 1',c:14,n:2},{t:'Week 2',c:11,n:1},{t:'Week 3',c:8,n:0},{t:'Week 4',c:7,n:1}];
+  var x0=30,x1=412,y0=20,y1=76,max=18,bars='',lbl='',step=(x1-x0)/wk.length,bw=Math.min(36,step*0.5);
+  wk.forEach(function(w,i){
+    var x=x0+i*step+(step-bw)/2, hc=(w.c/max)*(y1-y0), hn=(w.n/max)*(y1-y0);
+    bars+='<rect x="'+x+'" y="'+(y1-hc)+'" width="'+bw+'" height="'+hc+'" rx="3" fill="#D6453D" opacity=".85"/>'+
+          '<rect x="'+x+'" y="'+(y1-hc-hn)+'" width="'+bw+'" height="'+hn+'" rx="3" fill="#D99413"/>'+
+          '<text x="'+(x+bw/2)+'" y="'+(y1-hc-hn-5)+'" font-size="10" font-weight="800" fill="#0D2B2E" text-anchor="middle" font-family="Manrope,sans-serif">'+(w.c+w.n)+'</text>';
+    lbl+='<text x="'+(x+bw/2)+'" y="92" font-size="9.5" fill="#728A8B" text-anchor="middle" font-weight="700" font-family="Manrope,sans-serif">'+w.t+'</text>';
+  });
+  document.getElementById('cxChart').innerHTML=axis(['18','9','0'],y0,y1,x0,x1)+bars+lbl+
+    '<text x="'+x1+'" y="12" font-size="9.5" fill="#728A8B" text-anchor="end" font-weight="700" font-family="Manrope,sans-serif">amber = no-shows</text>';
+})();
+</script>
+</body>
+</html>
