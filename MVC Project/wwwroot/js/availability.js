@@ -6,6 +6,7 @@
 
     const token = document.querySelector('#availabilityAntiForgery input[name="__RequestVerificationToken"]')?.value || '';
     const saveUrl = page.dataset.saveUrl || '';
+    const gridUrl = page.dataset.gridUrl || '';
     const autoUpdateUrl = page.dataset.autoUpdateUrl || '';
     const logUrl = page.dataset.logUrl || '';
     const bulkPreviewUrl = page.dataset.bulkPreviewUrl || '';
@@ -17,11 +18,15 @@
     const dirtyCount = document.getElementById('dirtyCount');
     const autoUpdateButton = document.getElementById('autoUpdateButton');
     const categorySelect = document.getElementById('categoryId');
+    let appliedCategoryValue = categorySelect?.value || '';
     const startInput = document.getElementById('start');
     const endInput = document.getElementById('end');
     const filterForm = document.getElementById('inventoryFilterForm');
     const toast = document.getElementById('availabilityToast');
-    const grid = document.getElementById('inventoryGridScroll');
+    const gridHost = document.getElementById('inventoryGridHost');
+    const hotelBaseRate = Number(page.dataset.hotelBaseRate || '0');
+    let gridRequestController = null;
+    const restrictionRangeCache = new Map();
 
     function showToast(message, type) {
         if (!toast) return;
@@ -58,6 +63,119 @@
         catch { throw new Error('The server returned an invalid response.'); }
         if (!response.ok || data?.ok === false) throw new Error(data?.message || 'The operation failed.');
         return data;
+    }
+
+    function restrictionCacheKey(categoryId, planId, startDate, endDate) {
+        return [categoryId || '', planId || '', startDate || '', endDate || ''].join('||');
+    }
+
+    async function getRestrictionRangeData(categoryId, planId, startDate, endDate) {
+        const key = restrictionCacheKey(categoryId, planId, startDate, endDate);
+        if (restrictionRangeCache.has(key)) return await restrictionRangeCache.get(key);
+
+        // Keep the cache bounded while retaining recently opened plans for instant reopen.
+        if (restrictionRangeCache.size > 40) restrictionRangeCache.clear();
+
+        const pending = postJson(restrictionRangeUrl, {
+            categoryId: categoryId,
+            planId: planId,
+            startDate: startDate,
+            endDate: endDate
+        });
+        restrictionRangeCache.set(key, pending);
+        try {
+            return await pending;
+        } catch (error) {
+            restrictionRangeCache.delete(key);
+            throw error;
+        }
+    }
+
+    function clearRestrictionRangeCache(categoryId, planId) {
+        const prefix = (categoryId || '') + '||' + (planId || '') + '||';
+        Array.from(restrictionRangeCache.keys()).forEach(key => {
+            if (key.startsWith(prefix)) restrictionRangeCache.delete(key);
+        });
+    }
+
+    function currentGridScroll() {
+        return document.getElementById('inventoryGridScroll');
+    }
+
+    function syncAddressBar() {
+        try {
+            const url = new URL(window.location.href);
+            if (startInput?.value) url.searchParams.set('start', startInput.value);
+            else url.searchParams.delete('start');
+            if (endInput?.value) url.searchParams.set('end', endInput.value);
+            else url.searchParams.delete('end');
+            if (categorySelect?.value) url.searchParams.set('categoryId', categorySelect.value);
+            else url.searchParams.delete('categoryId');
+            window.history.replaceState({}, '', url.toString());
+        } catch { }
+    }
+
+    function hasUnsavedRates() {
+        return getDirtyInputs().length > 0;
+    }
+
+    async function refreshGrid(options) {
+        options = options || {};
+        if (!gridHost || !gridUrl) return false;
+
+        if (!options.ignoreDirty && hasUnsavedRates()) {
+            showToast('Save or cancel the changed rates before changing the inventory view.', 'warning');
+            return false;
+        }
+
+        const oldGrid = currentGridScroll();
+        const scrollLeft = options.preserveScroll !== false && oldGrid ? oldGrid.scrollLeft : 0;
+        const scrollTop = options.preserveScroll !== false && oldGrid ? oldGrid.scrollTop : 0;
+
+        if (gridRequestController) gridRequestController.abort();
+        const controller = new AbortController();
+        gridRequestController = controller;
+
+        const params = new URLSearchParams();
+        if (startInput?.value) params.set('start', startInput.value);
+        if (endInput?.value) params.set('end', endInput.value);
+        if (categorySelect?.value) params.set('categoryId', categorySelect.value);
+
+        gridHost.classList.add('is-loading');
+        gridHost.setAttribute('aria-busy', 'true');
+
+        try {
+            const response = await fetch(gridUrl + '?' + params.toString(), {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                signal: controller.signal
+            });
+            if (!response.ok) throw new Error('Unable to refresh inventory.');
+            const html = await response.text();
+            gridHost.innerHTML = html;
+            refreshDirtyState();
+            syncAddressBar();
+            // Paint the new grid first; restore any expanded restriction groups just
+            // after the frame so date/category navigation feels immediate.
+            window.requestAnimationFrame(() => restoreRestrictionGroups());
+
+            const newGrid = currentGridScroll();
+            if (newGrid) {
+                newGrid.scrollLeft = scrollLeft;
+                newGrid.scrollTop = scrollTop;
+            }
+            return true;
+        } catch (error) {
+            if (error?.name !== 'AbortError') showToast(error.message || 'Unable to refresh inventory.', 'error');
+            return false;
+        } finally {
+            if (gridRequestController === controller) {
+                gridHost.classList.remove('is-loading');
+                gridHost.removeAttribute('aria-busy');
+                gridRequestController = null;
+            }
+        }
     }
 
     // =============================================================
@@ -125,7 +243,13 @@
     saveButton?.addEventListener('click', async function () {
         const dirty = getDirtyInputs();
         if (!dirty.length) return;
+
+        const validInputs = [];
         const changes = [];
+        const skippedBelowBase = [];
+
+        // Match WebForms Save All: validate every changed date independently.
+        // A below-base date is skipped, while every other valid date is saved.
         for (const input of dirty) {
             const value = String(input.value || '').trim();
             if (!/^\d+(?:\.\d{1,2})?$/.test(value) || Number(value) <= 0) {
@@ -133,6 +257,20 @@
                 showToast('Enter a valid rate with up to 2 decimal places.', 'warning');
                 return;
             }
+
+            const numericRate = Number(value);
+            if (Number.isFinite(hotelBaseRate) && hotelBaseRate > 0 && numericRate < hotelBaseRate) {
+                skippedBelowBase.push(input);
+                input.setAttribute('aria-invalid', 'true');
+                input.title = 'Rate cannot be less than the base rate ' + hotelBaseRate.toFixed(2) + '.';
+                input.classList.add('rate-below-base');
+                continue;
+            }
+
+            input.removeAttribute('aria-invalid');
+            input.removeAttribute('title');
+            input.classList.remove('rate-below-base');
+            validInputs.push(input);
             changes.push({
                 categoryId: input.dataset.category || '',
                 planId: input.dataset.plan || '',
@@ -142,18 +280,41 @@
             });
         }
 
+        if (!changes.length) {
+            const message = skippedBelowBase.length === 1
+                ? 'Rate cannot be less than the base rate ' + hotelBaseRate.toFixed(2) + '. The rate was not saved.'
+                : skippedBelowBase.length + ' rates are below the base rate ' + hotelBaseRate.toFixed(2) + ' and were not saved.';
+            skippedBelowBase[0]?.focus();
+            showToast(message, 'warning');
+            refreshDirtyState();
+            return;
+        }
+
         setLoading(saveButton, true, 'Saving');
         try {
             const data = await postJson(saveUrl, { changes });
-            dirty.forEach(input => {
+            validInputs.forEach(input => {
                 input.dataset.original = String(input.value || '');
-                input.classList.remove('rate-dirty');
+                input.classList.remove('rate-dirty', 'rate-below-base');
+                input.removeAttribute('aria-invalid');
+                input.removeAttribute('title');
                 input.closest('.rate-value-cell')?.classList.remove('rate-dirty-cell');
             });
             refreshDirtyState();
-            showToast(data.message || 'Rates saved.', 'success');
-            // Reload so propagated derived rates and rate colours match committed DB values.
-            window.setTimeout(() => window.location.reload(), 250);
+
+            const hasServerSkipped = /below the base rate/i.test(data.message || '');
+            const hasSkipped = skippedBelowBase.length > 0 || hasServerSkipped;
+            let saveMessage = data.message || 'Rates saved.';
+            if (skippedBelowBase.length > 0 && !hasServerSkipped) {
+                saveMessage += skippedBelowBase.length === 1
+                    ? ' 1 rate below the base rate ' + hotelBaseRate.toFixed(2) + ' was not saved.'
+                    : ' ' + skippedBelowBase.length + ' rates below the base rate ' + hotelBaseRate.toFixed(2) + ' were not saved.';
+            }
+            showToast(saveMessage, hasSkipped ? 'warning' : 'success');
+
+            // Re-read only the grid. This updates derived rates and restores any
+            // below-base date to its persisted database value without a full page refresh.
+            await refreshGrid({ preserveScroll: true, ignoreDirty: true });
         } catch (error) {
             showToast(error.message || 'Unable to save changes.', 'error');
         } finally {
@@ -162,11 +323,20 @@
         }
     });
 
+
     // =============================================================
     // Category + Auto Update
     // =============================================================
-    categorySelect?.addEventListener('change', function () {
-        filterForm?.requestSubmit();
+    categorySelect?.addEventListener('change', async function () {
+        if (hasUnsavedRates()) {
+            categorySelect.value = appliedCategoryValue;
+            showToast('Save or cancel the changed rates before changing category.', 'warning');
+            return;
+        }
+        const requestedValue = categorySelect.value;
+        const refreshed = await refreshGrid({ preserveScroll: false });
+        if (refreshed) appliedCategoryValue = requestedValue;
+        else categorySelect.value = appliedCategoryValue;
     });
 
     autoUpdateButton?.addEventListener('click', async function () {
@@ -295,18 +465,23 @@
     }));
     document.getElementById('rangeCloseButton')?.addEventListener('click', e => { e.preventDefault(); closeRangePopover(); });
     document.getElementById('rangeClearButton')?.addEventListener('click', e => { e.preventDefault(); draftRangeStart = null; draftRangeEnd = null; renderDateRangeCalendars(); });
-    document.getElementById('rangeApplyButton')?.addEventListener('click', function (event) {
+    document.getElementById('rangeApplyButton')?.addEventListener('click', async function (event) {
         event.preventDefault();
+        if (hasUnsavedRates()) { showToast('Save or cancel the changed rates before changing dates.', 'warning'); return; }
         if (!draftRangeStart) { showToast('Please select a start date.', 'warning'); return; }
         if (!draftRangeEnd) draftRangeEnd = new Date(draftRangeStart);
-        const spanDays = Math.round((dayTime(draftRangeEnd) - dayTime(draftRangeStart)) / 86400000);
-        if (spanDays > 30) { showToast('Select a range of 31 days or less.', 'warning'); return; }
+        const oldStart = startInput?.value || '';
+        const oldEnd = endInput?.value || '';
         if (startInput) startInput.value = toIsoDate(draftRangeStart);
         if (endInput) endInput.value = toIsoDate(draftRangeEnd);
         updateRangeText();
         closeRangePopover();
-        // WebForms Apply immediately reloads the selected range. Do the same in MVC.
-        filterForm?.requestSubmit();
+        const refreshed = await refreshGrid({ preserveScroll: false });
+        if (!refreshed) {
+            if (startInput) startInput.value = oldStart;
+            if (endInput) endInput.value = oldEnd;
+            updateRangeText();
+        }
     });
     document.addEventListener('click', event => {
         if (!rangePopover || rangePopover.hidden) return;
@@ -314,13 +489,58 @@
         if (picker && !picker.contains(event.target)) closeRangePopover();
     });
 
+
+    document.getElementById('inventorySearchButton')?.addEventListener('click', function () {
+        refreshGrid({ preserveScroll: false });
+    });
+
+    filterForm?.addEventListener('submit', function (event) {
+        event.preventDefault();
+        refreshGrid({ preserveScroll: false });
+    });
+
+    page.querySelectorAll('[data-shift-days]').forEach(button => button.addEventListener('click', async function () {
+        if (hasUnsavedRates()) {
+            showToast('Save or cancel the changed rates before changing dates.', 'warning');
+            return;
+        }
+        const shift = Number(button.dataset.shiftDays || 0);
+        const oldStart = startInput?.value || '';
+        const oldEnd = endInput?.value || '';
+        const startDate = parseIsoDate(oldStart);
+        const endDate = parseIsoDate(oldEnd);
+        if (!startDate || !endDate || !shift) return;
+        startDate.setDate(startDate.getDate() + shift);
+        endDate.setDate(endDate.getDate() + shift);
+        if (startInput) startInput.value = toIsoDate(startDate);
+        if (endInput) endInput.value = toIsoDate(endDate);
+        updateRangeText();
+        const refreshed = await refreshGrid({ preserveScroll: false });
+        if (!refreshed) {
+            if (startInput) startInput.value = oldStart;
+            if (endInput) endInput.value = oldEnd;
+            updateRangeText();
+        }
+    }));
+
     // =============================================================
-    // Restriction expand/collapse, remembered after refresh
+    // Restriction expand/collapse, lazy-loaded on first open
     // =============================================================
     const openGroupsKey = 'Availability.OpenRestrictionGroups.' + (page.dataset.hotel || 'current');
+    const restrictionDefinitions = {
+        min_stay_arrival: { label: 'Min Stay Arrival', boolean: false, min: 1, max: 999, field: 'minStayArrival' },
+        min_stay_through: { label: 'Min Stay Through', boolean: false, min: 1, max: 999, field: 'minStayThrough' },
+        max_stay: { label: 'Max Stay', boolean: false, min: 0, max: 999, field: 'maxStay' },
+        booking_cutoff: { label: 'Booking Cutoff', boolean: false, min: 0, max: 365, field: 'bookingCutoff' },
+        closed_to_arrival: { label: 'Closed To Arrival', boolean: true, min: 0, max: 1, field: 'closedToArrival' },
+        closed_to_departure: { label: 'Closed To Departure', boolean: true, min: 0, max: 1, field: 'closedToDeparture' },
+        stop_sell: { label: 'Stop Sell', boolean: true, min: 0, max: 1, field: 'stopSell' }
+    };
+
     function groupKey(category, plan) { return (category || '') + '||' + (plan || ''); }
     function readOpenGroups() { try { return JSON.parse(sessionStorage.getItem(openGroupsKey) || '[]'); } catch { return []; } }
     function writeOpenGroups(groups) { try { sessionStorage.setItem(openGroupsKey, JSON.stringify(Array.from(new Set(groups)))); } catch { } }
+
     function setRestrictionGroup(category, plan, open) {
         const key = groupKey(category, plan);
         page.querySelectorAll('.restriction-row').forEach(row => {
@@ -337,16 +557,228 @@
         if (open) groups.push(key);
         writeOpenGroups(groups);
     }
-    page.addEventListener('click', event => {
+
+    function restrictionApiDateToIso(value) {
+        const parts = String(value || '').split('/');
+        if (parts.length !== 3) return '';
+        return parts[2] + '-' + parts[1].padStart(2, '0') + '-' + parts[0].padStart(2, '0');
+    }
+
+    function restrictionRawValue(definition, shown) {
+        if (!definition?.boolean) return String(shown ?? '');
+        return String(shown || '').toLowerCase() === 'closed' ? '1' : '0';
+    }
+
+    function restrictionLoadingSelector(categoryId, planId) {
+        return '.restriction-loading-placeholder[data-category="' + CSS.escape(categoryId) + '"][data-restriction-plan="' + CSS.escape(planId) + '"]';
+    }
+
+    function removeRestrictionLoadingRow(categoryId, planId) {
+        page.querySelectorAll(restrictionLoadingSelector(categoryId, planId)).forEach(row => row.remove());
+    }
+
+    function insertRestrictionLoadingRow(toggle) {
+        if (!toggle) return;
+        const categoryId = toggle.dataset.category || '';
+        const planId = toggle.dataset.plan || '';
+        if (!categoryId || !planId) return;
+        if (page.querySelector(restrictionLoadingSelector(categoryId, planId))) return;
+
+        const rateRow = toggle.closest('tr');
+        if (!rateRow || !rateRow.parentNode) return;
+        const dateCount = page.querySelectorAll('.inventory-date-heading[data-date]').length;
+        const tr = document.createElement('tr');
+        tr.className = 'restriction-row restriction-loading-placeholder';
+        tr.dataset.category = categoryId;
+        tr.dataset.restrictionPlan = planId;
+        tr.dataset.restriction = '__loading__';
+
+        const label = document.createElement('th');
+        label.className = 'sticky-col restriction-label';
+        label.innerHTML = '<span class="restriction-tree">↳</span><span>Restrictions</span>';
+        tr.appendChild(label);
+
+        const cell = document.createElement('td');
+        cell.colSpan = Math.max(1, dateCount);
+        cell.className = 'restriction-loading-cell';
+        cell.textContent = 'Loading restriction details…';
+        tr.appendChild(cell);
+
+        rateRow.parentNode.insertBefore(tr, rateRow.nextSibling);
+    }
+
+    function prefetchRestrictionRange(toggle) {
+        if (!toggle || toggle.dataset.restrictionsLoaded === '1') return;
+        const categoryId = toggle.dataset.category || '';
+        const planId = toggle.dataset.plan || '';
+        if (!categoryId || !planId) return;
+        getRestrictionRangeData(
+            categoryId,
+            planId,
+            startInput?.value || '',
+            endInput?.value || ''
+        ).catch(function () { });
+    }
+
+    async function ensureRestrictionRows(toggle) {
+        if (!toggle) return false;
+        if (toggle.dataset.restrictionsLoaded === '1') return true;
+        if (toggle.dataset.restrictionsLoading === '1') return false;
+
+        const categoryId = toggle.dataset.category || '';
+        const planId = toggle.dataset.plan || '';
+        const keys = String(toggle.dataset.restrictions || '').split(',').map(x => x.trim()).filter(Boolean);
+        if (!categoryId || !planId || !keys.length) return false;
+
+        toggle.dataset.restrictionsLoading = '1';
+        try {
+            const data = await getRestrictionRangeData(
+                categoryId,
+                planId,
+                startInput?.value || '',
+                endInput?.value || '');
+
+            const rowsByDate = new Map();
+            (data.rows || []).forEach(row => {
+                const iso = restrictionApiDateToIso(row.date);
+                if (iso) rowsByDate.set(iso, row);
+            });
+
+            const headers = Array.from(page.querySelectorAll('.inventory-date-heading[data-date]'));
+            const rateRow = toggle.closest('tr');
+            if (!rateRow) return false;
+            const fragment = document.createDocumentFragment();
+            const hotelToday = page.dataset.hotelToday || '';
+            const canEdit = toggle.dataset.canRestriction === '1';
+            const categoryName = toggle.dataset.categoryname || '';
+            const planName = toggle.dataset.planname || '';
+
+            keys.forEach(key => {
+                const definition = restrictionDefinitions[key];
+                if (!definition) return;
+
+                const tr = document.createElement('tr');
+                tr.className = 'restriction-row';
+                tr.hidden = true;
+                tr.dataset.restrictionPlan = planId;
+                tr.dataset.category = categoryId;
+                tr.dataset.restriction = key;
+
+                const label = document.createElement('th');
+                label.className = 'sticky-col restriction-label';
+                label.innerHTML = '<span class="restriction-tree">↳</span><span>' + escapeHtml(definition.label) + '</span>';
+                tr.appendChild(label);
+
+                headers.forEach(header => {
+                    const iso = header.dataset.date || '';
+                    const apiRow = rowsByDate.get(iso) || {};
+                    const shown = apiRow[definition.field] ?? (definition.boolean ? 'Open' : '—');
+                    const raw = restrictionRawValue(definition, shown);
+                    const isPast = hotelToday && iso < hotelToday;
+                    const editable = canEdit && !isPast;
+
+                    const td = document.createElement('td');
+                    td.className = 'restriction-cell inventory-drag-cell';
+                    if (header.classList.contains('weekend')) td.classList.add('weekend');
+                    if (header.classList.contains('today')) td.classList.add('today');
+                    if (key === 'stop_sell' && String(shown).toLowerCase() === 'closed') td.classList.add('stop-sell');
+                    td.dataset.rowtype = key;
+                    td.dataset.category = categoryId;
+                    td.dataset.categoryname = categoryName;
+                    td.dataset.plan = planId;
+                    td.dataset.planname = planName;
+                    td.dataset.date = iso;
+                    td.dataset.current = raw;
+                    td.dataset.key = key;
+                    td.dataset.label = definition.label;
+                    td.dataset.boolean = definition.boolean ? '1' : '0';
+                    td.dataset.min = String(definition.min);
+                    td.dataset.max = String(definition.max);
+                    td.dataset.canRestriction = editable ? '1' : '0';
+
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'restriction-cell-button';
+                    button.tabIndex = -1;
+                    button.disabled = !editable;
+                    const span = document.createElement('span');
+                    span.textContent = String(shown || '—');
+                    button.appendChild(span);
+                    td.appendChild(button);
+                    tr.appendChild(td);
+                });
+
+                fragment.appendChild(tr);
+            });
+
+            // Insert all restriction rows in one DOM operation. This avoids a layout
+            // recalculation for every restriction row/date and makes expansion much faster.
+            rateRow.parentNode.insertBefore(fragment, rateRow.nextSibling);
+
+            removeRestrictionLoadingRow(categoryId, planId);
+            toggle.dataset.restrictionsLoaded = '1';
+            return true;
+        } catch (error) {
+            removeRestrictionLoadingRow(categoryId, planId);
+            showToast(error.message || 'Unable to load restrictions.', 'error');
+            return false;
+        } finally {
+            toggle.dataset.restrictionsLoading = '0';
+        }
+    }
+
+    page.addEventListener('click', async event => {
         const toggle = event.target.closest?.('.restriction-toggle');
         if (!toggle) return;
-        event.preventDefault(); event.stopPropagation();
-        setRestrictionGroup(toggle.dataset.category, toggle.dataset.plan, !toggle.classList.contains('open'));
+        event.preventDefault();
+        event.stopPropagation();
+
+        const categoryId = toggle.dataset.category || '';
+        const planId = toggle.dataset.plan || '';
+        const opening = !toggle.classList.contains('open');
+
+        if (!opening) {
+            setRestrictionGroup(categoryId, planId, false);
+            return;
+        }
+
+        // Open immediately. If data is not already in the client/server hot cache, show
+        // one lightweight row instead of spinning the chevron while the user waits.
+        if (toggle.dataset.restrictionsLoaded !== '1') {
+            insertRestrictionLoadingRow(toggle);
+        }
+        setRestrictionGroup(categoryId, planId, true);
+
+        const loaded = await ensureRestrictionRows(toggle);
+        if (!loaded) {
+            setRestrictionGroup(categoryId, planId, false);
+            return;
+        }
+        setRestrictionGroup(categoryId, planId, true);
     });
-    readOpenGroups().forEach(key => {
-        const [category, plan] = String(key).split('||');
-        if (category && plan) setRestrictionGroup(category, plan, true);
+
+    // Start loading on hover/focus so a normal click is usually instant.
+    page.addEventListener('pointerover', event => {
+        const toggle = event.target.closest?.('.restriction-toggle');
+        if (toggle) prefetchRestrictionRange(toggle);
     });
+    page.addEventListener('focusin', event => {
+        const toggle = event.target.closest?.('.restriction-toggle');
+        if (toggle) prefetchRestrictionRange(toggle);
+    });
+
+    function restoreRestrictionGroups() {
+        readOpenGroups().forEach(async key => {
+            const [category, plan] = String(key).split('||');
+            if (!category || !plan) return;
+            const toggle = Array.from(page.querySelectorAll('.restriction-toggle')).find(button =>
+                button.dataset.category === category && button.dataset.plan === plan);
+            if (!toggle) return;
+            const loaded = await ensureRestrictionRows(toggle);
+            if (loaded) setRestrictionGroup(category, plan, true);
+        });
+    }
+    restoreRestrictionGroups();
 
     // =============================================================
     // Availability change log drawer
@@ -494,7 +926,7 @@
         const loading = document.getElementById('bulkDetailsLoading');
         if (loading) loading.textContent = 'Loading selected dates...';
         try {
-            const data = await postJson(restrictionRangeUrl, { categoryId, planId, startDate, endDate });
+            const data = await getRestrictionRangeData(categoryId, planId, startDate, endDate);
             const rows = data.rows || [];
             if (loading) loading.textContent = rows.length + ' date(s) loaded.';
             const body = document.getElementById('bulkRestrictionDetailsBody');
@@ -646,11 +1078,12 @@
                     if (!/^\d+$/.test(value)) throw new Error('Enter a valid whole number.');
                 }
                 data = await postJson(bulkRestrictionSaveUrl, { categoryId, planId, restrictionKey: type, startDate, endDate, value, days });
+                clearRestrictionRangeCache(categoryId, planId);
                 setRestrictionGroup(categoryId, planId, true);
             }
             showToast(data.message || 'Changes saved.', 'success');
             closeModal(bulkModal); clearBulkSelection();
-            window.setTimeout(() => window.location.reload(), 250);
+            await refreshGrid({ preserveScroll: true, ignoreDirty: true });
         } catch (error) {
             showToast(error.message || 'Unable to save bulk changes.', 'error');
         } finally { setLoading(bulkSaveButton, false); }

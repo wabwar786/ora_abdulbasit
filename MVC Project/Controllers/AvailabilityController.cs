@@ -44,7 +44,6 @@ public sealed class AvailabilityController : Controller
         var startDate = ParseDate(start) ?? today;
         var endDate = ParseDate(end) ?? startDate.AddDays(DefaultWindowDays - 1);
         if (endDate < startDate) (startDate, endDate) = (endDate, startDate);
-        if ((endDate - startDate).Days > 30) endDate = startDate.AddDays(30);
 
         try
         {
@@ -57,6 +56,48 @@ public sealed class AvailabilityController : Controller
             _logger.LogError(ex, "Availability page load failed for hotel {HotelId}.", hotelId);
             ViewBag.LoadError = "The availability data could not be loaded. Please check the database connection and Availability tables.";
             return View(new AvailabilityPageViewModel
+            {
+                HotelId = hotelId,
+                HotelName = hotelName,
+                HotelToday = today,
+                StartDate = startDate,
+                EndDate = endDate,
+                SelectedCategoryId = categoryId ?? string.Empty
+            });
+        }
+    }
+
+
+    [HttpGet("Grid")]
+    public async Task<IActionResult> Grid(
+        string? start,
+        string? end,
+        string? categoryId,
+        CancellationToken cancellationToken)
+    {
+        var hotelId = SessionValue("hotel");
+        var hotelName = SessionValue("HotelName");
+        var userId = SessionValue("UserId");
+        var role = SessionValue("Role");
+        var today = _hotelClock.GetHotelToday(hotelId);
+
+        var startDate = ParseDate(start) ?? today;
+        var endDate = ParseDate(end) ?? startDate.AddDays(DefaultWindowDays - 1);
+        if (endDate < startDate) (startDate, endDate) = (endDate, startDate);
+
+        Response.Headers.CacheControl = "no-store, no-cache";
+
+        try
+        {
+            var model = await _availabilityService.GetPageAsync(
+                hotelId, hotelName, userId, role, startDate, endDate, categoryId, cancellationToken);
+            return PartialView("_Grid", model);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Availability grid refresh failed for hotel {HotelId}.", hotelId);
+            ViewBag.LoadError = "The availability grid could not be refreshed. Please try again.";
+            return PartialView("_Grid", new AvailabilityPageViewModel
             {
                 HotelId = hotelId,
                 HotelName = hotelName,

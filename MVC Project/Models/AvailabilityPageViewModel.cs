@@ -17,6 +17,7 @@ public sealed class AvailabilityPageViewModel
     public bool CanBulkRateUpdate { get; set; }
     public bool CanUpdateRestriction { get; set; }
     public bool AllowDerivedRateEditing { get; set; }
+    public decimal HotelBaseRate { get; set; }
     public List<AvailabilityCategoryOption> CategoryOptions { get; set; } = new();
     public List<AvailabilityGridCategory> Categories { get; set; } = new();
     public List<AvailabilityDateHeader> Dates { get; set; } = new();
@@ -131,6 +132,8 @@ internal sealed class AvailabilityDbPlan
     public string ParentPlanName { get; set; } = string.Empty;
     public decimal Adjustment { get; set; }
     public string ChangeType { get; set; } = "Percentage";
+    public bool BookingCutoffEnabled { get; set; }
+    public int? BookingCutoffDays { get; set; }
     public bool IsDerived => !string.IsNullOrWhiteSpace(ParentPlanName);
 }
 

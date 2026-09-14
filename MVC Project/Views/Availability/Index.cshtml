@@ -5,11 +5,6 @@
     Layout = "_PmsLayout";
 
     const int navigationDays = 15;
-    var previousStart = Model.StartDate.AddDays(-navigationDays).ToString("yyyy-MM-dd");
-    var previousEnd = Model.EndDate.AddDays(-navigationDays).ToString("yyyy-MM-dd");
-    var nextStart = Model.StartDate.AddDays(navigationDays).ToString("yyyy-MM-dd");
-    var nextEnd = Model.EndDate.AddDays(navigationDays).ToString("yyyy-MM-dd");
-    string CatQuery(string id) => string.IsNullOrWhiteSpace(id) ? string.Empty : "&categoryId=" + Uri.EscapeDataString(id);
 }
 
 @section Styles {
@@ -18,7 +13,11 @@
 
 <div class="inventory-page" id="availabilityPage"
      data-hotel="@Model.HotelId"
+     data-hotel-today="@Model.HotelToday.ToString("yyyy-MM-dd")"
+     data-hotel-base-rate="@Model.HotelBaseRate.ToString("0.00", CultureInfo.InvariantCulture)"
      data-save-url="@Url.Action("Save", "Availability")"
+     data-grid-url="@Url.Action("Grid", "Availability")"
+     data-navigation-days="@navigationDays"
      data-auto-update-url="@Url.Action("AutoUpdate", "Availability")"
      data-log-url="@Url.Action("ChangeLog", "Availability")"
      data-bulk-preview-url="@Url.Action("PreviewBulkRate", "Availability")"
@@ -27,14 +26,6 @@
      data-bulk-restriction-save-url="@Url.Action("SaveBulkRestriction", "Availability")">
 
     <form id="availabilityAntiForgery" class="inventory-hidden-form">@Html.AntiForgeryToken()</form>
-
-    @if (!string.IsNullOrWhiteSpace(ViewBag.LoadError as string))
-    {
-        <div class="inventory-alert inventory-alert-error">
-            <i class="fa-solid fa-circle-exclamation"></i>
-            <span>@ViewBag.LoadError</span>
-        </div>
-    }
 
     <section class="inventory-toolbar-card">
         <form method="get" action="@Url.Action("Index", "Availability")" id="inventoryFilterForm" class="inventory-toolbar-row">
@@ -76,8 +67,8 @@
             </div>
 
             <div class="inventory-date-nav">
-                <a class="inventory-nav-btn" href="@($"/Availability?start={previousStart}&end={previousEnd}{CatQuery(Model.SelectedCategoryId)}")"
-                   title="Previous 15 days" aria-label="Previous 15 days">«</a>
+                <button type="button" class="inventory-nav-btn" data-shift-days="-@navigationDays"
+                        title="Previous 15 days" aria-label="Previous 15 days">«</button>
 
                 <div class="inventory-range-picker" id="inventoryRangePicker">
                     <input type="hidden" id="start" name="start" value="@Model.StartDate.ToString("yyyy-MM-dd")" />
@@ -122,157 +113,18 @@
                     </div>
                 </div>
 
-                <button type="submit" class="inventory-search-btn" title="View selected date range" aria-label="View selected date range">
+                <button type="button" id="inventorySearchButton" class="inventory-search-btn" title="View selected date range" aria-label="View selected date range">
                     <i class="fa-solid fa-magnifying-glass"></i>
                 </button>
-                <a class="inventory-nav-btn" href="@($"/Availability?start={nextStart}&end={nextEnd}{CatQuery(Model.SelectedCategoryId)}")"
-                   title="Next 15 days" aria-label="Next 15 days">»</a>
+                <button type="button" class="inventory-nav-btn" data-shift-days="@navigationDays"
+                        title="Next 15 days" aria-label="Next 15 days">»</button>
             </div>
         </form>
     </section>
 
-    @if (Model.Categories.Count == 0)
-    {
-        <section class="inventory-empty">
-            <i class="fa-regular fa-calendar-xmark"></i>
-            <strong>No availability rows found</strong>
-            <span>No Room Rent categories/rate plans were found for this property.</span>
-        </section>
-    }
-    else
-    {
-        <section class="inventory-grid-card">
-            <div class="inventory-grid-scroll" id="inventoryGridScroll">
-                <table class="inventory-grid" aria-label="Availability and rate inventory">
-                    <thead>
-                        <tr>
-                            <th class="inventory-plan-heading sticky-col">Room / Rate Plan</th>
-                            @foreach (var date in Model.Dates)
-                            {
-                                <th class="inventory-date-heading @(date.IsWeekend ? "weekend" : "") @(date.IsToday ? "today" : "")">
-                                    <span>@date.Date.ToString("ddd", CultureInfo.InvariantCulture)</span>
-                                    <strong>@date.Date.ToString("dd")</strong>
-                                    <small>@date.Date.ToString("MMM", CultureInfo.InvariantCulture)</small>
-                                </th>
-                            }
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var category in Model.Categories)
-                        {
-                            var availabilityRow = category.Rows.FirstOrDefault(x => x.RowType == "availability");
-                            var rateRows = category.Rows.Where(x => x.RowType == "rate").ToList();
-                            var netRow = category.Rows.FirstOrDefault(x => x.RowType == "net");
-
-                            if (availabilityRow != null)
-                            {
-                                <tr class="inventory-category-row" data-rowtype="availability" data-category="@category.CategoryId">
-                                    <th class="sticky-col inventory-category-cell">
-                                        <div class="inventory-category-cell-inner">
-                                            <span class="inventory-category-name">@($"{category.Name}({category.TotalRooms})")</span>
-                                            <span class="inventory-avl-caption">AVL</span>
-                                        </div>
-                                    </th>
-                                    @foreach (var cell in availabilityRow.Cells)
-                                    {
-                                        var isZero = int.TryParse(cell.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var av) && av == 0;
-                                        <td class="inventory-value-cell availability-value-cell availability-log-cell @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "") @(isZero ? "availability-zero" : "")"
-                                            data-rowtype="availability" data-category="@category.CategoryId" data-categoryname="@category.Name"
-                                            data-date="@cell.Date.ToString("yyyy-MM-dd")" title="View availability change log">
-                                            <input class="inventory-cell-input availability-cell-input availability-log-value @(isZero ? "zero-badge" : "")"
-                                                   type="number" inputmode="numeric" step="1" min="0" value="@cell.Value"
-                                                   data-original="@cell.Value" tabindex="-1" readonly aria-label="@category.Name availability @cell.Date.ToString("dd MMM yyyy")" />
-                                        </td>
-                                    }
-                                </tr>
-                            }
-
-                            @foreach (var row in rateRows)
-                            {
-                                <tr class="inventory-rate-row" data-rowtype="rate" data-plan="@row.PlanId" data-category="@category.CategoryId">
-                                    <th class="sticky-col inventory-rate-label">
-                                        <div class="inventory-rate-label-inner">
-                                            @if (row.Restrictions.Count > 0)
-                                            {
-                                                <button type="button" class="restriction-toggle" data-plan="@row.PlanId" data-category="@category.CategoryId" title="Show restrictions" aria-label="Show restrictions for @row.PlanName">
-                                                    <i class="fa-solid fa-chevron-right"></i>
-                                                </button>
-                                            }
-                                            else
-                                            {
-                                                <span class="restriction-toggle-spacer"></span>
-                                            }
-                                            <span class="inventory-rate-name">@row.PlanName (Rate)</span>
-                                            @if (row.IsDerived && !row.Editable)
-                                            {
-                                                <span class="inventory-lock" title="Derived rate plan is read only"><i class="fa-solid fa-lock"></i></span>
-                                            }
-                                        </div>
-                                    </th>
-                                    @foreach (var cell in row.Cells)
-                                    {
-                                        var editable = row.Editable && !cell.IsPast;
-                                        var bulkEditable = row.BulkEditable && !cell.IsPast;
-                                        var stateClass = string.IsNullOrWhiteSpace(cell.VisualState) ? "rate-normal" : cell.VisualState;
-                                        <td class="inventory-value-cell rate-value-cell inventory-drag-cell state-@stateClass @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "")"
-                                            data-rowtype="rate" data-category="@category.CategoryId" data-categoryname="@category.Name"
-                                            data-plan="@row.PlanId" data-planname="@row.PlanName" data-date="@cell.Date.ToString("yyyy-MM-dd")"
-                                            data-can-rate="@(editable ? "1" : "0")" data-can-bulk="@(bulkEditable ? "1" : "0")"
-                                            data-derived="@(row.IsDerived ? "1" : "0")" data-derivedlocked="@(row.IsDerived && !Model.AllowDerivedRateEditing ? "1" : "0")">
-                                            <input class="inventory-cell-input rate-cell-input" type="number" inputmode="decimal" step="0.01" min="0"
-                                                   value="@cell.Value" data-original="@cell.Value" data-category="@category.CategoryId" data-plan="@row.PlanId"
-                                                   data-rowtype="rate" data-date="@cell.Date.ToString("yyyy-MM-dd")"
-                                                   aria-label="@row.PlanName rate @cell.Date.ToString("dd MMM yyyy")"
-                                                   disabled="@(editable ? null : "disabled")" />
-                                        </td>
-                                    }
-                                </tr>
-
-                                @foreach (var restriction in row.Restrictions)
-                                {
-                                    <tr class="restriction-row" hidden data-restriction-plan="@row.PlanId" data-category="@category.CategoryId" data-restriction="@restriction.Key">
-                                        <th class="sticky-col restriction-label"><span class="restriction-tree">↳</span><span>@restriction.Label</span></th>
-                                        @foreach (var cell in restriction.Cells)
-                                        {
-                                            var editableRestriction = restriction.Editable && !cell.IsPast;
-                                            <td class="restriction-cell inventory-drag-cell @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "") @(cell.ManualStopSell && restriction.Key == "stop_sell" ? "stop-sell" : "")"
-                                                data-rowtype="@restriction.Key" data-category="@category.CategoryId" data-categoryname="@category.Name"
-                                                data-plan="@row.PlanId" data-planname="@row.PlanName" data-date="@cell.Date.ToString("yyyy-MM-dd")"
-                                                data-current="@cell.Value" data-key="@restriction.Key" data-label="@restriction.Label"
-                                                data-boolean="@(restriction.IsBoolean ? "1" : "0")" data-min="@restriction.Minimum" data-max="@restriction.Maximum"
-                                                data-can-restriction="@(editableRestriction ? "1" : "0")">
-                                                <button type="button" class="restriction-cell-button" tabindex="-1" disabled="@(editableRestriction ? null : "disabled")">
-                                                    @if (restriction.IsBoolean)
-                                                    {
-                                                        <span>@(cell.Value == "1" ? "Closed" : "Open")</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span>@(string.IsNullOrWhiteSpace(cell.Value) ? "—" : cell.Value)</span>
-                                                    }
-                                                </button>
-                                            </td>
-                                        }
-                                    </tr>
-                                }
-                            }
-
-                            if (netRow != null)
-                            {
-                                <tr class="inventory-net-row" data-rowtype="net" data-category="@category.CategoryId">
-                                    <th class="sticky-col inventory-net-label">Net Booking</th>
-                                    @foreach (var cell in netRow.Cells)
-                                    {
-                                        <td class="inventory-value-cell net-value-cell @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "")"><span>@cell.Value</span></td>
-                                    }
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    }
+    <div id="inventoryGridHost" class="inventory-grid-host" aria-live="polite">
+        <partial name="_Grid" model="Model" />
+    </div>
 
     <div id="availabilityToast" class="inventory-toast" role="status" aria-live="polite"></div>
 

@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Caching.Memory;
 using Orapmshms.Models;
 using Orapmshms.Services.AvailabilityJobs;
 
@@ -12,17 +13,20 @@ public sealed class AvailabilityService : IAvailabilityService
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;
     private readonly IAvailabilityChannelSyncQueue _channelSyncQueue;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<AvailabilityService> _logger;
 
     public AvailabilityService(
         IConfiguration configuration,
         IHotelClock hotelClock,
         IAvailabilityChannelSyncQueue channelSyncQueue,
+        IMemoryCache cache,
         ILogger<AvailabilityService> logger)
     {
         _connectionString = configuration.GetConnectionString("con") ?? string.Empty;
         _hotelClock = hotelClock;
         _channelSyncQueue = channelSyncQueue;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -42,15 +46,26 @@ public sealed class AvailabilityService : IAvailabilityService
         startDate = startDate.Date;
         endDate = endDate.Date;
         if (endDate < startDate) (startDate, endDate) = (endDate, startDate);
-        if ((endDate - startDate).Days > 30) endDate = startDate.AddDays(30);
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        // Cache only lightweight configuration/permission metadata for a short time.
+        // Live availability/rates/occupancy are never cached. This keeps date navigation
+        // responsive without making the inventory figures stale.
+        var permissionsTask = LoadAvailabilityPermissionsCachedAsync(
+            hotelId, userId, cancellationToken);
+        var categoriesTask = LoadCategoriesCachedAsync(
+            hotelId, cancellationToken);
+        var hotelBaseRateTask = LoadHotelBaseRateCachedAsync(
+            hotelId, cancellationToken);
+
+        await Task.WhenAll(permissionsTask, categoriesTask, hotelBaseRateTask);
+        var permissions = await permissionsTask;
+        var allCategories = await categoriesTask;
+        var hotelBaseRate = await hotelBaseRateTask;
+
+        var metadataTask = LoadGridMetadataCachedAsync(
+            hotelId, permissions.MenuId, cancellationToken);
 
         // Port of the WebForms PermissionHelper rules used by AvailabilitySetup.aspx.cs.
-        var permissions = await LoadAvailabilityPermissionsAsync(connection, hotelId, userId, cancellationToken);
-        var restrictionFeatures = await LoadHotelRestrictionFeaturesAsync(connection, hotelId, permissions.MenuId, cancellationToken);
-        // Manual availability editing keeps the legacy hotel/Manager rule.
         var canUpdateAvailability = role.Equals("hotel", StringComparison.OrdinalIgnoreCase) ||
                                     role.Equals("manager", StringComparison.OrdinalIgnoreCase);
 
@@ -63,13 +78,14 @@ public sealed class AvailabilityService : IAvailabilityService
         var canUpdateRestriction = permissions.HasAction("RestrictionUpdate") ||
                                    permissions.HasAction("RestrictionsUpdate") ||
                                    canUpdateRate;
-        var allowDerivedRateEditing = await IsDerivedRateEditingAllowedAsync(
-            connection, hotelId, permissions.MenuId, cancellationToken);
 
-        var allCategories = await LoadCategoriesAsync(connection, hotelId, null, cancellationToken);
         var visibleCategories = string.IsNullOrWhiteSpace(categoryId)
             ? allCategories
             : allCategories.Where(x => x.CategoryId.Equals(categoryId, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var metadata = await metadataTask;
+        var restrictionFeatures = metadata.Features;
+        var allowDerivedRateEditing = metadata.AllowDerived;
 
         var model = new AvailabilityPageViewModel
         {
@@ -86,6 +102,7 @@ public sealed class AvailabilityService : IAvailabilityService
             CanUpdateRestriction = canUpdateRestriction,
             CanEdit = canUpdateAvailability || canUpdateRate || canUpdateRestriction,
             AllowDerivedRateEditing = allowDerivedRateEditing,
+            HotelBaseRate = hotelBaseRate,
             CategoryOptions = allCategories.Select(x => new AvailabilityCategoryOption
             {
                 CategoryId = x.CategoryId,
@@ -106,24 +123,37 @@ public sealed class AvailabilityService : IAvailabilityService
             return model;
 
         var categoryIds = visibleCategories.Select(x => x.CategoryId).ToList();
-        var plans = await LoadPlansAsync(connection, hotelId, categoryIds, cancellationToken);
-        var availability = await LoadAvailabilityAsync(connection, hotelId, categoryIds, startDate, endDate, cancellationToken);
-        var rates = await LoadRatesAsync(connection, hotelId, categoryIds, startDate, endDate, cancellationToken);
-        var cutoffDefaults = await LoadPlanCutoffDefaultsAsync(connection, hotelId, cancellationToken);
-
         var occupancyCategoryNames = visibleCategories
-            .Select(category => plans.FirstOrDefault(p => p.CategoryId.Equals(category.CategoryId, StringComparison.OrdinalIgnoreCase))?.CategoryName ?? category.Name)
+            .Select(x => x.Name)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var occupied = await LoadOccupiedCountsAsync(
-            connection,
-            hotelId,
-            occupancyCategoryNames,
-            startDate,
-            endDate,
+        // Static rate-plan metadata is short-lived cached; all changing inventory data
+        // continues to be read in parallel directly from SQL Server.
+        var plansTask = LoadPlansCachedAsync(
+            hotelId, categoryIds, cancellationToken);
+        var availabilityTask = WithConnectionAsync(
+            connection => LoadAvailabilityAsync(connection, hotelId, categoryIds, startDate, endDate, cancellationToken),
             cancellationToken);
+        var ratesTask = WithConnectionAsync(
+            connection => LoadRatesAsync(connection, hotelId, categoryIds, startDate, endDate, cancellationToken, includeRestrictionDetails: true),
+            cancellationToken);
+        var occupiedTask = WithConnectionAsync(
+            connection => LoadOccupiedCountsAsync(connection, hotelId, occupancyCategoryNames, startDate, endDate, cancellationToken),
+            cancellationToken);
+
+        await Task.WhenAll(plansTask, availabilityTask, ratesTask, occupiedTask);
+        var plans = await plansTask;
+        var availability = await availabilityTask;
+        var rates = await ratesTask;
+        var occupied = await occupiedTask;
+
+        // The live grid query already contains restriction columns. Prime a short-lived
+        // per-plan cache from that same result so expanding restrictions normally needs
+        // no additional SQL query. This mirrors the WebForms preload strategy while
+        // still creating restriction DOM only when the user opens a plan.
+        PrimeRestrictionRangeCache(hotelId, startDate, endDate, plans, rates);
 
         foreach (var category in visibleCategories)
         {
@@ -199,13 +229,12 @@ public sealed class AvailabilityService : IAvailabilityService
                 }
 
                 AddRestrictionRows(
-                    rateRow, model.Dates, rates, cutoffDefaults, restrictionFeatures,
-                    model.CanUpdateRestriction, category.CategoryId, plan.PlanId, today);
+                    rateRow, restrictionFeatures, model.CanUpdateRestriction);
                 gridCategory.Rows.Add(rateRow);
             }
 
-            var occupancyName = categoryPlans.FirstOrDefault()?.CategoryName;
-            if (string.IsNullOrWhiteSpace(occupancyName)) occupancyName = category.Name;
+            // WebForms uses create_room.description as payments.Type for Net Booking.
+            var occupancyName = category.Name;
 
             var netRow = new AvailabilityGridRow
             {
@@ -272,6 +301,7 @@ public sealed class AvailabilityService : IAvailabilityService
         var rateHistory = new List<(string CategoryId, string PlanId, string PlanName, string Currency, DateTime Date, decimal EnteredRate)>();
         var rateSyncJobs = new List<(string CategoryId, DateTime Date, List<string> PlanIds)>();
         var saved = 0;
+        var skippedBelowBase = 0;
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -324,8 +354,14 @@ public sealed class AvailabilityService : IAvailabilityService
                 {
                     throw new InvalidOperationException("Enter a valid rate using numbers only, with up to 2 decimal places.");
                 }
+                // Match WebForms Save All behaviour: a date below the hotel base rate
+                // is not saved, but it must not prevent the other valid date changes
+                // from being committed.
                 if (hotelBaseRate > 0m && enteredRate < hotelBaseRate)
-                    throw new InvalidOperationException($"Rate cannot be less than the base rate {hotelBaseRate:0.00}.");
+                {
+                    skippedBelowBase++;
+                    continue;
+                }
 
                 if (!planCache.TryGetValue(change.CategoryId, out var categoryPlans))
                 {
@@ -379,7 +415,25 @@ public sealed class AvailabilityService : IAvailabilityService
                     item.PlanName, item.Currency, item.Date, item.Date,
                     new HashSet<int> { (int)item.Date.DayOfWeek }, item.EnteredRate, cancellationToken);
             }
-            return new AvailabilitySaveResult(true, saved == 1 ? "1 change saved." : $"{saved} changes saved.", saved);
+            if (saved == 0 && skippedBelowBase > 0)
+            {
+                return new AvailabilitySaveResult(
+                    false,
+                    skippedBelowBase == 1
+                        ? $"Rate cannot be less than the base rate {hotelBaseRate:0.00}. The rate was not saved."
+                        : $"{skippedBelowBase} rates are below the base rate {hotelBaseRate:0.00} and were not saved.",
+                    0);
+            }
+
+            var message = saved == 1 ? "1 change saved." : $"{saved} changes saved.";
+            if (skippedBelowBase > 0)
+            {
+                message += skippedBelowBase == 1
+                    ? $" 1 rate below the base rate {hotelBaseRate:0.00} was not saved."
+                    : $" {skippedBelowBase} rates below the base rate {hotelBaseRate:0.00} were not saved.";
+            }
+
+            return new AvailabilitySaveResult(true, message, saved);
         }
         catch (Exception ex)
         {
@@ -620,19 +674,38 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
             return new(false, "Category and plan are required.", new(), new());
         if (!TryDateRange(request.StartDate, request.EndDate, out var start, out var end))
             return new(false, "Invalid date range.", new(), new());
-        if ((end - start).Days > 730)
-            return new(false, "Restriction details are limited to 731 dates per request.", new(), new());
-
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        var permissions = await LoadAvailabilityPermissionsAsync(connection, hotelId, userId, cancellationToken);
-        var features = await LoadHotelRestrictionFeaturesAsync(connection, hotelId, permissions.MenuId, cancellationToken);
+        // Restriction expansion is a hot path. Reuse the short-lived permission/config
+        // cache populated by the grid and fetch only the selected category + plan in a
+        // single SQL round trip instead of loading every rate plan for the category.
+        var permissions = await LoadAvailabilityPermissionsCachedAsync(
+            hotelId, userId, cancellationToken);
+        var metadata = await LoadGridMetadataCachedAsync(
+            hotelId, permissions.MenuId, cancellationToken);
+        var features = metadata.Features;
         if (features.Count == 0)
             return new(false, "No restriction feature is enabled for this hotel.", new(), new());
 
-        var rates = await LoadRatesAsync(connection, hotelId, new[] { request.CategoryId.Trim() }, start, end, cancellationToken);
-        var defaults = await LoadPlanCutoffDefaultsAsync(connection, hotelId, cancellationToken);
-        defaults.TryGetValue(request.PlanId.Trim(), out var planCutoff);
+        var restrictionCacheKey = RestrictionRangeCacheKey(
+            hotelId, request.CategoryId.Trim(), request.PlanId.Trim(), start, end);
+
+        RestrictionPlanRangeData? planRange = null;
+        if (!_cache.TryGetValue<RestrictionPlanRangeData>(restrictionCacheKey, out planRange) || planRange == null)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            planRange = await LoadRestrictionPlanRangeAsync(
+                connection,
+                hotelId,
+                request.CategoryId.Trim(),
+                request.PlanId.Trim(),
+                start,
+                end,
+                cancellationToken);
+            _cache.Set(restrictionCacheKey, planRange, TimeSpan.FromSeconds(20));
+        }
+
+        var rates = planRange.Rates;
+        var planCutoff = planRange.Cutoff;
         var hotelToday = _hotelClock.GetHotelToday(hotelId);
         var rows = new List<AvailabilityRestrictionRangeRow>();
         var minArrivalValues = new List<string>();
@@ -825,6 +898,135 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
     }
 
 
+    private async Task<T> WithConnectionAsync<T>(
+        Func<SqlConnection, Task<T>> action,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await action(connection);
+    }
+
+    private sealed record GridMetadata(HashSet<string> Features, bool AllowDerived);
+
+    private async Task<AvailabilityPermissionState> LoadAvailabilityPermissionsCachedAsync(
+        string hotelId,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = $"availability:permissions:{hotelId}:{userId}";
+        if (_cache.TryGetValue<AvailabilityPermissionState>(cacheKey, out var cached) && cached != null)
+            return cached;
+
+        var value = await WithConnectionAsync(
+            connection => LoadAvailabilityPermissionsAsync(connection, hotelId, userId, cancellationToken),
+            cancellationToken);
+
+        // Permission cache is deliberately very short so permission changes take effect quickly.
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(15));
+        return value;
+    }
+
+    private async Task<List<AvailabilityDbCategory>> LoadCategoriesCachedAsync(
+        string hotelId,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = $"availability:categories:{hotelId}";
+        if (_cache.TryGetValue<List<AvailabilityDbCategory>>(cacheKey, out var cached) && cached != null)
+            return cached;
+
+        var value = await WithConnectionAsync(
+            connection => LoadCategoriesAsync(connection, hotelId, null, cancellationToken),
+            cancellationToken);
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
+        return value;
+    }
+
+    private async Task<List<AvailabilityDbPlan>> LoadPlansCachedAsync(
+        string hotelId,
+        IReadOnlyList<string> categoryIds,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIds = categoryIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var cacheKey = $"availability:plans:{hotelId}:{string.Join("|", normalizedIds)}";
+        if (_cache.TryGetValue<List<AvailabilityDbPlan>>(cacheKey, out var cached) && cached != null)
+            return cached;
+
+        var value = await WithConnectionAsync(
+            connection => LoadPlansAsync(connection, hotelId, normalizedIds, cancellationToken),
+            cancellationToken);
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
+        return value;
+    }
+
+    private async Task<GridMetadata> LoadGridMetadataCachedAsync(
+        string hotelId,
+        int menuId,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = $"availability:gridmeta:{hotelId}:{menuId}";
+        if (_cache.TryGetValue<GridMetadata>(cacheKey, out var cached) && cached != null)
+            return cached;
+
+        var value = await WithConnectionAsync(async connection =>
+        {
+            var features = await LoadHotelRestrictionFeaturesAsync(
+                connection, hotelId, menuId, cancellationToken);
+            var allowDerived = await IsDerivedRateEditingAllowedAsync(
+                connection, hotelId, menuId, cancellationToken);
+            return new GridMetadata(features, allowDerived);
+        }, cancellationToken);
+
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
+        return value;
+    }
+
+    private async Task<decimal> LoadHotelBaseRateCachedAsync(
+        string hotelId,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = $"availability:hotel-base-rate:{hotelId}";
+        if (_cache.TryGetValue<decimal>(cacheKey, out var cached))
+            return cached;
+
+        var value = await WithConnectionAsync(
+            connection => GetHotelBaseRateAsync(connection, hotelId, cancellationToken),
+            cancellationToken);
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
+        return value;
+    }
+
+    private static string RestrictionRangeCacheKey(
+        string hotelId,
+        string categoryId,
+        string planId,
+        DateTime start,
+        DateTime end)
+        => $"availability:restriction-range:{hotelId}:{categoryId}:{planId}:{start:yyyyMMdd}:{end:yyyyMMdd}";
+
+    private void PrimeRestrictionRangeCache(
+        string hotelId,
+        DateTime start,
+        DateTime end,
+        IReadOnlyList<AvailabilityDbPlan> plans,
+        Dictionary<(string CategoryId, string PlanId, DateTime Date), AvailabilityDbRate> rates)
+    {
+        foreach (var plan in plans)
+        {
+            if (string.IsNullOrWhiteSpace(plan.CategoryId) || string.IsNullOrWhiteSpace(plan.PlanId))
+                continue;
+
+            var key = RestrictionRangeCacheKey(hotelId, plan.CategoryId, plan.PlanId, start, end);
+            var cutoff = new PlanCutoffDefault(plan.BookingCutoffEnabled, plan.BookingCutoffDays);
+            _cache.Set(key, new RestrictionPlanRangeData(rates, cutoff), TimeSpan.FromSeconds(20));
+        }
+    }
+
     private async Task<List<AvailabilityDbCategory>> LoadCategoriesAsync(
         SqlConnection connection,
         string hotelId,
@@ -879,6 +1081,8 @@ SELECT
     cp.parent_planid,
     ISNULL(cp.percentage,0) AS derived_adjustment,
     ISNULL(cp.changetype,'Percentage') AS derived_change_type,
+    ISNULL(p.booking_cutoff_enabled,0) AS booking_cutoff_enabled,
+    TRY_CONVERT(int,p.booking_cutoff_days) AS booking_cutoff_days,
     p.orderid AS plan_orderid
 FROM dbo.category_plan cp
 INNER JOIN dbo.plans p
@@ -908,7 +1112,9 @@ ORDER BY cp.category_id, ISNULL(p.orderid,999999), cp.planname;";
                 BaseRate = ToDecimal(reader["baserate"]),
                 ParentPlanName = Convert.ToString(reader["parent_planid"]) ?? string.Empty,
                 Adjustment = ToDecimal(reader["derived_adjustment"]),
-                ChangeType = Convert.ToString(reader["derived_change_type"]) ?? "Percentage"
+                ChangeType = Convert.ToString(reader["derived_change_type"]) ?? "Percentage",
+                BookingCutoffEnabled = ToBool(reader["booking_cutoff_enabled"]),
+                BookingCutoffDays = ToNullableInt(reader["booking_cutoff_days"])
             });
         }
         return result;
@@ -959,17 +1165,20 @@ WHERE hotel_id=@hotel
         IReadOnlyList<string> categoryIds,
         DateTime start,
         DateTime end,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeRestrictionDetails = true)
     {
         var result = new Dictionary<(string, string, DateTime), AvailabilityDbRate>();
         if (categoryIds.Count == 0) return result;
         var inClause = string.Join(",", categoryIds.Select((_, index) => "@ratecat" + index));
+        var restrictionColumns = includeRestrictionDetails
+            ? ",min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure"
+            : string.Empty;
         var sql = $@"
 SELECT category_id,planid,[date],rate,upload,baserate,uploadfrom,
        ISNULL(stop_sell,0) AS stop_sell,
-       ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell,
-       min_los,min_stay_through,max_los,cutoff_days,
-       closed_to_arrival,closed_to_departure
+       ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell
+       {restrictionColumns}
 FROM dbo.datesrates
 WHERE hotel_id=@hotel
   AND [date] BETWEEN @start AND @end
@@ -996,15 +1205,93 @@ WHERE hotel_id=@hotel
                 BaseRate = ToDecimal(reader["baserate"]),
                 StopSell = ToBool(reader["stop_sell"]),
                 CutoffStopSell = ToBool(reader["cutoff_stop_sell"]),
-                MinStayArrival = ToNullableInt(reader["min_los"]),
-                MinStayThrough = ToNullableInt(reader["min_stay_through"]),
-                MaxStay = ToNullableInt(reader["max_los"]),
-                CutoffDays = ToNullableInt(reader["cutoff_days"]),
-                ClosedToArrival = ToNullableBool(reader["closed_to_arrival"]),
-                ClosedToDeparture = ToNullableBool(reader["closed_to_departure"])
+                MinStayArrival = includeRestrictionDetails ? ToNullableInt(reader["min_los"]) : null,
+                MinStayThrough = includeRestrictionDetails ? ToNullableInt(reader["min_stay_through"]) : null,
+                MaxStay = includeRestrictionDetails ? ToNullableInt(reader["max_los"]) : null,
+                CutoffDays = includeRestrictionDetails ? ToNullableInt(reader["cutoff_days"]) : null,
+                ClosedToArrival = includeRestrictionDetails ? ToNullableBool(reader["closed_to_arrival"]) : null,
+                ClosedToDeparture = includeRestrictionDetails ? ToNullableBool(reader["closed_to_departure"]) : null
             };
         }
         return result;
+    }
+
+    private sealed record RestrictionPlanRangeData(
+        Dictionary<(string CategoryId, string PlanId, DateTime Date), AvailabilityDbRate> Rates,
+        PlanCutoffDefault? Cutoff);
+
+    private async Task<RestrictionPlanRangeData> LoadRestrictionPlanRangeAsync(
+        SqlConnection connection,
+        string hotelId,
+        string categoryId,
+        string planId,
+        DateTime start,
+        DateTime end,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT TOP (1)
+       ISNULL(booking_cutoff_enabled,0) AS booking_cutoff_enabled,
+       TRY_CONVERT(int,booking_cutoff_days) AS booking_cutoff_days
+FROM dbo.plans
+WHERE hotel_id=@hotel
+  AND CONVERT(nvarchar(50),localplanid)=@plan
+ORDER BY id DESC;
+
+SELECT [date],rate,upload,baserate,uploadfrom,
+       ISNULL(stop_sell,0) AS stop_sell,
+       ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell,
+       min_los,min_stay_through,max_los,cutoff_days,
+       closed_to_arrival,closed_to_departure
+FROM dbo.datesrates
+WHERE hotel_id=@hotel
+  AND category_id=@category
+  AND planid=@plan
+  AND [date] BETWEEN @start AND @end
+ORDER BY [date];";
+
+        var rates = new Dictionary<(string, string, DateTime), AvailabilityDbRate>();
+        PlanCutoffDefault? cutoff = null;
+
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@category", SqlDbType.VarChar, 50).Value = categoryId;
+        command.Parameters.Add("@plan", SqlDbType.VarChar, 50).Value = planId;
+        command.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
+        command.Parameters.Add("@end", SqlDbType.Date).Value = end.Date;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            cutoff = new PlanCutoffDefault(
+                ToBool(reader["booking_cutoff_enabled"]),
+                ToNullableInt(reader["booking_cutoff_days"]));
+        }
+
+        if (await reader.NextResultAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var date = Convert.ToDateTime(reader["date"], CultureInfo.InvariantCulture).Date;
+                rates[(categoryId, planId, date)] = new AvailabilityDbRate
+                {
+                    Rate = ToDecimal(reader["rate"]),
+                    Upload = Convert.ToString(reader["upload"], CultureInfo.InvariantCulture) ?? string.Empty,
+                    UploadFrom = Convert.ToString(reader["uploadfrom"], CultureInfo.InvariantCulture) ?? string.Empty,
+                    BaseRate = ToDecimal(reader["baserate"]),
+                    StopSell = ToBool(reader["stop_sell"]),
+                    CutoffStopSell = ToBool(reader["cutoff_stop_sell"]),
+                    MinStayArrival = ToNullableInt(reader["min_los"]),
+                    MinStayThrough = ToNullableInt(reader["min_stay_through"]),
+                    MaxStay = ToNullableInt(reader["max_los"]),
+                    CutoffDays = ToNullableInt(reader["cutoff_days"]),
+                    ClosedToArrival = ToNullableBool(reader["closed_to_arrival"]),
+                    ClosedToDeparture = ToNullableBool(reader["closed_to_departure"])
+                };
+            }
+        }
+
+        return new RestrictionPlanRangeData(rates, cutoff);
     }
 
     private sealed record PlanCutoffDefault(bool Enabled, int? Days);
@@ -1060,41 +1347,58 @@ WHERE P.rn=1;";
         var sql = $@"
 DECLARE @startDate DATE=@start;
 DECLARE @endDate DATE=@end;
-;WITH stays AS
+DECLARE @dayCount INT=DATEDIFF(DAY,@startDate,@endDate)+1;
+;WITH Numbers AS
 (
-    SELECT p.Type AS CatName,p.room_no,CAST(p.ArrivalDate AS DATE) AS Arr,CAST(p.DepartureDate AS DATE) AS Dep
+    SELECT TOP (CASE WHEN @dayCount > 0 THEN @dayCount ELSE 0 END)
+           ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+    FROM sys.all_objects a
+    CROSS JOIN sys.all_objects b
+), CalendarDays AS
+(
+    SELECT DATEADD(DAY,n,@startDate) AS TheDate
+    FROM Numbers
+), stays AS
+(
+    SELECT p.Type AS CatName,p.room_no,TRY_CONVERT(date,p.ArrivalDate) AS Arr,TRY_CONVERT(date,p.DepartureDate) AS Dep
     FROM dbo.payments p
     INNER JOIN dbo.GuestInformationLogTB gi ON gi.reg_id=p.reg_id AND gi.hotel_id=p.hotel_id
     WHERE p.hotel_id=@hotel
       AND p.Type IN ({inClause})
       AND ISNULL(p.descr,'')='Room Rent'
       AND ISNULL(p.res_status,'') IN ('check in','reservation')
-      AND CAST(p.ArrivalDate AS DATE)<DATEADD(DAY,1,@endDate)
-      AND @startDate<CAST(p.DepartureDate AS DATE)
+      AND TRY_CONVERT(date,p.ArrivalDate)<DATEADD(DAY,1,@endDate)
+      AND @startDate<TRY_CONVERT(date,p.DepartureDate)
     UNION ALL
-    SELECT p.Type AS CatName,p.room_no,CAST(p.ArrivalDate AS DATE) AS Arr,CAST(p.DepartureDate AS DATE) AS Dep
+    SELECT p.Type AS CatName,p.room_no,TRY_CONVERT(date,p.ArrivalDate) AS Arr,TRY_CONVERT(date,p.DepartureDate) AS Dep
     FROM dbo.payments p
     INNER JOIN dbo.NewReservationsTB nr ON nr.reg_id=p.reg_id AND nr.hotel_id=p.hotel_id
     WHERE p.hotel_id=@hotel
       AND p.Type IN ({inClause})
       AND ISNULL(p.descr,'')='Room Rent'
       AND ISNULL(p.res_status,'') IN ('check in','reservation')
-      AND CAST(p.ArrivalDate AS DATE)<DATEADD(DAY,1,@endDate)
-      AND @startDate<CAST(p.DepartureDate AS DATE)
-),stay_days AS
+      AND TRY_CONVERT(date,p.ArrivalDate)<DATEADD(DAY,1,@endDate)
+      AND @startDate<TRY_CONVERT(date,p.DepartureDate)
+), valid_occ AS
 (
-    SELECT s.CatName,s.room_no,DATEADD(DAY,v.number,s.Arr) AS TheDate
+    SELECT s.CatName,d.TheDate,s.room_no
     FROM stays s
-    JOIN master..spt_values v ON v.type='P' AND v.number>=0 AND DATEADD(DAY,v.number,s.Arr)<s.Dep
-    WHERE DATEADD(DAY,v.number,s.Arr) BETWEEN @startDate AND @endDate
-),valid_occ AS
-(
-    SELECT sd.CatName,sd.TheDate,sd.room_no
-    FROM stay_days sd
-    INNER JOIN dbo.RoomsTB rt ON rt.Hotel_id=@hotel AND rt.room_no=sd.room_no AND ISNULL(rt.room_category,'')=sd.CatName
-    LEFT JOIN dbo.RoomBlocksTB rb ON rb.HotelID=rt.Hotel_id AND rb.RoomNo=rt.room_no AND rb.IsActive=1
-        AND CAST(rb.BlockStartDate AS DATE)<=sd.TheDate AND sd.TheDate<=CAST(rb.BlockEndDate AS DATE)
-    WHERE rb.BlockID IS NULL
+    INNER JOIN CalendarDays d
+        ON s.Arr<=d.TheDate AND d.TheDate<s.Dep
+    INNER JOIN dbo.RoomsTB rt
+        ON rt.Hotel_id=@hotel
+       AND rt.room_no=s.room_no
+       AND ISNULL(rt.room_category,'')=s.CatName
+    WHERE NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.RoomBlocksTB rb
+        WHERE rb.HotelID=rt.Hotel_id
+          AND rb.RoomNo=rt.room_no
+          AND rb.IsActive=1
+          AND TRY_CONVERT(date,rb.BlockStartDate)<=d.TheDate
+          AND d.TheDate<=TRY_CONVERT(date,rb.BlockEndDate)
+    )
 )
 SELECT CatName,TheDate,COUNT(DISTINCT room_no) AS Occupied
 FROM valid_occ
@@ -1127,15 +1431,12 @@ GROUP BY CatName,TheDate;";
 
     private static void AddRestrictionRows(
         AvailabilityGridRow row,
-        IReadOnlyList<AvailabilityDateHeader> dates,
-        IReadOnlyDictionary<(string CategoryId, string PlanId, DateTime Date), AvailabilityDbRate> rates,
-        IReadOnlyDictionary<string, PlanCutoffDefault> cutoffDefaults,
         ISet<string> enabledFeatures,
-        bool canUpdateRestriction,
-        string categoryId,
-        string planId,
-        DateTime today)
+        bool canUpdateRestriction)
     {
+        // Keep only restriction definitions in the initial page model. The actual
+        // date cells are loaded on demand when the user expands a rate plan.
+        // This removes hundreds/thousands of hidden TD elements from the first render.
         var definitions = new[]
         {
             new RestrictionUiDefinition("min_stay_arrival", "Min Stay Arrival", false, 1, 999),
@@ -1147,14 +1448,12 @@ GROUP BY CatName,TheDate;";
             new RestrictionUiDefinition("stop_sell", "Stop Sell", true, 0, 1)
         };
 
-        cutoffDefaults.TryGetValue(planId, out var planCutoff);
         foreach (var definition in definitions)
         {
-            // WebForms only renders restriction rows explicitly enabled for the hotel.
             if (!IsRestrictionFeatureEnabled(enabledFeatures, definition.Key))
                 continue;
 
-            var restriction = new AvailabilityRestrictionRow
+            row.Restrictions.Add(new AvailabilityRestrictionRow
             {
                 Key = definition.Key,
                 Label = definition.Label,
@@ -1162,36 +1461,7 @@ GROUP BY CatName,TheDate;";
                 Minimum = definition.Minimum,
                 Maximum = definition.Maximum,
                 Editable = canUpdateRestriction
-            };
-
-            foreach (var date in dates)
-            {
-                rates.TryGetValue((categoryId, planId, date.Date), out var rate);
-                string value = definition.Key switch
-                {
-                    "min_stay_arrival" => (rate?.MinStayArrival ?? 1).ToString(CultureInfo.InvariantCulture),
-                    "min_stay_through" => (rate?.MinStayThrough ?? 1).ToString(CultureInfo.InvariantCulture),
-                    "max_stay" => (rate?.MaxStay ?? 0).ToString(CultureInfo.InvariantCulture),
-                    "booking_cutoff" => (rate?.CutoffDays ?? (planCutoff?.Enabled == true ? planCutoff.Days : null) ?? 0).ToString(CultureInfo.InvariantCulture),
-                    "closed_to_arrival" => (rate?.ClosedToArrival ?? false) ? "1" : "0",
-                    "closed_to_departure" => (rate?.ClosedToDeparture ?? false) ? "1" : "0",
-                    // Match WebForms: the Stop Sell restriction row is MANUAL stop sell only.
-                    "stop_sell" => (rate?.StopSell ?? false) ? "1" : "0",
-                    _ => string.Empty
-                };
-
-                restriction.Cells.Add(new AvailabilityGridCell
-                {
-                    Date = date.Date,
-                    Value = value,
-                    IsPast = date.Date < today,
-                    IsWeekend = date.IsWeekend,
-                    IsToday = date.IsToday,
-                    EffectiveStopSell = rate?.EffectiveStopSell ?? false,
-                    ManualStopSell = rate?.StopSell ?? false
-                });
-            }
-            row.Restrictions.Add(restriction);
+            });
         }
     }
 
