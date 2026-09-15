@@ -1,6 +1,6 @@
-wwwroot\css\availability.css
+wwwroot\js\availability.js
 wwwroot\css\create-reservation.css
-wwwroot\css\dashboard.css
+wwwroot\img\orapms-logo.webp
 wwwroot\css\frontdesk-calendar.css
 wwwroot\css\pms-master.css
 wwwroot\css\pms-ui.css
@@ -8,9 +8,10 @@ wwwroot\css\your-hotels.css
 wwwroot\img\icons8-eye-30.png
 wwwroot\img\smartPMS-01.png
 wwwroot\img\smartpmslogo.png
-wwwroot\js\availability.js
+wwwroot\css\dashboard.css
 wwwroot\js\create-reservation.js
-wwwroot\js\dashboard.js
+wwwroot\css\availability.css
 wwwroot\js\frontdesk-calendar.js
 wwwroot\js\pms-common.js
 wwwroot\js\pms-master.js
+wwwroot\js\dashboard.js

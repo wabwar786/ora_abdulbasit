@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Orapmshms")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+938c3e07c00872f40492203b1a6f937b9f3f5795")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+abeea13e7e890a903f4cea1ae32f62c3bb6fa5f9")]
 [assembly: System.Reflection.AssemblyProductAttribute("Orapmshms")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Orapmshms")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
