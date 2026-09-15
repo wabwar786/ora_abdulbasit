@@ -1,0 +1,681 @@
+@model DashboardViewModel
+@using System.Text.Json
+@using System.Globalization
+@{
+    ViewData["Title"] = "Dashboard";
+
+
+
+    var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+
+
+    var occupancyJson = JsonSerializer.Serialize(Model.OccupancySeries, jsonOptions);
+
+
+
+    var occupancyLyJson = JsonSerializer.Serialize(Model.OccupancyLastYearSeries, jsonOptions);
+
+
+
+    var financialJson = JsonSerializer.Serialize(Model.FinancialSeries, jsonOptions);
+
+
+
+    var exceptionJson = JsonSerializer.Serialize(Model.ExceptionSeries, jsonOptions);
+
+
+
+
+
+
+
+    string Money(decimal value) => Model.CurrencySymbol + value.ToString("N2", CultureInfo.InvariantCulture);
+
+
+
+    string Money0(decimal value) => Model.CurrencySymbol + value.ToString("N0", CultureInfo.InvariantCulture);
+
+
+
+    decimal ChangePct(decimal current, decimal previous) => previous == 0m ? (current == 0m ? 0m : 100m) : Math.Round((current - previous) * 100m / Math.Abs(previous), 1);
+
+
+
+    var revenueChange = ChangePct(Model.RevenueToday, Model.RevenueTodayLastYear);
+
+
+
+    var revenue30Change = ChangePct(Model.RevenueLast30, Model.RevenueLast30LastYear);
+
+
+
+    var profit30Change = ChangePct(Model.ProfitLast30, Model.ProfitLast30LastYear);
+
+
+
+    var occupancyDelta = Math.Round(Model.OccupancyNext30 - Model.OccupancyNext30LastYear, 1);
+
+
+
+    var dialCircumference = 157m;
+
+
+
+    var dialOffset = dialCircumference - (dialCircumference * Math.Clamp(Model.OccupancyToday, 0m, 100m) / 100m);
+
+
+
+    var dialOffsetText = dialOffset.ToString("0.0", CultureInfo.InvariantCulture);
+
+
+
+    var dialAria = $"Occupancy {Model.OccupancyToday:0.#} percent";
+
+
+
+    var todayIso = Model.HotelToday.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+
+
+    var tomorrowIso = Model.HotelToday.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+
+
+    string RoomBucket(string? state, bool isDirty)
+
+    {
+
+        var value = (state ?? string.Empty).Trim().ToLowerInvariant().Replace(" ", string.Empty).Replace("-", string.Empty);
+
+
+
+        if (isDirty || value is "dirty" or "checkout" or "checkedout")
+
+            return "checkout";
+
+
+
+        if (value is "checkin" or "checkedin" or "inhouse")
+
+            return "checkin";
+
+
+
+        if (value is "reservation" or "reserved")
+
+            return "reservation";
+
+
+
+        if (value is "ooo" or "blocked" or "block" or "outoforder")
+
+            return "ooo";
+
+
+
+        return "vacant";
+
+    }
+
+
+
+
+
+    var roomCheckIn = Model.RoomStatus.Count(x => RoomBucket(x.State, x.IsDirty) == "checkin");
+
+
+
+    var roomReservation = Model.RoomStatus.Count(x => RoomBucket(x.State, x.IsDirty) == "reservation");
+
+
+
+    var roomCheckout = Model.RoomStatus.Count(x => RoomBucket(x.State, x.IsDirty) == "checkout");
+
+
+
+    var roomVacant = Model.RoomStatus.Count(x => RoomBucket(x.State, x.IsDirty) == "vacant");
+
+
+
+    var roomBlocked = Model.RoomStatus.Count(x => RoomBucket(x.State, x.IsDirty) == "ooo");
+
+
+
+    var roomPendingPayment = Model.RoomStatus.Count(x => x.PaymentState == "pending");
+
+
+
+    var roomPartialPayment = Model.RoomStatus.Count(x => x.PaymentState == "partial");
+
+
+
+    var roomPaidPayment = Model.RoomStatus.Count(x => x.PaymentState == "paid");
+
+
+
+    var roomTotal = Model.RoomStatus.Count;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/dashboard.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/dashboard-roomstatus-template.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/dashboard-layout-fix.css" asp-append-version="true" />
+}
+
+<div class="dashboard-page"
+     data-room-status-url="@Url.Action("RoomStatus", "Dashboard")"
+     data-statistic-url="@Url.Action("StatisticDetails", "Dashboard")"
+     data-analytics-url="@Url.Action("Analytics", "Dashboard")"
+     data-dashboard-date="@todayIso"
+     data-currency="@Model.CurrencySymbol">
+    @if (!string.IsNullOrWhiteSpace(Model.Message))
+
+
+
+    {
+        <div class="dashboard-alert"><i class="fa-solid fa-triangle-exclamation"></i><span>@Model.Message</span></div>
+    }
+
+    <section class="dashboard-hero">
+        <div class="dashboard-hero-copy">
+            <span class="dashboard-eyebrow">Property overview</span>
+            <h1>Today at @Model.HotelName</h1>
+            <p>
+                @Model.HotelToday.ToString("dddd, dd MMMM yyyy") ·
+                <strong>@Model.RoomsSoldToday of @Model.SellableRoomsToday rooms</strong> sold tonight ·
+                <strong>@Model.OccupancyNext30.ToString("0.#")%</strong> on the books for the next 30 days
+            </p>
+        </div>
+
+        <div class="dashboard-hero-metrics">
+            <div class="dashboard-occupancy-dial">
+                <svg width="66" height="66" viewBox="0 0 62 62" role="img" aria-label="@dialAria">
+                    <circle cx="31" cy="31" r="25" fill="none" stroke="rgba(255,255,255,.20)" stroke-width="7"></circle>
+                    <circle cx="31" cy="31" r="25" fill="none" stroke="#8fc7e8" stroke-width="7" stroke-linecap="round"
+                            stroke-dasharray="157" stroke-dashoffset="@dialOffsetText" transform="rotate(-90 31 31)"></circle>
+                    <text x="31" y="35" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">@Model.OccupancyToday.ToString("0")%</text>
+                </svg>
+                <div>
+                    <span>Occupancy</span>
+                    <strong>@Model.RoomsSoldToday / @Model.SellableRoomsToday rooms</strong>
+                    <small>@(occupancyDelta >= 0 ? "+" : "")@occupancyDelta.ToString("0.#") pts vs LY next 30d</small>
+                </div>
+            </div>
+
+            <div class="dashboard-hero-stat">
+                <span>Revenue today</span>
+                <strong>@Money0(Model.RevenueToday)</strong>
+                <small class="@(revenueChange >= 0 ? "dashboard-positive" : "dashboard-negative")">@(revenueChange >= 0 ? "+" : "")@revenueChange.ToString("0.#")% vs LY</small>
+            </div>
+            <div class="dashboard-hero-stat">
+                <span>ADR</span>
+                <strong>@Money0(Model.AdrToday)</strong>
+                <small>Accommodation</small>
+            </div>
+            <div class="dashboard-hero-stat">
+                <span>RevPAR</span>
+                <strong>@Money0(Model.RevParToday)</strong>
+                <small>Sellable rooms</small>
+            </div>
+        </div>
+
+        <a class="dashboard-primary-action" href="/CreateReservation"><i class="fa-solid fa-calendar-plus"></i><span>New Reservation</span></a>
+    </section>
+
+    <section class="dashboard-kpis" aria-label="Key figures">
+        <button type="button" class="dashboard-kpi dashboard-kpi-blue dashboard-kpi-button">
+            <div class="dashboard-kpi-label">Total revenue today</div>
+            <div class="dashboard-kpi-value">@Money(Model.RevenueToday)</div>
+            <div class="dashboard-kpi-foot dashboard-kpi-periods"><span><small>Today</small><strong>@Money0(Model.RevenueToday)</strong></span><span><small>Last 30 days</small><strong>@Money0(Model.RevenueLast30)</strong></span></div>
+        </button>
+        <button type="button" class="dashboard-kpi dashboard-kpi-amber dashboard-kpi-button">
+            <div class="dashboard-kpi-label">Receivables today</div>
+            <div class="dashboard-kpi-value">@Money(Model.ReceivablesToday)</div>
+            <div class="dashboard-kpi-foot dashboard-kpi-periods"><span><small>Today arrivals</small><strong>@Money0(Model.ReceivablesToday)</strong></span><span><small>Last 30-day arrivals</small><strong>@Money0(Model.ReceivablesLast30Arrivals)</strong></span></div>
+        </button>
+        <button type="button" class="dashboard-kpi dashboard-kpi-indigo dashboard-kpi-button">
+            <div class="dashboard-kpi-label">Total expenses today</div>
+            <div class="dashboard-kpi-value">@Money(Model.ExpensesToday)</div>
+            <div class="dashboard-kpi-foot dashboard-kpi-periods"><span><small>Today</small><strong>@Money0(Model.ExpensesToday)</strong></span><span><small>Last 30 days</small><strong>@Money0(Model.ExpensesLast30)</strong></span></div>
+        </button>
+        <button type="button" class="dashboard-kpi dashboard-kpi-green dashboard-kpi-button">
+            <div class="dashboard-kpi-label">Profit today</div>
+            <div class="dashboard-kpi-value">@Money(Model.ProfitToday)</div>
+            <div class="dashboard-kpi-foot dashboard-kpi-periods"><span><small>Today</small><strong>@Money0(Model.ProfitToday)</strong></span><span><small>Last 30 days</small><strong>@Money0(Model.ProfitLast30)</strong></span></div>
+        </button>
+        <button type="button" class="dashboard-kpi dashboard-kpi-slate dashboard-kpi-button">
+            <div class="dashboard-kpi-label">No shows</div>
+            <div class="dashboard-kpi-value">@Model.NoShowsToday <small>today</small></div>
+            <div class="dashboard-kpi-foot dashboard-kpi-periods"><span><small>This month</small><strong>@Model.NoShowsMonthToDate</strong></span><span><small>Last 30 days</small><strong>@Model.NoShowsLast30</strong></span></div>
+        </button>
+        <button type="button" class="dashboard-kpi dashboard-kpi-red dashboard-kpi-button">
+            <div class="dashboard-kpi-label">Cancellations</div>
+            <div class="dashboard-kpi-value">@Model.CancellationsToday <small>today</small></div>
+            <div class="dashboard-kpi-foot dashboard-kpi-periods"><span><small>This month</small><strong>@Model.CancellationsMonthToDate</strong></span><span><small>Last 30d rate</small><strong>@Model.CancellationRateLast30.ToString("0.#")%</strong></span></div>
+        </button>
+        <button type="button" class="dashboard-kpi dashboard-kpi-blue dashboard-kpi-button">
+            <div class="dashboard-kpi-label">Occupancy next 30 days</div>
+            <div class="dashboard-kpi-value">@Model.OccupancyNext30.ToString("0.#")%</div>
+            <div class="dashboard-kpi-foot"><span>LY @Model.OccupancyNext30LastYear.ToString("0.#")%</span><b class="@(occupancyDelta >= 0 ? "dashboard-positive-text" : "dashboard-negative-text")">@(occupancyDelta >= 0 ? "+" : "")@occupancyDelta.ToString("0.#") pts</b></div>
+        </button>
+        <button type="button" class="dashboard-kpi dashboard-kpi-orange dashboard-kpi-button">
+            <div class="dashboard-kpi-label">Profit margin MTD</div>
+            <div class="dashboard-kpi-value">@Model.ProfitMarginMonthToDate.ToString("0.#")%</div>
+            <div class="dashboard-kpi-foot"><span>LY @Model.ProfitMarginMonthToDateLastYear.ToString("0.#")%</span><b>Month to date</b></div>
+        </button>
+    </section>
+
+    <div class="dashboard-overview-columns">
+        <div class="dashboard-overview-left">
+            <section class="dashboard-card dashboard-room-status-card">
+                <header class="dashboard-card-head dashboard-room-status-head">
+                    <div>
+                        <h2>Room status</h2>
+                        <p>Hover a room for guest details · updated @Model.GeneratedAt.ToString("HH:mm")</p>
+                    </div>
+                    <div class="dashboard-room-controls">
+                        <button type="button" class="dashboard-pill is-active" data-room-filter="all">All <span data-room-filter-count="all">@roomTotal</span></button>
+                        <button type="button" class="dashboard-pill" data-room-filter="checkin">Check in <span data-room-filter-count="checkin">@roomCheckIn</span></button>
+                        <button type="button" class="dashboard-pill" data-room-filter="reservation">Reservation <span data-room-filter-count="reservation">@roomReservation</span></button>
+                        <button type="button" class="dashboard-pill" data-room-filter="checkout">Check out <span data-room-filter-count="checkout">@roomCheckout</span></button>
+                        <button type="button" class="dashboard-pill" data-room-filter="vacant">Vacant <span data-room-filter-count="vacant">@roomVacant</span></button>
+                        <button type="button" class="dashboard-pill" data-room-filter="ooo">Blocked <span data-room-filter-count="ooo">@roomBlocked</span></button>
+                        <select id="dashboardRoomDate" class="dashboard-select" aria-label="Room status date">
+                            <option value="@todayIso">Today</option>
+                            <option value="@tomorrowIso">Tomorrow</option>
+                        </select>
+                    </div>
+                </header>
+                <div class="dashboard-card-body dashboard-room-status-body">
+                    <div id="dashboardRoomRack" class="dashboard-room-rack">
+                        @foreach (var room in Model.RoomStatus)
+
+
+
+                        {
+
+
+
+                            var filterState = RoomBucket(room.State, room.IsDirty);
+
+
+
+                            var statusText = filterState == "ooo" ? "Out of order"
+
+
+
+                            : filterState == "checkin" ? "Checked in"
+
+
+
+                            : filterState == "reservation" ? "Reservation"
+
+
+
+                            : filterState == "checkout" ? "Checked out"
+
+
+
+                            : "Vacant";
+
+
+
+                            var dateRange = room.ArrivalDate.HasValue && room.DepartureDate.HasValue
+
+
+
+                            ? room.ArrivalDate.Value.ToString("dd MMM") + "–" + room.DepartureDate.Value.ToString("dd MMM")
+
+
+
+                            : string.Empty;
+
+
+
+                            var roomMeta = "Room " + room.RoomNo;
+
+
+
+                            if (!string.IsNullOrWhiteSpace(room.Category)) roomMeta += " · " + room.Category;
+
+
+
+                            if (!string.IsNullOrWhiteSpace(room.ReservationId)) roomMeta += " · " + room.ReservationId;
+                            <button type="button"
+                                    class="dashboard-room dashboard-room-@filterState"
+                                    data-room-state="@filterState"
+                                    data-room-payment="@room.PaymentState"
+                                    aria-label="Room @room.RoomNo @statusText">
+                                <span class="dashboard-room-no">@room.RoomNo</span>
+                                @if (room.PaymentState == "pending")
+
+
+
+                                {
+                                    <span class="dashboard-room-dot dashboard-room-dot-pending" aria-hidden="true"></span>
+                                }
+
+
+
+                                else if (room.PaymentState == "partial")
+
+
+
+                                {
+                                    <span class="dashboard-room-dot dashboard-room-dot-partial" aria-hidden="true"></span>
+                                }
+
+
+
+                                else if (room.PaymentState == "paid")
+
+
+
+                                {
+                                    <span class="dashboard-room-dot dashboard-room-dot-paid" aria-hidden="true"></span>
+                                }
+                                <span class="dashboard-room-tip" role="tooltip">
+                                    @if (!string.IsNullOrWhiteSpace(room.GuestName))
+
+
+
+                                    {
+                                        <strong>@room.GuestName</strong>
+                                    }
+
+
+
+                                    else
+
+
+
+                                    {
+                                        <strong>Room @room.RoomNo</strong>
+                                    }
+                                    <span>@roomMeta</span>
+                                    <span>@statusText@(string.IsNullOrWhiteSpace(dateRange) ? string.Empty : " · " + dateRange)</span>
+                                    @if (room.Balance > 0)
+
+
+
+                                    {
+                                        <b class="@(room.PaymentState == "partial" ? "dashboard-room-balance-partial" : "dashboard-room-balance-pending")">@Money(room.Balance) @(room.PaymentState == "partial" ? "part paid" : "pending")</b>
+                                    }
+
+
+
+                                    else if (filterState != "vacant" && filterState != "ooo")
+
+
+
+                                    {
+                                        <b class="dashboard-room-balance-settled">Settled</b>
+                                    }
+                                </span>
+                            </button>
+                        }
+                    </div>
+
+                    <div id="dashboardRoomLegend" class="dashboard-room-legend" aria-label="Room status legend">
+                        <span class="dashboard-room-legend-item dashboard-room-total"><i class="dashboard-legend-all"></i>Total rooms <b data-room-legend-count="all">@roomTotal</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-checkin"></i>Checked in <b data-room-legend-count="checkin">@roomCheckIn</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-reservation"></i>Reservation <b data-room-legend-count="reservation">@roomReservation</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-checkout"></i>Checked out <b data-room-legend-count="checkout">@roomCheckout</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-vacant"></i>Vacant <b data-room-legend-count="vacant">@roomVacant</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-ooo"></i>Out of order <b data-room-legend-count="ooo">@roomBlocked</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-pending"></i>Not paid <b data-room-legend-count="pending">@roomPendingPayment</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-partial"></i>Partially paid <b data-room-legend-count="partial">@roomPartialPayment</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-paid"></i>Fully paid <b data-room-legend-count="paid">@roomPaidPayment</b></span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="dashboard-card">
+                <header class="dashboard-card-head">
+                    <div><h2>Occupancy on the books</h2><p>Rooms sold per night compared with the same nights last year</p></div>
+                    <div class="dashboard-range-tabs">
+                        <button type="button" class="dashboard-pill is-active" data-occ-days="30">30 days</button>
+                        <button type="button" class="dashboard-pill" data-occ-days="60" disabled>60 days</button>
+                        <button type="button" class="dashboard-pill" data-occ-days="90" disabled>90 days</button>
+                    </div>
+                </header>
+                <div class="dashboard-card-body">
+                    <svg id="dashboardOccupancyChart" class="dashboard-chart dashboard-chart-large" viewBox="0 0 760 190" role="img" aria-label="Occupancy on the books"></svg>
+                    <div class="dashboard-chart-foot">
+                        <div><span>30 days</span><strong id="dashboardOcc30">@Model.OccupancyNext30.ToString("0.#")%</strong></div>
+                        <div><span>60 days</span><strong id="dashboardOcc60">Loading…</strong></div>
+                        <div><span>90 days</span><strong id="dashboardOcc90">Loading…</strong></div>
+                        <div><span>Forecast next 7</span><strong id="dashboardForecast7">@Model.ForecastNext7.ToString("0.#")%</strong></div>
+                    </div>
+                </div>
+            </section>
+
+
+            <section class="dashboard-card">
+                <header class="dashboard-card-head"><div><h2>Room type performance</h2><p>Occupancy, ADR and revenue by room category · next 30 days</p></div></header>
+                <div class="dashboard-table-wrap">
+                    <table class="dashboard-table dashboard-roomtype-table">
+                        <thead><tr><th>Room type</th><th class="dashboard-right">Rooms</th><th>Tonight</th><th class="dashboard-right">Next 30d</th><th class="dashboard-right">ADR</th><th class="dashboard-right">RevPAR</th><th class="dashboard-right">Revenue</th><th class="dashboard-right">Share</th></tr></thead>
+                        <tbody id="dashboardRoomTypesBody">
+                            <tr><td colspan="8" class="dashboard-empty-cell dashboard-analytics-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading room-type performance…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="dashboard-card">
+                <header class="dashboard-card-head">
+                    <div><h2>Revenue and profit trend</h2><p>Last 30 days against last year</p></div>
+                    <div class="dashboard-chart-key"><span><i class="dashboard-key-blue"></i>Revenue</span><span><i class="dashboard-key-green"></i>Profit</span><span><i class="dashboard-key-dash"></i>Last year</span></div>
+                </header>
+                <div class="dashboard-card-body">
+                    <svg id="dashboardRevenueChart" class="dashboard-chart" viewBox="0 0 560 175" role="img" aria-label="Revenue and profit trend"></svg>
+                    <div class="dashboard-chart-foot">
+                        <div><span>Total revenue</span><strong id="dashboardRevenue30">@Money0(Model.RevenueLast30)</strong></div>
+                        <div><span>Total profit</span><strong id="dashboardProfit30">@Money0(Model.ProfitLast30)</strong></div>
+                        <div><span>Profit margin</span><strong id="dashboardProfitMargin30">@(Model.RevenueLast30 <= 0 ? "0" : Math.Round(Model.ProfitLast30 * 100m / Model.RevenueLast30, 1).ToString("0.#"))%</strong></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="dashboard-card">
+                <header class="dashboard-card-head">
+                    <div><h2>Today's prices</h2><p>Lightweight pricing guidance from occupancy and forward demand</p></div>
+                    <a class="dashboard-pill dashboard-link-pill" href="/Availability">Review in Inventory</a>
+                </header>
+                <div class="dashboard-card-body">
+                    <div id="dashboardPrices" class="dashboard-prices">
+                        <div class="dashboard-empty-block dashboard-analytics-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading pricing guidance…</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="dashboard-overview-right">
+            <section class="dashboard-card">
+                <header class="dashboard-card-head">
+                    <div><h2>Today's operations</h2><p>Live operational position for today</p></div>
+                    <a class="dashboard-pill dashboard-link-pill" href="/Calendar">Front desk</a>
+                </header>
+                <div class="dashboard-card-body">
+                    <div class="dashboard-operations">
+                        <button type="button" class="dashboard-operation" data-dashboard-statistic="checkin"><span>Check-ins today</span><strong>@Model.ArrivalsToday</strong></button>
+                        <button type="button" class="dashboard-operation" data-dashboard-statistic="checkout"><span>Check-outs today</span><strong>@Model.DeparturesToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-available" data-dashboard-statistic="available"><span>Available rooms</span><strong>@Model.AvailableRoomsToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-occupied" data-dashboard-statistic="occupied"><span>Occupied rooms</span><strong>@Model.RoomsSoldToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-danger" data-dashboard-statistic="blocked"><span>Blocked / OOO</span><strong>@Model.BlockedRoomsToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-warning" data-dashboard-statistic="dirty"><span>Dirty rooms</span><strong>@Model.DirtyRoomsToday</strong></button>
+                    </div>
+                    <div class="dashboard-mini-stats">
+                        <div><span>In-house guests</span><strong>@Model.InHouseGuests</strong></div>
+                        <div><span>Average stay</span><strong>@Model.AverageStayNights.ToString("0.#") <small>nights</small></strong></div>
+                        <div><span>Repeat guests</span><strong>@Model.RepeatGuestPercent.ToString("0.#")%</strong></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="dashboard-card dashboard-guest-card">
+                <header class="dashboard-card-head">
+                    <div><h2>In-house guests</h2><p>@Model.InHouseGuests guest@(Model.InHouseGuests == 1 ? "" : "s") currently in house</p></div>
+                    <div class="dashboard-guest-filters">
+                        <button type="button" class="dashboard-pill is-active" data-guest-filter="all">All</button>
+                        <button type="button" class="dashboard-pill" data-guest-filter="due">Due out</button>
+                        <button type="button" class="dashboard-pill" data-guest-filter="balance">Balance</button>
+                    </div>
+                </header>
+                <div class="dashboard-table-wrap dashboard-guest-table-wrap">
+                    <table class="dashboard-table">
+                        <thead><tr><th>Room</th><th>Guest</th><th>Stay</th><th>Nights</th><th class="dashboard-right">Balance</th></tr></thead>
+                        <tbody>
+                            @if (Model.InHouseGuestRows.Count == 0)
+
+
+
+                            {
+                                <tr><td colspan="5" class="dashboard-empty-cell">No in-house guests found.</td></tr>
+                            }
+
+
+
+                            else
+
+
+
+                            {
+
+
+
+                                foreach (var guest in Model.InHouseGuestRows)
+
+
+
+                                {
+                                    <tr data-guest-due="@(guest.DueOutToday ? "1" : "0")" data-guest-balance="@(guest.Balance > 0 ? "1" : "0")">
+                                        <td><strong>@guest.RoomNo</strong></td>
+                                        <td>@guest.GuestName<div class="dashboard-subtext">@guest.ReservationId · @guest.Guests guest@(guest.Guests == 1 ? "" : "s")</div></td>
+                                        <td>@guest.ArrivalDate.ToString("dd MMM")–@guest.DepartureDate.ToString("dd MMM")</td>
+                                        <td>@guest.Nights</td>
+                                        <td class="dashboard-right">
+                                            @if (guest.Balance > 0)
+
+
+
+                                            {
+                                                <span class="dashboard-chip dashboard-chip-warning">@Money(guest.Balance)</span>
+                                            }
+
+
+
+                                            else
+
+
+
+                                            {
+                                                <span class="dashboard-chip dashboard-chip-good">Settled</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+
+
+
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="dashboard-card dashboard-money-card">
+                <header class="dashboard-card-head"><div><h2>Where the money comes from</h2><p>Accommodation revenue on the books · next 30 days</p></div></header>
+                <div class="dashboard-table-wrap dashboard-source-table-wrap">
+                    <table class="dashboard-table">
+                        <thead><tr><th>Channel</th><th class="dashboard-right">Rooms</th><th class="dashboard-right">ADR</th><th class="dashboard-right">Revenue</th><th class="dashboard-right">Share</th></tr></thead>
+                        <tbody id="dashboardRevenueSourcesBody">
+                            <tr><td colspan="5" class="dashboard-empty-cell dashboard-analytics-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading revenue sources…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+
+            <section class="dashboard-card">
+                <header class="dashboard-card-head"><div><h2>Cancellations and no-shows</h2><p>Last 30 days</p></div></header>
+                <div class="dashboard-card-body">
+                    <svg id="dashboardExceptionChart" class="dashboard-chart dashboard-chart-small" viewBox="0 0 420 120" role="img" aria-label="Cancellations and no-shows"></svg>
+                    <table class="dashboard-table dashboard-exception-table">
+                        <thead><tr><th>Type</th><th class="dashboard-right">Count</th><th class="dashboard-right">Rate</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in Model.ExceptionSources)
+
+
+
+                            {
+                                <tr><td>@item.Source</td><td class="dashboard-right">@item.Count</td><td class="dashboard-right">@item.RatePercent.ToString("0.#")%</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="dashboard-card">
+                <header class="dashboard-card-head">
+                    <div><h2>Occupancy trend and forecast</h2><p>Last 15 days and the next 14 days</p></div>
+                    <div class="dashboard-chart-key"><span><i class="dashboard-key-blue"></i>Actual</span><span><i class="dashboard-key-dash"></i>Forecast</span></div>
+                </header>
+                <div class="dashboard-card-body">
+                    <svg id="dashboardOccupancyTrendChart" class="dashboard-chart" viewBox="0 0 560 175" role="img" aria-label="Occupancy trend and forecast"></svg>
+                    <div class="dashboard-chart-foot">
+                        <div><span>Current occupancy</span><strong>@Model.OccupancyToday.ToString("0.#")%</strong></div>
+                        <div><span>Forecast next 7 days</span><strong id="dashboardForecastTrend7">@Model.ForecastNext7.ToString("0.#")%</strong></div>
+                        <div><span>Expected ADR</span><strong>@Money0(Model.AdrToday)</strong></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="dashboard-card">
+                <header class="dashboard-card-head"><div><h2>Decisions waiting on you</h2><p>Ranked operational and revenue signals</p></div></header>
+                <div class="dashboard-card-body">
+                    <ul id="dashboardDecisions" class="dashboard-decisions">
+                        <li class="dashboard-decision dashboard-decision-info dashboard-analytics-loading"><i></i><div><strong>Loading dashboard signals…</strong><p>Revenue and demand analysis is loading after the live dashboard.</p></div></li>
+                    </ul>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+
+<div id="dashboardStatisticOverlay" class="dashboard-stat-overlay" hidden></div>
+<section id="dashboardStatisticModal" class="dashboard-stat-modal" role="dialog" aria-modal="true" aria-labelledby="dashboardStatisticTitle" hidden>
+    <header class="dashboard-stat-modal-head">
+        <div>
+            <h2 id="dashboardStatisticTitle">Details</h2>
+            <p id="dashboardStatisticSubtitle"></p>
+        </div>
+        <button type="button" class="dashboard-stat-close" data-dashboard-stat-close aria-label="Close details">×</button>
+    </header>
+    <div class="dashboard-stat-summary">
+        <span id="dashboardStatisticSummaryLabel">Total</span>
+        <strong id="dashboardStatisticSummaryValue">—</strong>
+    </div>
+    <div id="dashboardStatisticLoading" class="dashboard-stat-loading">
+        <i class="fa-solid fa-spinner fa-spin"></i> Loading details…
+    </div>
+    <div id="dashboardStatisticTableWrap" class="dashboard-stat-table-wrap" hidden>
+        <table class="dashboard-table dashboard-stat-table">
+            <thead><tr id="dashboardStatisticHead"></tr></thead>
+            <tbody id="dashboardStatisticBody"></tbody>
+        </table>
+    </div>
+    <div id="dashboardStatisticEmpty" class="dashboard-empty-block" hidden>No records found for this statistic.</div>
+</section>
+
+<script type="application/json" id="dashboardOccupancyData">@Html.Raw(occupancyJson)</script>
+<script type="application/json" id="dashboardOccupancyLyData">@Html.Raw(occupancyLyJson)</script>
+<script type="application/json" id="dashboardFinancialData">@Html.Raw(financialJson)</script>
+<script type="application/json" id="dashboardExceptionData">@Html.Raw(exceptionJson)</script>
+
+@section Scripts {
+    <script src="~/js/dashboard.js" asp-append-version="true"></script>
+}

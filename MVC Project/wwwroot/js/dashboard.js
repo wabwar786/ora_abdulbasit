@@ -1,272 +1,820 @@
 (function () {
     'use strict';
 
-    const state = window.oraDashboardData || {};
-
-    function initProgressRings() {
-        const circumference = 339.292;
-        document.querySelectorAll('.progress-ring').forEach(function (ring) {
-            const current = Number(ring.dataset.current || 0);
-            const total = Number(ring.dataset.total || 0);
-            const pct = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
-            const circle = ring.querySelector('.ring-value');
-            if (circle) circle.style.strokeDashoffset = String(circumference * (1 - pct));
-        });
+    function readJson(id) {
+        var node = document.getElementById(id);
+        if (!node) return [];
+        try { return JSON.parse(node.textContent || '[]'); }
+        catch (_) { return []; }
     }
 
-    function initBookingsChart() {
-        const canvas = document.getElementById('ReservationChartOption');
-        if (!canvas || typeof Chart === 'undefined') return;
-        if (window.oraReservationChartInstance) window.oraReservationChartInstance.destroy();
-        window.oraReservationChartInstance = new Chart(canvas.getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: state.bookingLabels || [],
-                datasets: state.bookingDatasets || []
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: {
-                        position: 'top', align: 'start',
-                        labels: { boxWidth: 12, boxHeight: 8, padding: 12, color: '#6B778C', font: { size: 10, weight: '400' } }
-                    },
-                    tooltip: { mode: 'index', intersect: false, backgroundColor: '#172033', titleColor: '#fff', bodyColor: '#fff', padding: 10 }
-                },
-                datasets: { bar: { borderRadius: 0, borderSkipped: false, categoryPercentage: .72, barPercentage: .88 } },
-                scales: {
-                    x: { stacked: true, grid: { display: false }, ticks: { color: '#6B778C', font: { size: 9 }, maxRotation: 0, minRotation: 0 } },
-                    y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(107,119,140,.15)' }, ticks: { precision: 0, color: '#6B778C', font: { size: 9 } } }
-                }
-            }
-        });
+    function svgNode(name, attrs) {
+        var node = document.createElementNS('http://www.w3.org/2000/svg', name);
+        Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, String(attrs[key])); });
+        return node;
     }
 
-    const overlay = document.getElementById('dashboardModalOverlay');
-    const modalTitle = document.getElementById('dashboardModalTitle');
-    const modalSubtitle = document.getElementById('dashboardModalSubtitle');
-    const modalSummary = document.getElementById('dashboardModalSummary');
-    const modalHead = document.getElementById('dashboardModalHead');
-    const modalBody = document.getElementById('dashboardModalBody');
-    const modalEmpty = document.getElementById('dashboardModalEmpty');
-
-    function closeModal() {
-        if (!overlay) return;
-        overlay.classList.remove('open');
-        overlay.setAttribute('aria-hidden', 'true');
+    function addText(svg, x, y, value, anchor) {
+        var text = svgNode('text', { x: x, y: y, fill: '#8190a0', 'font-size': '8.5', 'font-weight': '500', 'text-anchor': anchor || 'start' });
+        text.textContent = value;
+        svg.appendChild(text);
     }
 
-    function showLoading(title) {
-        if (!overlay) return;
-        modalTitle.textContent = title || 'Details';
-        modalSubtitle.textContent = 'Loading...';
-        modalSummary.innerHTML = '';
-        modalHead.innerHTML = '';
-        modalBody.innerHTML = '<tr><td style="padding:25px;text-align:center;color:#8190a4">Loading details...</td></tr>';
-        modalEmpty.hidden = true;
-        overlay.classList.add('open');
-        overlay.setAttribute('aria-hidden', 'false');
+    function linePath(values, x0, x1, y0, y1, min, max) {
+        if (!values || values.length === 0) return '';
+        var span = max - min || 1;
+        var step = values.length <= 1 ? 0 : (x1 - x0) / (values.length - 1);
+        return values.map(function (value, index) {
+            var x = x0 + step * index;
+            var y = y1 - ((Number(value) - min) / span) * (y1 - y0);
+            return (index === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+        }).join(' ');
     }
 
-    function renderPopup(data) {
-        modalTitle.textContent = data.title || 'Details';
-        modalSubtitle.textContent = data.subtitle || '';
-        modalSummary.innerHTML = '';
-        Object.entries(data.summary || {}).forEach(function (entry) {
-            const pill = document.createElement('div');
-            pill.className = 'summary-pill';
-            const label = document.createElement('span');
-            label.textContent = entry[0];
-            const value = document.createElement('strong');
-            value.textContent = entry[1];
-            pill.append(label, value);
-            modalSummary.appendChild(pill);
-        });
-
-        const columns = data.columns || [];
-        const rows = data.rows || [];
-        modalHead.innerHTML = '';
-        modalBody.innerHTML = '';
-        if (columns.length) {
-            const tr = document.createElement('tr');
-            columns.forEach(function (column) {
-                const th = document.createElement('th');
-                th.textContent = column;
-                tr.appendChild(th);
-            });
-            modalHead.appendChild(tr);
+    function drawGrid(svg, width, height, min, max, formatter) {
+        var left = 38, right = width - 8, top = 10, bottom = height - 23;
+        for (var i = 0; i < 5; i++) {
+            var ratio = i / 4;
+            var y = top + ratio * (bottom - top);
+            svg.appendChild(svgNode('line', { x1: left, y1: y, x2: right, y2: y, stroke: '#edf2f6', 'stroke-width': 1 }));
+            var val = max - ratio * (max - min);
+            addText(svg, 2, y + 3, formatter ? formatter(val) : Math.round(val), 'start');
         }
-        rows.forEach(function (row) {
-            const tr = document.createElement('tr');
-            columns.forEach(function (column) {
-                const td = document.createElement('td');
-                td.textContent = row[column] == null ? '' : row[column];
+        return { left: left, right: right, top: top, bottom: bottom };
+    }
+
+    function drawLineChart(svg, labels, series, options) {
+        if (!svg) return;
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        var vb = (svg.getAttribute('viewBox') || '0 0 560 175').split(/\s+/).map(Number);
+        var width = vb[2] || 560, height = vb[3] || 175;
+        var all = [];
+        series.forEach(function (s) { (s.values || []).forEach(function (v) { if (Number.isFinite(Number(v))) all.push(Number(v)); }); });
+        var min = options && options.min != null ? options.min : Math.min(0, all.length ? Math.min.apply(null, all) : 0);
+        var max = options && options.max != null ? options.max : (all.length ? Math.max.apply(null, all) : 1);
+        if (max <= min) max = min + 1;
+        if (!options || options.min == null || options.max == null) max = max * 1.08;
+        var plot = drawGrid(svg, width, height, min, max, options && options.yFormatter);
+
+        series.forEach(function (s) {
+            var path = linePath(s.values || [], plot.left, plot.right, plot.top, plot.bottom, min, max);
+            if (!path) return;
+            svg.appendChild(svgNode('path', {
+                d: path,
+                fill: 'none',
+                stroke: s.color || '#5f97c2',
+                'stroke-width': s.width || 2,
+                'stroke-linecap': 'round',
+                'stroke-linejoin': 'round',
+                'stroke-dasharray': s.dash || ''
+            }));
+        });
+
+        if (labels && labels.length) {
+            var indexes = [0, Math.floor((labels.length - 1) / 3), Math.floor(2 * (labels.length - 1) / 3), labels.length - 1];
+            indexes = indexes.filter(function (v, i, a) { return v >= 0 && a.indexOf(v) === i; });
+            indexes.forEach(function (idx) {
+                var x = labels.length <= 1 ? plot.left : plot.left + idx * ((plot.right - plot.left) / (labels.length - 1));
+                addText(svg, x, height - 6, labels[idx], 'middle');
+            });
+        }
+    }
+
+    function shortDate(value) {
+        var d = new Date(value);
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+    }
+
+    function drawOccupancyOnBooks(days) {
+        var current = readJson('dashboardOccupancyData').filter(function (x) { return Number(x.roomsSold) >= 0; });
+        var lastYear = readJson('dashboardOccupancyLyData');
+        if (!current.length) return;
+        // Initial first paint contains 30 future days only. The lazy analytics
+        // payload contains 15 history days followed by 90 future days.
+        var futureStart = current.length > 90 ? 15 : 0;
+        var lastYearStart = lastYear.length > 90 ? 15 : 0;
+        var rows = current.slice(futureStart, futureStart + days);
+        var lyRows = lastYear.slice(lastYearStart, lastYearStart + days);
+        drawLineChart(
+            document.getElementById('dashboardOccupancyChart'),
+            rows.map(function (x) { return shortDate(x.date); }),
+            [
+                { values: rows.map(function (x) { return Number(x.occupancyPercent || 0); }), color: '#5f97c2', width: 2.2 },
+                { values: lyRows.map(function (x) { return Number(x.occupancyPercent || 0); }), color: '#aeb9c4', width: 1.5, dash: '5 4' }
+            ],
+            { min: 0, max: 100, yFormatter: function (v) { return Math.round(v) + '%'; } }
+        );
+    }
+
+    function drawRevenueTrend() {
+        var rows = readJson('dashboardFinancialData');
+        drawLineChart(
+            document.getElementById('dashboardRevenueChart'),
+            rows.map(function (x) { return shortDate(x.date); }),
+            [
+                { values: rows.map(function (x) { return Number(x.revenue || 0); }), color: '#5f97c2', width: 2.1 },
+                { values: rows.map(function (x) { return Number(x.profit || 0); }), color: '#73ad91', width: 1.9 },
+                { values: rows.map(function (x) { return Number(x.lastYearRevenue || 0); }), color: '#aeb9c4', width: 1.4, dash: '5 4' }
+            ],
+            { yFormatter: function (v) { return Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : Math.round(v); } }
+        );
+    }
+
+    function drawOccupancyTrend() {
+        var rows = readJson('dashboardOccupancyData').slice(0, 30);
+        if (!rows.length) return;
+        var actual = rows.slice(0, 16);
+        var forecast = rows.slice(15);
+        var svg = document.getElementById('dashboardOccupancyTrendChart');
+        if (!svg) return;
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        var width = 560, height = 175;
+        var plot = drawGrid(svg, width, height, 0, 100, function (v) { return Math.round(v) + '%'; });
+        var fullStep = rows.length <= 1 ? 0 : (plot.right - plot.left) / (rows.length - 1);
+        var actualPath = linePath(actual.map(function (x) { return Number(x.occupancyPercent || 0); }), plot.left, plot.left + fullStep * (actual.length - 1), plot.top, plot.bottom, 0, 100);
+        var forecastPath = linePath(forecast.map(function (x) { return Number(x.occupancyPercent || 0); }), plot.left + fullStep * 15, plot.right, plot.top, plot.bottom, 0, 100);
+        svg.appendChild(svgNode('path', { d: actualPath, fill: 'none', stroke: '#5f97c2', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+        svg.appendChild(svgNode('path', { d: forecastPath, fill: 'none', stroke: '#7f9ab2', 'stroke-width': 1.8, 'stroke-dasharray': '5 4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+        [0, 7, 15, 22, 29].forEach(function (idx) {
+            if (!rows[idx]) return;
+            addText(svg, plot.left + fullStep * idx, height - 6, shortDate(rows[idx].date), 'middle');
+        });
+    }
+
+    function drawExceptionChart() {
+        var rows = readJson('dashboardExceptionData');
+        var svg = document.getElementById('dashboardExceptionChart');
+        if (!svg || !rows.length) return;
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        var width = 420, height = 120, left = 26, right = 410, top = 8, bottom = 94;
+        var max = Math.max(1, Math.max.apply(null, rows.map(function (x) { return Math.max(Number(x.cancellations || 0), Number(x.noShows || 0)); })));
+        for (var i = 0; i < 4; i++) {
+            var y = top + i * ((bottom - top) / 3);
+            svg.appendChild(svgNode('line', { x1: left, y1: y, x2: right, y2: y, stroke: '#edf2f6' }));
+        }
+        var group = (right - left) / rows.length;
+        rows.forEach(function (row, idx) {
+            var x = left + idx * group + group * 0.18;
+            var w = Math.max(5, group * 0.24);
+            var c = Number(row.cancellations || 0), n = Number(row.noShows || 0);
+            var ch = c / max * (bottom - top), nh = n / max * (bottom - top);
+            svg.appendChild(svgNode('rect', { x: x, y: bottom - ch, width: w, height: ch, rx: 2, fill: '#d4837d' }));
+            svg.appendChild(svgNode('rect', { x: x + w + 3, y: bottom - nh, width: w, height: nh, rx: 2, fill: '#d9ae5f' }));
+            addText(svg, x + w, height - 7, row.label || '', 'middle');
+        });
+    }
+
+    function normalizeRoomFilterState(value, isDirty) {
+        var state = String(value || '').toLowerCase().replace(/[\s_-]+/g, '');
+
+        if (isDirty || state === 'dirty' || state === 'checkout' || state === 'checkedout')
+            return 'checkout';
+
+        if (state === 'checkin' || state === 'checkedin' || state === 'inhouse')
+            return 'checkin';
+
+        if (state === 'reservation' || state === 'reserved')
+            return 'reservation';
+
+        if (state === 'ooo' || state === 'blocked' || state === 'block' || state === 'outoforder')
+            return 'ooo';
+
+        return 'vacant';
+    }
+
+    var activeRoomFilter = 'all';
+    function applyRoomFilter(filter) {
+        activeRoomFilter = normalizeRoomFilterState(filter === 'all' ? 'all' : filter, false);
+        if (filter === 'all') activeRoomFilter = 'all';
+
+        document.querySelectorAll('[data-room-filter]').forEach(function (button) {
+            button.classList.toggle(
+                'is-active',
+                button.getAttribute('data-room-filter') === activeRoomFilter
+            );
+        });
+
+        document.querySelectorAll('#dashboardRoomRack [data-room-state]').forEach(function (room) {
+            var roomState = normalizeRoomFilterState(
+                room.getAttribute('data-room-state'),
+                room.classList.contains('dashboard-room-dirty')
+            );
+            var shouldHide = activeRoomFilter !== 'all' && roomState !== activeRoomFilter;
+
+            room.classList.toggle('dashboard-room-filter-hidden', shouldHide);
+            room.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+        });
+    }
+
+    function roomStateLabel(row) {
+        if (row.state === 'ooo') return 'Out of order';
+        if (row.state === 'checkin') return 'Checked in';
+        if (row.state === 'reservation') return 'Reservation';
+        if (row.state === 'dirty' || row.isDirty) return 'Checked out';
+        if (row.state === 'checkout') return 'Checked out';
+        return 'Vacant';
+    }
+
+    function roomFilterState(row) {
+        return normalizeRoomFilterState(row && row.state, !!(row && row.isDirty));
+    }
+
+    function formatRoomDate(value) {
+        if (!value) return '';
+        var text = String(value).slice(0, 10);
+        var parts = text.split('-');
+        if (parts.length !== 3) return '';
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var month = months[Math.max(0, Math.min(11, Number(parts[1]) - 1))] || '';
+        return String(Number(parts[2])) + ' ' + month;
+    }
+
+    function updateRoomLegend(rows) {
+        var counts = { all: 0, checkin: 0, reservation: 0, checkout: 0, vacant: 0, ooo: 0, pending: 0, partial: 0, paid: 0 };
+        (rows || []).forEach(function (row) {
+            counts.all += 1;
+            var state = roomFilterState(row);
+            if (counts[state] != null) counts[state] += 1;
+            var payment = row && row.paymentState ? String(row.paymentState).toLowerCase() : '';
+            if (counts[payment] != null) counts[payment] += 1;
+        });
+        Object.keys(counts).forEach(function (key) {
+            document.querySelectorAll('[data-room-legend-count="' + key + '"]').forEach(function (node) {
+                node.textContent = String(counts[key]);
+            });
+            document.querySelectorAll('[data-room-filter-count="' + key + '"]').forEach(function (node) {
+                node.textContent = String(counts[key]);
+            });
+        });
+    }
+
+    function appendRoomTip(button, row) {
+        var tip = document.createElement('span');
+        tip.className = 'dashboard-room-tip';
+        tip.setAttribute('role', 'tooltip');
+
+        var name = document.createElement('strong');
+        name.textContent = row.guestName || ('Room ' + (row.roomNo || ''));
+        tip.appendChild(name);
+
+        var meta = document.createElement('span');
+        var metaParts = ['Room ' + (row.roomNo || '')];
+        if (row.category) metaParts.push(row.category);
+        if (row.reservationId) metaParts.push(row.reservationId);
+        meta.textContent = metaParts.join(' · ');
+        tip.appendChild(meta);
+
+        var status = document.createElement('span');
+        var dates = '';
+        if (row.arrivalDate && row.departureDate) dates = formatRoomDate(row.arrivalDate) + '–' + formatRoomDate(row.departureDate);
+        status.textContent = roomStateLabel(row) + (dates ? ' · ' + dates : '');
+        tip.appendChild(status);
+
+        if (Number(row.balance || 0) > 0) {
+            var balance = document.createElement('b');
+            var paymentState = String(row.paymentState || 'pending').toLowerCase();
+            balance.className = paymentState === 'partial' ? 'dashboard-room-balance-partial' : 'dashboard-room-balance-pending';
+            var page = document.querySelector('.dashboard-page');
+            var currency = page ? (page.getAttribute('data-currency') || '£') : '£';
+            balance.textContent = currency + Number(row.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (paymentState === 'partial' ? ' part paid' : ' pending');
+            tip.appendChild(balance);
+        } else if (row.state !== 'vacant' && row.state !== 'ooo') {
+            var settled = document.createElement('b');
+            settled.className = 'dashboard-room-balance-settled';
+            settled.textContent = 'Settled';
+            tip.appendChild(settled);
+        }
+
+        button.appendChild(tip);
+    }
+
+    function renderRoomRack(rows) {
+        var rack = document.getElementById('dashboardRoomRack');
+        if (!rack) return;
+        rack.replaceChildren();
+        (rows || []).forEach(function (row) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dashboard-room dashboard-room-' + (row.state || 'vacant');
+            button.setAttribute('data-room-state', roomFilterState(row));
+            button.setAttribute('data-room-payment', row.paymentState || '');
+            button.setAttribute('aria-label', 'Room ' + (row.roomNo || '') + ' ' + roomStateLabel(row));
+
+            var number = document.createElement('span');
+            number.className = 'dashboard-room-no';
+            number.textContent = row.roomNo || '';
+            button.appendChild(number);
+
+            var paymentState = String(row.paymentState || '').toLowerCase();
+            if (paymentState === 'pending' || paymentState === 'partial' || paymentState === 'paid') {
+                var dot = document.createElement('span');
+                dot.className = 'dashboard-room-dot dashboard-room-dot-' + paymentState;
+                dot.setAttribute('aria-hidden', 'true');
+                button.appendChild(dot);
+            }
+
+            appendRoomTip(button, row);
+            rack.appendChild(button);
+        });
+        updateRoomLegend(rows || []);
+        applyRoomFilter(activeRoomFilter);
+    }
+
+    async function loadRoomDate(date) {
+        var page = document.querySelector('.dashboard-page');
+        var rack = document.getElementById('dashboardRoomRack');
+        if (!page || !rack) return;
+        var url = page.getAttribute('data-room-status-url');
+        if (!url) return;
+        rack.setAttribute('aria-busy', 'true');
+        rack.classList.add('is-loading');
+        try {
+            var response = await fetch(url + '?date=' + encodeURIComponent(date), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
+            var payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(payload.message || 'Unable to load room status.');
+            renderRoomRack(payload.rows || []);
+        } catch (error) {
+            console.warn(error);
+        } finally {
+            rack.classList.remove('is-loading');
+            rack.removeAttribute('aria-busy');
+        }
+    }
+
+    function ensureRoomStatusTemplateControls() {
+        var card = document.querySelector('.dashboard-room-status-card');
+        if (!card) return;
+
+        // Remove the legacy large status-summary boxes if an older view/CSS is
+        // still present. The supplied dashboard template uses header filters.
+        card.querySelectorAll('.dashboard-room-summary').forEach(function (node) {
+            node.remove();
+        });
+
+        var head = card.querySelector('.dashboard-room-status-head') || card.querySelector('.dashboard-card-head');
+        if (!head) return;
+
+        var controls = head.querySelector('.dashboard-room-controls');
+        if (!controls) {
+            controls = document.createElement('div');
+            controls.className = 'dashboard-room-controls';
+            head.appendChild(controls);
+        }
+
+        var select = controls.querySelector('#dashboardRoomDate');
+        var filters = [
+            ['all', 'All'],
+            ['checkin', 'Check in'],
+            ['reservation', 'Reservation'],
+            ['checkout', 'Check out'],
+            ['vacant', 'Vacant'],
+            ['ooo', 'Blocked']
+        ];
+
+        filters.forEach(function (item, index) {
+            if (controls.querySelector('[data-room-filter="' + item[0] + '"]')) return;
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dashboard-pill' + (item[0] === activeRoomFilter ? ' is-active' : '');
+            button.setAttribute('data-room-filter', item[0]);
+            button.appendChild(document.createTextNode(item[1] + ' '));
+            var count = document.createElement('span');
+            count.setAttribute('data-room-filter-count', item[0]);
+            count.textContent = '0';
+            button.appendChild(count);
+            controls.insertBefore(button, select || null);
+        });
+
+        var body = card.querySelector('.dashboard-room-status-body') || card.querySelector('.dashboard-card-body');
+        var rack = card.querySelector('#dashboardRoomRack');
+        var legend = card.querySelector('#dashboardRoomLegend');
+        if (body && rack && !legend) {
+            legend = document.createElement('div');
+            legend.id = 'dashboardRoomLegend';
+            legend.className = 'dashboard-room-legend';
+            legend.setAttribute('aria-label', 'Room status legend');
+
+            [
+                ['all', 'dashboard-legend-all', 'Total rooms'],
+                ['checkin', 'dashboard-legend-checkin', 'Checked in'],
+                ['reservation', 'dashboard-legend-reservation', 'Reservation'],
+                ['checkout', 'dashboard-legend-checkout', 'Checked out'],
+                ['vacant', 'dashboard-legend-vacant', 'Vacant'],
+                ['ooo', 'dashboard-legend-ooo', 'Out of order'],
+                ['pending', 'dashboard-legend-pending', 'Not paid'],
+                ['partial', 'dashboard-legend-partial', 'Partially paid'],
+                ['paid', 'dashboard-legend-paid', 'Fully paid']
+            ].forEach(function (item) {
+                var pill = document.createElement('span');
+                pill.className = 'dashboard-room-legend-item' + (item[0] === 'all' ? ' dashboard-room-total' : '');
+                pill.innerHTML = '<i class="' + item[1] + '"></i>' + item[2] + ' <b data-room-legend-count="' + item[0] + '">0</b>';
+                legend.appendChild(pill);
+            });
+
+            body.appendChild(legend);
+        }
+    }
+
+    function wireRoomControls() {
+        var card = document.querySelector('.dashboard-room-status-card');
+        if (card && !card.dataset.roomFilterWired) {
+            card.dataset.roomFilterWired = '1';
+            card.addEventListener('click', function (event) {
+                var button = event.target.closest('[data-room-filter]');
+                if (!button || !card.contains(button)) return;
+                applyRoomFilter(button.getAttribute('data-room-filter') || 'all');
+            });
+        }
+
+        var date = document.getElementById('dashboardRoomDate');
+        if (date && !date.dataset.roomDateWired) {
+            date.dataset.roomDateWired = '1';
+            date.addEventListener('change', function () { loadRoomDate(date.value); });
+        }
+    }
+
+    function wireGuestFilters() {
+        document.querySelectorAll('[data-guest-filter]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                var mode = button.getAttribute('data-guest-filter') || 'all';
+                document.querySelectorAll('[data-guest-filter]').forEach(function (x) { x.classList.toggle('is-active', x === button); });
+                document.querySelectorAll('[data-guest-due]').forEach(function (row) {
+                    var visible = mode === 'all' || (mode === 'due' && row.getAttribute('data-guest-due') === '1') || (mode === 'balance' && row.getAttribute('data-guest-balance') === '1');
+                    row.hidden = !visible;
+                });
+            });
+        });
+    }
+
+    function wireOccupancyTabs() {
+        document.querySelectorAll('[data-occ-days]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                document.querySelectorAll('[data-occ-days]').forEach(function (x) { x.classList.toggle('is-active', x === button); });
+                drawOccupancyOnBooks(Number(button.getAttribute('data-occ-days') || 30));
+            });
+        });
+    }
+
+    function closeStatisticModal() {
+        var overlay = document.getElementById('dashboardStatisticOverlay');
+        var modal = document.getElementById('dashboardStatisticModal');
+        if (overlay) overlay.hidden = true;
+        if (modal) modal.hidden = true;
+        document.body.classList.remove('dashboard-modal-open');
+    }
+
+    function setText(id, value) {
+        var node = document.getElementById(id);
+        if (node) node.textContent = value == null ? '' : String(value);
+    }
+
+    function renderStatisticDetail(detail) {
+        var loading = document.getElementById('dashboardStatisticLoading');
+        var wrap = document.getElementById('dashboardStatisticTableWrap');
+        var empty = document.getElementById('dashboardStatisticEmpty');
+        var head = document.getElementById('dashboardStatisticHead');
+        var body = document.getElementById('dashboardStatisticBody');
+        if (loading) loading.hidden = true;
+        setText('dashboardStatisticTitle', detail.title || 'Details');
+        setText('dashboardStatisticSubtitle', detail.subtitle || '');
+        setText('dashboardStatisticSummaryLabel', detail.summaryLabel || 'Total');
+        setText('dashboardStatisticSummaryValue', detail.summaryValue || '—');
+        if (head) head.replaceChildren();
+        if (body) body.replaceChildren();
+
+        (detail.columns || []).forEach(function (column) {
+            var th = document.createElement('th');
+            th.textContent = column;
+            if (head) head.appendChild(th);
+        });
+        (detail.rows || []).forEach(function (row) {
+            var tr = document.createElement('tr');
+            (row || []).forEach(function (value) {
+                var td = document.createElement('td');
+                td.textContent = value == null ? '' : String(value);
                 tr.appendChild(td);
             });
-            modalBody.appendChild(tr);
+            if (body) body.appendChild(tr);
         });
-        modalEmpty.hidden = rows.length !== 0;
+        var hasRows = Array.isArray(detail.rows) && detail.rows.length > 0;
+        if (wrap) wrap.hidden = !hasRows;
+        if (empty) empty.hidden = hasRows;
     }
 
-    async function openPopup(type) {
-        showLoading(popupLabel(type));
+    async function openStatisticModal(type) {
+        var page = document.querySelector('.dashboard-page');
+        var url = page ? page.getAttribute('data-statistic-url') : '';
+        var overlay = document.getElementById('dashboardStatisticOverlay');
+        var modal = document.getElementById('dashboardStatisticModal');
+        var loading = document.getElementById('dashboardStatisticLoading');
+        var wrap = document.getElementById('dashboardStatisticTableWrap');
+        var empty = document.getElementById('dashboardStatisticEmpty');
+        if (!url || !overlay || !modal) return;
+
+        overlay.hidden = false;
+        modal.hidden = false;
+        document.body.classList.add('dashboard-modal-open');
+        if (loading) loading.hidden = false;
+        if (wrap) wrap.hidden = true;
+        if (empty) empty.hidden = true;
+        setText('dashboardStatisticTitle', 'Loading details…');
+        setText('dashboardStatisticSubtitle', '');
+        setText('dashboardStatisticSummaryLabel', '');
+        setText('dashboardStatisticSummaryValue', '');
+
         try {
-            const params = new URLSearchParams({ type: type, start: state.start || '', end: state.end || '' });
-            const response = await fetch('/Dashboard/Popup?' + params.toString(), { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Unable to load dashboard details.');
-            renderPopup(data);
+            var dashboardDate = page.getAttribute('data-dashboard-date') || '';
+            var response = await fetch(url + '?type=' + encodeURIComponent(type) + '&date=' + encodeURIComponent(dashboardDate), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            });
+            var payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(payload.message || 'Unable to load dashboard details.');
+            renderStatisticDetail(payload.detail || {});
         } catch (error) {
-            renderPopup({ title: popupLabel(type), subtitle: '', columns: [], rows: [], summary: { Error: error.message || 'Unable to load details.' } });
+            if (loading) loading.hidden = true;
+            if (wrap) wrap.hidden = true;
+            if (empty) {
+                empty.hidden = false;
+                empty.textContent = error && error.message ? error.message : 'Unable to load dashboard details.';
+            }
         }
     }
 
-    function popupLabel(type) {
-        return ({
-            checkin: 'Today’s Check-ins', checkout: 'Today’s Completed Check-outs', available: 'Available Rooms', occupied: 'Occupied Rooms', blocked: 'Blocked Rooms', dirty: 'Dirty Rooms', receivables: 'Receivables', expense: 'Total Expenses', profitloss: 'Operational P/L', noshow: 'No Show - Selected Dates', cancellation: 'Cancellations - Selected Dates'
-        })[type] || 'Details';
-    }
-
-    function formatMoney(value) {
-        const n = Number(value || 0);
-        return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function formatRange(start, end) {
-        return (start || '') + (start && end ? ' - ' : '') + (end || '');
-    }
-
-    document.querySelectorAll('[data-popup]').forEach(function (element) {
-        element.addEventListener('click', function (event) {
-            const type = element.getAttribute('data-popup');
-            if (type) { event.preventDefault(); openPopup(type); }
+    function wireStatisticDetails() {
+        document.querySelectorAll('[data-dashboard-statistic]').forEach(function (node) {
+            node.addEventListener('click', function (event) {
+                event.preventDefault();
+                openStatisticModal(node.getAttribute('data-dashboard-statistic') || '');
+            });
         });
-    });
-
-    const modalClose = document.getElementById('dashboardModalClose');
-    if (modalClose) modalClose.addEventListener('click', closeModal);
-    if (overlay) overlay.addEventListener('click', function (event) { if (event.target === overlay) closeModal(); });
-    document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { closeModal(); closeActionMenus(); closeCalendar(); } });
-
-    function closeActionMenus(except) {
-        document.querySelectorAll('.dashboard-action-wrap.open').forEach(function (wrap) {
-            if (except && wrap === except) return;
-            wrap.classList.remove('open');
-            const menu = wrap.querySelector('.dashboard-action-menu');
-            if (menu) { menu.style.top = ''; menu.style.left = ''; }
+        document.querySelectorAll('[data-dashboard-stat-close]').forEach(function (node) {
+            node.addEventListener('click', closeStatisticModal);
+        });
+        var overlay = document.getElementById('dashboardStatisticOverlay');
+        if (overlay) overlay.addEventListener('click', closeStatisticModal);
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') closeStatisticModal();
         });
     }
 
-    document.querySelectorAll('.btn-actions').forEach(function (button) {
-        button.addEventListener('click', function (event) {
-            event.preventDefault(); event.stopPropagation();
-            const wrap = button.closest('.dashboard-action-wrap');
-            if (!wrap) return;
-            const menu = wrap.querySelector('.dashboard-action-menu');
-            if (!menu) return;
-            const wasOpen = wrap.classList.contains('open');
-            closeActionMenus(wrap);
-            if (wasOpen) { wrap.classList.remove('open'); return; }
-            const rect = button.getBoundingClientRect();
-            const width = 220;
-            let left = Math.max(8, rect.right - width);
-            if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
-            wrap.classList.add('open');
-            menu.style.left = left + 'px';
-            menu.style.top = (rect.bottom + 5) + 'px';
+    function updateJsonNode(id, value) {
+        var node = document.getElementById(id);
+        if (node) node.textContent = JSON.stringify(value || []);
+    }
+
+    function pageCurrency() {
+        var page = document.querySelector('.dashboard-page');
+        return page ? (page.getAttribute('data-currency') || '£') : '£';
+    }
+
+    function money0(value) {
+        var number = Number(value || 0);
+        return pageCurrency() + number.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+
+    function setHtmlText(id, value) {
+        var node = document.getElementById(id);
+        if (node) node.textContent = value;
+    }
+
+    function createCell(value, right) {
+        var td = document.createElement('td');
+        td.textContent = value == null ? '' : String(value);
+        if (right) td.className = 'dashboard-right';
+        return td;
+    }
+
+    function renderRevenueSources(rows) {
+        var body = document.getElementById('dashboardRevenueSourcesBody');
+        if (!body) return;
+        body.replaceChildren();
+        if (!rows || !rows.length) {
+            var emptyRow = document.createElement('tr');
+            var empty = createCell('No revenue on the books for this period.', false);
+            empty.colSpan = 5;
+            empty.className = 'dashboard-empty-cell';
+            emptyRow.appendChild(empty);
+            body.appendChild(emptyRow);
+            return;
+        }
+        rows.forEach(function (item) {
+            var tr = document.createElement('tr');
+            tr.appendChild(createCell(item.source || 'Unknown', false));
+            tr.appendChild(createCell(item.roomNights || 0, true));
+            tr.appendChild(createCell(money0(item.adr), true));
+            tr.appendChild(createCell(money0(item.revenue), true));
+            tr.appendChild(createCell(Number(item.sharePercent || 0).toFixed(1).replace(/\.0$/, '') + '%', true));
+            body.appendChild(tr);
         });
-    });
-    document.addEventListener('click', function (event) { if (!event.target.closest('.dashboard-action-wrap')) closeActionMenus(); });
-    window.addEventListener('resize', function () { closeActionMenus(); closeCalendar(); });
-    window.addEventListener('scroll', function () { closeActionMenus(); }, true);
-
-    // Dual-month range calendar, replacing the Web Forms postback calendar without changing its behavior.
-    const calendar = document.getElementById('calendarPopup');
-    const toggle = document.getElementById('calendarToggle');
-    const leftGrid = document.getElementById('leftCalendar');
-    const rightGrid = document.getElementById('rightCalendar');
-    const leftHeader = document.getElementById('leftMonthHeader');
-    const rightHeader = document.getElementById('rightMonthHeader');
-    const rangeInput = document.getElementById('dashboardDateRange');
-    const startInput = document.getElementById('dashboardStartDate');
-    const endInput = document.getElementById('dashboardEndDate');
-    const rangeText = document.getElementById('selectedRangeText');
-    let selectedStart = parseIso(startInput && startInput.value);
-    let selectedEnd = parseIso(endInput && endInput.value);
-    let viewMonth = new Date((selectedStart || new Date()).getFullYear(), (selectedStart || new Date()).getMonth(), 1);
-
-    function parseIso(value) {
-        if (!value) return null;
-        const parts = value.split('-').map(Number);
-        return parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : null;
     }
-    function iso(date) {
-        return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
-    }
-    function display(date) { return String(date.getDate()).padStart(2, '0') + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + date.getFullYear(); }
-    function sameDay(a, b) { return !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
-    function dayValue(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
 
-    function renderMonth(grid, header, date) {
-        if (!grid || !header) return;
-        header.textContent = date.toLocaleString(undefined, { month: 'long', year: 'numeric' });
-        grid.innerHTML = '';
-        ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(function (d) { const el = document.createElement('div'); el.className = 'weekday'; el.textContent = d; grid.appendChild(el); });
-        const first = new Date(date.getFullYear(), date.getMonth(), 1);
-        const days = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-        for (let i = 0; i < first.getDay(); i++) { const blank = document.createElement('span'); grid.appendChild(blank); }
-        for (let day = 1; day <= days; day++) {
-            const d = new Date(date.getFullYear(), date.getMonth(), day);
-            const btn = document.createElement('button');
-            btn.type = 'button'; btn.className = 'calendar-day'; btn.textContent = day;
-            if (sameDay(d, selectedStart) || sameDay(d, selectedEnd)) btn.classList.add('selected');
-            else if (selectedStart && selectedEnd && dayValue(d) > dayValue(selectedStart) && dayValue(d) < dayValue(selectedEnd)) btn.classList.add('in-range');
-            btn.addEventListener('click', function () { chooseDate(d); });
-            grid.appendChild(btn);
+    function renderRoomTypes(rows) {
+        var body = document.getElementById('dashboardRoomTypesBody');
+        if (!body) return;
+        body.replaceChildren();
+        if (!rows || !rows.length) {
+            var emptyRow = document.createElement('tr');
+            var empty = createCell('No room-type performance data found.', false);
+            empty.colSpan = 8;
+            empty.className = 'dashboard-empty-cell';
+            emptyRow.appendChild(empty);
+            body.appendChild(emptyRow);
+            return;
+        }
+        rows.forEach(function (item) {
+            var tr = document.createElement('tr');
+            var name = createCell('', false);
+            var strong = document.createElement('strong');
+            strong.textContent = item.category || '';
+            name.appendChild(strong);
+            tr.appendChild(name);
+            tr.appendChild(createCell(item.rooms || 0, true));
+
+            var tonight = document.createElement('td');
+            var progress = document.createElement('div');
+            progress.className = 'dashboard-progress';
+            var bar = document.createElement('span');
+            bar.style.width = Math.max(0, Math.min(100, Number(item.occupancyTonight || 0))) + '%';
+            progress.appendChild(bar);
+            var small = document.createElement('small');
+            small.textContent = Number(item.occupancyTonight || 0).toFixed(1).replace(/\.0$/, '') + '%';
+            tonight.appendChild(progress);
+            tonight.appendChild(small);
+            tr.appendChild(tonight);
+
+            tr.appendChild(createCell(Number(item.occupancyNext30 || 0).toFixed(1).replace(/\.0$/, '') + '%', true));
+            tr.appendChild(createCell(money0(item.adr), true));
+            tr.appendChild(createCell(money0(item.revPar), true));
+            tr.appendChild(createCell(money0(item.revenue), true));
+            tr.appendChild(createCell(Number(item.contributionPercent || 0).toFixed(1).replace(/\.0$/, '') + '%', true));
+
+            body.appendChild(tr);
+        });
+    }
+
+    function renderPrices(rows) {
+        var root = document.getElementById('dashboardPrices');
+        if (!root) return;
+        root.replaceChildren();
+        if (!rows || !rows.length) {
+            var empty = document.createElement('div');
+            empty.className = 'dashboard-empty-block';
+            empty.textContent = 'No active rate-plan data was found for today.';
+            root.appendChild(empty);
+            return;
+        }
+        rows.forEach(function (item) {
+            var card = document.createElement('article');
+            card.className = 'dashboard-price-card';
+            var name = document.createElement('span');
+            name.textContent = item.category || '';
+            var rate = document.createElement('strong');
+            var oldRate = document.createElement('s');
+            oldRate.textContent = money0(item.currentRate);
+            var arrow = document.createElement('i');
+            arrow.className = 'fa-solid fa-arrow-right';
+            rate.appendChild(oldRate);
+            rate.appendChild(arrow);
+            rate.appendChild(document.createTextNode(' ' + money0(item.recommendedRate)));
+            var note = document.createElement('small');
+            var change = Number(item.changePercent || 0);
+            note.className = change > 0 ? 'dashboard-positive-text' : change < 0 ? 'dashboard-negative-text' : '';
+            note.textContent = (change > 0 ? 'Raise ' : change < 0 ? 'Reduce ' : 'Hold ') + Math.abs(change).toFixed(1).replace(/\.0$/, '') + '% · ' + (item.reason || '');
+            card.appendChild(name);
+            card.appendChild(rate);
+            card.appendChild(note);
+            root.appendChild(card);
+        });
+    }
+
+    function renderDecisions(rows) {
+        var root = document.getElementById('dashboardDecisions');
+        if (!root) return;
+        root.replaceChildren();
+        (rows || []).forEach(function (item) {
+            var li = document.createElement('li');
+            li.className = 'dashboard-decision dashboard-decision-' + (item.tone || 'info');
+            var dot = document.createElement('i');
+            var copy = document.createElement('div');
+            var title = document.createElement('strong');
+            var detail = document.createElement('p');
+            title.textContent = item.title || '';
+            detail.textContent = item.detail || '';
+            copy.appendChild(title);
+            copy.appendChild(detail);
+            li.appendChild(dot);
+            li.appendChild(copy);
+            root.appendChild(li);
+        });
+        if (!root.children.length) {
+            var li = document.createElement('li');
+            li.className = 'dashboard-decision dashboard-decision-positive';
+            li.innerHTML = '<i></i><div><strong>No urgent revenue actions</strong><p>No high-priority dashboard exception is currently available.</p></div>';
+            root.appendChild(li);
         }
     }
-    function renderCalendars() {
-        renderMonth(leftGrid, leftHeader, viewMonth);
-        renderMonth(rightGrid, rightHeader, new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
-        if (rangeText) rangeText.textContent = selectedStart ? display(selectedStart) + (selectedEnd ? ' - ' + display(selectedEnd) : ' - Select end date') : 'Select date range';
-    }
-    function chooseDate(date) {
-        if (!selectedStart || selectedEnd) { selectedStart = date; selectedEnd = null; }
-        else if (dayValue(date) < dayValue(selectedStart)) { selectedEnd = selectedStart; selectedStart = date; }
-        else { selectedEnd = date; }
-        renderCalendars();
-    }
-    function closeCalendar() { if (calendar) { calendar.classList.remove('open'); calendar.setAttribute('aria-hidden', 'true'); } }
-    function openCalendar() { if (calendar) { calendar.classList.add('open'); calendar.setAttribute('aria-hidden', 'false'); renderCalendars(); } }
-    if (toggle) toggle.addEventListener('click', function (event) { event.stopPropagation(); calendar && calendar.classList.contains('open') ? closeCalendar() : openCalendar(); });
-    if (calendar) calendar.addEventListener('click', function (event) { event.stopPropagation(); });
-    document.addEventListener('click', function () { closeCalendar(); });
-    document.querySelectorAll('[data-cal-nav]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            const nav = button.dataset.calNav;
-            if (nav === 'left-prev') viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1);
-            if (nav === 'left-next') viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1);
-            if (nav === 'right-prev') viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1);
-            if (nav === 'right-next') viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1);
-            renderCalendars();
-        });
-    });
-    const clear = document.getElementById('clearDateSelection');
-    if (clear) clear.addEventListener('click', function () { selectedStart = null; selectedEnd = null; renderCalendars(); });
-    const apply = document.getElementById('applyDateSelection');
-    if (apply) apply.addEventListener('click', function () {
-        if (!selectedStart) return;
-        if (!selectedEnd) selectedEnd = selectedStart;
-        if (startInput) startInput.value = iso(selectedStart);
-        if (endInput) endInput.value = iso(selectedEnd);
-        if (rangeInput) rangeInput.value = display(selectedStart) + ' - ' + display(selectedEnd);
-        state.start = iso(selectedStart); state.end = iso(selectedEnd);
-        closeCalendar();
-    });
 
-    initProgressRings();
-    initBookingsChart();
-    renderCalendars();
+    function renderAnalyticsFailure(message) {
+        ['dashboardRevenueSourcesBody', 'dashboardRoomTypesBody'].forEach(function (id) {
+            var body = document.getElementById(id);
+            if (!body) return;
+            var columns = id === 'dashboardRevenueSourcesBody' ? 5 : 8;
+            body.replaceChildren();
+            var tr = document.createElement('tr');
+            var td = createCell(message || 'Analytics could not be loaded.', false);
+            td.colSpan = columns;
+            td.className = 'dashboard-empty-cell';
+            tr.appendChild(td);
+            body.appendChild(tr);
+        });
+        var prices = document.getElementById('dashboardPrices');
+        if (prices) prices.innerHTML = '<div class="dashboard-empty-block">Analytics could not be loaded.</div>';
+        var decisions = document.getElementById('dashboardDecisions');
+        if (decisions) decisions.innerHTML = '<li class="dashboard-decision dashboard-decision-warning"><i></i><div><strong>Analytics unavailable</strong><p>Live operational figures above are still available.</p></div></li>';
+    }
+
+    async function loadAnalytics() {
+        var page = document.querySelector('.dashboard-page');
+        var url = page ? page.getAttribute('data-analytics-url') : '';
+        if (!url) return;
+        try {
+            var response = await fetch(url, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            });
+            var payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(payload.message || 'Dashboard analytics could not be loaded.');
+            var data = payload.analytics || {};
+
+            updateJsonNode('dashboardOccupancyData', data.occupancySeries || []);
+            updateJsonNode('dashboardOccupancyLyData', data.occupancyLastYearSeries || []);
+            updateJsonNode('dashboardFinancialData', data.financialSeries || []);
+
+            setHtmlText('dashboardOcc30', Number(data.occupancyNext30 || 0).toFixed(1).replace(/\.0$/, '') + '%');
+            setHtmlText('dashboardOcc60', Number(data.occupancyNext60 || 0).toFixed(1).replace(/\.0$/, '') + '%');
+            setHtmlText('dashboardOcc90', Number(data.occupancyNext90 || 0).toFixed(1).replace(/\.0$/, '') + '%');
+            setHtmlText('dashboardForecast7', Number(data.forecastNext7 || 0).toFixed(1).replace(/\.0$/, '') + '%');
+            setHtmlText('dashboardForecastTrend7', Number(data.forecastNext7 || 0).toFixed(1).replace(/\.0$/, '') + '%');
+
+            var financial = data.financialSeries || [];
+            var revenue30 = financial.reduce(function (sum, x) { return sum + Number(x.revenue || 0); }, 0);
+            var profit30 = financial.reduce(function (sum, x) { return sum + Number(x.profit || 0); }, 0);
+            var margin = revenue30 > 0 ? profit30 * 100 / revenue30 : 0;
+            setHtmlText('dashboardRevenue30', money0(revenue30));
+            setHtmlText('dashboardProfit30', money0(profit30));
+            setHtmlText('dashboardProfitMargin30', margin.toFixed(1).replace(/\.0$/, '') + '%');
+
+            renderRevenueSources(data.revenueSources || []);
+            renderRoomTypes(data.roomTypes || []);
+            renderPrices(data.priceRecommendations || []);
+            renderDecisions(data.decisions || []);
+
+            document.querySelectorAll('[data-occ-days]').forEach(function (button) { button.disabled = false; });
+            drawOccupancyOnBooks(30);
+            drawWhenVisible('dashboardRevenueChart', drawRevenueTrend);
+            drawWhenVisible('dashboardOccupancyTrendChart', drawOccupancyTrend);
+        } catch (error) {
+            console.warn(error);
+            renderAnalyticsFailure(error && error.message ? error.message : 'Dashboard analytics could not be loaded.');
+        }
+    }
+
+    function drawWhenVisible(elementId, draw) {
+        var element = document.getElementById(elementId);
+        if (!element) return;
+        if (!('IntersectionObserver' in window)) { draw(); return; }
+        var observer = new IntersectionObserver(function (entries) {
+            if (!entries.some(function (entry) { return entry.isIntersecting; })) return;
+            observer.disconnect();
+            window.requestAnimationFrame(draw);
+        }, { rootMargin: '220px 0px' });
+        observer.observe(element);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        ensureRoomStatusTemplateControls();
+        wireRoomControls();
+        wireGuestFilters();
+        wireOccupancyTabs();
+        wireStatisticDetails();
+        updateRoomLegend(Array.prototype.map.call(document.querySelectorAll('#dashboardRoomRack [data-room-state]'), function (node) {
+            return {
+                state: node.getAttribute('data-room-state') || 'vacant',
+                paymentState: node.getAttribute('data-room-payment') || ''
+            };
+        }));
+        drawWhenVisible('dashboardOccupancyChart', function () { drawOccupancyOnBooks(30); });
+        drawWhenVisible('dashboardExceptionChart', drawExceptionChart);
+
+        // Let the live room/guest/financial headline render first, then retrieve
+        // heavier charts and rate analysis without holding up first paint.
+        var startAnalytics = function () { loadAnalytics(); };
+        if ('requestIdleCallback' in window) {
+            window.requestIdleCallback(startAnalytics, { timeout: 500 });
+        } else {
+            window.setTimeout(startAnalytics, 80);
+        }
+    });
 })();
