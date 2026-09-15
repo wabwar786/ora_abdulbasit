@@ -1,38 +1,44 @@
 # ORAPMS — Developer Guide
 
-You are working on a module of the ORAPMS hotel property management system. You
-do not have the master project, so these conventions are the contract your work
-is merged against.
+You are building a module of the ORAPMS hotel property management system. You do
+not have the master project, so these conventions are the contract your work is
+merged against.
 
-Following them means your work lands in master unchanged. Not following them
-means it gets held back for rework.
+Everything in this guide comes from a merge that went wrong. Nothing here is
+style preference — each rule exists because breaking it cost hours on the master
+side, in ways your own build never showed.
+
+**Understand this first:** your project compiles because it is self-consistent.
+Every namespace it references is one it declares. Master is a different set of
+namespaces. A file that is correct in your folder can be wrong the moment it
+lands — which is why "it works on my machine" is true here, and not useful.
 
 ---
 
-## 1. Namespaces
+## 1. Namespaces — the single biggest cause of failed merges
 
-The root namespace is **`Orapmshms`**. Your namespace must match the folder the
-file lives in.
+The root namespace is **`Orapmshms`**. Your namespace matches the folder the file
+lives in. Nothing more, nothing less.
 
 | File is a... | Folder | Namespace |
 |---|---|---|
 | Controller | `Controllers/` | `Orapmshms.Controllers` |
 | Service or its interface | `Services/` | `Orapmshms.Services` |
 | Background worker / queue | `Services/<Feature>Jobs/` | `Orapmshms.Services.<Feature>Jobs` |
-| Model, ViewModel, Request, Result | `Models/` | `Orapmshms.Models` |
+| Model, ViewModel, Request, Result, Filter, Row | `Models/` | `Orapmshms.Models` |
 | Action filter | `Filters/` | `Orapmshms.Filters` |
 | Service registration module | `Infrastructure/ServiceRegistration/Modules/` | `Orapmshms.Infrastructure.ServiceRegistration.Modules` |
 
-### Do not create nested namespaces
+### Never create a nested namespace
 
-A **nested namespace** is one with an extra segment on the end, used to group a
-module's own types.
+A **nested namespace** has an extra segment on the end, used to group a module's
+own types.
 
 **Do not do this:**
 
 ```csharp
 // File: Models/ReservationListViewModel.cs
-namespace Orapmshms.Models.ReservationList;   // ← extra ".ReservationList" segment
+namespace Orapmshms.Models.ReservationList;   // ← extra ".ReservationList"
 
 public sealed class ReservationListViewModel { }
 public sealed class ReservationFilter { }
@@ -52,57 +58,149 @@ public sealed class ReservationRow { }
 public enum ActionOutcome { Ok, Failed }
 ```
 
-The same applies anywhere. `Orapmshms.Services.ReservationList` is nested and
+The same in every folder. `Orapmshms.Services.ReservationList` is nested and
 wrong; `Orapmshms.Services` is correct. The only exception is the jobs folder in
 the table above, where the extra segment is part of the agreed structure.
 
-### Why this rule exists
+### What actually happened
 
-A nested namespace does not break anything on its own — it compiles and it
-deploys fine. The rule is about keeping the whole codebase consistent, so that
-any developer opening any file knows the namespace from the folder alone, and so
-that merges do not have to rewrite namespaces and chase down the `using`
-statements that point at them.
+`Orapmshms.Models.ReservationList` compiled perfectly in the developer's project.
+On merge the models moved into `Orapmshms.Models`, and six other files were left
+importing a namespace that no longer existed:
 
-### Name your types so they cannot collide
+```
+The type or namespace name 'ReservationList' does not exist
+in the namespace 'Orapmshms.Models'
+```
+
+Four `.cs` files and two `.cshtml` files. The error names the symbol, not the
+cause. It took three days to trace.
+
+### Razor counts too
+
+The broken references were not only in `.cs` files. These two lines sat at the
+top of a view and produced the same error:
+
+```razor
+@model Orapmshms.Models.ReservationList.ReservationListViewModel
+@using Orapmshms.Models.ReservationList
+```
+
+Correct:
+
+```razor
+@model Orapmshms.Models.ReservationListViewModel
+```
+
+Check every `@model`, `@using` and `@inject` line in your views before handing
+over. They are easy to forget because nothing in your project complains about
+them.
+
+---
+
+## 2. Name your types so they cannot collide
 
 Flat namespaces mean your type names share one space with everyone else's. Two
-developers who both write `ActionOutcome` or `Filter` create a genuine clash
-that has to be resolved by hand.
-
-Prefix your types with your module name:
+developers who both write `ActionOutcome`, `Filter` or `Row` create a clash that
+has to be resolved by hand — and no tool will resolve it, because deciding which
+class the product keeps is not a mechanical question.
 
 ```csharp
-// Weak - very likely to collide with another module
+// Weak - very likely to collide
 public enum ActionOutcome { }
 public sealed class Filter { }
 public sealed class Row { }
+public sealed class Summary { }
 
 // Strong - unmistakably yours
 public enum ReservationActionOutcome { }
 public sealed class ReservationFilter { }
 public sealed class ReservationRow { }
+public sealed class ReservationSummary { }
 ```
 
-This matters more than the namespace rule does. A namespace mismatch is a
-mechanical fix; a name collision needs somebody to decide which type wins.
+**This matters more than the namespace rule.** A namespace mismatch is a
+mechanical fix. A name collision needs somebody to decide which type wins, and
+that somebody is the person merging, who wrote neither class.
 
 ---
 
-## 2. File naming
+## 3. Stylesheets
 
-- **One public type per file.** The file name matches the type name.
-- Interface in its own file: `IReservationListService.cs` and
-  `ReservationListService.cs`.
-- When converting a Web Forms page, **keep the original page name**. `BulkCheckin`
-  stays `BulkCheckin` — do not rename it to `BulkCheckIn`.
+### Never touch a shared file without saying so
 
-Small supporting types (an enum, a small record used only by that file) may sit
-alongside the main type. Anything reused across files gets its own file.
+`pms-master.css` and `_PmsLayout.cshtml` belong to the whole product. Changing
+them affects every page every other developer built.
+
+If your feature genuinely needs a change there, say so explicitly in your
+handover — one sentence is enough. Shared stylesheets are reviewed rule by rule
+during the merge, and knowing your intent up front is the difference between a
+clean merge and a broken sidebar on every page.
+
+### Your feature's CSS goes in its own file
+
+```
+wwwroot/css/reservation-list.css
+wwwroot/js/reservation-list.js
+```
+
+### Prefix every class name
+
+```css
+/* Good */
+.reslist-grid { }
+.reslist-row { }
+
+/* Bad - will collide with someone */
+.grid { }
+.row { }
+.table-box { }
+.actions { }
+```
+
+### Never define custom properties in `:root`
+
+```css
+/* Never. This restyles every page in the product. */
+:root {
+    --primary: #2c5788;
+    --radius: 8px;
+}
+```
+
+Scope them to your own root element instead:
+
+```css
+.reslist-root {
+    --reslist-primary: #2c5788;
+    --reslist-radius: 8px;
+}
+```
+
+### Never create a class starting with `pms-`
+
+That prefix belongs to the shared master layout.
+
+### If you rewrote a stylesheet, say "rewrite"
+
+There are two ways a stylesheet can change: you **added** rules, or you
+**rebuilt** the file. The merge handles these completely differently, and getting
+it wrong is expensive.
+
+- **Added** → the merge can take just your new rules
+- **Rewrote** → the whole file has to be replaced
+
+When a rewrite is merged rule by rule, master's abandoned properties survive
+inside your rebuilt rules and fight them. That happened to the master layout: 79
+of 94 rules had been rewritten, the merge kept master's leftovers, and the
+sidebar came out with icons overlapping the text on every page. Neither version
+looked like that on its own.
+
+One sentence — "I rebuilt this file, don't merge it" — prevents all of it.
 
 ---
 
-## 3. Services
+## 4. Services
 
 Registration is automatic. **Do not edit `Program.cs`.**
 
@@ -138,7 +236,7 @@ public sealed class ReservationListService : IReservationListService
 }
 ```
 
-`IFooService` + `FooService` is picked up automatically and registered as
+`IFooService` + `FooService` is discovered automatically and registered as
 **Scoped**.
 
 ### If you need a Singleton
@@ -157,11 +255,18 @@ public sealed class RateCalculator : IRateCalculator { }
 When in doubt, leave it Scoped. A scoped service promoted to singleton leaks one
 user's hotel into another user's request, and nothing errors when it happens.
 
+### Mock services
+
+If you ship a `FooMockService` alongside the real one, make it obvious in your
+handover which one the interface should resolve to. Two implementations of one
+interface is fine; which one the container picks is not something a merge can
+guess.
+
 ---
 
-## 4. Background workers
+## 5. Background workers
 
-A plain background worker needs nothing from you — it is started automatically:
+A plain background worker needs nothing from you:
 
 ```csharp
 namespace Orapmshms.Services.ReservationJobs;
@@ -199,26 +304,8 @@ public sealed class ReservationJobsModule : IServiceModule
 **Why the factory calls matter:** writing `AddSingleton<ReservationSyncWorker>()`
 twice creates **two separate instances** — one filling a channel nobody reads,
 one reading a channel nobody fills. The work silently never runs, and no error
-appears anywhere. This is the single hardest bug in the project to find, so the
-shape above is not a style preference.
-
----
-
-## 5. CSS and JavaScript
-
-- Prefix new class names with your feature: `.reslist-grid`, `.reslist-row`
-- **Never define custom properties in `:root`.** They are global and restyle
-  every page in the product.
-- **Never create a class starting with `pms-`.** Those belong to the shared
-  master layout.
-- Put your feature's styles in their own file: `wwwroot/css/reservation-list.css`
-
-If you must change a shared stylesheet such as `pms-master.css`, say so when you
-hand over your work. Shared stylesheets are reviewed rule by rule during the
-merge, and knowing your intent up front avoids your change being skipped.
-
-A colliding class name produces no error at all — the page simply renders wrong,
-and it is very hard to trace. That is why this rule is strict.
+appears anywhere. This is the hardest bug in the project to find, so the shape
+above is not a style preference.
 
 ---
 
@@ -239,7 +326,7 @@ var sql = "SELECT * FROM dbo.payments WHERE hotel_id = '" + hotelId + "'";
 
 Rules:
 
-- Always parameterised. No string concatenation, no interpolation.
+- Always parameterised. No concatenation, no interpolation.
 - Always an explicit size: `SqlDbType.VarChar, 50`, not `AddWithValue`.
 - Name the columns you need. No `SELECT *`.
 - Set `CommandTimeout` on anything that scans a date range.
@@ -247,25 +334,45 @@ Rules:
 
 ---
 
-## 7. Never send these files
+## 7. Files you must never send
 
 `Program.cs` · `Startup.cs` · `*.csproj` · `*.sln` · `appsettings*.json` ·
-`_PmsLayout.cshtml` · `_ViewImports.cshtml` · `_ViewStart.cshtml` · `bin` · `obj`
+`_PmsLayout.cshtml` · `_ViewImports.cshtml` · `_ViewStart.cshtml` ·
+`pms-master.css` · `pms-master.js` · `bin` · `obj` · `.vs`
 
 These belong to master. If your `Program.cs` contains a registration your feature
 needs, that is fine — it is read and applied during the merge — but the file
 itself is never copied.
 
+If you believe you genuinely need a change in one of these, **ask first**. Do not
+send a modified copy and hope it is noticed.
+
 ---
 
 ## 8. Before you hand over
 
-1. Build with no warnings you introduced.
-2. Run the project, log in, open your page, and exercise it properly.
-3. Open one **other** page too — Dashboard is a good check that you have not
-   broken anything shared.
-4. Create `changes.txt` in your project root listing the files in this update,
-   one per line:
+1. **Build with no warnings you introduced.**
+
+2. **Check every Razor directive.** Open each `.cshtml` and read the top:
+   `@model`, `@using`, `@inject`. These are the lines that break on merge and
+   never break for you.
+
+3. **Search your own project for nested namespaces.** Find in Files:
+
+   ```
+   namespace Orapmshms.Models.
+   namespace Orapmshms.Services.
+   ```
+
+   Anything found — other than a `...Jobs` folder — has to be flattened.
+
+4. **Run the project.** Log in, open your page, and exercise it properly: save,
+   delete, search, page through.
+
+5. **Open one page you did not build.** Dashboard is a good check that you have
+   not broken anything shared.
+
+6. **Write `changes.txt`** in your project root, one file per line:
 
 ```
 Controllers/ReservationListController.cs
@@ -273,21 +380,44 @@ Services/IReservationListService.cs
 Services/ReservationListService.cs
 Models/ReservationListViewModel.cs
 Views/ReservationList/Index.cshtml
+Views/ReservationList/_ReservationTable.cshtml
 wwwroot/css/reservation-list.css
 wwwroot/js/reservation-list.js
 ```
+
+7. **Say what you rewrote.** One line in your handover message:
+
+   > Rebuilt `reservation-list.css` from scratch — replace, do not merge.
+   > No shared files touched.
 
 ---
 
 ## Checklist
 
-- [ ] Namespace matches the folder, with no extra nested segment
-- [ ] Type names carry the module prefix
+**Namespaces**
+- [ ] Every namespace matches its folder, with no extra nested segment
+- [ ] Searched for `namespace Orapmshms.Models.` and `namespace Orapmshms.Services.`
+- [ ] Every `@model`, `@using` and `@inject` in every view checked
+
+**Naming**
+- [ ] Every type name carries the module prefix
+- [ ] No class called `Filter`, `Row`, `Summary`, `ActionOutcome` or similar
 - [ ] One public type per file, file named after it
+
+**Styles**
+- [ ] CSS classes prefixed with the feature name
+- [ ] Nothing defined in `:root`
+- [ ] No class starting with `pms-`
+- [ ] Shared file changes declared in the handover
+
+**Code**
 - [ ] `Program.cs` untouched
 - [ ] Services follow `IFooService` / `FooService`
 - [ ] Worker that is also a queue has a module file
-- [ ] CSS classes prefixed, `:root` untouched, no `pms-` names
 - [ ] All SQL parameterised with explicit sizes
+
+**Handover**
 - [ ] Project builds and the page was tested in a browser
+- [ ] One page you did not build also opens correctly
 - [ ] `changes.txt` written
+- [ ] Rewrites and shared-file changes stated in writing
