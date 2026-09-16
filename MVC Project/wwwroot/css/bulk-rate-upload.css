@@ -177,9 +177,9 @@
     background: var(--bulkrate-green);
 }
 
-.bulkrate-job-status.is-busy .bulkrate-status-dot { background: var(--bulkrate-blue); animation: bulkrate-pulse 1s ease-in-out infinite; }
+.bulkrate-job-status.bulk-rate-upload-is-busy .bulkrate-status-dot { background: var(--bulkrate-blue); animation: bulkrate-pulse 1s ease-in-out infinite; }
 .bulkrate-job-status.is-warning .bulkrate-status-dot { background: var(--bulkrate-orange); }
-.bulkrate-job-status.is-error .bulkrate-status-dot { background: var(--bulkrate-red); }
+.bulkrate-job-status.bulk-rate-upload-is-error .bulkrate-status-dot { background: var(--bulkrate-red); }
 
 @keyframes bulkrate-pulse {
     0%,100% { opacity: 1; transform: scale(1); }
@@ -817,22 +817,22 @@
 }
 
 .bulkrate-calendar-day:hover { background: #edf3fa; color: #24384f; }
-.bulkrate-calendar-day.outside-month { color: #c0c8d3; }
+.bulkrate-calendar-day.bulk-rate-upload-outside-month { color: #c0c8d3; }
 
-.bulkrate-calendar-day.range-fill {
+.bulkrate-calendar-day.bulk-rate-upload-range-fill {
     background: #e7f0fa;
     color: #4f7198;
     border-radius: 4px;
 }
 
-.bulkrate-calendar-day.range-start,
-.bulkrate-calendar-day.range-end {
+.bulkrate-calendar-day.bulk-rate-upload-range-start,
+.bulkrate-calendar-day.bulk-rate-upload-range-end {
     background: var(--bulkrate-blue) !important;
     color: #fff !important;
     font-weight: 600;
 }
 
-.bulkrate-calendar-day.today::after {
+.bulkrate-calendar-day.bulk-rate-upload-today::after {
     content: "";
     position: absolute;
     left: 50%;
@@ -844,8 +844,8 @@
     background: #4d79a8;
 }
 
-.bulkrate-calendar-day.range-start.today::after,
-.bulkrate-calendar-day.range-end.today::after { background: #fff; }
+.bulkrate-calendar-day.bulk-rate-upload-range-start.bulk-rate-upload-today::after,
+.bulkrate-calendar-day.bulk-rate-upload-range-end.bulk-rate-upload-today::after { background: #fff; }
 
 .bulkrate-calendar-footer {
     min-height: 55px;

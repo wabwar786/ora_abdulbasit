@@ -149,10 +149,10 @@
         statusText.textContent = message;
         statusWrap.title = message;
         statusWrap.hidden = message.length === 0;
-        statusWrap.classList.remove("is-busy", "is-warning", "is-error");
-        if (kind === "busy") statusWrap.classList.add("is-busy");
+        statusWrap.classList.remove("bulk-rate-upload-is-busy", "is-warning", "bulk-rate-upload-is-error");
+        if (kind === "busy") statusWrap.classList.add("bulk-rate-upload-is-busy");
         else if (kind === "warning") statusWrap.classList.add("is-warning");
-        else if (kind === "error") statusWrap.classList.add("is-error");
+        else if (kind === "error") statusWrap.classList.add("bulk-rate-upload-is-error");
     }
 
     function setJobUi(isBusy) {
@@ -572,7 +572,7 @@
         const first = monthStart(monthDate);
         const firstVisible = new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay());
         const month = first.getMonth();
-        const today = hotelTodayDate();
+        const bulk-rate-upload-today = hotelTodayDate();
         const startTime = calendarStart ? dayTime(calendarStart) : null;
         const endTime = calendarEnd ? dayTime(calendarEnd) : null;
 
@@ -585,8 +585,8 @@
             button.textContent = String(current.getDate());
             button.dataset.date = toIso(current);
 
-            if (current.getMonth() !== month) button.classList.add("outside-month");
-            if (sameDay(current, today)) button.classList.add("today");
+            if (current.getMonth() !== month) button.classList.add("bulk-rate-upload-outside-month");
+            if (sameDay(current, bulk-rate-upload-today)) button.classList.add("bulk-rate-upload-today");
             if (isBeforeHotelToday(current)) {
                 button.disabled = true;
                 button.classList.add("is-disabled");
@@ -594,9 +594,9 @@
                 button.title = "Past dates are not available for this hotel.";
             }
             if (startTime !== null && endTime !== null && currentTime >= startTime && currentTime <= endTime)
-                button.classList.add("range-fill");
-            if (startTime !== null && currentTime === startTime) button.classList.add("range-start");
-            if (endTime !== null && currentTime === endTime) button.classList.add("range-end");
+                button.classList.add("bulk-rate-upload-range-fill");
+            if (startTime !== null && currentTime === startTime) button.classList.add("bulk-rate-upload-range-start");
+            if (endTime !== null && currentTime === endTime) button.classList.add("bulk-rate-upload-range-end");
 
             host.appendChild(button);
         }
