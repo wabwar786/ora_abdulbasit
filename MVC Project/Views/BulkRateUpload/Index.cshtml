@@ -1,0 +1,263 @@
+@model Orapmshms.Models.BulkRateUploadModel
+@{
+    ViewData["Title"] = "Bulk Rate Upload";
+    Layout = "_PmsLayout";
+    var propertyBaseRateText = Model.PropertyBaseRate.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/bulk-rate-upload.css" asp-append-version="true" />
+}
+
+<div id="bulkRatePage"
+     class="bulkrate-root"
+     data-preview-url="@Url.Action("Preview", "BulkRateUpload")"
+     data-start-url="@Url.Action("Start", "BulkRateUpload")"
+     data-history-url="@Url.Action("History", "BulkRateUpload")"
+     data-status-url-template="@Url.Action("Status", "BulkRateUpload", new { jobId = "__JOB_ID__" })"
+     data-hotel-today="@Model.HotelTodayIso"
+     data-property-base-rate="@propertyBaseRateText">
+
+    <form id="bulkRateAntiForgery" class="bulkrate-hidden">@Html.AntiForgeryToken()</form>
+
+    @if (!string.IsNullOrWhiteSpace(ViewBag.LoadError as string))
+    {
+        <div class="bulkrate-alert bulkrate-alert-error">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <span>@ViewBag.LoadError</span>
+        </div>
+    }
+
+    <section class="bulkrate-toolbar-card" aria-labelledby="bulkRateTitle">
+        <div class="bulkrate-heading">
+            <span class="bulkrate-heading-icon"><i class="fa-solid fa-arrow-trend-up"></i></span>
+            <div>
+                <h1 id="bulkRateTitle">Bulk Rate Upload</h1>
+                <p>Update room rates across plans and date ranges without blocking the page.</p>
+            </div>
+        </div>
+
+        <div class="bulkrate-toolbar-actions">
+            <div class="bulkrate-job-status" aria-live="polite" hidden>
+                <span class="bulkrate-status-dot"></span>
+                <span id="bulkRateStatus"></span>
+            </div>
+            <button type="button" class="bulkrate-btn bulkrate-btn-secondary" id="bulkRatePreview">
+                <i class="fa-regular fa-eye"></i><span>Preview</span>
+            </button>
+            <button type="button" class="bulkrate-btn bulkrate-btn-primary" id="bulkRateSave">
+                <i class="fa-regular fa-floppy-disk"></i><span>Save Rates</span>
+            </button>
+            <button type="button" class="bulkrate-btn bulkrate-btn-ghost" id="bulkRateReset">
+                <i class="fa-solid fa-rotate-left"></i><span>Reset</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="bulkrate-panel bulkrate-selection-panel">
+        <div class="bulkrate-panel-head">
+            <div>
+                <h2>Rate Setup</h2>
+                <p>Select plans, rooms, date ranges and applicable days.</p>
+            </div>
+        </div>
+
+        <div class="bulkrate-two-column">
+            <div class="bulkrate-field">
+                <div class="bulkrate-field-head">
+                    <label id="bulkRatePlansLabel">Rate Plans</label>
+                    <div class="bulkrate-field-links">
+                        <button type="button" data-select-all="plans">Select all</button>
+                        <span>·</span>
+                        <button type="button" data-clear-all="plans">Clear</button>
+                    </div>
+                </div>
+                <div class="bulkrate-multi" data-multi="plans" aria-labelledby="bulkRatePlansLabel">
+                    <button type="button" class="bulkrate-multi-display" data-multi-toggle="plans" aria-expanded="false">
+                        <span class="bulkrate-multi-placeholder">Select rate plans</span>
+                        <span class="bulkrate-multi-tags"></span>
+                        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                    </button>
+                    <div class="bulkrate-multi-menu" data-multi-menu="plans" hidden>
+                        @foreach (var plan in Model.PlanOptions)
+                        {
+                            <label class="bulkrate-multi-option">
+                                <input type="checkbox" class="bulkrate-plan-choice" value="@plan.Value" data-label="@plan.Text" />
+                                <span>@plan.Text</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="bulkrate-field">
+                <div class="bulkrate-field-head">
+                    <label id="bulkRateRoomsLabel">Room Types</label>
+                    <div class="bulkrate-field-links">
+                        <button type="button" data-select-all="rooms">Select all</button>
+                        <span>·</span>
+                        <button type="button" data-clear-all="rooms">Clear</button>
+                    </div>
+                </div>
+                <div class="bulkrate-multi" data-multi="rooms" aria-labelledby="bulkRateRoomsLabel">
+                    <button type="button" class="bulkrate-multi-display" data-multi-toggle="rooms" aria-expanded="false">
+                        <span class="bulkrate-multi-placeholder">Select room types</span>
+                        <span class="bulkrate-multi-tags"></span>
+                        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                    </button>
+                    <div class="bulkrate-multi-menu" data-multi-menu="rooms" hidden>
+                        @foreach (var room in Model.RoomOptions)
+                        {
+                            <label class="bulkrate-multi-option">
+                                <input type="checkbox" class="bulkrate-room-choice" value="@room.Value" data-label="@room.Text" />
+                                <span>@room.Text</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bulkrate-setup-lower">
+            <div class="bulkrate-ranges-section">
+                <div class="bulkrate-subhead">
+                    <div>
+                        <h3>Date Ranges</h3>
+                        <span>Add separate ranges when the base rate changes.</span>
+                    </div>
+                    <button type="button" id="bulkRateAddRange" class="bulkrate-add-range">
+                        <i class="fa-solid fa-plus"></i><span>Add Range</span>
+                    </button>
+                </div>
+                <div id="bulkRateRanges" class="bulkrate-ranges"></div>
+            </div>
+
+            <div class="bulkrate-days-section">
+                <div class="bulkrate-subhead bulkrate-days-head">
+                    <div>
+                        <h3>Applicable Days</h3>
+                        <span>Choose weekdays included in the upload.</span>
+                    </div>
+                    <button type="button" class="bulkrate-link-btn" id="bulkRateAllDays">All days</button>
+                </div>
+                <div class="bulkrate-days-box" id="bulkRateDays">
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="0" checked /><span>Sun</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="1" checked /><span>Mon</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="2" checked /><span>Tue</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="3" checked /><span>Wed</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="4" checked /><span>Thu</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="5" checked /><span>Fri</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="6" checked /><span>Sat</span></label>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="bulkrate-panel bulkrate-summary-panel">
+        <div class="bulkrate-summary-head">
+            <div>
+                <h2>Update Summary</h2>
+                <p>Preview shows the selected root plans. Derived child rates are calculated during save.</p>
+            </div>
+            <div class="bulkrate-stats" aria-label="Bulk rate selection summary">
+                <div class="bulkrate-stat"><span>Plans</span><strong id="bulkRatePlanCount">0</strong></div>
+                <div class="bulkrate-stat"><span>Rooms</span><strong id="bulkRateRoomCount">0</strong></div>
+                <div class="bulkrate-stat"><span>Ranges</span><strong id="bulkRateRangeCount">0</strong></div>
+                <div class="bulkrate-stat"><span>Est. rows</span><strong id="bulkRateEstimatedRows">0</strong></div>
+            </div>
+        </div>
+
+        <div class="bulkrate-table-wrap">
+            <table class="bulkrate-summary-table">
+                <thead>
+                    <tr>
+                        <th>Date Range</th>
+                        <th>Room Type</th>
+                        <th>Rate Plan</th>
+                        <th class="bulkrate-number">Adjusted Rate</th>
+                    </tr>
+                </thead>
+                <tbody id="bulkRatePreviewBody">
+                    <tr><td colspan="4" class="bulkrate-empty">Select plans, room types and a complete date range to preview rates.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bulkrate-note">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Large saves run in controlled background batches. You can keep using the page while the job is processed.</span>
+        </div>
+    </section>
+
+    <details class="bulkrate-panel bulkrate-history-panel" id="bulkRateHistoryPanel">
+        <summary>
+            <span><i class="fa-solid fa-clock-rotate-left"></i> Recent Bulk Rate History</span>
+            <small>Open to view recent uploads</small>
+        </summary>
+        <div class="bulkrate-history-body">
+            <div class="bulkrate-history-toolbar">
+                <input type="search" id="bulkRateHistorySearch" placeholder="Search user, plan or room..." autocomplete="off" />
+                <button type="button" class="bulkrate-btn bulkrate-btn-secondary" id="bulkRateHistoryRefresh">
+                    <i class="fa-solid fa-rotate"></i><span>Refresh</span>
+                </button>
+            </div>
+            <div class="bulkrate-table-wrap bulkrate-history-table-wrap">
+                <table class="bulkrate-history-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Updated By</th>
+                            <th>Rate Plan</th>
+                            <th>Room Type</th>
+                            <th>Days</th>
+                            <th>Date From</th>
+                            <th>Date To</th>
+                            <th class="bulkrate-number">Base Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bulkRateHistoryBody">
+                        <tr><td colspan="8" class="bulkrate-empty">Open this section to load recent upload history.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
+    <div id="bulkRateCalendarPopover" class="bulkrate-calendar-popover" hidden>
+        <div class="bulkrate-calendar-popover-head">
+            <div><strong>Select date range</strong><span>Choose a start and end date</span></div>
+            <button type="button" class="bulkrate-calendar-close" id="bulkRateCalendarClose" aria-label="Close date picker">×</button>
+        </div>
+        <div class="bulkrate-calendar-months">
+            <section class="bulkrate-calendar-month">
+                <div class="bulkrate-calendar-month-head">
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                    <strong id="bulkRateCalendarLeftTitle"></strong>
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                </div>
+                <div class="bulkrate-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                <div class="bulkrate-calendar-grid" id="bulkRateCalendarLeft"></div>
+            </section>
+            <section class="bulkrate-calendar-month">
+                <div class="bulkrate-calendar-month-head">
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                    <strong id="bulkRateCalendarRightTitle"></strong>
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                </div>
+                <div class="bulkrate-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                <div class="bulkrate-calendar-grid" id="bulkRateCalendarRight"></div>
+            </section>
+        </div>
+        <div class="bulkrate-calendar-footer">
+            <span id="bulkRateCalendarText">Select date range</span>
+            <div>
+                <button type="button" class="bulkrate-calendar-clear" id="bulkRateCalendarClear">Clear</button>
+                <button type="button" class="bulkrate-calendar-apply" id="bulkRateCalendarApply">Apply</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/bulk-rate-upload.js" asp-append-version="true"></script>
+}
