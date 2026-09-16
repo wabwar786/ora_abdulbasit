@@ -1,6 +1,7 @@
 using System.Data;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Orapmshms.Models;
 using Orapmshms.Services.BulkRateJobs;
 
@@ -17,15 +18,25 @@ public sealed class BulkRateUploadService : IBulkRateUploadService
     private readonly ILogger<BulkRateUploadService> _logger;
 
     public BulkRateUploadService(
-        string connectionString,
+        IConfiguration configuration,
         IBulkRateChannelUploadService channelUploadService,
         ILogger<BulkRateUploadService> logger)
     {
-        _connectionString = string.IsNullOrWhiteSpace(connectionString)
-            ? throw new InvalidOperationException("Database connection string is missing.")
-            : connectionString;
-        _channelUploadService = channelUploadService;
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        _connectionString = configuration.GetConnectionString("con")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:con is missing from configuration.");
+
+        if (string.IsNullOrWhiteSpace(_connectionString))
+            throw new InvalidOperationException(
+                "ConnectionStrings:con is empty in configuration.");
+
+        _channelUploadService = channelUploadService
+            ?? throw new ArgumentNullException(nameof(channelUploadService));
+
+        _logger = logger
+            ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<BulkRateUploadModel> GetPageAsync(

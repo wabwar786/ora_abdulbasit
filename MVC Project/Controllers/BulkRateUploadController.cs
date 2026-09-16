@@ -24,30 +24,34 @@ public sealed class BulkRateUploadController : Controller
         IHotelClock hotelClock,
         ILogger<BulkRateUploadController> logger)
     {
-        var connectionString = configuration.GetConnectionString("con")
-            ?? throw new InvalidOperationException("ConnectionStrings:con is missing from configuration.");
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+        ArgumentNullException.ThrowIfNull(applicationLifetime);
 
+        _hotelClock = hotelClock ?? throw new ArgumentNullException(nameof(hotelClock));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        // Keep one constructor contract everywhere: pass IConfiguration, never a raw
+        // connection-string string. Each service resolves ConnectionStrings:con itself.
         var channelUploadService = new BulkRateChannelUploadService(
-            connectionString,
+            configuration,
             loggerFactory.CreateLogger<BulkRateChannelUploadService>());
 
         _service = new BulkRateUploadService(
-            connectionString,
+            configuration,
             channelUploadService,
             loggerFactory.CreateLogger<BulkRateUploadService>());
 
         // One process-wide bounded queue, created lazily the first time this feature is used.
         _queue = BulkRateUploadWorker.GetOrCreate(
-            connectionString,
+            configuration,
             loggerFactory,
             applicationLifetime.ApplicationStopping);
-        _hotelClock = hotelClock;
-        _logger = logger;
     }
 
+    // Clean MVC URL: /BulkRateUpload
     [HttpGet("")]
     [HttpGet("Index")]
-    [HttpGet("/UpdateRateValues.aspx")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
         var hotelId = SessionValue("hotel");
@@ -74,6 +78,15 @@ public sealed class BulkRateUploadController : Controller
                 HotelTodayIso = _hotelClock.GetHotelToday(hotelId).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
             });
         }
+    }
+
+    // Backward-compatible entry point for any old menu/bookmark that still points
+    // to UpdateRateValues.aspx with WebForms query-string values. The MVC feature
+    // uses Session, so discard the legacy query string and redirect to the clean URL.
+    [HttpGet("/UpdateRateValues.aspx")]
+    public IActionResult LegacyUpdateRateValues()
+    {
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpPost("Preview")]

@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 
 namespace Orapmshms.Services;
 
@@ -27,13 +28,21 @@ public sealed class BulkRateChannelUploadService : IBulkRateChannelUploadService
     private readonly ILogger<BulkRateChannelUploadService> _logger;
 
     public BulkRateChannelUploadService(
-        string connectionString,
+        IConfiguration configuration,
         ILogger<BulkRateChannelUploadService> logger)
     {
-        _connectionString = string.IsNullOrWhiteSpace(connectionString)
-            ? throw new InvalidOperationException("Database connection string is missing.")
-            : connectionString;
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        _connectionString = configuration.GetConnectionString("con")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:con is missing from configuration.");
+
+        if (string.IsNullOrWhiteSpace(_connectionString))
+            throw new InvalidOperationException(
+                "ConnectionStrings:con is empty in configuration.");
+
+        _logger = logger
+            ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<BulkRateChannelUploadResult> UploadRatesAsync(
