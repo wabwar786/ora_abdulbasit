@@ -1,0 +1,2203 @@
+/*
+   ORA PMS - Rate Plan Professional UI
+   Matches the PMS master shell and Bulk Rate Upload visual language.
+   This file intentionally has no Bootstrap dependency.
+*/
+
+.rp-page {
+    --rp-nav: #12233a;
+    --rp-blue: #2c5788;
+    --rp-blue-dark: #214368;
+    --rp-blue-soft: #e9f1fa;
+    --rp-blue-line: #d3e3f4;
+    --rp-bg: #f2f5f9;
+    --rp-card: #ffffff;
+    --rp-soft: #f7f9fc;
+    --rp-line: #e1e7ef;
+    --rp-line-2: #edf1f6;
+    --rp-text: #16202e;
+    --rp-text-2: #33425a;
+    --rp-muted: #5d6b80;
+    --rp-faint: #7c8798;
+    --rp-green: #0f6f59;
+    --rp-green-soft: #e5f5f0;
+    --rp-red: #b74444;
+    --rp-red-soft: #fff1f1;
+    --rp-amber: #a26c15;
+    --rp-amber-soft: #fff7e7;
+    --rp-shadow: 0 2px 8px rgba(22, 32, 46, .05);
+    min-width: 0;
+    padding: 12px 16px 20px;
+    color: var(--rp-text);
+    font-family: 'Montserrat', system-ui, sans-serif;
+    font-size: 11px;
+}
+
+    .rp-page *, .rp-page *::before, .rp-page *::after {
+        box-sizing: border-box;
+    }
+
+    .rp-page [hidden], .rp-hidden {
+        display: none !important;
+    }
+
+    .rp-page button, .rp-page input, .rp-page select, .rp-page textarea {
+        font: inherit;
+        color: inherit;
+    }
+
+    .rp-page a {
+        text-decoration: none;
+    }
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* top page bar */
+.rp-pagebar {
+    min-height: 62px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    background: #fff;
+    border: 1px solid var(--rp-line);
+    border-radius: 10px;
+    box-shadow: var(--rp-shadow);
+}
+
+.rp-pagebar-main {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.rp-pagebar-icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--rp-blue);
+    background: var(--rp-blue-soft);
+    border: 1px solid var(--rp-blue-line);
+    font-size: 13px;
+}
+
+.rp-pagebar-copy {
+    min-width: 0;
+}
+
+.rp-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+    .rp-title-row h1 {
+        margin: 0;
+        color: var(--rp-text);
+        font-size: 16px;
+        line-height: 1.2;
+        font-weight: 700;
+    }
+
+.rp-pagebar-copy p {
+    margin: 3px 0 0;
+    color: var(--rp-muted);
+    font-size: 9.5px;
+    line-height: 1.35;
+}
+
+.rp-title-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 21px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1px solid var(--rp-line);
+    background: var(--rp-soft);
+    color: var(--rp-muted);
+    font-size: 8.5px;
+    font-weight: 600;
+}
+
+.rp-pagebar-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+/* buttons */
+.rp-btn {
+    min-height: 34px;
+    padding: 0 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: #fff;
+    color: var(--rp-text-2);
+    font-size: 9.5px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+
+    .rp-btn:hover {
+        transform: translateY(-1px);
+    }
+
+    .rp-btn:disabled {
+        opacity: .55;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+.rp-btn-primary {
+    background: var(--rp-blue);
+    border-color: var(--rp-blue);
+    color: #fff;
+}
+
+    .rp-btn-primary:hover:not(:disabled) {
+        background: var(--rp-blue-dark);
+        border-color: var(--rp-blue-dark);
+        color: #fff;
+    }
+
+.rp-btn-secondary {
+    background: #fff;
+    border-color: #ccd6e2;
+    color: #405570;
+}
+
+    .rp-btn-secondary:hover:not(:disabled) {
+        background: #f6f8fb;
+        border-color: #b9c6d4;
+        color: #233b58;
+    }
+
+.rp-btn-save-base {
+    min-width: 72px;
+}
+
+/* main workspace */
+.rp-workspace {
+    display: grid;
+    grid-template-columns: minmax(330px, 450px) minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+}
+
+.rp-left-column, .rp-right-column {
+    min-width: 0;
+    position: relative;
+}
+
+.rp-left-column {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+}
+
+.rp-right-column {
+    min-width: 0;
+}
+
+/* cards */
+.rp-card {
+    min-width: 0;
+    background: var(--rp-card);
+    border: 1px solid var(--rp-line);
+    border-radius: 10px;
+    box-shadow: var(--rp-shadow);
+    overflow: hidden;
+}
+
+.rp-card-head {
+    min-height: 48px;
+    padding: 9px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid var(--rp-line-2);
+    background: #fbfcfe;
+}
+
+.rp-card-title-wrap {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rp-card-icon, .rp-setting-icon {
+    width: 29px;
+    height: 29px;
+    flex: 0 0 29px;
+    display: grid;
+    place-items: center;
+    border-radius: 7px;
+    background: var(--rp-blue-soft);
+    color: var(--rp-blue);
+    font-size: 10px;
+}
+
+.rp-card-head h2 {
+    margin: 0;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--rp-text);
+}
+
+.rp-card-head p {
+    margin: 2px 0 0;
+    color: var(--rp-faint);
+    font-size: 8.7px;
+    line-height: 1.3;
+}
+
+.rp-card-body {
+    padding: 10px;
+}
+
+.rp-count-badge {
+    min-width: 24px;
+    height: 22px;
+    padding: 0 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--rp-blue-line);
+    border-radius: 999px;
+    background: var(--rp-blue-soft);
+    color: var(--rp-blue);
+    font-size: 8.5px;
+    font-weight: 700;
+}
+
+/* base rate */
+.rp-base-body {
+    padding-top: 9px;
+}
+
+.rp-money-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+    align-items: center;
+}
+
+.rp-money-input, .rp-adjustment-input, .rp-input-suffix {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+}
+
+    .rp-money-input > span, .rp-adjustment-input > span, .rp-input-suffix > span {
+        min-width: 42px;
+        padding: 0 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #cfd8e3;
+        border-right: 0;
+        border-radius: 7px 0 0 7px;
+        background: #f4f7fa;
+        color: var(--rp-muted);
+        font-size: 8.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .rp-money-input input, .rp-adjustment-input input, .rp-input-suffix input {
+        border-radius: 0 7px 7px 0 !important;
+    }
+
+.rp-input-suffix {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+    .rp-input-suffix > span {
+        border-left: 0;
+        border-right: 1px solid #cfd8e3;
+        border-radius: 0 7px 7px 0;
+        text-transform: none;
+    }
+
+    .rp-input-suffix input {
+        border-radius: 7px 0 0 7px !important;
+    }
+
+.rp-check-row {
+    position: relative;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--rp-muted);
+    font-size: 9px;
+    cursor: pointer;
+    user-select: none;
+}
+
+    .rp-check-row input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+.rp-check-box {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
+    border: 1px solid #b9c5d2;
+    border-radius: 4px;
+    background: #fff;
+    transition: .15s ease;
+}
+
+.rp-check-row input:checked + .rp-check-box {
+    background: var(--rp-blue);
+    border-color: var(--rp-blue);
+    box-shadow: inset 0 0 0 3px #fff;
+}
+
+.rp-inline-message {
+    margin-top: 7px;
+}
+
+/* plan table */
+.rp-plan-table-wrap {
+    max-height: 500px;
+    overflow: auto;
+    background: #fff;
+}
+
+.rp-plan-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+    .rp-plan-table th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        height: 30px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--rp-line);
+        background: #f5f8fb;
+        color: #66768a;
+        font-size: 7.8px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+        .rp-plan-table th:first-child {
+            width: 43%;
+        }
+
+        .rp-plan-table th:nth-child(2) {
+            width: 18%;
+        }
+
+        .rp-plan-table th:nth-child(3) {
+            width: 29%;
+        }
+
+        .rp-plan-table th:last-child {
+            width: 10%;
+        }
+
+    .rp-plan-table td {
+        padding: 8px;
+        border-bottom: 1px solid var(--rp-line-2);
+        vertical-align: middle;
+        color: var(--rp-text-2);
+        font-size: 8.8px;
+    }
+
+    .rp-plan-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .rp-plan-table tbody tr {
+        transition: background .12s ease, box-shadow .12s ease;
+    }
+
+        .rp-plan-table tbody tr:hover {
+            background: #f8fbff;
+        }
+
+        .rp-plan-table tbody tr.is-current-plan {
+            background: #eef5fc;
+            box-shadow: inset 3px 0 0 var(--rp-blue);
+        }
+
+.rp-plan-link {
+    display: block;
+    min-width: 0;
+    color: inherit;
+}
+
+.rp-plan-name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #23364b;
+    font-size: 9.5px;
+    font-weight: 650;
+}
+
+.rp-plan-meta {
+    display: block;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #8793a2;
+    font-size: 7.6px;
+}
+
+.rp-status-pill {
+    max-width: 100%;
+    min-height: 20px;
+    padding: 3px 6px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 7.6px;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+    .rp-status-pill.is-off {
+        background: #f4f6f8;
+        border-color: #e5e9ee;
+        color: #768394;
+    }
+
+    .rp-status-pill.is-blue {
+        background: var(--rp-blue-soft);
+        border-color: var(--rp-blue-line);
+        color: var(--rp-blue);
+    }
+
+    .rp-status-pill.is-green {
+        background: var(--rp-green-soft);
+        border-color: #cbe9df;
+        color: var(--rp-green);
+    }
+
+.rp-action-col {
+    text-align: right !important;
+}
+
+.rp-icon-btn {
+    width: 26px;
+    height: 26px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 9px;
+}
+
+.rp-delete-btn {
+    color: #d32f2f !important;
+}
+
+    .rp-delete-btn i,
+    .rp-delete-btn svg {
+        color: #d32f2f !important;
+        fill: currentColor;
+    }
+
+    .rp-delete-btn:hover {
+        background: #fff1f1;
+        border-color: #f0c7c7;
+        color: #b42318 !important;
+    }
+
+        .rp-delete-btn:hover i,
+        .rp-delete-btn:hover svg {
+            color: #b42318 !important;
+        }
+
+/* editor */
+.rp-editor-head {
+    min-height: 58px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--rp-line);
+    background: linear-gradient(180deg, #ffffff, #fbfcfe);
+}
+
+.rp-editor-title-wrap {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.rp-editor-icon {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--rp-blue-soft);
+    border: 1px solid var(--rp-blue-line);
+    color: var(--rp-blue);
+    font-size: 11px;
+}
+
+.rp-kicker {
+    display: block;
+    margin-bottom: 2px;
+    color: #8190a1;
+    font-size: 7.6px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.rp-editor-head h2 {
+    margin: 0;
+    color: var(--rp-text);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.rp-editor-head p {
+    margin: 2px 0 0;
+    color: var(--rp-faint);
+    font-size: 8.5px;
+    line-height: 1.3;
+}
+
+.rp-plan-id-badge {
+    height: 24px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--rp-blue-line);
+    border-radius: 999px;
+    background: var(--rp-blue-soft);
+    color: var(--rp-blue);
+    font-size: 8.3px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.rp-editor-body {
+    padding: 10px 12px 12px;
+}
+
+.rp-section {
+    padding: 0;
+}
+
+    .rp-section + .rp-section {
+        margin-top: 10px;
+    }
+
+.rp-section-head {
+    min-height: 36px;
+    margin-bottom: 8px;
+    padding-bottom: 7px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--rp-line-2);
+}
+
+    .rp-section-head h3 {
+        margin: 0;
+        color: #25364a;
+        font-size: 10.5px;
+        font-weight: 700;
+    }
+
+    .rp-section-head p {
+        margin: 2px 0 0;
+        color: var(--rp-faint);
+        font-size: 8.5px;
+        line-height: 1.3;
+    }
+
+.rp-section-number {
+    color: #a2adba;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .07em;
+}
+
+/* fields */
+.rp-fields-grid, .rp-derived-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 8px 10px;
+}
+
+.rp-span-12 {
+    grid-column: span 12;
+}
+
+.rp-span-8 {
+    grid-column: span 8;
+}
+
+.rp-span-4 {
+    grid-column: span 4;
+}
+
+.rp-span-3 {
+    grid-column: span 3;
+}
+
+.rp-span-2 {
+    grid-column: span 2;
+}
+
+.rp-field {
+    min-width: 0;
+}
+
+    .rp-field > label, .rp-schedule-card > label {
+        margin: 0 0 4px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: #4a5a6d;
+        font-size: 8.7px;
+        font-weight: 700;
+    }
+
+    .rp-field small {
+        display: block;
+        margin-top: 3px;
+        color: #8a96a5;
+        font-size: 7.7px;
+        line-height: 1.35;
+    }
+
+.rp-input, .rp-select {
+    width: 100%;
+    min-height: 34px;
+    padding: 5px 8px;
+    border: 1px solid #cfd8e3;
+    border-radius: 7px;
+    outline: 0;
+    background: #fff;
+    color: var(--rp-text-2);
+    font-size: 9px;
+    line-height: 1.25;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+    .rp-input:focus, .rp-select:focus {
+        border-color: var(--rp-blue);
+        box-shadow: 0 0 0 3px rgba(44, 87, 136, .10);
+    }
+
+    .rp-input[readonly], .rp-input:disabled, .rp-select:disabled {
+        background: #f3f5f8;
+        color: #718095;
+        cursor: not-allowed;
+    }
+
+.rp-textarea {
+    min-height: 52px;
+    resize: vertical;
+}
+
+/* settings */
+.rp-rules-grid {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 9px;
+}
+
+.rp-setting-card {
+    padding: 9px 10px;
+    border: 1px solid var(--rp-line);
+    border-radius: 8px;
+    background: #fbfcfe;
+}
+
+.rp-setting-head {
+    min-height: 34px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.rp-setting-title {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rp-setting-icon {
+    background: #f0f4f8;
+    color: #536980;
+}
+
+.rp-setting-title h3 {
+    margin: 0;
+    color: #2d3e52;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+.rp-setting-title p {
+    margin: 2px 0 0;
+    color: #8995a4;
+    font-size: 7.8px;
+    line-height: 1.3;
+}
+
+.rp-setting-toggle-row {
+    margin-top: 7px;
+    padding: 7px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-top: 1px solid var(--rp-line-2);
+    border-bottom: 1px solid var(--rp-line-2);
+}
+
+    .rp-setting-toggle-row strong, .rp-derive-row strong {
+        display: block;
+        color: #425267;
+        font-size: 8.6px;
+        font-weight: 650;
+    }
+
+    .rp-setting-toggle-row span, .rp-derive-row span {
+        display: block;
+        margin-top: 2px;
+        color: #8995a4;
+        font-size: 7.6px;
+        line-height: 1.25;
+    }
+
+.rp-compact-field {
+    margin-top: 7px;
+}
+
+    .rp-compact-field.is-disabled {
+        opacity: .55;
+    }
+
+/* switch */
+.rp-switch {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-block;
+    width: 32px;
+    height: 18px;
+    cursor: pointer;
+}
+
+    .rp-switch input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .rp-switch > span {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        border-radius: 999px;
+        background: #cbd4de;
+        transition: .18s ease;
+    }
+
+        .rp-switch > span::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(0,0,0,.18);
+            transition: .18s ease;
+        }
+
+    .rp-switch input:checked + span {
+        background: var(--rp-blue);
+    }
+
+        .rp-switch input:checked + span::after {
+            transform: translateX(14px);
+        }
+
+/* automatic charge */
+.rp-charge-grid {
+    margin-top: 7px;
+    display: grid;
+    grid-template-columns: minmax(135px, .8fr) minmax(0, 1.2fr);
+    gap: 7px;
+}
+
+.rp-choice-card {
+    min-width: 0;
+    min-height: 58px;
+    padding: 7px 8px;
+    border: 1px solid #d9e1e9;
+    border-radius: 7px;
+    background: #fff;
+    transition: .15s ease;
+}
+
+    .rp-choice-card.is-selected {
+        border-color: #9ebcdf;
+        background: #f3f8fd;
+        box-shadow: inset 0 0 0 1px #dbeaf8;
+    }
+
+    .rp-choice-card > label {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        cursor: pointer;
+    }
+
+    .rp-choice-card input[type="checkbox"] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+.rp-choice-check {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #c4cfda;
+    border-radius: 5px;
+    background: #fff;
+    color: transparent;
+    font-size: 8px;
+}
+
+.rp-choice-card.is-selected .rp-choice-check {
+    background: var(--rp-blue);
+    border-color: var(--rp-blue);
+    color: #fff;
+}
+
+.rp-choice-copy {
+    min-width: 0;
+}
+
+    .rp-choice-copy strong {
+        display: block;
+        color: #3c4d61;
+        font-size: 8.5px;
+        font-weight: 650;
+    }
+
+    .rp-choice-copy small {
+        display: block;
+        margin-top: 2px;
+        color: #8a96a5;
+        font-size: 7.5px;
+        line-height: 1.25;
+    }
+
+.rp-schedule-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+    .rp-schedule-card .rp-select {
+        min-height: 31px;
+        font-size: 8.5px;
+    }
+
+/* action bars */
+.rp-actionbar {
+    min-height: 44px;
+    margin: 10px -12px 0;
+    padding: 7px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--rp-line);
+    border-bottom: 1px solid var(--rp-line);
+    background: #fbfcfe;
+}
+
+    .rp-actionbar + .rp-section {
+        margin-top: 10px;
+    }
+
+.save-message {
+    min-height: 16px;
+    display: inline-flex;
+    align-items: center;
+    font-size: 8.5px;
+    font-weight: 600;
+}
+
+    .save-message.is-success {
+        color: var(--rp-green);
+    }
+
+    .save-message.is-error {
+        color: var(--rp-red);
+    }
+
+    .save-message.is-warning {
+        color: var(--rp-amber);
+    }
+
+/* rates */
+.rp-rates-section {
+    padding-top: 0;
+}
+
+.rp-rates-head {
+    margin-bottom: 7px;
+}
+
+.rp-derive-row {
+    min-height: 44px;
+    padding: 7px 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--rp-blue-line);
+    border-radius: 8px;
+    background: #f5f9fd;
+}
+
+.rp-derived-panel {
+    margin-top: 8px;
+    padding: 9px;
+    border: 1px solid var(--rp-line);
+    border-radius: 8px;
+    background: #fafbfd;
+}
+
+.rp-info-note {
+    margin-top: 7px;
+    padding: 6px 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    border-radius: 6px;
+    background: #f1f6fb;
+    color: #65788e;
+    font-size: 7.8px;
+    line-height: 1.35;
+}
+
+    .rp-info-note i {
+        margin-top: 1px;
+        color: var(--rp-blue);
+    }
+
+.rp-rate-table-wrap {
+    margin-top: 8px;
+    border: 1px solid var(--rp-line);
+    border-radius: 8px;
+    overflow: auto;
+}
+
+.rp-rate-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+    .rp-rate-table th {
+        height: 30px;
+        padding: 0 9px;
+        background: #f5f8fb;
+        border-bottom: 1px solid var(--rp-line);
+        color: #66768a;
+        font-size: 7.8px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        text-align: left;
+    }
+
+    .rp-rate-table td {
+        padding: 7px 9px;
+        border-bottom: 1px solid var(--rp-line-2);
+        vertical-align: middle;
+    }
+
+    .rp-rate-table tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .rp-rate-table tbody tr:hover {
+        background: #fbfdff;
+    }
+
+.rp-number-col {
+    width: 220px;
+    text-align: right !important;
+}
+
+.rp-room-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rp-room-icon {
+    width: 27px;
+    height: 27px;
+    flex: 0 0 27px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    background: #f1f5f9;
+    color: #617187;
+    font-size: 9px;
+}
+
+.rp-room-cell strong {
+    display: block;
+    color: #35465a;
+    font-size: 8.8px;
+    font-weight: 650;
+}
+
+.rp-room-cell small {
+    display: block;
+    margin-top: 1px;
+    color: #8d98a6;
+    font-size: 7.4px;
+}
+
+.rp-adjustment-input {
+    width: 160px;
+    margin-left: auto;
+}
+
+    .rp-adjustment-input .rp-input {
+        min-height: 31px;
+        text-align: right;
+    }
+
+.rp-rates-actionbar {
+    margin-top: 8px;
+    margin-bottom: -12px;
+}
+
+/* tooltip */
+.field-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #8b98a8;
+    font-size: 9px;
+    cursor: help;
+}
+
+    .field-tooltip::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 6px);
+        z-index: 50;
+        width: 235px;
+        padding: 7px 8px;
+        border-radius: 6px;
+        background: #223449;
+        color: #fff;
+        box-shadow: 0 8px 22px rgba(15,23,42,.16);
+        font-size: 8px;
+        font-weight: 500;
+        line-height: 1.4;
+        opacity: 0;
+        transform: translateY(3px);
+        pointer-events: none;
+        transition: .14s ease;
+    }
+
+    .field-tooltip:hover::after, .field-tooltip:focus::after {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+/* empty state, alert, loading, toast */
+.rp-empty-state {
+    min-height: 58px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: #8b97a7;
+    font-size: 8.5px;
+}
+
+    .rp-empty-state i {
+        font-size: 15px;
+        color: #aab5c1;
+    }
+
+.rp-alert {
+    margin-bottom: 9px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 8px;
+    font-size: 9px;
+}
+
+.rp-alert-error {
+    border: 1px solid #efcaca;
+    background: var(--rp-red-soft);
+    color: #983b3b;
+}
+
+.rp-loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: rgba(255,255,255,.72);
+    backdrop-filter: blur(1px);
+}
+
+.rp-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid #dce7f2;
+    border-top-color: var(--rp-blue);
+    border-radius: 50%;
+    animation: rpSpin .7s linear infinite;
+}
+
+@keyframes rpSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.rp-toast {
+    position: fixed;
+    right: 18px;
+    top: 72px;
+    z-index: 10100;
+    max-width: 390px;
+    padding: 10px 12px;
+    border: 1px solid var(--rp-line);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 16px 38px rgba(22,32,46,.16);
+    color: var(--rp-text-2);
+    font-size: 9px;
+    font-weight: 600;
+}
+
+    .rp-toast.is-success {
+        border-left: 4px solid var(--rp-green);
+    }
+
+    .rp-toast.is-error {
+        border-left: 4px solid var(--rp-red);
+    }
+
+    .rp-toast.is-warning {
+        border-left: 4px solid var(--rp-amber);
+    }
+
+@media (max-width: 1180px) {
+    .rp-workspace {
+        grid-template-columns: 320px minmax(0, 1fr);
+    }
+
+    .rp-rules-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .rp-charge-grid {
+        grid-template-columns: 1fr 1.3fr;
+    }
+
+    .rp-span-8 {
+        grid-column: span 7;
+    }
+
+    .rp-span-4 {
+        grid-column: span 5;
+    }
+
+    .rp-derived-grid .rp-span-4 {
+        grid-column: span 6;
+    }
+
+    .rp-derived-grid .rp-span-3 {
+        grid-column: span 3;
+    }
+
+    .rp-derived-grid .rp-span-2 {
+        grid-column: span 3;
+    }
+}
+
+@media (max-width: 980px) {
+    .rp-page {
+        padding: 10px 12px 18px;
+    }
+
+    .rp-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .rp-plan-table-wrap {
+        max-height: 300px;
+    }
+
+    .rp-rules-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .rp-pagebar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .rp-pagebar-actions {
+        width: 100%;
+    }
+
+        .rp-pagebar-actions .rp-btn {
+            flex: 1;
+        }
+
+    .rp-rules-grid, .rp-charge-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .rp-fields-grid, .rp-derived-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .rp-span-12, .rp-span-8, .rp-span-4, .rp-span-3, .rp-span-2 {
+        grid-column: auto;
+    }
+
+    .rp-plan-table th:nth-child(2), .rp-plan-table td:nth-child(2) {
+        display: none;
+    }
+
+    .rp-plan-table th:first-child {
+        width: 52%;
+    }
+
+    .rp-plan-table th:nth-child(3) {
+        width: 38%;
+    }
+
+    .rp-plan-table th:last-child {
+        width: 10%;
+    }
+
+    .rp-number-col {
+        width: 160px;
+    }
+
+    .rp-adjustment-input {
+        width: 130px;
+    }
+}
+
+@media (max-width: 520px) {
+    .rp-page {
+        padding: 8px;
+    }
+
+    .rp-pagebar-actions {
+        flex-direction: column;
+    }
+
+        .rp-pagebar-actions .rp-btn {
+            width: 100%;
+        }
+
+    .rp-plan-table th:nth-child(3), .rp-plan-table td:nth-child(3) {
+        display: none;
+    }
+
+    .rp-plan-table th:first-child {
+        width: 84%;
+    }
+
+    .rp-plan-table th:last-child {
+        width: 16%;
+    }
+
+    .rp-editor-body {
+        padding: 9px;
+    }
+
+    .rp-actionbar {
+        margin-left: -9px;
+        margin-right: -9px;
+        padding-left: 9px;
+        padding-right: 9px;
+    }
+
+    .rp-rate-table th:first-child {
+        width: auto;
+    }
+
+    .rp-number-col {
+        width: 145px;
+    }
+}
+
+/* =========================================================
+   FINAL READABILITY + LAYOUT REFINEMENTS
+   Keeps the original professional Rate Plan structure intact.
+   ========================================================= */
+
+/* Global readability */
+.rp-page {
+    font-size: 12px;
+}
+
+.rp-title-row h1 {
+    font-size: 18px;
+}
+
+.rp-pagebar-copy p {
+    font-size: 11px;
+}
+
+.rp-title-badge {
+    font-size: 10px;
+    height: 22px;
+}
+
+.rp-btn {
+    min-height: 36px;
+    padding: 0 13px;
+    font-size: 11px;
+    border-radius: 8px;
+}
+
+.rp-btn-primary,
+.rp-btn-primary:hover,
+.rp-btn-primary:focus,
+.rp-btn-primary:active,
+.rp-btn-primary *,
+.rp-btn-primary:hover *,
+.rp-btn-primary:focus * {
+    color: #fff !important;
+}
+
+.rp-card-head {
+    min-height: 54px;
+    padding: 10px 12px;
+}
+
+.rp-card-icon, .rp-setting-icon {
+    width: 31px;
+    height: 31px;
+    flex-basis: 31px;
+    font-size: 11px;
+}
+
+.rp-card-head h2 {
+    font-size: 12.5px;
+}
+
+.rp-card-head p {
+    font-size: 10px;
+}
+
+.rp-card-body {
+    padding: 12px;
+}
+
+.rp-count-badge {
+    font-size: 10px;
+    min-width: 26px;
+    height: 24px;
+}
+
+/* Base rate: one clean professional input group */
+.rp-base-body {
+    padding-top: 11px;
+}
+
+.rp-money-row {
+    gap: 8px;
+}
+
+.rp-money-input {
+    height: 39px;
+    display: grid;
+    grid-template-columns: 52px minmax(0,1fr);
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid #c5d1df;
+    border-radius: 8px;
+    background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+    .rp-money-input:focus-within {
+        border-color: var(--rp-blue);
+        box-shadow: 0 0 0 3px rgba(44,87,136,.10);
+    }
+
+    .rp-money-input > span {
+        min-width: 0;
+        padding: 0 9px;
+        border: 0;
+        border-right: 1px solid #d7e0ea;
+        border-radius: 0;
+        background: #f4f7fb;
+        color: #405875;
+        font-size: 10px;
+        font-weight: 700;
+    }
+
+    .rp-money-input input {
+        width: 100%;
+        min-width: 0;
+        height: 100%;
+        padding: 0 11px;
+        border: 0 !important;
+        border-radius: 0 !important;
+        outline: 0;
+        background: #fff;
+        color: #23364b;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+.rp-btn-save-base {
+    min-width: 82px;
+    min-height: 39px;
+}
+
+.rp-check-row {
+    margin-top: 10px;
+    font-size: 10.5px;
+}
+
+.rp-check-box {
+    width: 16px;
+    height: 16px;
+    flex-basis: 16px;
+}
+
+/* Rate-plan list: order is explicit; internal Plan # is not displayed */
+.rp-plan-table th {
+    height: 33px;
+    padding: 0 8px;
+    font-size: 9px;
+}
+
+.rp-plan-table td {
+    padding: 9px 8px;
+    font-size: 10px;
+}
+
+.rp-plan-table th:first-child {
+    width: 38%;
+}
+
+.rp-plan-table th:nth-child(2) {
+    width: 12%;
+    text-align: center;
+}
+
+.rp-plan-table th:nth-child(3) {
+    width: 17%;
+}
+
+.rp-plan-table th:nth-child(4) {
+    width: 25%;
+}
+
+.rp-plan-table th:last-child {
+    width: 8%;
+}
+
+.rp-plan-name {
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.rp-plan-meta {
+    margin-top: 3px;
+    font-size: 9px;
+}
+
+.rp-order-col {
+    text-align: center !important;
+}
+
+.rp-order-chip {
+    min-width: 26px;
+    height: 23px;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--rp-blue-line);
+    border-radius: 6px;
+    background: var(--rp-blue-soft);
+    color: var(--rp-blue);
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+.rp-status-pill {
+    min-height: 22px;
+    padding: 4px 7px;
+    font-size: 9px;
+}
+
+.rp-icon-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 10px;
+}
+
+/* Editor typography */
+.rp-editor-head {
+    min-height: 62px;
+    padding: 11px 13px;
+}
+
+.rp-editor-icon {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+    font-size: 12px;
+}
+
+.rp-kicker {
+    font-size: 8.8px;
+}
+
+.rp-editor-head h2 {
+    font-size: 14.5px;
+}
+
+.rp-editor-head p {
+    font-size: 10px;
+}
+
+.rp-editor-body {
+    padding: 11px 13px 13px;
+}
+
+.rp-section-head h3 {
+    font-size: 12px;
+}
+
+.rp-section-head p {
+    font-size: 10px;
+}
+
+.rp-section-number {
+    font-size: 9px;
+}
+
+/* Plan details left; booking/payment settings sit beside it */
+.rp-editor-top-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, .82fr) minmax(430px, 1.18fr);
+    gap: 10px;
+    align-items: stretch;
+}
+
+.rp-plan-details-panel {
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--rp-line);
+    border-radius: 8px;
+    background: #fbfcfe;
+}
+
+    .rp-plan-details-panel .rp-section-head {
+        margin-bottom: 9px;
+    }
+
+    .rp-plan-details-panel .rp-fields-grid {
+        display: grid;
+        grid-template-columns: minmax(0,1fr) 104px;
+        grid-template-areas:
+            "planname order"
+            "description description";
+        gap: 9px;
+    }
+
+.rp-plan-name-field {
+    grid-area: planname;
+}
+
+.rp-order-field {
+    grid-area: order;
+}
+
+.rp-description-field {
+    grid-area: description;
+}
+
+.rp-plan-details-panel .rp-textarea {
+    min-height: 115px;
+}
+
+.rp-editor-top-grid > .rp-rules-grid {
+    margin-top: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-content: start;
+}
+
+.rp-setting-card {
+    padding: 10px 11px;
+}
+
+.rp-setting-head h3 {
+    font-size: 11.5px;
+}
+
+.rp-setting-head p {
+    font-size: 9.5px;
+}
+
+.rp-setting-toggle-row strong {
+    font-size: 10.5px;
+}
+
+.rp-setting-toggle-row span {
+    font-size: 9px;
+}
+
+.rp-charge-grid {
+    grid-template-columns: minmax(150px,.82fr) minmax(0,1.18fr);
+}
+
+.rp-choice-copy strong {
+    font-size: 10px;
+}
+
+.rp-choice-copy small {
+    font-size: 8.8px;
+}
+
+.rp-schedule-card .rp-select {
+    font-size: 10px;
+}
+
+/* Fields */
+.rp-field > label, .rp-schedule-card > label {
+    margin-bottom: 5px;
+    font-size: 10.5px;
+}
+
+.rp-field small {
+    margin-top: 4px;
+    font-size: 8.8px;
+}
+
+.rp-input, .rp-select {
+    min-height: 37px;
+    padding: 6px 9px;
+    font-size: 11px;
+}
+
+.rp-textarea {
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.rp-input-suffix > span {
+    font-size: 9.5px;
+}
+
+/* Action bars and Rates */
+.rp-actionbar {
+    min-height: 48px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.save-message {
+    font-size: 10px;
+}
+
+.rp-derive-row strong {
+    font-size: 10.5px;
+}
+
+.rp-derive-row span {
+    font-size: 9px;
+}
+
+.rp-info-note {
+    font-size: 9px;
+}
+
+.rp-rate-table th {
+    font-size: 9px;
+}
+
+.rp-rate-table td {
+    font-size: 10px;
+}
+
+.rp-room-cell strong {
+    font-size: 10.5px;
+}
+
+.rp-room-cell small {
+    font-size: 8.8px;
+}
+
+.field-tooltip {
+    font-size: 10px;
+}
+
+    .field-tooltip::after {
+        font-size: 9px;
+    }
+
+.rp-toast, .rp-alert {
+    font-size: 10.5px;
+}
+
+/* Keep the layout professional as width reduces */
+@media (max-width: 1320px) {
+    .rp-editor-top-grid {
+        grid-template-columns: minmax(300px,.9fr) minmax(390px,1.1fr);
+    }
+
+    .rp-charge-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 1120px) {
+    .rp-editor-top-grid {
+        grid-template-columns: 1fr;
+    }
+
+        .rp-editor-top-grid > .rp-rules-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
+    .rp-charge-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .rp-editor-top-grid,
+    .rp-editor-top-grid > .rp-rules-grid,
+    .rp-plan-details-panel .rp-fields-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .rp-plan-details-panel .rp-fields-grid {
+        grid-template-areas:
+            "planname"
+            "order"
+            "description";
+    }
+
+    .rp-plan-table th:nth-child(2), .rp-plan-table td:nth-child(2) {
+        display: none;
+    }
+
+    .rp-plan-table th:first-child {
+        width: 45%;
+    }
+
+    .rp-plan-table th:nth-child(3) {
+        width: 20%;
+    }
+
+    .rp-plan-table th:nth-child(4) {
+        width: 27%;
+    }
+
+    .rp-plan-table th:last-child {
+        width: 8%;
+    }
+}
+
+@media (max-width: 520px) {
+    .rp-plan-table th:nth-child(3), .rp-plan-table td:nth-child(3) {
+        display: none;
+    }
+
+    .rp-plan-table th:first-child {
+        width: 64%;
+    }
+
+    .rp-plan-table th:nth-child(4) {
+        width: 27%;
+    }
+
+    .rp-plan-table th:last-child {
+        width: 9%;
+    }
+}
+
+/* =========================================================
+   FINAL READABILITY + RIGHT-ALIGNED SAVE ACTIONS
+   17 Sep 2026
+   - Keeps the existing ORA PMS layout and colour scheme.
+   - Moves Save Plan Details / Save Rates to the right.
+   - Increases typography without changing Razor/JS structure.
+   ========================================================= */
+
+/* Give the left list a little more breathing room for larger text. */
+.rp-workspace {
+    grid-template-columns: minmax(360px, 400px) minmax(0, 1fr);
+}
+
+/* Overall readable type scale. */
+.rp-page {
+    font-size: 13px;
+}
+
+.rp-title-row h1 {
+    font-size: 19px;
+}
+
+.rp-pagebar-copy p {
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.rp-title-badge {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 10.5px;
+}
+
+.rp-btn {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 12px;
+    font-weight: 650;
+}
+
+/* Card headings / helper text. */
+.rp-card-head h2 {
+    font-size: 14px;
+}
+
+.rp-card-head p {
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+.rp-count-badge {
+    font-size: 10.5px;
+}
+
+.rp-check-row {
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+/* Base-rate field readability. */
+.rp-money-input > span {
+    font-size: 11px;
+}
+
+.rp-money-input input {
+    font-size: 13px;
+}
+
+/* Existing plan list. */
+.rp-plan-table th {
+    font-size: 10.5px;
+    height: 36px;
+}
+
+.rp-plan-table td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    font-size: 11.5px;
+}
+
+.rp-plan-name {
+    font-size: 12.5px;
+}
+
+.rp-plan-meta {
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.rp-order-chip {
+    min-width: 28px;
+    height: 25px;
+    font-size: 10.5px;
+}
+
+.rp-status-pill {
+    min-height: 24px;
+    padding: 4px 8px;
+    font-size: 10px;
+}
+
+.rp-icon-btn {
+    font-size: 11px;
+}
+
+/* Editor heading. */
+.rp-kicker {
+    font-size: 9.5px;
+}
+
+.rp-editor-head h2 {
+    font-size: 16px;
+}
+
+.rp-editor-head p {
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.rp-section-head h3 {
+    font-size: 13.5px;
+}
+
+.rp-section-head p {
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.rp-section-number {
+    font-size: 9.5px;
+}
+
+/* Form labels and fields. */
+.rp-field > label,
+.rp-schedule-card > label {
+    font-size: 11.5px;
+    margin-bottom: 6px;
+}
+
+.rp-field small {
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.rp-input,
+.rp-select {
+    min-height: 39px;
+    padding: 7px 10px;
+    font-size: 12.5px;
+}
+
+.rp-textarea {
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+.rp-input-suffix > span {
+    font-size: 10.5px;
+}
+
+/* Booking cutoff / payment cards. */
+.rp-setting-head h3 {
+    font-size: 12.5px;
+}
+
+.rp-setting-head p {
+    font-size: 10.5px;
+    line-height: 1.4;
+}
+
+.rp-setting-toggle-row strong,
+.rp-derive-row strong {
+    font-size: 11.5px;
+}
+
+.rp-setting-toggle-row span,
+.rp-derive-row span {
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.rp-choice-copy strong {
+    font-size: 11px;
+}
+
+.rp-choice-copy small {
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.rp-schedule-card .rp-select {
+    font-size: 11.5px;
+}
+
+/* Rates section. */
+.rp-info-note {
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.rp-rate-table th {
+    font-size: 10px;
+}
+
+.rp-rate-table td {
+    font-size: 11px;
+}
+
+.rp-room-cell strong {
+    font-size: 11.5px;
+}
+
+.rp-room-cell small {
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+/* Messages, tooltips and alerts. */
+.save-message {
+    font-size: 11px;
+}
+
+.field-tooltip {
+    font-size: 10.5px;
+}
+
+    .field-tooltip::after {
+        font-size: 9.5px;
+    }
+
+.rp-toast,
+.rp-alert {
+    font-size: 11.5px;
+}
+
+/*
+   Keep status messages on the left and put the actual save action at the
+   far right. This applies to both Save Plan Details and Save Rates.
+*/
+.rp-actionbar {
+    min-height: 52px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    justify-content: flex-end;
+}
+
+    .rp-actionbar .save-message {
+        order: 1;
+        margin-right: auto;
+    }
+
+    .rp-actionbar .rp-btn {
+        order: 2;
+        margin-left: 12px;
+    }
+
+/* Keep buttons clearly readable on the ORA PMS blue. */
+#savePlanDetailsButton,
+#saveRatesButton {
+    min-width: 132px;
+    color: #fff !important;
+}
+
+    #savePlanDetailsButton *,
+    #saveRatesButton * {
+        color: #fff !important;
+    }
+
+/* Responsive: preserve the existing stacking behaviour. */
+@media (max-width: 1120px) {
+    .rp-workspace {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .rp-page {
+        font-size: 12px;
+    }
+
+    .rp-title-row h1 {
+        font-size: 18px;
+    }
+
+    .rp-actionbar {
+        align-items: center;
+    }
+
+        .rp-actionbar .rp-btn {
+            min-width: 140px;
+        }
+}

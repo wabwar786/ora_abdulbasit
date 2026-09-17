@@ -527,12 +527,12 @@
     transition: .14s ease;
 }
 
-.bulkrate-day-pill input:checked + span {
-    border-color: #bfd2e6;
-    background: #e9f1f9;
-    color: var(--bulkrate-blue);
-    box-shadow: inset 0 -2px 0 rgba(44,87,136,.12);
-}
+    .bulkrate-day-pill input:checked + span {
+        border-color: #bfd2e6;
+        background: #dbc314;
+        color: #060606;
+        box-shadow: inset 0 -2px 0 rgba(44,87,136,.12);
+    }
 
 .bulkrate-summary-panel { padding-bottom: 9px; }
 

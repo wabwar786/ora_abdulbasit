@@ -362,7 +362,6 @@ booked AS
       AND p.Type = @categoryNamePayments
       AND p.descr = 'Room Rent'
       AND p.res_status IN ('check in', 'reservation')
-
       /* Reservation overlaps selected date. */
       AND CAST(p.ArrivalDate AS DATE) < @dep
       AND @arr < CAST(p.DepartureDate AS DATE)
