@@ -27,7 +27,7 @@ public sealed class BulkRateChannelUploadService : IBulkRateChannelUploadService
     private readonly string _connectionString;
     private readonly ILogger<BulkRateChannelUploadService> _logger;
 
-    public BulkRateChannelUploadService(
+    public BulkRateChannelUploadService(  
         IConfiguration configuration,
         ILogger<BulkRateChannelUploadService> logger)
     {

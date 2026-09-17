@@ -15,7 +15,7 @@
         ? propertyBaseRate
         : 0;
 
-    const rangesHost = document.getElementById("bulkRateRanges");
+    const rangesHost = document.getElementById("bulkRateRanges" );
     const previewBody = document.getElementById("bulkRatePreviewBody");
     const statusText = document.getElementById("bulkRateStatus");
     const statusWrap = statusText?.closest(".bulkrate-job-status");

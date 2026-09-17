@@ -2,7 +2,7 @@ namespace Orapmshms.Services;
 
 public interface IBulkRateChannelUploadService
 {
-    Task<BulkRateChannelUploadResult> UploadRatesAsync(
+    Task<BulkRateChannelUploadResult> UploadRatesAsync (
         string hotelId,
         DateTime fromDate,
         DateTime toDate,

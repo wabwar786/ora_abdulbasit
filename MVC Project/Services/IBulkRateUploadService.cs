@@ -5,12 +5,12 @@ namespace Orapmshms.Services;
 
 public interface IBulkRateUploadService
 {
-    Task<BulkRateUploadModel> GetPageAsync(
+    Task<BulkRateUploadModel>   GetPageAsync(
         string hotelId,
         string hotelName,
         CancellationToken cancellationToken = default);
 
-    Task<decimal> GetPropertyBaseRateAsync(
+    Task<decimal> GetPropertyBaseRateAsync (
         string hotelId,
         CancellationToken cancellationToken = default);
 
