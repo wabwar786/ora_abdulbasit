@@ -505,7 +505,7 @@
 
 .bulkrate-delete-range:hover { background: #ffeded; }
 
-.bulkrate-days-box {
+.bulkrate-days-box  {
     display: grid;
     grid-template-columns: repeat(4,1fr);
     gap: 5px;

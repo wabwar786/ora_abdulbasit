@@ -212,7 +212,7 @@ ORDER BY id DESC;";
 
             BulkRateChannelUploadResult channelResult;
             try
-            {
+             {
                 channelResult = await _channelUploadService.UploadRatesAsync(
                     hotelId,
                     save.MinDate,

@@ -4,9 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Orapmshms.Models;
 using Orapmshms.Services;
 using Orapmshms.Services.BulkRateJobs;
-
 namespace Orapmshms.Controllers;
-
 [Route("BulkRateUpload")]
 public sealed class BulkRateUploadController : Controller
 {
@@ -14,7 +12,6 @@ public sealed class BulkRateUploadController : Controller
     private readonly IBulkRateUploadQueue _queue;
     private readonly IHotelClock _hotelClock;
     private readonly ILogger<BulkRateUploadController> _logger;
-
     // No custom Program.cs registration is required.
     // IConfiguration / ILoggerFactory are framework services already available in ASP.NET Core.
     public BulkRateUploadController(
@@ -27,28 +24,23 @@ public sealed class BulkRateUploadController : Controller
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(loggerFactory);
         ArgumentNullException.ThrowIfNull(applicationLifetime);
-
         _hotelClock = hotelClock ?? throw new ArgumentNullException(nameof(hotelClock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
         // Keep one constructor contract everywhere: pass IConfiguration, never a raw
         // connection-string string. Each service resolves ConnectionStrings:con itself.
         var channelUploadService = new BulkRateChannelUploadService(
             configuration,
             loggerFactory.CreateLogger<BulkRateChannelUploadService>());
-
         _service = new BulkRateUploadService(
             configuration,
             channelUploadService,
             loggerFactory.CreateLogger<BulkRateUploadService>());
-
         // One process-wide bounded queue, created lazily the first time this feature is used.
         _queue = BulkRateUploadWorker.GetOrCreate(
             configuration,
             loggerFactory,
             applicationLifetime.ApplicationStopping);
     }
-
     // Clean MVC URL: /BulkRateUpload
     [HttpGet("")]
     [HttpGet("Index")]
@@ -57,7 +49,6 @@ public sealed class BulkRateUploadController : Controller
         var hotelId = SessionValue("hotel");
         if (hotelId.Length == 0)
             return RedirectToAction("Index", "LoginHMS");
-
         try
         {
             var model = await _service.GetPageAsync(
@@ -79,7 +70,6 @@ public sealed class BulkRateUploadController : Controller
             });
         }
     }
-
     // Backward-compatible entry point for any old menu/bookmark that still points
     // to UpdateRateValues.aspx with WebForms query-string values. The MVC feature
     // uses Session, so discard the legacy query string and redirect to the clean URL.
@@ -88,7 +78,6 @@ public sealed class BulkRateUploadController : Controller
     {
         return RedirectToAction(nameof(Index));
     }
-
     [HttpPost("Preview")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Preview(
@@ -98,13 +87,11 @@ public sealed class BulkRateUploadController : Controller
         var hotelId = SessionValue("hotel");
         if (hotelId.Length == 0)
             return Unauthorized(new { ok = false, message = "Your login session is missing. Please sign in again." });
-
         try
         {
             var dateValidation = ValidateDatesAgainstHotelToday(request, _hotelClock.GetHotelToday(hotelId));
             if (dateValidation != null)
                 return BadRequest(new { ok = false, message = dateValidation });
-
             var rows = await _service.PreviewAsync(hotelId, request, cancellationToken);
             return Json(new
             {
@@ -133,7 +120,6 @@ public sealed class BulkRateUploadController : Controller
             return StatusCode(500, new { ok = false, message = "Unable to preview these rates." });
         }
     }
-
     [HttpPost("Start")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Start(
@@ -164,7 +150,6 @@ public sealed class BulkRateUploadController : Controller
             Environment.MachineName,
             request,
             DateTime.UtcNow);
-
         if (!_queue.TryQueue(job, out var rejectionMessage))
         {
             var statusCode = rejectionMessage.StartsWith("A bulk rate upload for this hotel", StringComparison.OrdinalIgnoreCase)
@@ -177,7 +162,6 @@ public sealed class BulkRateUploadController : Controller
                 message = rejectionMessage
             });
         }
-
         return Json(new
         {
             ok = true,
@@ -204,7 +188,6 @@ public sealed class BulkRateUploadController : Controller
                 status.UpdatedAtUtc
             });
         }
-
         Response.Headers.CacheControl = "no-store, no-cache";
         return Json(new
         {
@@ -215,7 +198,6 @@ public sealed class BulkRateUploadController : Controller
             status.UpdatedAtUtc
         });
     }
-
     [HttpGet("History")]
     public async Task<IActionResult> History(
         string? search,

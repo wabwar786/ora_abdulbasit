@@ -2,7 +2,7 @@ using Orapmshms.Models;
 
 namespace Orapmshms.Services.BulkRateJobs;
 
-public sealed record BulkRateUploadJob(
+public sealed record BulkRateUploadJob (
     string JobId,
     string HotelId,
     string HotelName,

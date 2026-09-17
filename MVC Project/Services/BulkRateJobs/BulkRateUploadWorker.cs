@@ -80,7 +80,7 @@ public sealed class BulkRateUploadWorker : IBulkRateUploadQueue
                     loggerFactory,
                     applicationStopping);
 
-                Volatile.Write(ref _instance, current);
+                Volatile.Write(ref _instance, current );
             }
         }
 

@@ -6,7 +6,7 @@ public sealed class BulkRateUploadModel
     public string HotelId { get; set; } = string.Empty;
     public string HotelName { get; set; } = string.Empty;
     public string HotelTodayIso { get; set; } = string.Empty;
-    public decimal PropertyBaseRate { get; set; }
+    public decimal PropertyBaseRate  { get; set; }
     public List<BulkRateUploadModel> PlanOptions { get; set; } = new();
     public List<BulkRateUploadModel> RoomOptions { get; set; } = new();
 

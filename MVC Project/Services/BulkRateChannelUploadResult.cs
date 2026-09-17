@@ -6,6 +6,6 @@ public sealed class BulkRateChannelUploadResult
     public int UploadedRows { get; set; }
     public int SkippedMappingRows { get; set; }
     public int PayloadGroups { get; set; }
-    public List<string> Warnings { get; set; } = new();
+    public List<string> Warnings { get; set;   } = new();
     public bool HasWarnings => Warnings.Count > 0;
 }
