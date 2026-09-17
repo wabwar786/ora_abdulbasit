@@ -11,7 +11,7 @@ namespace hotelsoftware
 {
 
 
-    public partial class UpdateRateValues
+    public partial class BulkUpdateRestrictions
     {
 
         /// <summary>
