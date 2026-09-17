@@ -896,7 +896,7 @@
     transition: .15s ease;
 }
 
-    .rp-choice-card.is-selected {
+    .rp-choice-card.rate-plan-is-selected {
         border-color: #9ebcdf;
         background: #f3f8fd;
         box-shadow: inset 0 0 0 1px #dbeaf8;
@@ -929,7 +929,7 @@
     font-size: 8px;
 }
 
-.rp-choice-card.is-selected .rp-choice-check {
+.rp-choice-card.rate-plan-is-selected .rp-choice-check {
     background: var(--rp-blue);
     border-color: var(--rp-blue);
     color: #fff;
@@ -994,7 +994,7 @@
         color: var(--rp-green);
     }
 
-    .save-message.is-error {
+    .save-message.rate-plan-is-error {
         color: var(--rp-red);
     }
 
@@ -1256,7 +1256,7 @@
         border-left: 4px solid var(--rp-green);
     }
 
-    .rp-toast.is-error {
+    .rp-toast.rate-plan-is-error {
         border-left: 4px solid var(--rp-red);
     }
 

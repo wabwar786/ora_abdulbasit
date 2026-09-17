@@ -15,7 +15,7 @@
         ? propertyBaseRate
         : 0;
 
-    const rangesHost = document.getElementById("bulkRateRanges" );
+    const rangesHost = document.getElementById("bulkRateRanges");
     const previewBody = document.getElementById("bulkRatePreviewBody");
     const statusText = document.getElementById("bulkRateStatus");
     const statusWrap = statusText?.closest(".bulkrate-job-status");
@@ -572,7 +572,7 @@
         const first = monthStart(monthDate);
         const firstVisible = new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay());
         const month = first.getMonth();
-        const bulk-rate-upload-today = hotelTodayDate();
+        const today = hotelTodayDate();
         const startTime = calendarStart ? dayTime(calendarStart) : null;
         const endTime = calendarEnd ? dayTime(calendarEnd) : null;
 
@@ -586,7 +586,7 @@
             button.dataset.date = toIso(current);
 
             if (current.getMonth() !== month) button.classList.add("bulk-rate-upload-outside-month");
-            if (sameDay(current, bulk-rate-upload-today)) button.classList.add("bulk-rate-upload-today");
+            if (sameDay(current, today)) button.classList.add("bulk-rate-upload-today");
             if (isBeforeHotelToday(current)) {
                 button.disabled = true;
                 button.classList.add("is-disabled");

@@ -5,7 +5,8 @@ namespace Orapmshms.Services.AvailabilityJobs;
 public enum AvailabilityChannelSyncKind
 {
     Rates,
-    Restrictions
+    Restrictions,
+    ReconcileMappings
 }
 
 public sealed record AvailabilityChannelSyncJob(

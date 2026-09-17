@@ -50,7 +50,7 @@
         const element = $(id);
         if (!element) return;
         element.textContent = message || '';
-        element.classList.remove('is-success', 'is-error', 'is-warning');
+        element.classList.remove('is-success', 'rate-plan-is-error', 'is-warning');
         if (message) element.classList.add(`is-${kind}`);
     }
 
@@ -60,7 +60,7 @@
 
         window.clearTimeout(toastTimer);
         toast.textContent = message || '';
-        toast.classList.remove('is-success', 'is-error', 'is-warning');
+        toast.classList.remove('is-success', 'rate-plan-is-error', 'is-warning');
         toast.classList.add(`is-${kind}`);
         toast.hidden = false;
 
@@ -234,8 +234,8 @@
         if (source === 'schedule' && schedule.value !== '') instant.checked = false;
 
         schedule.disabled = instant.checked;
-        $('instantChargeOption')?.classList.toggle('is-selected', instant.checked);
-        $('scheduledChargeOption')?.classList.toggle('is-selected', !instant.checked && schedule.value !== '');
+        $('instantChargeOption')?.classList.toggle('rate-plan-is-selected', instant.checked);
+        $('scheduledChargeOption')?.classList.toggle('rate-plan-is-selected', !instant.checked && schedule.value !== '');
     }
 
     function syncDerivedMode() {
