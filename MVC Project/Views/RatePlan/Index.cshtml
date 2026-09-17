@@ -1,0 +1,603 @@
+@model Orapmshms.Models.RatePlanPageViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Rate Plans";
+
+    Layout = "_PmsLayout";
+
+    var editor = Model.Editor ?? new RatePlanEditorModel();
+
+    var currency = string.IsNullOrWhiteSpace(Model.Currency) ? "Rate" : Model.Currency;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/rate-plan.css" asp-append-version="true" />
+}
+
+<div id="ratePlanPage"
+     class="rp-page"
+     data-save-base-url="@Url.Action("SaveBaseRate", "RatePlan")"
+     data-save-details-url="@Url.Action("SaveDetails", "RatePlan")"
+     data-save-rates-url="@Url.Action("SaveRates", "RatePlan")"
+     data-delete-url="@Url.Action("Delete", "RatePlan")"
+     data-index-url="@Url.Action("Index", "RatePlan")">
+
+    <form id="ratePlanAntiForgery" class="rp-hidden">@Html.AntiForgeryToken()</form>
+
+    @if (!string.IsNullOrWhiteSpace(ViewBag.LoadError as string))
+
+    {
+        <div class="rp-alert rp-alert-error">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <span>@ViewBag.LoadError</span>
+        </div>
+    }
+
+    <section class="rp-pagebar" aria-labelledby="ratePlanTitle">
+        <div class="rp-pagebar-main">
+            <span class="rp-pagebar-icon" aria-hidden="true">
+                <i class="fa-solid fa-layer-group"></i>
+            </span>
+            <div class="rp-pagebar-copy">
+                <div class="rp-title-row">
+                    <h1 id="ratePlanTitle">Rate Plans</h1>
+                    <span class="rp-title-badge">@Model.Plans.Count plans</span>
+                </div>
+                <p>Manage pricing structures, booking rules, payment timing and room-level rate adjustments.</p>
+            </div>
+        </div>
+
+        <div class="rp-pagebar-actions">
+            <a class="rp-btn rp-btn-secondary" href="@Url.Action("Index", "BulkRateUpload")">
+                <i class="fa-solid fa-arrow-trend-up"></i>
+                <span>Bulk Rate Upload</span>
+            </a>
+            <a class="rp-btn rp-btn-primary" href="@Url.Action("Index", "RatePlan")">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add New Rate Plan</span>
+            </a>
+        </div>
+    </section>
+
+    <div class="rp-workspace">
+        <aside class="rp-left-column position-relative">
+            <section class="rp-card rp-base-card">
+                <div class="rp-card-head">
+                    <div class="rp-card-title-wrap">
+                        <span class="rp-card-icon"><i class="fa-solid fa-sterling-sign"></i></span>
+                        <div>
+                            <h2>Hotel Base Rate</h2>
+                            <p>Default value used by your rate-plan structure.</p>
+                        </div>
+                    </div>
+                    <span class="field-tooltip" tabindex="0"
+                          data-tooltip="Save only the hotel base rate, or apply the same change to all rate plans and send the updated values to Channex.">
+                        <i class="fa-solid fa-circle-question"></i>
+                    </span>
+                </div>
+
+                <div class="rp-card-body rp-base-body">
+                    <div class="rp-money-row">
+                        <div class="rp-money-input">
+                            <span>@currency</span>
+                            <input id="txtBaseRate"
+                                   type="number"
+                                   inputmode="decimal"
+                                   min="0"
+                                   max="99999999.99"
+                                   step="0.01"
+                                   autocomplete="off"
+                                   value="@Model.BaseRate.ToString("0.##", CultureInfo.InvariantCulture)"
+                                   placeholder="0.00" />
+                        </div>
+                        <button id="saveBaseRateButton" type="button" class="rp-btn rp-btn-secondary rp-btn-save-base">
+                            <i class="fa-regular fa-floppy-disk"></i>
+                            <span>Save</span>
+                        </button>
+                    </div>
+
+                    <label class="rp-check-row" for="chkApplyBaseRateToAllPlans">
+                        <input id="chkApplyBaseRateToAllPlans" type="checkbox" />
+                        <span class="rp-check-box" aria-hidden="true"></span>
+                        <span>Apply this base-rate change to all rate plans</span>
+                    </label>
+
+                    <div id="baseRateMessage" class="save-message rp-inline-message" aria-live="polite"></div>
+                </div>
+            </section>
+
+            <section class="rp-card rp-plan-card">
+                <div class="rp-card-head">
+                    <div class="rp-card-title-wrap">
+                        <span class="rp-card-icon"><i class="fa-solid fa-list-check"></i></span>
+                        <div>
+                            <h2>Existing Rate Plans</h2>
+                            <p>Select a plan to review or edit.</p>
+                        </div>
+                    </div>
+                    <span class="rp-count-badge">@Model.Plans.Count</span>
+                </div>
+
+                <div class="rp-plan-table-wrap">
+                    <table class="rp-plan-table">
+                        <thead>
+                            <tr>
+                                <th>Rate plan</th>
+                                <th>Cutoff</th>
+                                <th>Auto charge</th>
+                                <th class="rp-action-col"><span class="sr-only">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (Model.Plans.Count == 0)
+
+                            {
+                                <tr>
+                                    <td colspan="5">
+                                        <div class="rp-empty-state">
+                                            <i class="fa-regular fa-folder-open"></i>
+                                            <span>No rate plans have been created.</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+
+                            else
+
+                            {
+
+                                foreach (var plan in Model.Plans)
+
+                                {
+
+                                    var selected = editor.IsEdit && editor.LocalPlanId == plan.LocalPlanId;
+
+                                    var cutoffOff = string.Equals(plan.CutoffDisplay, "Off", StringComparison.OrdinalIgnoreCase);
+
+                                    var chargeOff = string.Equals(plan.AutoChargeDisplay, "Off", StringComparison.OrdinalIgnoreCase);
+                                    <tr class="@(selected ? "is-current-plan" : null)">
+                                        <td>
+                                            <a class="rp-plan-link" href="@Url.Action("Index", "RatePlan", new { plan = plan.Name })">
+                                                <span class="rp-plan-name">@plan.Name</span>
+                                                @if (!string.IsNullOrWhiteSpace(plan.DerivedFrom))
+
+                                                {
+                                                    <span class="rp-plan-meta">Derived from @plan.DerivedFrom</span>
+                                                }
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <span class="rp-status-pill @(cutoffOff ? "is-off" : "is-blue")">@plan.CutoffDisplay</span>
+                                        </td>
+                                        <td>
+                                            <span class="rp-status-pill @(chargeOff ? "is-off" : "is-green")">@plan.AutoChargeDisplay</span>
+                                        </td>
+                                        <td class="rp-action-col">
+                                            <button type="button"
+                                                    class="rp-icon-btn rp-delete-btn"
+                                                    data-delete-plan
+                                                    data-plan-id="@plan.LocalPlanId"
+                                                    data-plan-name="@plan.Name"
+                                                    title="Delete this rate plan"
+                                                    aria-label="Delete @plan.Name">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <div class="rp-loading-overlay" data-loading-overlay hidden>
+                <div class="rp-spinner"></div>
+            </div>
+        </aside>
+
+        <main class="rp-right-column position-relative">
+            <section class="rp-card rp-editor-card">
+                <div class="rp-editor-head">
+                    <div class="rp-editor-title-wrap">
+                        <span class="rp-editor-icon"><i class="fa-solid fa-sliders"></i></span>
+                        <div>
+                            <span class="rp-kicker">Rate Plan Editor</span>
+                            <h2>@(editor.IsEdit ? "Edit Rate Plan" : "Add New Rate Plan")</h2>
+                            @if (editor.IsEdit)
+
+                            {
+                                <p>@editor.PlanName</p>
+                            }
+
+                            else
+
+                            {
+                                <p>Create the plan details first, then configure its room pricing.</p>
+                            }
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="rp-editor-body">
+                    <input type="hidden" id="localPlanId" value="@editor.LocalPlanId" />
+
+                    <div class="rp-editor-top-grid">
+                        <section class="rp-section rp-plan-details-panel">
+                            <div class="rp-section-head">
+                                <div>
+                                    <h3>Plan Details</h3>
+                                    <p>Basic information used to identify and organise this rate plan.</p>
+                                </div>
+                                <span class="rp-section-number">01</span>
+                            </div>
+
+                            <div class="rp-fields-grid">
+                                <div class="rp-field rp-plan-name-field">
+                                    <label for="txtPlanName">
+                                        Plan Name
+                                        <span class="field-tooltip" tabindex="0"
+                                              data-tooltip="Use a clear guest-facing name, for example Flexible Rate or Non-Refundable.">
+                                            <i class="fa-solid fa-circle-question"></i>
+                                        </span>
+                                    </label>
+                                    <input id="txtPlanName"
+                                           class="rp-input"
+                                           maxlength="200"
+                                           value="@editor.PlanName"
+                                    @(editor.IsEdit ? "readonly" : null) />
+                                    @if (editor.IsEdit)
+
+                                    {
+                                        <small>Plan names are locked after creation to protect linked rates and Channex mappings.</small>
+                                    }
+                                </div>
+
+                                <div class="rp-field rp-order-field">
+                                    <label for="txtOrderid">
+                                        Display Order
+                                        <span class="field-tooltip" tabindex="0"
+                                              data-tooltip="Lower numbers appear first in the rate-plan list.">
+                                            <i class="fa-solid fa-circle-question"></i>
+                                        </span>
+                                    </label>
+                                    <input id="txtOrderid"
+                                           type="number"
+                                           class="rp-input"
+                                           min="0"
+                                           max="9999"
+                                           value="@editor.DisplayOrder" />
+                                </div>
+
+                                <div class="rp-field rp-description-field">
+                                    <label for="txtDescription">
+                                        Description
+                                        <span class="field-tooltip" tabindex="0"
+                                              data-tooltip="Summarise the plan terms, such as cancellation or payment conditions.">
+                                            <i class="fa-solid fa-circle-question"></i>
+                                        </span>
+                                    </label>
+                                    <textarea id="txtDescription"
+                                              class="rp-input rp-textarea"
+                                              rows="2"
+                                              maxlength="2000"
+                                              placeholder="Add a short description of the plan terms...">@editor.Description</textarea>
+                                </div>
+                            </div>
+                        </section>
+
+                        <div class="rp-rules-grid">
+                            <section class="rp-setting-card">
+                                <div class="rp-setting-head">
+                                    <div class="rp-setting-title">
+                                        <span class="rp-setting-icon"><i class="fa-regular fa-calendar-xmark"></i></span>
+                                        <div>
+                                            <h3>Booking Cutoff</h3>
+                                            <p>Set the minimum advance-booking period.</p>
+                                        </div>
+                                    </div>
+                                    <span class="field-tooltip" tabindex="0"
+                                          data-tooltip="Example: a 3-day cutoff blocks this plan when arrival is fewer than 3 calendar days away.">
+                                        <i class="fa-solid fa-circle-question"></i>
+                                    </span>
+                                </div>
+
+                                <div class="rp-setting-toggle-row">
+                                    <div>
+                                        <strong>Enable booking cutoff</strong>
+                                        <span>Restrict bookings close to arrival.</span>
+                                    </div>
+                                    <label class="rp-switch" for="chkBookingCutoffEnabled">
+                                        <input id="chkBookingCutoffEnabled"
+                                               type="checkbox"
+                                        @(editor.BookingCutoffEnabled ? "checked" : null) />
+                                        <span></span>
+                                    </label>
+                                </div>
+
+                                <div id="bookingCutoffDaysField" class="rp-field rp-compact-field">
+                                    <label for="txtBookingCutoffDays">Minimum days before arrival</label>
+                                    <div class="rp-input-suffix">
+                                        <input id="txtBookingCutoffDays"
+                                               type="number"
+                                               class="rp-input"
+                                               min="1"
+                                               max="365"
+                                               value="@(editor.BookingCutoffDays?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)"
+                                               placeholder="3" />
+                                        <span>days</span>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="rp-setting-card">
+                                <div class="rp-setting-head">
+                                    <div class="rp-setting-title">
+                                        <span class="rp-setting-icon"><i class="fa-regular fa-credit-card"></i></span>
+                                        <div>
+                                            <h3>Automatic Card Charge</h3>
+                                            <p>Configure when an automatic payment should run.</p>
+                                        </div>
+                                    </div>
+                                    <span class="field-tooltip" tabindex="0"
+                                          data-tooltip="Instant charge and scheduled charge are mutually exclusive. Selecting one clears the other.">
+                                        <i class="fa-solid fa-circle-question"></i>
+                                    </span>
+                                </div>
+
+                                <div class="rp-charge-grid">
+                                    <div class="rp-choice-card" id="instantChargeOption">
+                                        <label for="chkinstpay">
+                                            <input id="chkinstpay"
+                                                   type="checkbox"
+                                            @(editor.InstantPayment ? "checked" : null) />
+                                            <span class="rp-choice-check"><i class="fa-solid fa-check"></i></span>
+                                            <span class="rp-choice-copy">
+                                                <strong>Charge instantly</strong>
+                                                <small>When the booking is received.</small>
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    <div class="rp-choice-card rp-schedule-card" id="scheduledChargeOption">
+                                        <label for="ddlChargeLeadHours">Charge before arrival</label>
+                                        <select id="ddlChargeLeadHours" class="rp-select">
+                                            <option value="">Do not schedule</option>
+                                            @if (editor.ChargeLeadHours == 12)
+
+                                            {
+                                                <option value="12" selected>12 hours before arrival</option>
+                                            }
+
+                                            else
+
+                                            {
+                                                <option value="12">12 hours before arrival</option>
+                                            }
+                                            @if (editor.ChargeLeadHours == 24)
+
+                                            {
+                                                <option value="24" selected>24 hours before arrival</option>
+                                            }
+
+                                            else
+
+                                            {
+                                                <option value="24">24 hours before arrival</option>
+                                            }
+                                            @if (editor.ChargeLeadHours == 48)
+
+                                            {
+                                                <option value="48" selected>48 hours before arrival</option>
+                                            }
+
+                                            else
+
+                                            {
+                                                <option value="48">48 hours before arrival</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="rp-actionbar">
+                        <button id="savePlanDetailsButton" type="button" class="rp-btn rp-btn-primary">
+                            <i class="fa-regular fa-floppy-disk"></i>
+                            <span>Save Plan Details</span>
+                        </button>
+                        <span id="detailsSaveMessage" class="save-message" aria-live="polite"></span>
+                    </div>
+
+                    <section class="rp-section rp-rates-section">
+                        <div class="rp-section-head rp-rates-head">
+                            <div>
+                                <h3>Rates</h3>
+                                <p>Use manual room adjustments or calculate this plan from a parent rate plan.</p>
+                            </div>
+                            <span class="rp-section-number">02</span>
+                        </div>
+
+                        <div class="rp-derive-row">
+                            <div>
+                                <strong>Derived Rate Plan</strong>
+                                <span>Automatically follow another plan using a fixed or percentage adjustment.</span>
+                            </div>
+                            <label class="rp-switch" for="chkDerive">
+                                <input id="chkDerive" type="checkbox" @(editor.Derive ? "checked" : null) />
+                                <span></span>
+                            </label>
+                        </div>
+
+                        <div id="derivedPanel" class="rp-derived-panel" hidden="@(!editor.Derive)">
+                            <div class="rp-derived-grid">
+                                <div class="rp-field rp-span-4">
+                                    <label for="ddlDerivedFrom">Derived From</label>
+                                    <select id="ddlDerivedFrom" class="rp-select">
+                                        <option value="">Select parent plan...</option>
+                                        @foreach (var option in Model.ParentPlans)
+
+                                        {
+
+                                            if (option.Value.Equals(editor.DerivedFrom, StringComparison.OrdinalIgnoreCase))
+
+                                            {
+                                                <option value="@option.Value" selected>@option.Text</option>
+                                            }
+
+                                            else
+
+                                            {
+                                                <option value="@option.Value">@option.Text</option>
+                                            }
+
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="rp-field rp-span-3">
+                                    <label for="ddlOperator">Operator</label>
+                                    <select id="ddlOperator" class="rp-select">
+                                        @if (editor.Operator == "Minus")
+
+                                        {
+                                            <option value="Plus">Plus (+)</option>
+                                            <option value="Minus" selected>Minus (-)</option>
+                                        }
+
+                                        else
+
+                                        {
+                                            <option value="Plus" selected>Plus (+)</option>
+                                            <option value="Minus">Minus (-)</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="rp-field rp-span-3">
+                                    <label for="txtDeriveAmount">Amount</label>
+                                    <input id="txtDeriveAmount"
+                                           type="number"
+                                           min="0"
+                                           step="0.01"
+                                           class="rp-input"
+                                           value="@editor.DeriveAmount.ToString("0.##", CultureInfo.InvariantCulture)"
+                                           placeholder="0.00" />
+                                </div>
+
+                                <div class="rp-field rp-span-2">
+                                    <label for="ddlDeriveType">Type</label>
+                                    <select id="ddlDeriveType" class="rp-select">
+                                        @if (editor.DeriveType == "Percentage")
+
+                                        {
+                                            <option value="Value">Value</option>
+                                            <option value="Percentage" selected>Percentage</option>
+                                        }
+
+                                        else
+
+                                        {
+                                            <option value="Value" selected>Value</option>
+                                            <option value="Percentage">Percentage</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="rp-info-note">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>The selected parent's rate remains the source; this plan stores only the configured adjustment.</span>
+                            </div>
+                        </div>
+
+                        <div id="manualRatesPanel" hidden="@(editor.Derive)">
+                            <div class="rp-rate-table-wrap">
+                                <table class="rp-rate-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Room Type</th>
+                                            <th class="rp-number-col">Per Room Adjustment</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (editor.Rooms.Count == 0)
+
+                                        {
+                                            <tr>
+                                                <td colspan="2">
+                                                    <div class="rp-empty-state">
+                                                        <i class="fa-regular fa-folder-open"></i>
+                                                        <span>No Room Rent categories are available.</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+
+                                        else
+
+                                        {
+
+                                            foreach (var room in editor.Rooms)
+
+                                            {
+                                                <tr data-rate-room
+                                                    data-category-id="@room.CategoryId"
+                                                    data-room-type="@room.RoomType">
+                                                    <td>
+                                                        <div class="rp-room-cell">
+                                                            <span class="rp-room-icon"><i class="fa-solid fa-bed"></i></span>
+                                                            <div>
+                                                                <strong>@room.RoomType</strong>
+                                                                <small>Base rate + adjustment</small>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="rp-number-col">
+                                                        <div class="rp-adjustment-input">
+                                                            <span>@currency</span>
+                                                            <input type="number"
+                                                                   step="0.01"
+                                                                   class="rp-input"
+                                                                   data-room-adjustment
+                                                                   value="@room.PerRoom.ToString("0.##", CultureInfo.InvariantCulture)" />
+                                                        </div>
+                                                        <input type="hidden"
+                                                               data-room-active
+                                                               value="@(room.Active ? "true" : "false")" />
+                                                    </td>
+                                                </tr>
+                                            }
+
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="rp-actionbar rp-rates-actionbar">
+                            <button id="saveRatesButton" type="button" class="rp-btn rp-btn-primary">
+                                <i class="fa-regular fa-floppy-disk"></i>
+                                <span>Save Rates</span>
+                            </button>
+                            <span id="ratesSaveMessage" class="save-message" aria-live="polite"></span>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <div class="rp-loading-overlay" data-loading-overlay hidden>
+                <div class="rp-spinner"></div>
+            </div>
+        </main>
+    </div>
+
+    <div id="ratePlanToast" class="rp-toast" role="status" aria-live="polite" hidden></div>
+</div>
+
+@section Scripts {
+    <script src="~/js/rate-plan.js" asp-append-version="true"></script>
+}

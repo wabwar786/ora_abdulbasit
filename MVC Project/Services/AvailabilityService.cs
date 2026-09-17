@@ -960,7 +960,7 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
         var value = await WithConnectionAsync(
             connection => LoadPlansAsync(connection, hotelId, normalizedIds, cancellationToken),
             cancellationToken);
-        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(5));
         return value;
     }
 
@@ -1175,14 +1175,28 @@ WHERE hotel_id=@hotel
             ? ",min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure"
             : string.Empty;
         var sql = $@"
+;WITH RankedRates AS
+(
+    SELECT category_id,planid,[date],rate,upload,baserate,uploadfrom,
+           ISNULL(stop_sell,0) AS stop_sell,
+           ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell
+           {restrictionColumns},
+           ROW_NUMBER() OVER
+           (
+               PARTITION BY hotel_id,CONVERT(nvarchar(100),category_id),CONVERT(nvarchar(50),planid),[date]
+               ORDER BY CASE WHEN ISNULL(uploadfrom,0)=1 THEN 0 ELSE 1 END,
+                        CASE WHEN ISNULL(upload,0)=0 THEN 0 ELSE 1 END
+           ) AS rn
+    FROM dbo.datesrates
+    WHERE hotel_id=@hotel
+      AND [date] BETWEEN @start AND @end
+      AND category_id IN ({inClause})
+)
 SELECT category_id,planid,[date],rate,upload,baserate,uploadfrom,
-       ISNULL(stop_sell,0) AS stop_sell,
-       ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell
+       stop_sell,cutoff_stop_sell
        {restrictionColumns}
-FROM dbo.datesrates
-WHERE hotel_id=@hotel
-  AND [date] BETWEEN @start AND @end
-  AND category_id IN ({inClause});";
+FROM RankedRates
+WHERE rn=1;";
 
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
@@ -1238,16 +1252,29 @@ WHERE hotel_id=@hotel
   AND CONVERT(nvarchar(50),localplanid)=@plan
 ORDER BY id DESC;
 
-SELECT [date],rate,upload,baserate,uploadfrom,
-       ISNULL(stop_sell,0) AS stop_sell,
-       ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell,
-       min_los,min_stay_through,max_los,cutoff_days,
-       closed_to_arrival,closed_to_departure
-FROM dbo.datesrates
-WHERE hotel_id=@hotel
-  AND category_id=@category
-  AND planid=@plan
-  AND [date] BETWEEN @start AND @end
+;WITH RankedRates AS
+(
+    SELECT [date],rate,upload,baserate,uploadfrom,
+           ISNULL(stop_sell,0) AS stop_sell,
+           ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell,
+           min_los,min_stay_through,max_los,cutoff_days,
+           closed_to_arrival,closed_to_departure,
+           ROW_NUMBER() OVER
+           (
+               PARTITION BY hotel_id,CONVERT(nvarchar(100),category_id),CONVERT(nvarchar(50),planid),[date]
+               ORDER BY CASE WHEN ISNULL(uploadfrom,0)=1 THEN 0 ELSE 1 END,
+                        CASE WHEN ISNULL(upload,0)=0 THEN 0 ELSE 1 END
+           ) AS rn
+    FROM dbo.datesrates
+    WHERE hotel_id=@hotel
+      AND category_id=@category
+      AND planid=@plan
+      AND [date] BETWEEN @start AND @end
+)
+SELECT [date],rate,upload,baserate,uploadfrom,stop_sell,cutoff_stop_sell,
+       min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure
+FROM RankedRates
+WHERE rn=1
 ORDER BY [date];";
 
         var rates = new Dictionary<(string, string, DateTime), AvailabilityDbRate>();
