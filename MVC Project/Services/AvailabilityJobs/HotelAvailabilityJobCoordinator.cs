@@ -43,5 +43,34 @@ namespace Orapmshms.Services.AvailabilityJobs
                 gate.Release();
             }
         }
+
+        public static async Task<T> RunAsync<T>(
+            string hotelId,
+            CancellationToken cancellationToken,
+            Func<Task<T>> work)
+        {
+            if (work == null)
+                throw new ArgumentNullException(nameof(work));
+
+            string key = string.IsNullOrWhiteSpace(hotelId)
+                ? "__UNKNOWN_HOTEL__"
+                : hotelId.Trim();
+
+            SemaphoreSlim gate = HotelLocks.GetOrAdd(
+                key,
+                ignored => new SemaphoreSlim(1, 1));
+
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return await work().ConfigureAwait(false);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
     }
 }

@@ -360,6 +360,7 @@ WHERE dr.hotel_id=@hotel
   AND CONVERT(nvarchar(50),dr.planid)=@plan
   AND dr.[date] BETWEEN @from AND @to
   AND ISNULL(dr.uploadfrom,0)<>1
+  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL
   {categoryFilter};
 
 DECLARE @days int=DATEDIFF(day,@from,@to)+1;
@@ -481,7 +482,8 @@ JOIN #EffectiveDerived e
   ON CONVERT(nvarchar(100),e.category_id)=CONVERT(nvarchar(100),dr.category_id)
  AND e.[date]=dr.[date]
 WHERE dr.hotel_id=@hotel
-  AND CONVERT(nvarchar(50),dr.planid)=CONVERT(nvarchar(50),@child);
+  AND CONVERT(nvarchar(50),dr.planid)=CONVERT(nvarchar(50),@child)
+  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL;
 
 INSERT INTO dbo.datesrates
 (hotel_id,planid,category_id,[date],baserate,rate,upload,uploadfrom,restr_upload,restr_uploadfrom,currentdate)

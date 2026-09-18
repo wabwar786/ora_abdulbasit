@@ -1,0 +1,403 @@
+@model Orapmshms.Models.YieldManagementPageViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Yield Management";
+    Layout = "_PmsLayout";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/yield-management.css" asp-append-version="true" />
+}
+
+<div id="yieldManagementPage"
+     class="yieldm-root"
+     data-rule-url-template="@Url.Action("Rule", "YieldManagement", new { id = "__ID__" })"
+     data-save-url="@Url.Action("Save", "YieldManagement")"
+     data-toggle-url-template="@Url.Action("Toggle", "YieldManagement", new { id = "__ID__" })"
+     data-delete-url-template="@Url.Action("Delete", "YieldManagement", new { id = "__ID__" })"
+     data-hotel-today="@Model.HotelTodayIso">
+
+    <form id="yieldAntiForgery" class="yieldm-hidden">@Html.AntiForgeryToken()</form>
+
+    @if (!string.IsNullOrWhiteSpace(ViewBag.LoadError as string))
+    {
+        <div class="yieldm-alert yieldm-alert-error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>@ViewBag.LoadError</span>
+        </div>
+    }
+
+    <section class="yieldm-toolbar">
+        <div class="yieldm-heading">
+            <span class="yieldm-heading-icon"><i class="fa-solid fa-chart-line"></i></span>
+            <div>
+                <h1>Yield Management</h1>
+                <p>Control automated pricing rules using live property and room-type occupancy.</p>
+            </div>
+        </div>
+        <div class="yieldm-toolbar-actions">
+            <div class="yieldm-search-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input id="yieldRuleSearch" type="search" maxlength="60" placeholder="Search yield rules..." autocomplete="off" />
+            </div>
+            <button type="button" class="yieldm-btn yieldm-btn-primary" id="yieldNewRule">
+                <i class="fa-solid fa-plus"></i><span>New Rule</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="yieldm-occupancy-layout">
+        <article class="yieldm-occupancy-main">
+            <div class="yieldm-card-kicker">TODAY'S PROPERTY OCCUPANCY</div>
+            <div class="yieldm-occupancy-main-row">
+                <div>
+                    <strong class="yieldm-big-percent">@Model.TodayOccupancy.ToString("0.#", CultureInfo.InvariantCulture)%</strong>
+                    <span class="yieldm-date-label">@Model.HotelTodayIso</span>
+                </div>
+                <div class="yieldm-ring" style="--occ:@Model.TodayOccupancy.ToString("0.#", CultureInfo.InvariantCulture)%">
+                    <span>@Model.TodayRoomsSold/@Model.TodaySellableRooms</span>
+                </div>
+            </div>
+            <div class="yieldm-mini-stats">
+                <div><span>Sold</span><strong>@Model.TodayRoomsSold</strong></div>
+                <div><span>Available</span><strong>@Model.TodayAvailableRooms</strong></div>
+                <div><span>Blocked</span><strong>@Model.TodayBlockedRooms</strong></div>
+                <div><span>Active Rules</span><strong>@Model.ActiveRules</strong></div>
+            </div>
+        </article>
+
+        <article class="yieldm-category-card">
+            <div class="yieldm-section-head">
+                <div>
+                    <h2>Category Occupancy</h2>
+                    <p>Live room-type occupancy for today's hotel date.</p>
+                </div>
+                <span class="yieldm-live"><i></i> Live</span>
+            </div>
+            <div class="yieldm-category-list">
+                @if (Model.CategoryOccupancy.Count == 0)
+                {
+                    <div class="yieldm-empty-mini">No room-category occupancy is available.</div>
+                }
+                else
+                {
+                    @foreach (var item in Model.CategoryOccupancy)
+                    {
+                        <div class="yieldm-category-row">
+                            <div class="yieldm-category-name">
+                                <strong>@item.Category</strong>
+                                <span>@item.SoldRooms sold · @item.AvailableRooms available · @item.BlockedRooms blocked</span>
+                            </div>
+                            <div class="yieldm-category-meter">
+                                <div class="yieldm-category-track"><span style="width:@Math.Clamp(item.OccupancyPercent, 0m, 100m).ToString("0.#", CultureInfo.InvariantCulture)%"></span></div>
+                                <strong>@item.OccupancyPercent.ToString("0.#", CultureInfo.InvariantCulture)%</strong>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </article>
+    </section>
+
+    <section class="yieldm-editor" id="yieldRuleEditor" hidden>
+        <div class="yieldm-editor-head">
+            <div>
+                <span class="yieldm-editor-eyebrow" id="yieldEditorMode">NEW RULE</span>
+                <h2 id="yieldEditorTitle">Create Yield Rule</h2>
+                <p>Define the stay period, occupancy trigger and rate adjustment in one place.</p>
+            </div>
+            <button type="button" class="yieldm-icon-btn" id="yieldEditorClose" aria-label="Close rule editor">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div id="yieldEditorMessage" class="yieldm-form-message" hidden></div>
+        <input type="hidden" id="yieldRuleId" value="0" />
+
+        <div class="yieldm-editor-grid yieldm-editor-grid-main">
+            <div class="yieldm-field yieldm-span-2">
+                <label for="yieldRuleName" class="yieldm-required-label">Rule Name</label>
+                <input id="yieldRuleName" type="text" maxlength="50" title="Maximum 50 characters" placeholder="e.g. High occupancy weekend uplift" />
+            </div>
+            <div class="yieldm-field">
+                <label for="yieldPriority">Priority</label>
+                <input id="yieldPriority" type="number" min="0" max="999" value="0" title="0 to 999" />
+            </div>
+            <div class="yieldm-field yieldm-active-field">
+                <label>Status</label>
+                <label class="yieldm-switch-line">
+                    <input id="yieldIsActive" type="checkbox" checked />
+                    <span class="yieldm-switch"></span>
+                    <span id="yieldActiveText">Active</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="yieldm-editor-section">
+            <div class="yieldm-editor-section-head">
+                <span class="yieldm-step">1</span>
+                <div><h3>Scope</h3><p>Select the rate plans and room categories affected by this rule.</p></div>
+            </div>
+            <div class="yieldm-two-column">
+                <div class="yieldm-field">
+                    <div class="yieldm-field-head">
+                        <label id="yieldPlansLabel" class="yieldm-required-label">Rate Plans</label>
+                        <div><button type="button" data-yield-select-all="plans">Select all</button><span>·</span><button type="button" data-yield-clear="plans">Clear</button></div>
+                    </div>
+                    <div class="yieldm-multi" data-yield-multi="plans" aria-labelledby="yieldPlansLabel">
+                        <button type="button" class="yieldm-multi-display" data-yield-multi-toggle="plans">
+                            <span class="yieldm-multi-placeholder">Select rate plans</span>
+                            <span class="yieldm-multi-tags"></span><i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                        <div class="yieldm-multi-menu" data-yield-multi-menu="plans" hidden>
+                            @foreach (var plan in Model.PlanOptions)
+                            {
+                                <label><input type="checkbox" class="yield-plan-choice" value="@plan.Value" data-label="@plan.Text" /><span>@plan.Text</span></label>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="yieldm-field">
+                    <div class="yieldm-field-head">
+                        <label id="yieldRoomsLabel" class="yieldm-required-label">Room Types</label>
+                        <div><button type="button" data-yield-select-all="rooms">Select all</button><span>·</span><button type="button" data-yield-clear="rooms">Clear</button></div>
+                    </div>
+                    <div class="yieldm-multi" data-yield-multi="rooms" aria-labelledby="yieldRoomsLabel">
+                        <button type="button" class="yieldm-multi-display" data-yield-multi-toggle="rooms">
+                            <span class="yieldm-multi-placeholder">Select room types</span>
+                            <span class="yieldm-multi-tags"></span><i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                        <div class="yieldm-multi-menu" data-yield-multi-menu="rooms" hidden>
+                            @foreach (var room in Model.RoomOptions)
+                            {
+                                <label><input type="checkbox" class="yield-room-choice" value="@room.Value" data-label="@room.Text" /><span>@room.Text</span></label>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="yieldm-editor-section yieldm-period-section">
+            <div class="yieldm-editor-section-head">
+                <span class="yieldm-step">2</span>
+                <div><h3>Stay Period</h3><p>Choose the stay date range and the weekdays when this rule can run.</p></div>
+            </div>
+            <div class="yieldm-period-layout">
+                <div class="yieldm-field yieldm-date-range-field">
+                    <label for="yieldDateRangeButton" class="yieldm-required-label">Staying Date Range</label>
+                    <div class="yieldm-date-range-picker" id="yieldDateRangePicker">
+                        <input id="yieldStayFrom" type="hidden" />
+                        <input id="yieldStayTo" type="hidden" />
+                        <button type="button" class="yieldm-date-range-display" id="yieldDateRangeButton" aria-expanded="false">
+                            <span class="yieldm-date-range-text" id="yieldDateRangeText">Select date range</span>
+                            <span class="yieldm-date-range-icon"><i class="fa-regular fa-calendar-days"></i></span>
+                        </button>
+
+                        <div id="yieldCalendarPopover" class="yieldm-calendar-popover" hidden>
+                            <div class="yieldm-calendar-popover-head">
+                                <div><strong>Select date range</strong><span>Choose a start and end date</span></div>
+                                <button type="button" class="yieldm-calendar-close" id="yieldCalendarClose" aria-label="Close date picker">×</button>
+                            </div>
+                            <div class="yieldm-calendar-months">
+                                <section class="yieldm-calendar-month">
+                                    <div class="yieldm-calendar-month-head">
+                                        <button type="button" class="yieldm-calendar-nav" data-yield-calendar-shift="-1" aria-label="Previous month">‹</button>
+                                        <strong id="yieldCalendarLeftTitle"></strong>
+                                        <button type="button" class="yieldm-calendar-nav" data-yield-calendar-shift="1" aria-label="Next month">›</button>
+                                    </div>
+                                    <div class="yieldm-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                                    <div class="yieldm-calendar-grid" id="yieldCalendarLeft"></div>
+                                </section>
+                                <section class="yieldm-calendar-month">
+                                    <div class="yieldm-calendar-month-head">
+                                        <button type="button" class="yieldm-calendar-nav" data-yield-calendar-shift="-1" aria-label="Previous month">‹</button>
+                                        <strong id="yieldCalendarRightTitle"></strong>
+                                        <button type="button" class="yieldm-calendar-nav" data-yield-calendar-shift="1" aria-label="Next month">›</button>
+                                    </div>
+                                    <div class="yieldm-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                                    <div class="yieldm-calendar-grid" id="yieldCalendarRight"></div>
+                                </section>
+                            </div>
+                            <div class="yieldm-calendar-footer">
+                                <span id="yieldCalendarText">Select date range</span>
+                                <div>
+                                    <button type="button" class="yieldm-calendar-clear" id="yieldCalendarClear">Clear</button>
+                                    <button type="button" class="yieldm-calendar-apply" id="yieldCalendarApply">Apply</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="yieldm-field yieldm-days-field">
+                    <div class="yieldm-field-head">
+                        <label class="yieldm-required-label">Applicable Days</label>
+                        <div class="yieldm-days-links">
+                            <button type="button" id="yieldAllDays">All</button><span>·</span><button type="button" id="yieldClearDays">Clear</button>
+                        </div>
+                    </div>
+                    <div class="yieldm-days" id="yieldDays">
+                        <label><input type="checkbox" value="7" checked /><span>Sun</span></label>
+                        <label><input type="checkbox" value="1" checked /><span>Mon</span></label>
+                        <label><input type="checkbox" value="2" checked /><span>Tue</span></label>
+                        <label><input type="checkbox" value="3" checked /><span>Wed</span></label>
+                        <label><input type="checkbox" value="4" checked /><span>Thu</span></label>
+                        <label><input type="checkbox" value="5" checked /><span>Fri</span></label>
+                        <label><input type="checkbox" value="6" checked /><span>Sat</span></label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="yieldm-editor-section yieldm-trigger-action">
+            <div class="yieldm-trigger-panel">
+                <div class="yieldm-editor-section-head">
+                    <span class="yieldm-step">3</span>
+                    <div><h3>Trigger</h3><p>Define the occupancy condition that activates the rule.</p></div>
+                </div>
+                <div class="yieldm-field">
+                    <label for="yieldRuleType" class="yieldm-required-label">Rule Type</label>
+                    <select id="yieldRuleType">
+                        <option value="OCC_PCT_PROPERTY">Occupancy Percentage - Property</option>
+                        <option value="OCC_PCT_ROOMTYPE">Occupancy Percentage - Room Type</option>
+                        <option value="ADVANCE_BOOKING">Advance Booking</option>
+                        <option value="CLOSE_AT_OCCUPANCY">Close At Occupancy Level</option>
+                        <option value="TIMED_DISCOUNT">Timed Discount</option>
+                    </select>
+                </div>
+                <div id="yieldOccupancyThreshold" class="yieldm-threshold-row">
+                    <div class="yieldm-field yieldm-compact-field">
+                        <label for="yieldOccMin" class="yieldm-required-label">Occupancy From</label>
+                        <div class="yieldm-input-with-unit"><input id="yieldOccMin" type="number" min="0" max="100" step="0.01" placeholder="0" title="0 to 100" /><span>%</span></div>
+                    </div>
+                    <div class="yieldm-field yieldm-compact-field">
+                        <label for="yieldOccMax" class="yieldm-required-label">Occupancy To</label>
+                        <div class="yieldm-input-with-unit"><input id="yieldOccMax" type="number" min="0" max="100" step="0.01" placeholder="100" title="0 to 100" /><span>%</span></div>
+                    </div>
+                </div>
+                <div id="yieldAdvanceThreshold" class="yieldm-threshold-row" hidden>
+                    <div class="yieldm-field yieldm-compact-field">
+                        <label for="yieldThMin" class="yieldm-required-label">Days From</label>
+                        <div class="yieldm-input-with-unit"><input id="yieldThMin" type="number" min="0" max="365" step="1" placeholder="0" title="0 to 365 days" /><span>days</span></div>
+                    </div>
+                    <div class="yieldm-field yieldm-compact-field">
+                        <label for="yieldThMax" class="yieldm-required-label">Days To</label>
+                        <div class="yieldm-input-with-unit"><input id="yieldThMax" type="number" min="0" max="365" step="1" placeholder="30" title="0 to 365 days" /><span>days</span></div>
+                    </div>
+                </div>
+                <div id="yield-time-threshold" class="yieldm-threshold-row" hidden>
+                    <div class="yieldm-field yieldm-compact-field"><label for="yield-time-from" class="yieldm-required-label">Time From</label><input id="yield-time-from" type="time" /></div>
+                    <div class="yieldm-field yieldm-compact-field"><label for="yield-time-to" class="yieldm-required-label">Time To</label><input id="yield-time-to" type="time" /></div>
+                </div>
+            </div>
+
+            <div class="yieldm-action-panel">
+                <div class="yieldm-editor-section-head">
+                    <span class="yieldm-step">4</span>
+                    <div><h3>Rate Action</h3><p>Choose how the selling rate should change.</p></div>
+                </div>
+                <div class="yieldm-field"><label for="yieldChangeType" class="yieldm-required-label">Change Type</label><select id="yieldChangeType"><option value="">Select action</option><option value="INCREASE">Increase</option><option value="DECREASE">Decrease</option><option value="SET">Set To</option></select></div>
+                <div class="yieldm-action-value-grid">
+                    <div class="yieldm-field"><label for="yieldChangeValue" class="yieldm-required-label">Change Value</label><input id="yieldChangeValue" type="number" min="0" max="999999.99" step="0.01" placeholder="0.00" title="0 to 999999.99" /></div>
+                    <div class="yieldm-field"><label for="yieldChangeUnit" class="yieldm-required-label">Unit</label><select id="yieldChangeUnit"><option value="">Select unit</option><option value="PERCENT">Percentage %</option><option value="AMOUNT">Amount / Value</option></select></div>
+                </div>
+                <div class="yieldm-action-preview" id="yieldActionPreview"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Select an action to preview the pricing instruction.</span></div>
+            </div>
+        </div>
+
+        <div class="yieldm-editor-footer">
+            <button type="button" class="yieldm-btn yieldm-btn-ghost" id="yieldCancelEdit">Cancel</button>
+            <button type="button" class="yieldm-btn yieldm-btn-primary" id="yieldSaveRule"><i class="fa-regular fa-floppy-disk"></i><span>Save Rule</span></button>
+        </div>
+    </section>
+
+    <section class="yieldm-rules-card">
+        <div class="yieldm-section-head yieldm-rules-head">
+            <div>
+                <h2>Yield Rules</h2>
+                <p>Rules are evaluated in priority order. Lower priority numbers are shown first.</p>
+            </div>
+            <span class="yieldm-count-badge"><strong id="yieldVisibleRuleCount">@Model.Rules.Count</strong> rules</span>
+        </div>
+        <div class="yieldm-table-wrap">
+            <table class="yieldm-table" id="yieldRulesTable">
+                <thead>
+                    <tr>
+                        <th>Priority</th>
+                        <th>Rule</th>
+                        <th>Stay Period</th>
+                        <th>Trigger</th>
+                        <th>Rate Action</th>
+                        <th>Scope</th>
+                        <th>Status</th>
+                        <th class="yieldm-actions-head">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rules.Count == 0)
+                    {
+                        <tr class="yieldm-empty-row"><td colspan="8">No yield rules have been created yet.</td></tr>
+                    }
+                    else
+                    {
+                        foreach (var rule in Model.Rules)
+                        {
+                            var triggerText = rule.RuleType is "OCC_PCT_PROPERTY" or "OCC_PCT_ROOMTYPE" or "CLOSE_AT_OCCUPANCY"
+                                ? $"{rule.OccupancyMin:0.##}% – {rule.OccupancyMax:0.##}%"
+                                : rule.RuleType == "ADVANCE_BOOKING"
+                                    ? $"{rule.ThresholdMin} – {rule.ThresholdMax} days"
+                                    : rule.RuleType == "TIMED_DISCOUNT"
+                                        ? $"{rule.TimeFrom:hh\\:mm} – {rule.TimeTo:hh\\:mm}"
+                                        : "—";
+                            var actionClass = rule.ChangeType == "INCREASE" ? "is-up" : rule.ChangeType == "DECREASE" ? "is-down" : "is-set";
+                            var actionSymbol = rule.ChangeUnit == "PERCENT" ? "%" : "";
+                            <tr data-rule-row="@rule.Id" data-search="@(rule.RuleName + " " + rule.RuleTypeLabel + " " + triggerText + " " + rule.ChangeType)">
+                                <td><span class="yieldm-priority">@rule.Priority</span></td>
+                                <td>
+                                    <button type="button" class="yieldm-rule-name" data-edit-rule="@rule.Id">@rule.RuleName</button>
+                                    <small> · @rule.RuleTypeLabel</small>
+                                </td>
+                                <td><strong>@rule.StayFrom.ToString("dd MMM yyyy")</strong><small>to @rule.StayTo.ToString("dd MMM yyyy")</small></td>
+                                <td><span class="yieldm-trigger-badge">@triggerText</span></td>
+                                <td><span class="yieldm-rate-action @actionClass"><i class="fa-solid @(rule.ChangeType == "INCREASE" ? "fa-arrow-trend-up" : rule.ChangeType == "DECREASE" ? "fa-arrow-trend-down" : "fa-equals")"></i>@rule.ChangeType @rule.ChangeValue?.ToString("0.##")@actionSymbol</span></td>
+                                <td><span class="yieldm-scope-chip"><i class="fa-solid fa-tag"></i>@rule.RatePlanCount plans</span><span class="yieldm-scope-chip"><i class="fa-solid fa-bed"></i>@rule.RoomTypeCount rooms</span></td>
+                                <td>
+                                    <button type="button" class="yieldm-status-switch @(rule.IsActive ? "is-active" : "")" data-toggle-rule="@rule.Id" data-is-active="@(rule.IsActive ? "true" : "false")" aria-label="Toggle status">
+                                        <span></span><em>@(rule.IsActive ? "Active" : "Inactive")</em>
+                                    </button>
+                                </td>
+                                <td>
+                                    <div class="yieldm-row-actions">
+                                        <button type="button" title="Edit" data-edit-rule="@rule.Id"><i class="fa-solid fa-pen"></i></button>
+                                        <button type="button" title="Delete" class="is-danger" data-delete-rule="@rule.Id" data-rule-name="@rule.RuleName"><i class="fa-solid fa-trash"></i></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="yieldm-confirm" id="yieldConfirm" hidden>
+        <div class="yieldm-confirm-card" role="dialog" aria-modal="true" aria-labelledby="yieldConfirmTitle">
+            <div class="yieldm-confirm-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <h3 id="yieldConfirmTitle">Confirm action</h3>
+            <p id="yieldConfirmText"></p>
+            <div class="yieldm-confirm-note" id="yieldConfirmNote"></div>
+            <div class="yieldm-confirm-actions">
+                <button type="button" class="yieldm-btn yieldm-btn-ghost" id="yieldConfirmCancel">Cancel</button>
+                <button type="button" class="yieldm-btn yieldm-btn-primary" id="yieldConfirmOk">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="yieldm-toast" id="yieldToast" hidden aria-live="polite"></div>
+</div>
+
+@section Scripts {
+    <script src="~/js/yield-management.js" asp-append-version="true"></script>
+}

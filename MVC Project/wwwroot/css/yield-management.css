@@ -1,0 +1,2704 @@
+.yieldm-root {
+    --ym-navy: #17324f;
+    --ym-navy2: #102a43;
+    --ym-teal: #16a6a0;
+    --ym-teal-soft: #eaf8f7;
+    --ym-border: #dce5ee;
+    --ym-bg: #f5f8fb;
+    --ym-text: #172033;
+    --ym-muted: #708197;
+    --ym-green: #159766;
+    --ym-red: #d9475c;
+    --ym-amber: #d69216;
+    max-width: 1540px;
+    margin: 0 auto;
+    padding: 10px 12px 28px;
+    color: var(--ym-text);
+    font-family: Montserrat,Arial,sans-serif
+}
+
+    .yieldm-root * {
+        box-sizing: border-box
+    }
+
+.yieldm-hidden {
+    display: none !important
+}
+
+.yieldm-alert {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border: 1px solid #f5c2c7;
+    background: #fff1f2;
+    color: #9f1239;
+    font-size: 12px
+}
+
+.yieldm-toolbar, .yieldm-occupancy-main, .yieldm-category-card, .yieldm-editor, .yieldm-rules-card {
+    background: #fff;
+    border: 1px solid var(--ym-border);
+    box-shadow: 0 8px 24px rgba(23,50,79,.05)
+}
+
+.yieldm-toolbar {
+    min-height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 12px 14px;
+    margin-bottom: 10px
+}
+
+.yieldm-heading {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0
+}
+
+.yieldm-heading-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    background: var(--ym-navy);
+    color: #fff;
+    font-size: 16px;
+    flex: 0 0 38px
+}
+
+.yieldm-heading h1 {
+    font-size: 17px;
+    line-height: 1.2;
+    margin: 0;
+    color: var(--ym-navy2);
+    font-weight: 800
+}
+
+.yieldm-heading p {
+    font-size: 11px;
+    margin: 3px 0 0;
+    color: var(--ym-muted)
+}
+
+.yieldm-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px
+}
+
+.yieldm-search-wrap {
+    position: relative;
+    width: 285px
+}
+
+    .yieldm-search-wrap i {
+        position: absolute;
+        left: 11px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 11px;
+        color: #8796a8
+    }
+
+    .yieldm-search-wrap input {
+        width: 100%;
+        height: 38px;
+        padding: 0 12px 0 31px;
+        border: 1px solid #cad7e3;
+        background: #fff;
+        font-size: 12px;
+        outline: none
+    }
+
+        .yieldm-search-wrap input:focus, .yieldm-field input:focus, .yieldm-field select:focus {
+            border-color: #62bdb8;
+            box-shadow: 0 0 0 3px rgba(22,166,160,.1)
+        }
+
+.yieldm-btn {
+    height: 38px;
+    border: 0;
+    padding: 0 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: .15s ease
+}
+
+.yieldm-btn-primary {
+    background: var(--ym-navy);
+    color: #fff
+}
+
+    .yieldm-btn-primary:hover {
+        background: #0d2740
+    }
+
+.yieldm-btn-ghost {
+    background: #fff;
+    color: #3d5065;
+    border: 1px solid #cbd7e3
+}
+
+    .yieldm-btn-ghost:hover {
+        background: #f6f9fc
+    }
+
+.yieldm-btn:disabled {
+    opacity: .58;
+    cursor: not-allowed
+}
+
+.yieldm-occupancy-layout {
+    display: grid;
+    grid-template-columns: 320px minmax(0,1fr);
+    gap: 10px;
+    margin-bottom: 10px
+}
+
+.yieldm-occupancy-main, .yieldm-category-card {
+    padding: 13px 14px
+}
+
+.yieldm-card-kicker {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .7px;
+    color: #667a90
+}
+
+.yieldm-occupancy-main-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 8px 0 10px
+}
+
+.yieldm-big-percent {
+    display: block;
+    font-size: 34px;
+    line-height: 1;
+    font-weight: 850;
+    color: var(--ym-navy2)
+}
+
+.yieldm-date-label {
+    display: block;
+    margin-top: 5px;
+    color: var(--ym-muted);
+    font-size: 10px
+}
+
+.yieldm-ring {
+    --occ: 0;
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: conic-gradient(var(--ym-teal) var(--occ),#e8eef4 0);
+    position: relative
+}
+
+    .yieldm-ring:after {
+        content: "";
+        position: absolute;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: #fff
+    }
+
+    .yieldm-ring span {
+        position: relative;
+        z-index: 1;
+        font-size: 9px;
+        font-weight: 800;
+        color: var(--ym-navy)
+    }
+
+.yieldm-mini-stats {
+    display: grid;
+    grid-template-columns: repeat(4,1fr);
+    border-top: 1px solid #edf1f5;
+    padding-top: 9px;
+    gap: 6px
+}
+
+    .yieldm-mini-stats div {
+        min-width: 0
+    }
+
+    .yieldm-mini-stats span {
+        display: block;
+        font-size: 9px;
+        color: var(--ym-muted);
+        white-space: nowrap
+    }
+
+    .yieldm-mini-stats strong {
+        display: block;
+        font-size: 14px;
+        margin-top: 1px;
+        color: #26384a
+    }
+
+.yieldm-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px
+}
+
+    .yieldm-section-head h2 {
+        font-size: 13px;
+        margin: 0;
+        color: var(--ym-navy2);
+        font-weight: 800
+    }
+
+    .yieldm-section-head p {
+        font-size: 10px;
+        color: var(--ym-muted);
+        margin: 3px 0 0
+    }
+
+.yieldm-live {
+    font-size: 9px;
+    font-weight: 800;
+    color: #28796e;
+    background: #effaf8;
+    border: 1px solid #c7ece7;
+    padding: 4px 7px;
+    white-space: nowrap
+}
+
+    .yieldm-live i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #22a77b;
+        display: inline-block;
+        margin-right: 5px
+    }
+
+.yieldm-category-list {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    column-gap: 18px;
+    row-gap: 7px;
+    max-height: 120px;
+    overflow: auto;
+    padding-right: 3px
+}
+
+.yieldm-category-row {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) 145px;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px dashed #edf1f5
+}
+
+.yieldm-category-name {
+    min-width: 0
+}
+
+    .yieldm-category-name strong {
+        font-size: 11px;
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap
+    }
+
+    .yieldm-category-name span {
+        display: block;
+        margin-top: 2px;
+        font-size: 9px;
+        color: var(--ym-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis
+    }
+
+.yieldm-category-meter {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) 40px;
+    align-items: center;
+    gap: 7px
+}
+
+.yieldm-category-track {
+    height: 6px;
+    background: #edf2f6;
+    overflow: hidden
+}
+
+    .yieldm-category-track span {
+        display: block;
+        height: 100%;
+        background: var(--ym-teal)
+    }
+
+.yieldm-category-meter strong {
+    font-size: 10px;
+    text-align: right;
+    color: #29445c
+}
+
+.yieldm-empty-mini {
+    font-size: 11px;
+    color: var(--ym-muted);
+    padding: 18px 2px
+}
+
+.yieldm-editor {
+    margin-bottom: 10px;
+    padding: 0
+}
+
+.yieldm-editor-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ym-border);
+    background: linear-gradient(180deg,#fbfdff,#f7fafc)
+}
+
+.yieldm-editor-eyebrow {
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .8px;
+    color: var(--ym-teal)
+}
+
+.yieldm-editor-head h2 {
+    font-size: 15px;
+    margin: 2px 0 0;
+    color: var(--ym-navy2)
+}
+
+.yieldm-editor-head p {
+    font-size: 10px;
+    color: var(--ym-muted);
+    margin: 3px 0 0
+}
+
+.yieldm-icon-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #d4dee8;
+    background: #fff;
+    color: #60738a;
+    cursor: pointer
+}
+
+.yieldm-editor-grid {
+    display: grid;
+    gap: 10px
+}
+
+.yieldm-editor-grid-main {
+    grid-template-columns: 2fr 2fr 1fr 1fr;
+    padding: 12px 14px
+}
+
+.yieldm-span-2 {
+    grid-column: span 2
+}
+
+.yieldm-field {
+    min-width: 0
+}
+
+    .yieldm-field > label, .yieldm-field-head > label {
+        display: block;
+        font-size: 10px;
+        font-weight: 800;
+        color: #34475b;
+        margin: 0 0 5px
+    }
+
+    .yieldm-field input, .yieldm-field select {
+        width: 100%;
+        height: 36px;
+        border: 1px solid #cbd8e4;
+        background: #fff;
+        padding: 0 9px;
+        color: #203246;
+        font-size: 11px;
+        outline: none
+    }
+
+        .yieldm-field input[type=number] {
+            font-variant-numeric: tabular-nums
+        }
+
+.yieldm-active-field {
+    align-self: end
+}
+
+.yieldm-switch-line {
+    height: 36px;
+    border: 1px solid #cbd8e4;
+    padding: 0 9px;
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    margin: 0 !important;
+    cursor: pointer;
+    font-size: 10px !important
+}
+
+    .yieldm-switch-line input {
+        display: none
+    }
+
+.yieldm-switch {
+    width: 34px;
+    height: 18px;
+    background: #bec9d5;
+    position: relative;
+    transition: .18s;
+    flex: 0 0 34px
+}
+
+    .yieldm-switch:after {
+        content: "";
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        left: 2px;
+        top: 2px;
+        background: #fff;
+        box-shadow: 0 1px 4px rgba(0,0,0,.18);
+        transition: .18s
+    }
+
+.yieldm-switch-line input:checked + .yieldm-switch {
+    background: var(--ym-green)
+}
+
+    .yieldm-switch-line input:checked + .yieldm-switch:after {
+        left: 18px
+    }
+
+.yieldm-editor-section {
+    border-top: 1px solid #edf1f5;
+    padding: 11px 14px
+}
+
+.yieldm-editor-section-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 9px
+}
+
+.yieldm-step {
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    background: #e9f7f6;
+    color: #087f7a;
+    font-size: 9px;
+    font-weight: 900;
+    flex: 0 0 20px
+}
+
+.yieldm-editor-section-head h3 {
+    font-size: 11px;
+    margin: 0;
+    color: #263b50
+}
+
+.yieldm-editor-section-head p {
+    font-size: 9px;
+    color: var(--ym-muted);
+    margin: 2px 0 0
+}
+
+.yieldm-two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px
+}
+
+.yieldm-field-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px
+}
+
+    .yieldm-field-head > div {
+        display: flex;
+        align-items: center;
+        gap: 5px
+    }
+
+    .yieldm-field-head button {
+        border: 0;
+        background: none;
+        color: #167c91;
+        font-size: 9px;
+        padding: 0;
+        cursor: pointer
+    }
+
+    .yieldm-field-head span {
+        font-size: 9px;
+        color: #9aa8b7
+    }
+
+.yieldm-multi {
+    position: relative
+}
+
+.yieldm-multi-display {
+    width: 100%;
+    min-height: 36px;
+    border: 1px solid #cbd8e4;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 30px 4px 8px;
+    position: relative;
+    text-align: left;
+    cursor: pointer
+}
+
+    .yieldm-multi-display > i {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 9px;
+        color: #77889a
+    }
+
+.yieldm-multi-placeholder {
+    font-size: 10px;
+    color: #7d8da0
+}
+
+.yieldm-multi-tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap
+}
+
+    .yieldm-multi-tags b {
+        font-size: 9px;
+        background: #edf4fb;
+        color: #294b68;
+        padding: 3px 5px;
+        font-weight: 700
+    }
+
+.yieldm-multi-menu {
+    position: absolute;
+    z-index: 50;
+    left: 0;
+    right: 0;
+    top: calc(100% + 3px);
+    max-height: 190px;
+    overflow: auto;
+    border: 1px solid #cbd8e4;
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(22,40,60,.14);
+    padding: 4px
+}
+
+    .yieldm-multi-menu label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 7px;
+        margin: 0;
+        font-size: 10px;
+        cursor: pointer
+    }
+
+        .yieldm-multi-menu label:hover {
+            background: #f3f8fb
+        }
+
+    .yieldm-multi-menu input {
+        width: auto;
+        height: auto
+    }
+
+.yieldm-period-grid {
+    grid-template-columns: 1fr 1fr 3fr
+}
+
+.yieldm-days {
+    display: grid;
+    grid-template-columns: repeat(7,1fr);
+    gap: 4px
+}
+
+    .yieldm-days label {
+        margin: 0
+    }
+
+    .yieldm-days input {
+        display: none
+    }
+
+    .yieldm-days span {
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d3dee8;
+        background: #fff;
+        font-size: 9px;
+        font-weight: 700;
+        color: #607289;
+        cursor: pointer
+    }
+
+    .yieldm-days input:checked + span {
+        background: #eaf8f7;
+        border-color: #7acbc6;
+        color: #087b76
+    }
+
+.yieldm-trigger-action {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 18px
+}
+
+.yieldm-trigger-panel, .yieldm-action-panel {
+    min-width: 0
+}
+
+.yieldm-threshold-row, .yieldm-action-value-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px
+}
+
+.yieldm-action-preview {
+    margin-top: 8px;
+    min-height: 38px;
+    border: 1px solid #dce6ef;
+    background: #f8fbfd;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    color: #64778b;
+    font-size: 10px
+}
+
+    .yieldm-action-preview i {
+        color: var(--ym-teal)
+    }
+
+.yieldm-editor-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+    padding: 10px 14px;
+    background: #fbfdff;
+    border-top: 1px solid var(--ym-border)
+}
+
+.yieldm-form-message {
+    margin: 10px 14px 0;
+    padding: 8px 10px;
+    font-size: 10px;
+    border: 1px solid #f1c5ca;
+    background: #fff3f5;
+    color: #a01d34
+}
+
+    .yieldm-form-message.is-success {
+        border-color: #bce5d4;
+        background: #effaf5;
+        color: #166b4b
+    }
+
+.yieldm-rules-card {
+    overflow: hidden
+}
+
+.yieldm-rules-head {
+    padding: 12px 14px;
+    margin: 0;
+    border-bottom: 1px solid var(--ym-border)
+}
+
+.yieldm-count-badge {
+    font-size: 9px;
+    color: #64778b;
+    border: 1px solid #d7e1eb;
+    padding: 5px 8px;
+    background: #fafcfe
+}
+
+    .yieldm-count-badge strong {
+        color: var(--ym-navy);
+        font-size: 11px
+    }
+
+.yieldm-table-wrap {
+    overflow: auto
+}
+
+.yieldm-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1120px
+}
+
+    .yieldm-table th {
+        padding: 9px 10px;
+        background: #f2f7fa;
+        border-bottom: 1px solid #d9e3ec;
+        color: #496074;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        text-align: left;
+        white-space: nowrap
+    }
+
+    .yieldm-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #edf1f5;
+        font-size: 10px;
+        vertical-align: middle;
+        color: #2e4255
+    }
+
+    .yieldm-table tbody tr:hover {
+        background: #fbfdff
+    }
+
+    .yieldm-table td small {
+        display: block;
+        margin-top: 3px;
+        color: #8392a4;
+        font-size: 9px
+    }
+
+.yieldm-priority {
+    min-width: 28px;
+    height: 24px;
+    padding: 0 7px;
+    display: inline-grid;
+    place-items: center;
+    background: #edf3f8;
+    border: 1px solid #d7e1e9;
+    color: #314c64;
+    font-weight: 800
+}
+
+.yieldm-rule-name {
+    display: block;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: #164d78;
+    font-weight: 800;
+    font-size: 10px;
+    cursor: pointer;
+    text-align: left
+}
+
+    .yieldm-rule-name:hover {
+        text-decoration: underline
+    }
+
+.yieldm-trigger-badge {
+    display: inline-block;
+    padding: 4px 6px;
+    background: #f0f7fb;
+    color: #315a75;
+    border: 1px solid #d9e8f1;
+    font-weight: 700;
+    white-space: nowrap
+}
+
+.yieldm-rate-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 800;
+    white-space: nowrap
+}
+
+    .yieldm-rate-action.is-up {
+        color: #12825c
+    }
+
+    .yieldm-rate-action.is-down {
+        color: #c13d52
+    }
+
+    .yieldm-rate-action.is-set {
+        color: #385f88
+    }
+
+.yieldm-scope-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 4px;
+    padding: 3px 5px;
+    background: #f6f8fb;
+    border: 1px solid #e0e7ee;
+    color: #5a6d80;
+    font-size: 9px;
+    white-space: nowrap
+}
+
+.yieldm-status-switch {
+    border: 0;
+    background: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    cursor: pointer
+}
+
+    .yieldm-status-switch > span {
+        width: 30px;
+        height: 16px;
+        background: #c8d1da;
+        position: relative
+    }
+
+        .yieldm-status-switch > span:after {
+            content: "";
+            width: 12px;
+            height: 12px;
+            background: #fff;
+            position: absolute;
+            left: 2px;
+            top: 2px;
+            transition: .15s;
+            box-shadow: 0 1px 3px rgba(0,0,0,.2)
+        }
+
+    .yieldm-status-switch.is-active > span {
+        background: var(--ym-green)
+    }
+
+        .yieldm-status-switch.is-active > span:after {
+            left: 16px
+        }
+
+    .yieldm-status-switch em {
+        font-size: 9px;
+        font-style: normal;
+        color: #66788a;
+        font-weight: 700
+    }
+
+.yieldm-row-actions {
+    display: flex;
+    gap: 4px
+}
+
+    .yieldm-row-actions button {
+        width: 28px;
+        height: 28px;
+        border: 1px solid #d5e0e9;
+        background: #fff;
+        color: #315778;
+        cursor: pointer
+    }
+
+        .yieldm-row-actions button:hover {
+            background: #f2f7fa
+        }
+
+        .yieldm-row-actions button.is-danger {
+            color: #c33e52
+        }
+
+.yieldm-actions-head {
+    text-align: center !important
+}
+
+.yieldm-empty-row td {
+    text-align: center !important;
+    padding: 30px !important;
+    color: #8795a5 !important
+}
+
+.yieldm-confirm[hidden] {
+    display: none !important
+}
+
+.yieldm-confirm {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: rgba(15,30,45,.42);
+    display: grid;
+    place-items: center;
+    padding: 20px
+}
+
+.yieldm-confirm-card {
+    width: min(460px,100%);
+    background: #fff;
+    border: 1px solid #dbe4ed;
+    box-shadow: 0 24px 70px rgba(8,25,42,.24);
+    padding: 18px
+}
+
+.yieldm-confirm-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    background: #fff5e7;
+    color: #bd7410;
+    margin-bottom: 10px
+}
+
+.yieldm-confirm-card h3 {
+    font-size: 15px;
+    margin: 0;
+    color: #17324f
+}
+
+.yieldm-confirm-card p {
+    font-size: 11px;
+    line-height: 1.55;
+    color: #5d7185;
+    margin: 7px 0 0
+}
+
+.yieldm-confirm-note {
+    font-size: 10px;
+    line-height: 1.45;
+    color: #77551f;
+    background: #fff9ed;
+    border: 1px solid #f0ddba;
+    padding: 8px 9px;
+    margin-top: 10px
+}
+
+.yieldm-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+    margin-top: 14px
+}
+
+.yieldm-toast {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 1300;
+    max-width: 390px;
+    padding: 10px 12px;
+    background: #17324f;
+    color: #fff;
+    font-size: 10px;
+    box-shadow: 0 14px 36px rgba(8,28,45,.22)
+}
+
+    .yieldm-toast.is-error {
+        background: #a7273d
+    }
+
+@media(max-width:1100px) {
+    .yieldm-occupancy-layout {
+        grid-template-columns: 1fr
+    }
+
+    .yieldm-category-list {
+        max-height: none
+    }
+
+    .yieldm-editor-grid-main {
+        grid-template-columns: 2fr 1fr 1fr
+    }
+
+        .yieldm-editor-grid-main .yieldm-span-2 {
+            grid-column: span 1
+        }
+
+    .yieldm-period-grid {
+        grid-template-columns: 1fr 1fr
+    }
+
+        .yieldm-period-grid .yieldm-span-2 {
+            grid-column: 1/-1
+        }
+}
+
+@media(max-width:760px) {
+    .yieldm-root {
+        padding: 7px
+    }
+
+    .yieldm-toolbar {
+        align-items: stretch;
+        flex-direction: column
+    }
+
+    .yieldm-toolbar-actions {
+        align-items: stretch
+    }
+
+    .yieldm-search-wrap {
+        width: 100%
+    }
+
+    .yieldm-category-list {
+        grid-template-columns: 1fr
+    }
+
+    .yieldm-editor-grid-main, .yieldm-two-column, .yieldm-period-grid, .yieldm-trigger-action, .yieldm-threshold-row, .yieldm-action-value-grid {
+        grid-template-columns: 1fr
+    }
+
+        .yieldm-span-2, .yieldm-period-grid .yieldm-span-2 {
+            grid-column: auto
+        }
+
+    .yieldm-days {
+        grid-template-columns: repeat(4,1fr)
+    }
+
+    .yieldm-mini-stats {
+        grid-template-columns: repeat(2,1fr)
+    }
+
+    .yieldm-editor-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 4
+    }
+
+    .yieldm-category-row {
+        grid-template-columns: 1fr
+    }
+
+    .yieldm-category-meter {
+        grid-template-columns: 1fr 40px
+    }
+}
+
+/* =========================================================
+   Compact full-width refinement
+   Matches the spacing, type scale and card language used by
+   Bulk Rate Upload / Bulk Update Restrictions.
+   ========================================================= */
+.yieldm-root {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 8px 6px 20px;
+    font-size: 12px;
+}
+
+.yieldm-toolbar,
+.yieldm-occupancy-main,
+.yieldm-category-card,
+.yieldm-editor,
+.yieldm-rules-card {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, .055);
+}
+
+.yieldm-toolbar {
+    min-height: 60px;
+    padding: 9px 12px;
+    margin-bottom: 8px;
+}
+
+.yieldm-heading-icon {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+    border-radius: 7px;
+    background: #edf3fa;
+    color: #2c5788;
+    font-size: 13px;
+}
+
+.yieldm-heading h1 {
+    font-size: 15px;
+}
+
+.yieldm-heading p {
+    font-size: 10.8px;
+    line-height: 1.35;
+}
+
+.yieldm-search-wrap {
+    width: 300px;
+}
+
+    .yieldm-search-wrap input {
+        height: 36px;
+        font-size: 11.5px;
+    }
+
+.yieldm-btn {
+    height: 36px;
+    font-size: 11px;
+    border-radius: 6px;
+}
+
+.yieldm-occupancy-layout {
+    grid-template-columns: 330px minmax(0, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.yieldm-occupancy-main,
+.yieldm-category-card {
+    padding: 11px 12px;
+}
+
+.yieldm-card-kicker {
+    font-size: 10.5px;
+}
+
+.yieldm-big-percent {
+    font-size: 35px;
+}
+
+.yieldm-date-label {
+    font-size: 10px;
+}
+
+.yieldm-mini-stats span {
+    font-size: 9.8px;
+}
+
+.yieldm-mini-stats strong {
+    font-size: 14.5px;
+}
+
+.yieldm-section-head h2 {
+    font-size: 13.5px;
+}
+
+.yieldm-section-head p {
+    font-size: 10.3px;
+}
+
+.yieldm-category-name strong {
+    font-size: 11.5px;
+}
+
+.yieldm-category-name span {
+    font-size: 9.8px;
+}
+
+.yieldm-category-meter strong {
+    font-size: 10.5px;
+}
+
+.yieldm-live {
+    font-size: 9.5px;
+    border-radius: 999px;
+}
+
+.yieldm-editor[hidden] {
+    display: none !important;
+}
+
+.yieldm-editor:not([hidden]) {
+    display: block;
+}
+
+.yieldm-editor {
+    margin-bottom: 8px;
+}
+
+.yieldm-editor-head {
+    padding: 11px 12px;
+}
+
+    .yieldm-editor-head h2 {
+        font-size: 15.5px;
+    }
+
+    .yieldm-editor-head p {
+        font-size: 10.5px;
+    }
+
+.yieldm-editor-eyebrow {
+    font-size: 9.5px;
+}
+
+.yieldm-editor-grid-main,
+.yieldm-editor-section {
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.yieldm-editor-section-head h3 {
+    font-size: 11.5px;
+}
+
+.yieldm-editor-section-head p {
+    font-size: 9.8px;
+}
+
+.yieldm-field > label,
+.yieldm-field-head > label {
+    font-size: 10.8px;
+}
+
+.yieldm-field input,
+.yieldm-field select {
+    height: 36px;
+    font-size: 11.5px;
+}
+
+.yieldm-switch-line {
+    font-size: 10.8px !important;
+}
+
+.yieldm-field-head button {
+    font-size: 9.8px;
+}
+
+.yieldm-multi-placeholder,
+.yieldm-multi-menu label {
+    font-size: 10.5px;
+}
+
+.yieldm-multi-tags b {
+    font-size: 9.8px;
+}
+
+.yieldm-days span {
+    font-size: 10px;
+}
+
+.yieldm-action-preview {
+    font-size: 10.5px;
+}
+
+.yieldm-form-message {
+    font-size: 10.5px;
+}
+
+.yieldm-rules-head {
+    padding: 10px 12px;
+}
+
+.yieldm-count-badge {
+    font-size: 9.8px;
+    border-radius: 999px;
+}
+
+    .yieldm-count-badge strong {
+        font-size: 11.5px;
+    }
+
+.yieldm-table th {
+    padding: 10px 10px;
+    font-size: 10px;
+}
+
+.yieldm-table td {
+    padding: 9px 10px;
+    font-size: 11px;
+}
+
+    .yieldm-table td small {
+        font-size: 9.6px;
+    }
+
+.yieldm-rule-name {
+    font-size: 11px;
+}
+
+.yieldm-trigger-badge {
+    font-size: 10.5px;
+}
+
+.yieldm-rate-action {
+    font-size: 10.8px;
+}
+
+.yieldm-scope-chip {
+    font-size: 9.8px;
+}
+
+.yieldm-status-switch em {
+    font-size: 10px;
+}
+
+.yieldm-row-actions button {
+    width: 30px;
+    height: 30px;
+}
+
+@media (min-width: 1400px) {
+    .yieldm-root {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+}
+
+/* =========================================================
+   Yield rule editor refinement - aligned with Bulk Rate /
+   Bulk Restrictions controls and date-range picker.
+   ========================================================= */
+.yieldm-root {
+    --ym-selected-day: #dbc314;
+    --ym-required: #c83b4d;
+}
+
+/* Slightly larger and darker editor typography for easier reading. */
+.yieldm-editor-head h2 {
+    font-size: 16px;
+}
+
+.yieldm-editor-head p {
+    font-size: 11.2px;
+    color: #62758a;
+}
+
+.yieldm-editor-eyebrow {
+    font-size: 10px;
+}
+
+.yieldm-editor-section-head h3 {
+    font-size: 12.4px;
+    color: #253a50;
+}
+
+.yieldm-editor-section-head p {
+    font-size: 10.6px;
+    color: #6b7c90;
+}
+
+.yieldm-field > label,
+.yieldm-field-head > label {
+    font-size: 11.5px;
+    color: #2f4359;
+}
+
+.yieldm-field input,
+.yieldm-field select {
+    height: 36px;
+    font-size: 12.2px;
+    color: #23384d;
+}
+
+.yieldm-multi-placeholder,
+.yieldm-multi-menu label {
+    font-size: 11.2px;
+    color: #455b72;
+}
+
+.yieldm-field-head button {
+    font-size: 10.5px;
+}
+
+.yieldm-action-preview {
+    font-size: 11px;
+    color: #596d83;
+}
+
+/* Clearly identify fields that are required to save a rule. */
+.yieldm-required-label::after {
+    content: " *";
+    color: var(--ym-required);
+    font-weight: 800;
+}
+
+/* Respect the hidden attribute on conditional trigger controls. */
+.yieldm-threshold-row[hidden] {
+    display: none !important;
+}
+
+/* Stay date range and applicable days share one row on desktop. */
+.yieldm-period-layout {
+    display: grid;
+    grid-template-columns: minmax(330px, .78fr) minmax(520px, 1.22fr);
+    gap: 14px;
+    align-items: end;
+}
+
+.yieldm-date-range-picker {
+    position: relative;
+    min-width: 0;
+}
+
+.yieldm-date-range-display {
+    width: 100%;
+    height: 36px;
+    padding: 0 0 0 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #344a61;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    overflow: hidden;
+    font: 500 12px/1 inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+    .yieldm-date-range-display:hover {
+        border-color: #aab8c6;
+    }
+
+    .yieldm-date-range-display:focus {
+        outline: none;
+        border-color: #f5a623;
+        box-shadow: 0 0 0 3px rgba(245,166,35,.13);
+    }
+
+.yieldm-date-range-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yieldm-date-range-icon {
+    width: 38px;
+    height: 100%;
+    flex: 0 0 38px;
+    display: grid;
+    place-items: center;
+    background: #2c5788;
+    color: #fff;
+    font-size: 12px;
+}
+
+.yieldm-days-field {
+    min-width: 0;
+}
+
+.yieldm-days-links {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #99a6b5;
+}
+
+.yieldm-days {
+    grid-template-columns: repeat(7, minmax(54px, 1fr));
+    gap: 5px;
+}
+
+    .yieldm-days span {
+        height: 36px;
+        border-radius: 6px;
+        color: #50647b;
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .yieldm-days input:checked + span {
+        border-color: #c7ad00;
+        background: var(--ym-selected-day);
+        color: #111;
+        box-shadow: inset 0 -2px 0 rgba(91,75,0,.12);
+    }
+
+/* Compact trigger inputs: the input width now reflects the type of data. */
+.yieldm-trigger-action {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+    gap: 16px;
+}
+
+.yieldm-trigger-panel > .yieldm-field {
+    max-width: 470px;
+}
+
+.yieldm-trigger-panel .yieldm-threshold-row {
+    grid-template-columns: repeat(2, minmax(120px, 180px));
+    justify-content: start;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+    .yieldm-trigger-panel .yieldm-threshold-row .yieldm-field {
+        width: 100%;
+    }
+
+    .yieldm-trigger-panel .yieldm-threshold-row input {
+        text-align: left;
+    }
+
+.yieldm-action-panel .yieldm-action-value-grid {
+    grid-template-columns: minmax(150px, .8fr) minmax(170px, 1fr);
+}
+
+/* Two-month range picker mirrors Bulk Update Restrictions. */
+.yieldm-calendar-popover {
+    position: absolute;
+    left: 0;
+    top: 41px;
+    z-index: 700;
+    width: 640px;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #d8e2ec;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 18px 45px rgba(22,32,46,.18);
+}
+
+    .yieldm-calendar-popover[hidden] {
+        display: none !important;
+    }
+
+.yieldm-calendar-popover-head {
+    min-height: 58px;
+    padding: 10px 12px 9px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid #edf1f6;
+}
+
+    .yieldm-calendar-popover-head > div {
+        display: grid;
+        gap: 3px;
+    }
+
+    .yieldm-calendar-popover-head strong {
+        color: #25364a;
+        font-size: 13px;
+        font-weight: 650;
+    }
+
+    .yieldm-calendar-popover-head span {
+        color: #64758a;
+        font-size: 10.5px;
+    }
+
+.yieldm-calendar-close {
+    width: 29px;
+    height: 29px;
+    flex: none;
+    border: 1px solid #dce4ed;
+    border-radius: 7px;
+    background: #fff;
+    color: #7a8797;
+    font-size: 17px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+    .yieldm-calendar-close:hover {
+        background: #f6f8fb;
+        color: #33425a;
+    }
+
+.yieldm-calendar-months {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 11px 14px 8px;
+}
+
+.yieldm-calendar-month {
+    min-width: 0;
+}
+
+.yieldm-calendar-month-head {
+    height: 30px;
+    display: grid;
+    grid-template-columns: 30px 1fr 30px;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 6px;
+}
+
+    .yieldm-calendar-month-head strong {
+        text-align: center;
+        color: #334a63;
+        font-size: 11.5px;
+        font-weight: 650;
+    }
+
+.yieldm-calendar-nav {
+    width: 27px;
+    height: 27px;
+    border: 1px solid #d9e3ed;
+    border-radius: 6px;
+    background: #fff;
+    color: #57708d;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+    .yieldm-calendar-nav:hover {
+        background: #edf3fa;
+        border-color: #c9d7e5;
+        color: #2c5788;
+    }
+
+.yieldm-calendar-weekdays,
+.yieldm-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+}
+
+.yieldm-calendar-weekdays {
+    margin-bottom: 3px;
+}
+
+    .yieldm-calendar-weekdays span {
+        height: 25px;
+        display: grid;
+        place-items: center;
+        border-radius: 4px;
+        background: #f5f7fa;
+        color: #63748a;
+        font-size: 9.5px;
+        font-weight: 650;
+    }
+
+.yieldm-calendar-day {
+    position: relative;
+    height: 31px;
+    min-width: 0;
+    border: 0;
+    border-radius: 5px;
+    background: #fff;
+    color: #30465e;
+    font: 500 10.5px/1 inherit;
+    cursor: pointer;
+}
+
+    .yieldm-calendar-day:hover {
+        background: #edf3fa;
+        color: #24384f;
+    }
+
+    .yieldm-calendar-day.outside-month {
+        color: #c0c8d3;
+    }
+
+    .yieldm-calendar-day.range-fill {
+        background: #e7f0fa;
+        color: #4f7198;
+        border-radius: 4px;
+    }
+
+    .yieldm-calendar-day.range-start,
+    .yieldm-calendar-day.range-end {
+        background: #2c5788 !important;
+        color: #fff !important;
+        font-weight: 700;
+    }
+
+    .yieldm-calendar-day.today::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: 3px;
+        width: 3px;
+        height: 3px;
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background: #4d79a8;
+    }
+
+    .yieldm-calendar-day.range-start.today::after,
+    .yieldm-calendar-day.range-end.today::after {
+        background: #fff;
+    }
+
+.yieldm-calendar-footer {
+    min-height: 55px;
+    padding: 9px 13px;
+    border-top: 1px solid #edf1f6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+    .yieldm-calendar-footer > span {
+        color: #586b82;
+        font-size: 10.5px;
+    }
+
+    .yieldm-calendar-footer > div {
+        display: flex;
+        gap: 7px;
+    }
+
+.yieldm-calendar-clear,
+.yieldm-calendar-apply {
+    height: 32px;
+    padding: 0 13px;
+    border-radius: 6px;
+    font: 600 11px/1 inherit;
+    cursor: pointer;
+}
+
+.yieldm-calendar-clear {
+    border: 1px solid #d5dee8;
+    background: #fff;
+    color: #5f6f82;
+}
+
+    .yieldm-calendar-clear:hover {
+        background: #f7f9fc;
+    }
+
+.yieldm-calendar-apply {
+    border: 1px solid #2c5788;
+    background: #2c5788;
+    color: #fff;
+}
+
+    .yieldm-calendar-apply:hover {
+        background: #244a74;
+        border-color: #244a74;
+    }
+
+@media (max-width: 1150px) {
+    .yieldm-period-layout {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .yieldm-days {
+        grid-template-columns: repeat(7, 1fr);
+    }
+}
+
+@media (max-width: 760px) {
+    .yieldm-calendar-popover {
+        width: min(325px, calc(100vw - 42px));
+        left: 0;
+    }
+
+    .yieldm-calendar-months {
+        grid-template-columns: 1fr;
+    }
+
+    .yieldm-calendar-month:nth-child(2) {
+        display: none;
+    }
+
+    .yieldm-calendar-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+        .yieldm-calendar-footer > div {
+            width: 100%;
+            justify-content: flex-end;
+        }
+
+    .yieldm-days {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .yieldm-trigger-panel .yieldm-threshold-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* Small page-wide type lift without making the layout bulky. */
+.yieldm-heading h1 {
+    font-size: 15.8px;
+}
+
+.yieldm-heading p {
+    font-size: 11.2px;
+}
+
+.yieldm-section-head h2 {
+    font-size: 14px;
+}
+
+.yieldm-section-head p {
+    font-size: 10.8px;
+}
+
+.yieldm-category-name strong {
+    font-size: 12px;
+}
+
+.yieldm-category-name span {
+    font-size: 10.2px;
+}
+
+.yieldm-table th {
+    font-size: 10.4px;
+}
+
+.yieldm-table td {
+    font-size: 11.5px;
+}
+
+    .yieldm-table td small {
+        font-size: 10px;
+    }
+
+.yieldm-rule-name {
+    font-size: 11.6px;
+}
+
+.yieldm-trigger-badge {
+    font-size: 10.8px;
+}
+
+.yieldm-rate-action {
+    font-size: 11.1px;
+}
+
+.yieldm-scope-chip {
+    font-size: 10px;
+}
+
+.yieldm-status-switch em {
+    font-size: 10.4px;
+}
+
+/* =========================================================
+   Yield editor visual alignment pass
+   Keeps the compact PMS language used by Bulk Rate Upload and
+   Bulk Update Restrictions, but gives the editor a clearer grid.
+   ========================================================= */
+.yieldm-editor {
+    border-radius: 8px;
+    overflow: visible;
+    box-shadow: 0 5px 18px rgba(23, 50, 79, .055);
+}
+
+.yieldm-editor-head {
+    min-height: 64px;
+    padding: 11px 13px;
+    align-items: center;
+    border-radius: 8px 8px 0 0;
+}
+
+    .yieldm-editor-head h2 {
+        font-size: 16.5px;
+        line-height: 1.2;
+        font-weight: 750;
+    }
+
+    .yieldm-editor-head p {
+        margin-top: 3px;
+        font-size: 11.5px;
+        line-height: 1.35;
+    }
+
+.yieldm-editor-eyebrow {
+    font-size: 9.8px;
+    letter-spacing: .75px;
+}
+
+.yieldm-editor-grid-main {
+    grid-template-columns: minmax(420px, 1fr) 150px 190px;
+    gap: 10px;
+    padding: 11px 13px;
+    align-items: end;
+}
+
+    .yieldm-editor-grid-main .yieldm-span-2 {
+        grid-column: auto;
+    }
+
+.yieldm-editor-section {
+    padding: 10px 13px 11px;
+}
+
+.yieldm-editor-section-head {
+    min-height: 30px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.yieldm-step {
+    width: 21px;
+    height: 21px;
+    flex-basis: 21px;
+    border-radius: 4px;
+    font-size: 9.5px;
+}
+
+.yieldm-editor-section-head h3 {
+    font-size: 12.5px;
+    line-height: 1.2;
+    font-weight: 750;
+}
+
+.yieldm-editor-section-head p {
+    margin-top: 2px;
+    font-size: 10.5px;
+    line-height: 1.3;
+}
+
+.yieldm-two-column {
+    gap: 12px;
+}
+
+.yieldm-field > label,
+.yieldm-field-head > label {
+    margin-bottom: 5px;
+    color: #2f4258;
+    font-size: 11.5px;
+    line-height: 1.2;
+    font-weight: 700;
+}
+
+.yieldm-field input,
+.yieldm-field select,
+.yieldm-multi-display,
+.yieldm-date-range-display,
+.yieldm-switch-line {
+    min-height: 38px;
+    height: 38px;
+    border-radius: 6px;
+    border-color: #cad6e2;
+    color: #2f4358;
+    font-size: 11.8px;
+}
+
+.yieldm-field input,
+.yieldm-field select {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+    .yieldm-field input::placeholder {
+        color: #98a6b6;
+    }
+
+.yieldm-multi-display {
+    padding: 4px 32px 4px 9px;
+}
+
+.yieldm-field-head {
+    min-height: 21px;
+    align-items: flex-end;
+}
+
+    .yieldm-field-head button,
+    .yieldm-days-links button {
+        color: #49728d;
+        font-size: 10px;
+        font-weight: 600;
+    }
+
+        .yieldm-field-head button:hover,
+        .yieldm-days-links button:hover {
+            color: #17324f;
+            text-decoration: underline;
+        }
+
+/* Date range and weekdays sit on one baseline without stretching the day buttons. */
+.yieldm-period-layout {
+    grid-template-columns: minmax(330px, 420px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: end;
+}
+
+.yieldm-days-field {
+    align-self: end;
+}
+
+.yieldm-days {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+}
+
+    .yieldm-days label {
+        width: 62px;
+        flex: 0 0 62px;
+    }
+
+    .yieldm-days span {
+        width: 100%;
+        height: 33px;
+        border: 1px solid #d7e1eb;
+        border-radius: 6px;
+        background: #fff;
+        color: #4f6279;
+        font-size: 11px;
+        font-weight: 600;
+        box-shadow: none;
+    }
+
+    .yieldm-days input:checked + span {
+        border-color: #bfd2e6;
+        background: #dbc314;
+        color: #060606;
+        box-shadow: inset 0 -2px 0 rgba(44, 87, 136, .12);
+    }
+
+    .yieldm-days input:focus-visible + span {
+        outline: 2px solid rgba(245, 166, 35, .28);
+        outline-offset: 1px;
+    }
+
+/* Trigger and rate action now read as two balanced sub-cards. */
+.yieldm-trigger-action {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    background: #fbfcfe;
+}
+
+.yieldm-trigger-panel,
+.yieldm-action-panel {
+    min-width: 0;
+    padding: 10px 11px 11px;
+    border: 1px solid #dde6ee;
+    border-radius: 7px;
+    background: #fff;
+}
+
+    .yieldm-trigger-panel .yieldm-editor-section-head,
+    .yieldm-action-panel .yieldm-editor-section-head {
+        margin-bottom: 9px;
+    }
+
+    .yieldm-trigger-panel > .yieldm-field,
+    .yieldm-action-panel > .yieldm-field {
+        max-width: none;
+    }
+
+        .yieldm-trigger-panel > .yieldm-field > select,
+        .yieldm-action-panel > .yieldm-field > select {
+            width: 100%;
+        }
+
+    .yieldm-trigger-panel .yieldm-threshold-row {
+        grid-template-columns: repeat(2, minmax(130px, 175px));
+        gap: 8px;
+        margin-top: 8px;
+        justify-content: start;
+        align-items: end;
+    }
+
+.yieldm-compact-field {
+    max-width: 175px;
+}
+
+.yieldm-input-with-unit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    height: 38px;
+}
+
+    .yieldm-input-with-unit input {
+        height: 38px;
+        min-height: 38px;
+        border-radius: 6px 0 0 6px;
+    }
+
+    .yieldm-input-with-unit span {
+        min-width: 38px;
+        padding: 0 9px;
+        border: 1px solid #cad6e2;
+        border-left: 0;
+        border-radius: 0 6px 6px 0;
+        background: #f6f8fb;
+        color: #697b8f;
+        display: grid;
+        place-items: center;
+        font-size: 10.5px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .yieldm-input-with-unit:focus-within span {
+        border-color: #62bdb8;
+    }
+
+.yieldm-action-panel .yieldm-action-value-grid {
+    grid-template-columns: minmax(130px, .72fr) minmax(170px, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.yieldm-action-preview {
+    min-height: 38px;
+    margin-top: 8px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    color: #566c83;
+    font-size: 10.8px;
+}
+
+.yieldm-editor-footer {
+    padding: 9px 13px;
+    border-radius: 0 0 8px 8px;
+}
+
+    .yieldm-editor-footer .yieldm-btn {
+        min-width: 86px;
+        height: 36px;
+        border-radius: 6px;
+        font-size: 11.2px;
+    }
+
+/* Preserve clean alignment when the viewport narrows. */
+@media (max-width: 1180px) {
+    .yieldm-editor-grid-main {
+        grid-template-columns: minmax(300px, 1fr) 130px 170px;
+    }
+
+    .yieldm-period-layout {
+        grid-template-columns: 360px minmax(0, 1fr);
+    }
+
+    .yieldm-days label {
+        width: 55px;
+        flex-basis: 55px;
+    }
+}
+
+@media (max-width: 980px) {
+    .yieldm-editor-grid-main {
+        grid-template-columns: 1fr 150px 175px;
+    }
+
+    .yieldm-period-layout,
+    .yieldm-trigger-action {
+        grid-template-columns: 1fr;
+    }
+
+    .yieldm-days label {
+        width: 62px;
+        flex-basis: 62px;
+    }
+}
+
+@media (max-width: 760px) {
+    .yieldm-editor-grid-main,
+    .yieldm-two-column {
+        grid-template-columns: 1fr;
+    }
+
+        .yieldm-editor-grid-main .yieldm-span-2 {
+            grid-column: auto;
+        }
+
+    .yieldm-trigger-panel .yieldm-threshold-row,
+    .yieldm-action-panel .yieldm-action-value-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .yieldm-days {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+        .yieldm-days label {
+            width: auto;
+            flex-basis: auto;
+        }
+}
+
+/* =========================================================
+   Yield editor compact structure pass
+   2026-09-18: tighter controls, stronger alignment, cleaner stay-period row.
+   ========================================================= */
+
+/* Basic information: one fluid field + two deliberately small controls. */
+.yieldm-editor-grid-main {
+    grid-template-columns: minmax(360px, 1fr) 135px 185px;
+    gap: 10px;
+    align-items: end;
+}
+
+    .yieldm-editor-grid-main .yieldm-span-2 {
+        grid-column: auto;
+    }
+
+/* Keep all editor controls visually consistent with Bulk Rate / Restrictions. */
+.yieldm-editor .yieldm-field > label,
+.yieldm-editor .yieldm-field-head > label {
+    color: #233a52;
+    font-size: 11.6px;
+    font-weight: 750;
+}
+
+.yieldm-editor .yieldm-field input,
+.yieldm-editor .yieldm-field select,
+.yieldm-editor .yieldm-multi-display,
+.yieldm-editor .yieldm-date-range-display,
+.yieldm-editor .yieldm-switch-line {
+    height: 38px;
+    min-height: 38px;
+    border: 1px solid #c7d5e2;
+    border-radius: 6px;
+    background: #fff;
+    color: #263d54;
+    font-size: 11.8px;
+}
+
+/* Scope remains simple and balanced. */
+.yieldm-two-column {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+}
+
+/* Stay Period becomes one compact, aligned control surface. */
+.yieldm-period-section {
+    background: #fbfcfe;
+}
+
+.yieldm-period-layout {
+    display: grid;
+    grid-template-columns: 390px max-content;
+    justify-content: start;
+    align-items: end;
+    gap: 22px;
+    padding: 10px 11px;
+    border: 1px solid #e1e8ef;
+    border-radius: 7px;
+    background: #fff;
+}
+
+.yieldm-date-range-field {
+    width: 390px;
+    max-width: 100%;
+}
+
+.yieldm-date-range-display {
+    border-color: #c7d5e2;
+    box-shadow: none;
+}
+
+.yieldm-date-range-icon {
+    width: 39px;
+    flex-basis: 39px;
+    background: #1f4b78;
+}
+
+.yieldm-days-field {
+    width: max-content;
+    max-width: 100%;
+}
+
+    .yieldm-days-field .yieldm-field-head {
+        min-height: 21px;
+        justify-content: flex-start;
+        gap: 14px;
+    }
+
+.yieldm-days-links {
+    gap: 5px;
+    white-space: nowrap;
+}
+
+.yieldm-days {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+}
+
+    .yieldm-days label {
+        width: 52px;
+        flex: 0 0 52px;
+    }
+
+    .yieldm-days span {
+        width: 52px;
+        height: 34px;
+        border: 1px solid #ccd8e4;
+        border-radius: 6px;
+        background: #f8fafc;
+        color: #435970;
+        font-size: 10.8px;
+        font-weight: 700;
+        transition: background .12s ease, border-color .12s ease, color .12s ease;
+    }
+
+        .yieldm-days span:hover {
+            background: #f2f6fa;
+            border-color: #aebfce;
+        }
+
+    .yieldm-days input:checked + span {
+        border-color: #d7b71a;
+        background: #fff0a6;
+        color: #2f2a0a;
+        box-shadow: inset 0 -1px 0 rgba(118, 94, 0, .10);
+    }
+
+/* Pricing logic: compact horizontal forms rather than full-width selects. */
+.yieldm-trigger-action {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+    gap: 12px;
+    align-items: stretch;
+    background: #fbfcfe;
+}
+
+.yieldm-trigger-panel,
+.yieldm-action-panel {
+    padding: 11px 12px 12px;
+    border: 1px solid #dce5ed;
+    border-radius: 7px;
+    background: #fff;
+}
+
+/* Trigger: Rule Type + the relevant threshold controls share one line. */
+.yieldm-trigger-panel {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 14px;
+    row-gap: 0;
+    align-items: end;
+}
+
+    .yieldm-trigger-panel .yieldm-editor-section-head {
+        grid-column: 1 / -1;
+        margin-bottom: 9px;
+    }
+
+    .yieldm-trigger-panel > .yieldm-field {
+        grid-column: 1;
+        width: 100%;
+        max-width: 280px;
+    }
+
+    .yieldm-trigger-panel .yieldm-threshold-row {
+        grid-column: 2;
+        display: grid;
+        grid-template-columns: repeat(2, 124px);
+        justify-content: start;
+        align-items: end;
+        gap: 8px;
+        margin: 0;
+    }
+
+        .yieldm-trigger-panel .yieldm-threshold-row[hidden] {
+            display: none !important;
+        }
+
+    .yieldm-trigger-panel .yieldm-compact-field {
+        width: 124px;
+        max-width: 124px;
+    }
+
+    .yieldm-trigger-panel .yieldm-input-with-unit {
+        width: 124px;
+        height: 38px;
+    }
+
+        .yieldm-trigger-panel .yieldm-input-with-unit span {
+            min-width: 34px;
+            padding: 0 7px;
+        }
+
+    .yieldm-trigger-panel #yield-time-threshold input {
+        width: 124px;
+    }
+
+/* Rate Action: all three values sit on one deliberate compact line. */
+.yieldm-action-panel {
+    display: grid;
+    grid-template-columns: 175px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    column-gap: 12px;
+    row-gap: 0;
+    align-items: end;
+}
+
+    .yieldm-action-panel .yieldm-editor-section-head {
+        grid-column: 1 / -1;
+        margin-bottom: 9px;
+    }
+
+    .yieldm-action-panel > .yieldm-field {
+        grid-column: 1;
+        width: 175px;
+        max-width: 175px;
+    }
+
+    .yieldm-action-panel .yieldm-action-value-grid {
+        grid-column: 2;
+        display: grid;
+        grid-template-columns: 125px 160px;
+        justify-content: start;
+        gap: 8px;
+        margin: 0;
+    }
+
+        .yieldm-action-panel .yieldm-action-value-grid .yieldm-field:first-child {
+            width: 125px;
+        }
+
+        .yieldm-action-panel .yieldm-action-value-grid .yieldm-field:last-child {
+            width: 160px;
+        }
+
+.yieldm-action-preview {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    min-height: 36px;
+}
+
+/* Make section headings line up and reduce unnecessary vertical bulk. */
+.yieldm-editor-section {
+    padding: 10px 13px;
+}
+
+.yieldm-editor-section-head {
+    margin-bottom: 8px;
+}
+
+    .yieldm-editor-section-head h3 {
+        font-size: 12.2px;
+    }
+
+    .yieldm-editor-section-head p {
+        font-size: 10.4px;
+    }
+
+@media (max-width: 1180px) {
+    .yieldm-period-layout {
+        grid-template-columns: 360px max-content;
+        gap: 15px;
+    }
+
+    .yieldm-date-range-field {
+        width: 360px;
+    }
+
+    .yieldm-days label,
+    .yieldm-days span {
+        width: 46px;
+        flex-basis: 46px;
+    }
+
+    .yieldm-trigger-panel {
+        grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+        column-gap: 10px;
+    }
+
+        .yieldm-trigger-panel > .yieldm-field {
+            max-width: 250px;
+        }
+
+        .yieldm-trigger-panel .yieldm-threshold-row {
+            grid-template-columns: repeat(2, 112px);
+        }
+
+        .yieldm-trigger-panel .yieldm-compact-field,
+        .yieldm-trigger-panel .yieldm-input-with-unit,
+        .yieldm-trigger-panel #yield-time-threshold input {
+            width: 112px;
+            max-width: 112px;
+        }
+
+    .yieldm-action-panel {
+        grid-template-columns: 160px minmax(0, 1fr);
+        column-gap: 9px;
+    }
+
+        .yieldm-action-panel > .yieldm-field {
+            width: 160px;
+            max-width: 160px;
+        }
+
+        .yieldm-action-panel .yieldm-action-value-grid {
+            grid-template-columns: 112px 145px;
+        }
+
+            .yieldm-action-panel .yieldm-action-value-grid .yieldm-field:first-child {
+                width: 112px;
+            }
+
+            .yieldm-action-panel .yieldm-action-value-grid .yieldm-field:last-child {
+                width: 145px;
+            }
+}
+
+@media (max-width: 1020px) {
+    .yieldm-period-layout {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .yieldm-date-range-field {
+        width: 100%;
+        max-width: 420px;
+    }
+
+    .yieldm-days-field {
+        width: auto;
+    }
+
+    .yieldm-trigger-action {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .yieldm-editor-grid-main {
+        grid-template-columns: 1fr;
+    }
+
+        .yieldm-editor-grid-main .yieldm-span-2 {
+            grid-column: auto;
+        }
+
+    .yieldm-period-layout {
+        padding: 9px;
+    }
+
+    .yieldm-days {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+        .yieldm-days label,
+        .yieldm-days span {
+            width: auto;
+            flex-basis: auto;
+        }
+
+    .yieldm-trigger-panel,
+    .yieldm-action-panel {
+        display: block;
+    }
+
+        .yieldm-trigger-panel > .yieldm-field,
+        .yieldm-action-panel > .yieldm-field {
+            width: 100%;
+            max-width: none;
+        }
+
+        .yieldm-trigger-panel .yieldm-threshold-row,
+        .yieldm-action-panel .yieldm-action-value-grid {
+            margin-top: 8px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+            .yieldm-trigger-panel .yieldm-compact-field,
+            .yieldm-trigger-panel .yieldm-input-with-unit,
+            .yieldm-trigger-panel #yield-time-threshold input,
+            .yieldm-action-panel .yieldm-action-value-grid .yieldm-field:first-child,
+            .yieldm-action-panel .yieldm-action-value-grid .yieldm-field:last-child {
+                width: 100%;
+                max-width: none;
+            }
+}
+
+
+/* =========================================================
+   Yield editor input limits / compact identity row
+   ========================================================= */
+.yieldm-editor-grid-main {
+    grid-template-columns: minmax(320px, 480px) 105px 165px;
+    justify-content: start;
+    column-gap: 10px;
+}
+
+    .yieldm-editor-grid-main .yieldm-span-2 {
+        grid-column: auto;
+        width: 100%;
+        max-width: 480px;
+    }
+
+#yieldRuleName {
+    width: 100%;
+    max-width: 480px;
+}
+
+#yieldPriority {
+    width: 105px;
+}
+
+.yieldm-active-field {
+    width: 165px;
+}
+
+@media (max-width: 900px) {
+    .yieldm-editor-grid-main {
+        grid-template-columns: minmax(280px, 1fr) 110px 160px;
+    }
+
+        .yieldm-editor-grid-main .yieldm-span-2,
+        #yieldRuleName {
+            max-width: none;
+        }
+}
+
+@media (max-width: 680px) {
+    .yieldm-editor-grid-main {
+        grid-template-columns: 1fr;
+    }
+
+    #yieldPriority, .yieldm-active-field {
+        width: 100%;
+    }
+}
+
+/* =========================================================
+   Compact Rate Plan / Room Type dropdown options
+   Keep editor controls at 38px, but do not apply that height to menu checkboxes.
+   ========================================================= */
+.yieldm-editor .yieldm-multi-menu {
+    padding: 2px 4px;
+}
+
+    .yieldm-editor .yieldm-multi-menu label {
+        min-height: 30px;
+        padding: 4px 7px;
+        gap: 8px;
+        line-height: 1.2;
+        margin: 0;
+        align-items: center;
+    }
+
+    .yieldm-editor .yieldm-multi-menu input[type="checkbox"] {
+        width: 14px !important;
+        height: 14px !important;
+        min-height: 14px !important;
+        max-height: 14px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        flex: 0 0 14px;
+        box-shadow: none !important;
+    }
+
+    .yieldm-editor .yieldm-multi-menu label + label {
+        border-top: 1px solid #f1f4f7;
+    }

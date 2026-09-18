@@ -1,0 +1,427 @@
+@model Orapmshms.Models.BulkRestrictionUpdateModel
+@{
+    ViewData["Title"] = "Bulk Update Restrictions";
+
+    Layout = "_PmsLayout";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/bulk-rate-upload.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/bulk-update-restrictions.css" asp-append-version="true" />
+}
+
+<div id="bulkRestrictionPage"
+     class="bulkrate-root bulkrestrict-root"
+     data-preview-url="@Url.Action("Preview", "BulkUpdateRestrictions")"
+     data-save-url="@Url.Action("Save", "BulkUpdateRestrictions")"
+     data-history-url="@Url.Action("History", "BulkUpdateRestrictions")"
+     data-hotel-today="@Model.HotelTodayIso"
+     data-can-update="@(Model.CanUpdate ? "true" : "false")">
+
+    <form id="bulkRestrictionAntiForgery" class="bulkrate-hidden">@Html.AntiForgeryToken()</form>
+
+    @if (!string.IsNullOrWhiteSpace(ViewBag.LoadError as string))
+
+    {
+        <div class="bulkrate-alert bulkrate-alert-error">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <span>@ViewBag.LoadError</span>
+        </div>
+    }
+
+    @if (!Model.CanUpdate && string.IsNullOrWhiteSpace(ViewBag.LoadError as string))
+
+    {
+        <div class="bulkrate-alert bulkrestrict-alert-warning">
+            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+            <span>You can review this page, but your current access does not allow restriction updates.</span>
+        </div>
+    }
+
+    <section class="bulkrate-toolbar-card" aria-labelledby="bulkRestrictionTitle">
+        <div class="bulkrate-heading">
+            <span class="bulkrate-heading-icon"><i class="fa-solid fa-sliders"></i></span>
+            <div>
+                <h1 id="bulkRestrictionTitle">Bulk Update Restrictions</h1>
+                <p>Apply stay rules and selling controls across multiple rate plans, room types and dates.</p>
+            </div>
+        </div>
+
+        <div class="bulkrate-toolbar-actions">
+            <div class="bulkrate-job-status" id="bulkRestrictionStatusWrap" aria-live="polite" hidden>
+                <span class="bulkrate-status-dot"></span>
+                <span id="bulkRestrictionStatus"></span>
+            </div>
+            <button type="button" class="bulkrate-btn bulkrate-btn-secondary" id="bulkRestrictionPreview">
+                <i class="fa-regular fa-eye"></i><span>Preview</span>
+            </button>
+            <button type="button" class="bulkrate-btn bulkrate-btn-primary" id="bulkRestrictionSave" disabled="@(!Model.CanUpdate)">
+                <i class="fa-regular fa-floppy-disk"></i><span>Save Restrictions</span>
+            </button>
+            <button type="button" class="bulkrate-btn bulkrate-btn-ghost" id="bulkRestrictionReset">
+                <i class="fa-solid fa-rotate-left"></i><span>Reset</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="bulkrate-panel bulkrate-selection-panel">
+        <div class="bulkrate-panel-head">
+            <div>
+                <h2>Update Scope</h2>
+                <p>Select the plans, rooms, date ranges and weekdays that should receive the restriction changes.</p>
+            </div>
+            <span class="bulkrestrict-context-badge"><i class="fa-regular fa-calendar-check"></i> Future dates only</span>
+        </div>
+
+        <div class="bulkrate-two-column">
+            <div class="bulkrate-field">
+                <div class="bulkrate-field-head">
+                    <label id="bulkRestrictionPlansLabel">Rate Plans</label>
+                    <div class="bulkrate-field-links">
+                        <button type="button" data-select-all="plans">Select all</button>
+                        <span>·</span>
+                        <button type="button" data-clear-all="plans">Clear</button>
+                    </div>
+                </div>
+                <div class="bulkrate-multi" data-multi="plans" aria-labelledby="bulkRestrictionPlansLabel">
+                    <button type="button" class="bulkrate-multi-display" data-multi-toggle="plans" aria-expanded="false">
+                        <span class="bulkrate-multi-placeholder">Select rate plans</span>
+                        <span class="bulkrate-multi-tags"></span>
+                        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                    </button>
+                    <div class="bulkrate-multi-menu" data-multi-menu="plans" hidden>
+                        @foreach (var plan in Model.PlanOptions)
+
+                        {
+                            <label class="bulkrate-multi-option">
+                                <input type="checkbox" class="bulkrestrict-plan-choice" value="@plan.Value" data-label="@plan.Text" />
+                                <span>@plan.Text</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="bulkrate-field">
+                <div class="bulkrate-field-head">
+                    <label id="bulkRestrictionRoomsLabel">Room Types</label>
+                    <div class="bulkrate-field-links">
+                        <button type="button" data-select-all="rooms">Select all</button>
+                        <span>·</span>
+                        <button type="button" data-clear-all="rooms">Clear</button>
+                    </div>
+                </div>
+                <div class="bulkrate-multi" data-multi="rooms" aria-labelledby="bulkRestrictionRoomsLabel">
+                    <button type="button" class="bulkrate-multi-display" data-multi-toggle="rooms" aria-expanded="false">
+                        <span class="bulkrate-multi-placeholder">Select room types</span>
+                        <span class="bulkrate-multi-tags"></span>
+                        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                    </button>
+                    <div class="bulkrate-multi-menu" data-multi-menu="rooms" hidden>
+                        @foreach (var room in Model.RoomOptions)
+
+                        {
+                            <label class="bulkrate-multi-option">
+                                <input type="checkbox" class="bulkrestrict-room-choice" value="@room.Value" data-label="@room.Text" />
+                                <span>@room.Text</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bulkrate-setup-lower">
+            <div class="bulkrate-ranges-section">
+                <div class="bulkrate-subhead">
+                    <div>
+                        <h3>Date Ranges</h3>
+                        <span>Add one or more ranges. Overlapping dates are only processed once.</span>
+                    </div>
+                    <button type="button" id="bulkRestrictionAddRange" class="bulkrate-add-range">
+                        <i class="fa-solid fa-plus"></i><span>Add Range</span>
+                    </button>
+                </div>
+                <div id="bulkRestrictionRanges" class="bulkrate-ranges"></div>
+            </div>
+
+            <div class="bulkrate-days-section">
+                <div class="bulkrate-subhead bulkrate-days-head">
+                    <div>
+                        <h3>Applicable Days</h3>
+                        <span>Only selected weekdays inside the ranges will be updated.</span>
+                    </div>
+                    <div class="bulkrestrict-day-links">
+                        <button type="button" class="bulkrate-link-btn" id="bulkRestrictionAllDays">All</button>
+                        <span>·</span>
+                        <button type="button" class="bulkrate-link-btn" id="bulkRestrictionClearDays">Clear</button>
+                    </div>
+                </div>
+                <div class="bulkrate-days-box" id="bulkRestrictionDays">
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="0" checked /><span>Sun</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="1" checked /><span>Mon</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="2" checked /><span>Tue</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="3" checked /><span>Wed</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="4" checked /><span>Thu</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="5" checked /><span>Fri</span></label>
+                    <label class="bulkrate-day-pill"><input type="checkbox" value="6" checked /><span>Sat</span></label>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="bulkrate-panel bulkrestrict-rules-panel">
+        <div class="bulkrate-panel-head bulkrestrict-rules-head">
+            <div>
+                <h2>Restriction Changes</h2>
+                <p>Only enabled fields are changed. “No Change” keeps the current database value.</p>
+            </div>
+            <span class="bulkrestrict-safe-badge"><i class="fa-solid fa-shield-halved"></i> Selective update</span>
+        </div>
+
+        <div class="bulkrestrict-grid">
+            <article class="bulkrestrict-card" data-rule-card="minStayArrival">
+                <div class="bulkrestrict-card-head">
+                    <div>
+                        <strong>Minimum Stay on Arrival</strong>
+                        <span>Minimum nights when the stay starts on the selected date.</span>
+                    </div>
+                    <label class="bulkrestrict-switch" title="Enable Minimum Stay on Arrival">
+                        <input type="checkbox" id="bulkRestrictionMinArrivalEnabled" data-rule-toggle="minStayArrival" />
+                        <span></span>
+                    </label>
+                </div>
+                <div class="bulkrestrict-control-row">
+                    <input type="number" id="bulkRestrictionMinArrival" class="bulkrestrict-input" min="1" step="1" value="1" disabled />
+                    <span class="bulkrestrict-unit">night(s)</span>
+                </div>
+                <small>Use 1 to clear an existing minimum-arrival restriction.</small>
+            </article>
+
+            <article class="bulkrestrict-card" data-rule-card="minStayThrough">
+                <div class="bulkrestrict-card-head">
+                    <div>
+                        <strong>Minimum Stay Through</strong>
+                        <span>Minimum stay required when a booking passes through the selected date.</span>
+                    </div>
+                    <label class="bulkrestrict-switch" title="Enable Minimum Stay Through">
+                        <input type="checkbox" id="bulkRestrictionMinThroughEnabled" data-rule-toggle="minStayThrough" />
+                        <span></span>
+                    </label>
+                </div>
+                <div class="bulkrestrict-control-row">
+                    <input type="number" id="bulkRestrictionMinThrough" class="bulkrestrict-input" min="1" step="1" value="1" disabled />
+                    <span class="bulkrestrict-unit">night(s)</span>
+                </div>
+                <small>Use 1 to clear an existing minimum-through restriction.</small>
+            </article>
+
+            <article class="bulkrestrict-card" data-rule-card="maxStay">
+                <div class="bulkrestrict-card-head">
+                    <div>
+                        <strong>Maximum Stay</strong>
+                        <span>Maximum number of nights allowed for stays using these dates.</span>
+                    </div>
+                    <label class="bulkrestrict-switch" title="Enable Maximum Stay">
+                        <input type="checkbox" id="bulkRestrictionMaxStayEnabled" data-rule-toggle="maxStay" />
+                        <span></span>
+                    </label>
+                </div>
+                <div class="bulkrestrict-control-row">
+                    <input type="number" id="bulkRestrictionMaxStay" class="bulkrestrict-input" min="0" step="1" value="0" disabled />
+                    <span class="bulkrestrict-unit">night(s)</span>
+                </div>
+                <small>Use 0 to clear the maximum stay restriction.</small>
+            </article>
+
+            <article class="bulkrestrict-card bulkrestrict-card-accent" data-rule-card="cutoff">
+                <div class="bulkrestrict-card-head bulkrestrict-card-head-static">
+                    <div>
+                        <strong>Booking Cutoff</strong>
+                        <span>Controls how many days before arrival this rate plan stops selling.</span>
+                    </div>
+                    <i class="fa-solid fa-circle-info bulkrestrict-info" title="The effective cutoff is rate-plan specific and is reconciled with Stop Sell."></i>
+                </div>
+                <select id="bulkRestrictionCutoffMode" class="bulkrestrict-select">
+                    <option value="None" selected>No Change</option>
+                    <option value="PlanDefault">Use Rate Plan Default</option>
+                    <option value="Disabled">Disable for Selected Dates</option>
+                    <option value="Custom">Set Custom Cutoff Days</option>
+                </select>
+                <div class="bulkrestrict-cutoff-custom" id="bulkRestrictionCutoffCustom" hidden>
+                    <input type="number" id="bulkRestrictionCutoff" class="bulkrestrict-input" min="1" max="365" step="1" value="1" />
+                    <span class="bulkrestrict-unit">day(s)</span>
+                </div>
+            </article>
+
+            <article class="bulkrestrict-card bulkrestrict-status-card" data-rule-card="cta">
+                <div class="bulkrestrict-card-head bulkrestrict-card-head-static">
+                    <div>
+                        <strong>Closed to Arrival</strong>
+                        <span>Control whether guests may start their stay on selected dates.</span>
+                    </div>
+                    <span class="bulkrestrict-mini-icon"><i class="fa-solid fa-right-to-bracket"></i></span>
+                </div>
+                <select id="bulkRestrictionCta" class="bulkrestrict-select">
+                    <option value="None" selected>No Change</option>
+                    <option value="Open">Allow Arrival</option>
+                    <option value="Closed">Close Arrival</option>
+                </select>
+            </article>
+
+            <article class="bulkrestrict-card bulkrestrict-status-card" data-rule-card="ctd">
+                <div class="bulkrestrict-card-head bulkrestrict-card-head-static">
+                    <div>
+                        <strong>Closed to Departure</strong>
+                        <span>Control whether guests may end their stay on selected dates.</span>
+                    </div>
+                    <span class="bulkrestrict-mini-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
+                </div>
+                <select id="bulkRestrictionCtd" class="bulkrestrict-select">
+                    <option value="None" selected>No Change</option>
+                    <option value="Open">Allow Departure</option>
+                    <option value="Closed">Close Departure</option>
+                </select>
+            </article>
+
+            <article class="bulkrestrict-card bulkrestrict-status-card bulkrestrict-selling-card" data-rule-card="stopSell">
+                <div class="bulkrestrict-card-head bulkrestrict-card-head-static">
+                    <div>
+                        <strong>Selling Status / Stop Sell</strong>
+                        <span>Open or close inventory for sale for the selected room and rate-plan dates.</span>
+                    </div>
+                    <span class="bulkrestrict-mini-icon"><i class="fa-solid fa-store"></i></span>
+                </div>
+                <select id="bulkRestrictionSellingStatus" class="bulkrestrict-select">
+                    <option value="None" selected>No Change</option>
+                    <option value="Open">Open for Sale</option>
+                    <option value="Closed">Stop Sell</option>
+                </select>
+            </article>
+        </div>
+
+        <label class="bulkrestrict-clear-card" for="bulkRestrictionClearAll">
+            <input type="checkbox" id="bulkRestrictionClearAll" />
+            <span class="bulkrestrict-clear-icon"><i class="fa-solid fa-eraser"></i></span>
+            <span class="bulkrestrict-clear-copy">
+                <strong>Clear all supported restrictions</strong>
+                <small>Resets minimum stays, maximum stay, CTA, CTD and manual Stop Sell, and disables booking cutoff for the selected dates.</small>
+            </span>
+            <span class="bulkrestrict-clear-warning">Use carefully</span>
+        </label>
+    </section>
+
+    <section class="bulkrate-panel bulkrate-summary-panel">
+        <div class="bulkrate-summary-head">
+            <div>
+                <h2>Update Summary</h2>
+                <p>Preview exactly what will be changed before saving.</p>
+            </div>
+            <div class="bulkrate-stats" aria-label="Bulk restriction selection summary">
+                <div class="bulkrate-stat"><span>Plans</span><strong id="bulkRestrictionPlanCount">0</strong></div>
+                <div class="bulkrate-stat"><span>Rooms</span><strong id="bulkRestrictionRoomCount">0</strong></div>
+                <div class="bulkrate-stat"><span>Ranges</span><strong id="bulkRestrictionRangeCount">0</strong></div>
+                <div class="bulkrate-stat"><span>Est. rows</span><strong id="bulkRestrictionEstimatedRows">0</strong></div>
+            </div>
+        </div>
+
+        <div class="bulkrate-table-wrap bulkrestrict-summary-wrap">
+            <table class="bulkrate-summary-table bulkrestrict-summary-table">
+                <thead>
+                    <tr>
+                        <th>Date Range</th>
+                        <th>Room Type</th>
+                        <th>Rate Plan</th>
+                        <th>Min Arrival</th>
+                        <th>Min Through</th>
+                        <th>Max Stay</th>
+                        <th>Cutoff</th>
+                        <th>CTA</th>
+                        <th>CTD</th>
+                        <th>Stop Sell</th>
+                    </tr>
+                </thead>
+                <tbody id="bulkRestrictionPreviewBody">
+                    <tr><td colspan="10" class="bulkrate-empty">Select plans, room types and a complete date range to preview restrictions.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bulkrate-note bulkrestrict-note">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Saving updates the PMS first and then uses the existing channel restriction queue to publish the affected date range.</span>
+        </div>
+    </section>
+
+    <details class="bulkrate-panel bulkrate-history-panel" id="bulkRestrictionHistoryPanel">
+        <summary>
+            <span><i class="fa-solid fa-clock-rotate-left"></i> Recent Restriction History</span>
+            <small>Open to review recent bulk restriction updates</small>
+        </summary>
+        <div class="bulkrate-history-body">
+            <div class="bulkrate-history-toolbar">
+                <input type="search" id="bulkRestrictionHistorySearch" placeholder="Search user, plan or room..." autocomplete="off" />
+                <button type="button" class="bulkrate-btn bulkrate-btn-secondary" id="bulkRestrictionHistoryRefresh">
+                    <i class="fa-solid fa-rotate"></i><span>Refresh</span>
+                </button>
+            </div>
+            <div class="bulkrate-table-wrap bulkrate-history-table-wrap">
+                <table class="bulkrate-history-table bulkrestrict-history-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Updated By</th>
+                            <th>Rate Plan</th>
+                            <th>Room Type</th>
+                            <th>Days</th>
+                            <th>Date From</th>
+                            <th>Date To</th>
+                            <th>Changes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bulkRestrictionHistoryBody">
+                        <tr><td colspan="8" class="bulkrate-empty">Open this section to load recent restriction history.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
+    <div id="bulkRestrictionCalendarPopover" class="bulkrate-calendar-popover" hidden>
+        <div class="bulkrate-calendar-popover-head">
+            <div><strong>Select date range</strong><span>Choose a start and end date</span></div>
+            <button type="button" class="bulkrate-calendar-close" id="bulkRestrictionCalendarClose" aria-label="Close date picker">×</button>
+        </div>
+        <div class="bulkrate-calendar-months">
+            <section class="bulkrate-calendar-month">
+                <div class="bulkrate-calendar-month-head">
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                    <strong id="bulkRestrictionCalendarLeftTitle"></strong>
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                </div>
+                <div class="bulkrate-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                <div class="bulkrate-calendar-grid" id="bulkRestrictionCalendarLeft"></div>
+            </section>
+            <section class="bulkrate-calendar-month">
+                <div class="bulkrate-calendar-month-head">
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                    <strong id="bulkRestrictionCalendarRightTitle"></strong>
+                    <button type="button" class="bulkrate-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                </div>
+                <div class="bulkrate-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                <div class="bulkrate-calendar-grid" id="bulkRestrictionCalendarRight"></div>
+            </section>
+        </div>
+        <div class="bulkrate-calendar-footer">
+            <span id="bulkRestrictionCalendarText">Select date range</span>
+            <div>
+                <button type="button" class="bulkrate-calendar-clear" id="bulkRestrictionCalendarClear">Clear</button>
+                <button type="button" class="bulkrate-calendar-apply" id="bulkRestrictionCalendarApply">Apply</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/bulk-update-restrictions.js" asp-append-version="true"></script>
+}

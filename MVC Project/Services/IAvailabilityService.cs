@@ -67,4 +67,32 @@ public interface IAvailabilityService
         string ip,
         AvailabilityBulkRestrictionSaveRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<BulkRestrictionUpdateModel> GetBulkRestrictionPageAsync(
+        string hotelId,
+        string hotelName,
+        string userId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<BulkRestrictionUpdateModel>> PreviewBulkRestrictionsAsync(
+        string hotelId,
+        string userId,
+        BulkRestrictionUpdateModel request,
+        CancellationToken cancellationToken = default);
+
+    Task<AvailabilitySaveResult> SaveBulkRestrictionsAsync(
+        string hotelId,
+        string userId,
+        string userName,
+        string role,
+        string ip,
+        BulkRestrictionUpdateModel request,
+        CancellationToken cancellationToken = default);
+
+    Task<BulkRestrictionUpdateModel> GetBulkRestrictionHistoryAsync(
+        string hotelId,
+        string? search,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
 }
