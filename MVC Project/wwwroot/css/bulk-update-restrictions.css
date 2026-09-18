@@ -1,0 +1,392 @@
+.bulkrestrict-root {
+    --bulkrestrict-teal: #1f8f86;
+    --bulkrestrict-teal-soft: #edf8f6;
+    --bulkrestrict-amber: #b97812;
+    --bulkrestrict-red: #bf3a3a;
+}
+
+.bulkrestrict-alert-warning {
+    border: 1px solid #f2d9a9;
+    background: #fff9ee;
+    color: #8a5a12;
+}
+
+.bulkrestrict-root .bulkrate-job-status #bulkRestrictionStatus {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bulkrestrict-context-badge,
+.bulkrestrict-safe-badge {
+    min-height: 27px;
+    padding: 0 9px;
+    border: 1px solid #d7e4ee;
+    border-radius: 999px;
+    background: #f7fafc;
+    color: #5c7085;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 8.8px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.bulkrestrict-safe-badge {
+    border-color: #cfe7e3;
+    background: var(--bulkrestrict-teal-soft);
+    color: #30766f;
+}
+
+.bulkrestrict-day-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #a1acb9;
+}
+
+/* The restriction page reuses Bulk Rate's date row, but does not need a Base Rate column. */
+.bulkrestrict-root .bulkrate-range-row {
+    grid-template-columns: minmax(230px,1fr) 30px;
+}
+
+.bulkrestrict-rules-panel {
+    z-index: 30;
+}
+
+.bulkrestrict-rules-head {
+    margin-bottom: 9px;
+}
+
+.bulkrestrict-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 7px;
+    align-items: stretch;
+}
+
+.bulkrestrict-card {
+    min-width: 0;
+    min-height: 132px;
+    height: 100%;
+    padding: 9px;
+    border: 1px solid #dfe7ef;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+    .bulkrestrict-card:hover {
+        border-color: #c8d5e2;
+        box-shadow: 0 3px 10px rgba(31, 52, 73, .06);
+    }
+
+    .bulkrestrict-card.is-enabled {
+        border-color: #b9cee1;
+        background: #fcfdff;
+        box-shadow: inset 3px 0 0 var(--bulkrate-blue);
+    }
+
+    .bulkrestrict-card.is-muted {
+        opacity: .56;
+        background: #f8fafc;
+    }
+
+.bulkrestrict-card-accent {
+    background: linear-gradient(180deg, #ffffff 0%, #fbfefe 100%);
+}
+
+.bulkrestrict-card-head {
+    min-height: 48px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 7px;
+}
+
+    .bulkrestrict-card-head > div {
+        min-width: 0;
+        display: grid;
+        gap: 3px;
+    }
+
+    .bulkrestrict-card-head strong {
+        color: #31465b;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .bulkrestrict-card-head span:not(.bulkrestrict-switch span):not(.bulkrestrict-mini-icon) {
+        color: #8794a4;
+        font-size: 8.7px;
+        line-height: 1.35;
+    }
+
+.bulkrestrict-card > small {
+    margin-top: auto;
+    color: #8794a4;
+    font-size: 8.5px;
+    line-height: 1.35;
+}
+
+.bulkrestrict-card-head-static {
+    min-height: 48px;
+}
+
+.bulkrestrict-switch {
+    width: 31px;
+    height: 18px;
+    flex: 0 0 31px;
+    position: relative;
+    margin-top: 1px;
+    cursor: pointer;
+}
+
+    .bulkrestrict-switch input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .bulkrestrict-switch span {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: #cbd5df;
+        transition: background .16s ease;
+    }
+
+        .bulkrestrict-switch span::after {
+            content: "";
+            width: 12px;
+            height: 12px;
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, .24);
+            transition: transform .16s ease;
+        }
+
+    .bulkrestrict-switch input:checked + span {
+        background: var(--bulkrate-blue);
+    }
+
+        .bulkrestrict-switch input:checked + span::after {
+            transform: translateX(13px);
+        }
+
+    .bulkrestrict-switch input:focus-visible + span {
+        box-shadow: 0 0 0 3px rgba(245, 166, 35, .17);
+    }
+
+.bulkrestrict-control-row,
+.bulkrestrict-cutoff-custom {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.bulkrestrict-input,
+.bulkrestrict-select {
+    width: 100%;
+    height: 34px;
+    padding: 0 9px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #3d5268;
+    font: 500 9.8px/1 inherit;
+}
+
+.bulkrestrict-select {
+    padding-right: 28px;
+}
+
+    .bulkrestrict-input:focus,
+    .bulkrestrict-select:focus {
+        outline: none;
+        border-color: var(--bulkrate-orange);
+        box-shadow: 0 0 0 3px rgba(245,166,35,.13);
+    }
+
+    .bulkrestrict-input:disabled,
+    .bulkrestrict-select:disabled {
+        background: #f3f6f8;
+        color: #9aa7b5;
+        cursor: not-allowed;
+    }
+
+.bulkrestrict-unit {
+    color: #7b8998;
+    font-size: 8.7px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.bulkrestrict-info {
+    margin-top: 1px;
+    color: #7c8da0;
+    font-size: 11px;
+    cursor: help;
+}
+
+.bulkrestrict-mini-icon {
+    width: 27px;
+    height: 27px;
+    flex: 0 0 27px;
+    border-radius: 6px;
+    background: #edf3fa;
+    color: var(--bulkrate-blue);
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+}
+
+.bulkrestrict-selling-card {
+    grid-column: auto;
+}
+
+.bulkrestrict-clear-card {
+    min-height: 55px;
+    margin-top: 9px;
+    padding: 8px 10px;
+    border: 1px solid #efd2d2;
+    border-radius: 8px;
+    background: #fffafa;
+    display: grid;
+    grid-template-columns: auto 29px minmax(0,1fr) auto;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+    .bulkrestrict-clear-card:hover {
+        border-color: #e3bcbc;
+        background: #fff7f7;
+    }
+
+    .bulkrestrict-clear-card input {
+        width: 14px;
+        height: 14px;
+        accent-color: var(--bulkrestrict-red);
+    }
+
+.bulkrestrict-clear-icon {
+    width: 29px;
+    height: 29px;
+    border-radius: 6px;
+    background: #fff0f0;
+    color: var(--bulkrestrict-red);
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+}
+
+.bulkrestrict-clear-copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+    .bulkrestrict-clear-copy strong {
+        color: #774040;
+        font-size: 9.8px;
+    }
+
+    .bulkrestrict-clear-copy small {
+        color: #946b6b;
+        font-size: 8.7px;
+        line-height: 1.35;
+    }
+
+.bulkrestrict-clear-warning {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #fff0f0;
+    color: #aa4141;
+    font-size: 8.2px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.bulkrestrict-summary-wrap {
+    max-height: 340px;
+}
+
+.bulkrestrict-summary-table {
+    min-width: 1060px;
+}
+
+    .bulkrestrict-summary-table th:nth-child(n+4),
+    .bulkrestrict-summary-table td:nth-child(n+4) {
+        text-align: center;
+    }
+
+    .bulkrestrict-summary-table td.is-change {
+        color: #274e78;
+        font-weight: 600;
+    }
+
+    .bulkrestrict-summary-table td.is-neutral {
+        color: #98a4b1;
+    }
+
+.bulkrestrict-note i {
+    color: var(--bulkrestrict-teal);
+}
+
+.bulkrestrict-history-table {
+    min-width: 920px;
+}
+
+    .bulkrestrict-history-table td:last-child {
+        max-width: 380px;
+        white-space: normal;
+        line-height: 1.35;
+    }
+
+.bulkrestrict-root.is-clear-all .bulkrestrict-grid {
+    opacity: .56;
+}
+
+.bulkrestrict-root.is-clear-all .bulkrestrict-card {
+    pointer-events: none;
+}
+
+@media (max-width: 1180px) {
+    .bulkrestrict-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .bulkrestrict-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .bulkrestrict-context-badge,
+    .bulkrestrict-safe-badge {
+        display: none;
+    }
+}
+
+@media (max-width: 680px) {
+    .bulkrestrict-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .bulkrestrict-clear-card {
+        grid-template-columns: auto 29px minmax(0,1fr);
+    }
+
+    .bulkrestrict-clear-warning {
+        display: none;
+    }
+}
