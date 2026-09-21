@@ -1,0 +1,495 @@
+@model Orapmshms.Models.CheckInPageViewModel
+@using System.Text.Json
+@using System.Linq
+@using Orapmshms.Models
+@{
+    ViewData["Title"] = "Guest Check-In";
+    var g = Model.Guest ?? new GuestCheckInInput();
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var stateJson = JsonSerializer.Serialize(Model, jsonOptions);
+    var showDiscountColumn = Model.Charges.Any(x => x.Discount != 0m);
+    var showTaxColumn = Model.Charges.Any(x => x.Gst != 0m);
+    var showBedTaxColumn = Model.Charges.Any(x => x.BedTax != 0m);
+    string Money(decimal value) => $"{Model.Currency}{value:N2}";
+    string DateValue(DateTime value) => value == default ? "" : value.ToString("yyyy-MM-dd");
+    string DateText(DateTime? value) => value.HasValue ? value.Value.ToString("dd MMM yyyy") : "—";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="@Url.Content("~/css/checkin-mvc.css")" asp-append-version="true" />
+    <style>
+        /* Critical layout fallback: keeps the Check-In screen usable and aligned even if
+           a browser/cache serves an older external stylesheet during deployment. */
+        .ora-checkin{font-family:Inter,"Segoe UI",Arial,sans-serif;color:#102c4b;background:#f5f7f7;padding-bottom:8px}
+        .ora-checkin *{box-sizing:border-box}
+        .ora-checkin .page-title{display:flex;align-items:center;gap:10px;padding:10px 18px 8px}
+        .ora-checkin .checkin-title-copy h1{margin:0;color:#0b3768;font-size:23px;font-weight:800}
+        .ora-checkin .checkin-title-copy p{margin:1px 0 0;color:#60758d}
+        .ora-checkin .search-wrap{position:relative;margin-left:auto;width:min(510px,42vw)}
+        .ora-checkin .search{display:flex;position:relative;width:100%}
+        .ora-checkin .search input{padding-left:34px}
+        .ora-checkin .search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);z-index:2;color:#60758d}
+        .ora-checkin .checkin-action-toolbar{display:none}
+        .ora-checkin .layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(340px,.88fr);gap:10px;padding:0 18px 4px}
+        .ora-checkin .stack{display:grid;gap:10px;align-content:start;min-width:0}
+        .ora-checkin .card{background:#fff;border:1px solid #c8d5e4;border-radius:7px;overflow:hidden;box-shadow:0 1px 3px rgba(16,44,75,.07)}
+        .ora-checkin .card-head{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f1f6fc;border-bottom:1px solid #d4dfec;color:#0b3768}
+        .ora-checkin .card-body{padding:10px 12px}
+        .ora-checkin .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 12px}
+        .ora-checkin .span-2{grid-column:span 2}
+        .ora-checkin .field{min-width:0}
+        .ora-checkin .field>label,.ora-checkin .field-label{display:block;margin-bottom:4px;font-weight:600;color:#173653}
+        .ora-checkin input,.ora-checkin select,.ora-checkin textarea{width:100%;min-height:34px;padding:6px 9px;border:1px solid #b9c9dc;border-radius:4px;background:#fff;color:#173653}
+        .ora-checkin input[type="checkbox"]{width:15px!important;height:15px!important;min-width:15px!important;min-height:15px!important;padding:0!important;margin:0!important;vertical-align:middle;flex:0 0 15px}
+        .ora-checkin textarea{min-height:58px}
+        .ora-checkin .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:6px 13px;border:1px solid #0b3768;border-radius:4px;font-weight:700}
+        .ora-checkin .btn-primary{background:#0b3768;color:#fff}.ora-checkin .btn-outline{background:#fff;color:#0b3768}
+        .ora-checkin .table-wrap{overflow:auto;border:1px solid #c5d3e3;border-radius:6px}.ora-checkin .table{width:100%;border-collapse:collapse}
+        .ora-checkin .table th{background:#dce8f8;color:#173653}.ora-checkin .table th,.ora-checkin .table td{padding:7px 8px;border-bottom:1px solid #c5d3e3;white-space:nowrap}
+        .ora-checkin .totals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px}
+        .ora-checkin .total{display:flex;justify-content:space-between;padding:9px 11px;background:#edf4fc;color:#0b3768;border-radius:6px}
+        @@media(max-width:1100px){.ora-checkin .layout{grid-template-columns:1fr}.ora-checkin .search-wrap{width:min(520px,48vw)}}
+        @@media(max-width:760px){.ora-checkin .page-title{align-items:flex-start;flex-wrap:wrap}.ora-checkin .search-wrap{width:100%;margin-left:0}.ora-checkin .layout{padding:0 12px}.ora-checkin .checkin-action-toolbar{padding:0 12px 12px}.ora-checkin .grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @@media(max-width:520px){.ora-checkin .grid{grid-template-columns:1fr}.ora-checkin .span-2{grid-column:span 1}.ora-checkin .totals{grid-template-columns:1fr}}
+    </style>
+}
+
+<div id="checkinApp"
+     class="ora-checkin app"
+     data-reg-id="@Model.ReservationId"
+     data-visit-id="@Model.VisitId"
+     data-currency="@Model.Currency"
+     data-currency-code="@Model.CurrencyCode"
+     data-date-mode="@Model.ReservationDateMode"
+     data-month-wise="@(Model.IsMonthWise ? "1" : "0")"
+     data-allow-dirty="@(Model.AllowDirtyRoom ? "1" : "0")"
+     data-stripe="@(Model.IsStripeConfigured ? "1" : "0")"
+     data-clover="@(Model.IsCloverConfigured ? "1" : "0")"
+     data-card-permission="@(Model.CanCardPayment ? "1" : "0")"
+     data-terminal-url="@Url.Content("~/TerminalCardPayment.aspx")"
+     data-fbr="@(Model.FbrEnabled ? "1" : "0")">
+
+    <form id="antiForgeryForm" class="hidden">@Html.AntiForgeryToken()</form>
+    <script id="checkinInitialState" type="application/json">@Html.Raw(stateJson)</script>
+
+    @if (!string.IsNullOrWhiteSpace(Convert.ToString(ViewBag.LoadError)))
+    {
+        <div class="checkin-alert is-error"><i class="fa-solid fa-triangle-exclamation"></i><span>@ViewBag.LoadError</span></div>
+    }
+
+    <section class="page-title">
+        <i class="pulse" aria-hidden="true"></i>
+        <div class="checkin-title-copy">
+            <h1>GUEST CHECK-IN</h1>
+            <p>Register the guest, manage room/services, payments and stay actions from one screen.</p>
+        </div>
+        <div class="search-wrap">
+            <div class="search" role="search">
+                <label for="guestSearch" class="sr-only">Search guests</label>
+                <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
+                <input id="guestSearch" type="search" value="@(Model.IsExistingBooking ? Model.ReservationId : string.Empty)" placeholder="Search reservation no." autocomplete="off" />
+                <button id="guestSearchButton" type="button" aria-label="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+            </div>
+            <div id="searchResults" class="search-results hidden" role="listbox"></div>
+        </div>
+    </section>
+
+    <form id="checkinForm" novalidate>
+        <div class="layout">
+            <div class="stack">
+                <section class="card guest-card" aria-labelledby="guestHeading">
+                    <div class="card-head">
+                        <span class="card-icon"><i class="fa-regular fa-user"></i></span>
+                        <div class="card-title"><h2 id="guestHeading">Guest &amp; Registration</h2></div>
+                        <span class="card-meta">Hotel date: @Model.HotelToday.ToString("dd MMM yyyy")</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="grid guest-grid-mvc">
+                            <div class="field"><label for="firstName">First Name <b class="req">*</b></label><input id="firstName" maxlength="20" required autocomplete="given-name" value="@g.FirstName" /></div>
+                            <div class="field"><label for="lastName">Last Name</label><input id="lastName" maxlength="20" autocomplete="family-name" value="@g.LastName" /></div>
+                            <div class="field"><label for="phone">Contact Number</label><input id="phone" maxlength="50" type="tel" autocomplete="tel" value="@g.Phone" /></div>
+                            <div class="field"><label for="email">Email</label><input id="email" maxlength="150" type="email" autocomplete="email" value="@g.Email" /></div>
+
+                            <div class="field"><label for="passportNo">ID / Passport</label><input id="passportNo" maxlength="30" value="@g.PassportNo" /></div>
+                            <div class="field"><label for="vatNo">VAT / CNIC No.</label><input id="vatNo" maxlength="30" value="@g.VatNo" /></div>
+                            <div class="field"><label for="country">Country</label><select id="country"><option value="">--Select--</option>@foreach (var o in Model.Countries){<option value="@o.Value">@o.Text</option>}</select></div>
+                            <div class="field"><label for="city">City</label><select id="city"><option value="">--Select--</option>@foreach (var o in Model.Cities){<option value="@o.Value">@o.Text</option>}</select></div>
+
+                            <div class="field span-2 guest-address-field"><label for="address">Complete Address</label><input id="address" maxlength="200" value="@g.Address" /></div>
+                            <div class="field stay-date-field">
+                                <label for="stayDateDisplay">Stay Dates</label>
+                                <div id="stayDatePicker" class="date-picker">
+                                    <input id="stayDateDisplay" class="date-picker-input" readonly aria-haspopup="dialog" aria-expanded="false" aria-controls="dateCalendar" />
+                                    <input id="checkIn" type="hidden" value="@DateValue(g.ArrivalDate)" />
+                                    <input id="checkOut" type="hidden" value="@DateValue(g.DepartureDate)" />
+                                    <div id="dateCalendar" class="calendar-panel hidden" role="dialog" aria-label="Choose stay dates">
+                                        <div class="calendar-header">
+                                            <button id="previousMonth" type="button" class="calendar-nav" aria-label="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+                                            <strong id="calendarMonth"></strong>
+                                            <button id="nextMonth" type="button" class="calendar-nav" aria-label="Next month"><i class="fa-solid fa-chevron-right"></i></button>
+                                        </div>
+                                        <div class="calendar-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+                                        <div id="calendarDays" class="calendar-days"></div>
+                                        <div id="calendarHint" class="calendar-hint">Select arrival date</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="field"><label for="stayCount">@(Model.IsMonthWise ? "Months" : "Nights")</label><input id="stayCount" readonly /></div>
+                            <div class="field"><label for="source">Booking Source</label><div class="select-with-button"><select id="source"><option value="">--Select--</option>@foreach (var o in Model.Sources){<option value="@o.Value">@o.Text</option>}</select><button id="manageSource" type="button" class="mini-action" title="Manage source"><i class="fa-solid fa-plus"></i></button></div></div>
+                            <div class="field"><label for="company">Company</label><div class="select-with-button"><select id="company"><option value="">--Select--</option>@foreach (var o in Model.Companies){<option value="@o.Value">@o.Text</option>}</select><button id="manageCompany" type="button" class="mini-action" title="Manage company"><i class="fa-solid fa-plus"></i></button></div></div>
+                            <div class="field"><label for="adults">Adults</label><div class="counter"><button type="button" data-target="adults" data-delta="-1"><i class="fa-solid fa-minus"></i></button><input id="adults" type="number" min="1" value="@Math.Max(1,g.Adults)" /><button type="button" data-target="adults" data-delta="1"><i class="fa-solid fa-plus"></i></button></div></div>
+                            <div class="field"><label for="children">Minors</label><div class="counter"><button type="button" data-target="children" data-delta="-1"><i class="fa-solid fa-minus"></i></button><input id="children" type="number" min="0" value="@Math.Max(0,g.Children)" /><button type="button" data-target="children" data-delta="1"><i class="fa-solid fa-plus"></i></button></div></div>
+
+                            <div id="guestActionRow" class="guest-inline-actions" aria-label="Guest actions">
+                                @if (!Model.IsExistingBooking)
+                                {
+                                    <button id="guestProceedCheckIn" type="button" class="btn btn-primary"><i class="fa-solid fa-arrow-right-to-bracket"></i>Proceed Check-In</button>
+                                }
+                                else if (Model.CanUpdateGuest)
+                                {
+                                    <button id="updateGuest" type="button" class="btn btn-primary"><i class="fa-solid fa-user-pen"></i>Update Guest Info</button>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Runtime-only values retained for WebForms parity; intentionally not shown in Guest Info. -->
+                        <div class="checkin-runtime-fields hidden" aria-hidden="true">
+                            <input id="arrivalTime" type="hidden" value="@g.ArrivalTime" />
+                            <input id="departureTime" type="hidden" value="@g.DepartureTime" />
+                            <select id="reservationType" tabindex="-1"><option value="Individual">Individual</option><option value="Group">Group</option></select>
+                            <select id="reservationDateMode" tabindex="-1"><option value="groupSame">Same dates for all rooms</option><option value="groupDifferent">Different dates by room</option></select>
+                            <input id="bookingId" type="hidden" value="@g.BookingId" />
+                            <input id="groupName" type="hidden" value="@g.GroupName" />
+                            <input id="complementary" type="checkbox" @(g.Complementary ? "checked" : null) tabindex="-1" />
+                        </div>
+
+
+                    </div>
+                </section>
+
+                <section class="card" aria-labelledby="roomsHeading">
+                    <div class="card-head">
+                        <span class="card-icon"><i class="fa-solid fa-bed"></i></span>
+                        <div class="card-title"><h2 id="roomsHeading">Rooms &amp; Services</h2></div>
+                    </div>
+                    <div class="card-body">
+                        <div id="chargeEntry" class="charge-row charge-row-mvc">
+                            <div class="field">
+                                <label for="chargeCategory">Categories</label>
+                                <select id="chargeCategory">
+                                    <option value="">--Select--</option>
+                                    @foreach (var o in Model.Categories)
+                                    {
+                                        <option value="@o.Text" data-category-id="@o.Value">@o.Text</option>
+                                    }
+                                    <option value="Services" data-service="1">Services / Charges</option>
+                                </select>
+                            </div>
+
+                            <div id="chargeDetailWrap" class="field charge-detail-wrap hidden">
+                                <label for="chargeDetail">Details</label>
+                                <input id="chargeDetail" maxlength="500" placeholder="Enter service / charge details" />
+                            </div>
+
+                            <div id="chargeRoomWrap" class="field hidden">
+                                <label for="chargeRoom">Room No.</label>
+                                <select id="chargeRoom"><option value="">--Select--</option></select>
+                            </div>
+
+                            <div id="ratePlanWrap" class="field hidden">
+                                <label for="ratePlan">Rate Plan</label>
+                                <select id="ratePlan"><option value="">--Select--</option></select>
+                            </div>
+
+                            <div class="field">
+                                <label for="chargeTotal">Total (@Model.Currency)</label>
+                                <input id="chargeTotal" type="number" min="-999999999" step="0.01" />
+                            </div>
+
+                            @if (Model.HasDiscountPermission)
+                            {
+                                <div class="field"><label for="discount">Discount (@Model.Currency)</label><input id="discount" type="number" min="0" step="0.01" value="0" /></div>
+                            }
+
+                            <div class="tax-group charge-tax-group" role="group" aria-label="Taxes">
+                                @if (Model.HasGstPermission && Model.HasGst){<label class="check"><input id="gst" type="checkbox" /> @Model.TaxLabel (@Model.GstPercent.ToString("0.##")%)</label>}
+                                @if (Model.HasBedTaxPermission && Model.HasBedTax && !Model.TaxLabel.Equals("VAT",StringComparison.OrdinalIgnoreCase)){<label class="check"><input id="bedTax" type="checkbox" /> Bed Tax (@Model.BedTaxPercent.ToString("0.##")%)</label>}
+                            </div>
+
+                            <button id="addCharge" type="button" class="btn btn-primary charge-add-btn"><i class="fa-solid fa-plus"></i>Add</button>
+                        </div>
+
+                        <div id="chargeOptionsRow" class="charge-options-row">
+                            <div id="promoCodeWrap" class="field hidden" hidden aria-hidden="true"><select id="promoCode" tabindex="-1"><option value="" selected></option></select></div>
+                            <div id="monthlyRateWrap" class="field hidden"><label for="monthlyRate">Monthly Rate</label><input id="monthlyRate" type="number" min="0" step="0.01" /></div>
+                            <div class="field room-date-col hidden"><label for="chargeArrival">Arrival</label><input id="chargeArrival" type="date" value="@DateValue(g.ArrivalDate)" /></div>
+                            <div class="field room-date-col hidden"><label for="chargeDeparture">Departure</label><input id="chargeDeparture" type="date" value="@DateValue(g.DepartureDate)" /></div>
+                            <input id="chargeNights" type="hidden" value="@Math.Max(0, (g.DepartureDate.Date - g.ArrivalDate.Date).Days)" />
+                            <input id="numberOfRooms" type="hidden" value="1" />
+                        </div>
+
+                        <div class="table-wrap charge-table-wrap">
+                            <table class="table charge-table">
+                                <thead>
+                                    <tr><th>Check-In</th><th>#</th><th>Description</th><th>Type</th><th>Room</th><th>Guest</th><th>Stay</th><th>Rate Plan</th><th class="num">Rate / Night</th><th data-charge-col="discount" class="num @(!showDiscountColumn ? "is-column-hidden" : "")">Discount</th><th data-charge-col="gst" class="num @(!showTaxColumn ? "is-column-hidden" : "")">@Model.TaxLabel</th><th data-charge-col="bedtax" class="num @(!showBedTaxColumn ? "is-column-hidden" : "")">Bed Tax</th><th class="num">Total</th><th>Actions</th></tr>
+                                </thead>
+                                <tbody id="chargeRows">
+                                @if (Model.Charges.Count == 0)
+                                {
+                                    <tr class="table-empty"><td colspan="14">No charges added yet. Save the guest, then add a room or service.</td></tr>
+                                }
+                                else
+                                {
+                                    var sr = 0;
+                                    foreach (var row in Model.Charges)
+                                    {
+                                        sr++;
+                                        <tr data-charge-id="@row.Id" data-room="@row.RoomNo" data-category="@row.Category" data-status="@row.ReservationStatus" data-arrival="@(row.ArrivalDate?.ToString("yyyy-MM-dd") ?? "")" data-departure="@(row.DepartureDate?.ToString("yyyy-MM-dd") ?? "")">
+                                            <td>@if(row.CanSelectForCheckIn){<input class="room-check" type="checkbox" value="@row.Id" data-room="@row.RoomNo" checked="@row.SelectedForCheckIn" title="Select this pending room for check-in" />}else{<i class="fa-solid fa-lock table-lock" title="This row is not available for check-in selection."></i>}</td>
+                                            <td>@sr</td>
+                                            <td>@(row.Description.Equals("Room Rent",StringComparison.OrdinalIgnoreCase) ? row.Description : (!string.IsNullOrWhiteSpace(row.DeductionInfo) ? row.DeductionInfo : row.Description))</td>
+                                            <td>@row.Category</td>
+                                            <td class="room-cell reservation-room-number-cell">
+                                                <span class="room-number-text">@(string.IsNullOrWhiteSpace(row.RoomNo) ? "—" : row.RoomNo)</span>
+                                                @if(row.CanChangeRoom)
+                                                {
+                                                    <button type="button" class="reservation-room-edit-btn" data-room-change="@row.Id" title="Change this room" aria-label="Change room @row.RoomNo"><i class="fa-solid fa-pen"></i></button>
+                                                }
+                                            </td>
+                                            <td class="guest-cell inline-editable-cell" data-value="@row.GuestName" data-can-edit-guest="@(row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "1" : "0")" title="@(row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "Double-click to edit guest name" : "")">@(string.IsNullOrWhiteSpace(row.GuestName) ? "—" : row.GuestName)</td>
+                                            <td>@DateText(row.ArrivalDate) → @DateText(row.DepartureDate)<br/><small>@row.Nights.ToString("0.##") @(Model.IsMonthWise ? "month(s)" : "night(s)")</small></td>
+                                            <td>@(string.IsNullOrWhiteSpace(row.RatePlanName) ? row.RatePlanId : row.RatePlanName)</td>
+                                            @{ var ratePerNight = row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) && row.Nights > 1m && Math.Abs(row.Rate - row.Charge) < 0.01m ? Math.Round(row.Rate / row.Nights, 2) : row.Rate; }
+                                            <td class="num rate-cell inline-editable-cell" data-value="@ratePerNight.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-can-edit-rate="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "1" : "0")" title="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "Double-click to edit rate per night" : "Rate update not permitted")">@Money(ratePerNight)</td>
+                                            <td data-charge-col="discount" data-value="@row.Discount.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showDiscountColumn ? "is-column-hidden" : "")">@Money(row.Discount)</td>
+                                            <td data-charge-col="gst" data-value="@row.Gst.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showTaxColumn ? "is-column-hidden" : "")">@Money(row.Gst)</td>
+                                            <td data-charge-col="bedtax" data-value="@row.BedTax.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showBedTaxColumn ? "is-column-hidden" : "")">@Money(row.BedTax)</td>
+                                            <td class="num charge-total-cell" data-value="@row.TotalAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)"><b>@Money(row.TotalAmount)</b></td>
+                                            <td class="row-actions">
+                                                @if(row.CanDelete){<button type="button" class="icon-action danger" data-action="delete" title="Delete"><i class="fa-solid fa-trash"></i></button>}else if(!string.IsNullOrWhiteSpace(row.DeleteLockTitle)){<span class="icon-action is-disabled" title="@row.DeleteLockTitle"><i class="fa-solid fa-lock"></i></span>}
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="totals" aria-live="polite">
+                            <div class="total">Subtotal <b id="subTotal">@Money(Model.Totals.SubTotal)</b></div>
+                            <div class="total">Tax <b id="taxTotal">@Money(Model.Totals.TaxTotal)</b></div>
+                            <div class="total grand">Grand Total <b id="grandTotal">@Money(Model.Totals.GrandTotal)</b></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card additional-stay-items hidden" aria-labelledby="extraHeading" aria-hidden="true">
+                    <div class="card-head">
+                        <span class="card-icon"><i class="fa-solid fa-bell-concierge"></i></span>
+                        <div class="card-title"><h2 id="extraHeading">Additional Stay Items</h2><small>Laundry, discount codes and notes from the original page.</small></div>
+                    </div>
+                    <div class="card-body">
+                        <div class="utility-tabs" role="tablist">
+                            <button type="button" class="utility-tab active" data-panel="notesPanel">Notes</button>
+                            <button type="button" class="utility-tab" data-panel="laundryPanel">Laundry</button>
+                            <button type="button" class="utility-tab" data-panel="discountPanel">Discount Code</button>
+                        </div>
+                        <div id="notesPanel" class="utility-panel active"><label for="notes">Notes</label><textarea id="notes" placeholder="Add any notes about this stay...">@g.Notes</textarea></div>
+                        <div id="laundryPanel" class="utility-panel hidden">
+                            <div class="utility-grid">
+                                <div class="field"><label for="laundryCategory">Category</label><select id="laundryCategory"><option value="">--Select--</option></select></div>
+                                <div class="field"><label for="laundryItem">Item</label><select id="laundryItem"><option value="">--Select--</option></select></div>
+                                <div class="field"><label for="laundrySubCategory">Sub Category</label><input id="laundrySubCategory" readonly /></div>
+                                <div class="field"><label for="laundryQty">Quantity</label><input id="laundryQty" type="number" min="1" value="1" /></div>
+                                <div class="field"><label for="laundryRate">Rate</label><input id="laundryRate" type="number" min="0" step="0.01" readonly /></div>
+                                <div class="field"><label for="laundryAmount">Amount</label><input id="laundryAmount" readonly /></div>
+                                <button id="addLaundry" type="button" class="btn btn-primary"><i class="fa-solid fa-plus"></i>Add Laundry</button>
+                            </div>
+                            <div class="table-wrap compact-table"><table class="table"><thead><tr><th>#</th><th>Category</th><th>Item</th><th>Qty</th><th class="num">Rate</th><th class="num">Amount</th><th>Action</th></tr></thead><tbody id="laundryRows">
+                            @if(Model.Laundry.Count==0){<tr class="table-empty"><td colspan="7">No laundry items.</td></tr>}else{var li=0;foreach(var row in Model.Laundry){li++;<tr><td>@li</td><td>@row.Category</td><td>@row.Item</td><td>@row.Quantity</td><td class="num">@Money(row.Rate)</td><td class="num">@Money(row.Amount)</td><td><button type="button" class="btn btn-ghost" data-laundry-delete="@row.Id"><i class="fa-solid fa-trash"></i> Delete</button></td></tr>}}
+                            </tbody></table></div>
+                        </div>
+                        <div id="discountPanel" class="utility-panel hidden">
+                            <div class="inline-tool"><div class="field"><label for="discountCode">Discount Code</label><input id="discountCode" /></div><button id="applyDiscount" type="button" class="btn btn-primary">Apply Code</button></div>
+                            <div id="discountList" class="discount-list">@if(Model.Discounts.Count==0){<span class="muted-text">No discount code applied.</span>}else{foreach(var d in Model.Discounts){<span class="discount-chip"><b>@d.Code</b> @Money(d.Amount)</span>}}</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <aside class="stack" aria-label="Payment">
+                <section class="card" aria-labelledby="paymentHeading">
+                    <div class="card-head"><span class="card-icon"><i class="fa-regular fa-credit-card"></i></span><div class="card-title"><h2 id="paymentHeading">Charges &amp; Payment</h2></div></div>
+                    <div class="card-body summary">
+                        <div class="pay-row"><label>Total</label><input id="paymentTotal" readonly value="@Money(Model.Totals.GrandTotal)" /></div>
+                        <div class="pay-row"><label>Advance Paid</label><div class="money-input" data-currency="@Model.Currency"><input id="advancePaid" type="number" readonly value="@Model.Totals.AdvancePaid.ToString("0.00")" /></div></div>
+                        <div class="pay-row"><label for="paymentMethod">Payment Method</label><select id="paymentMethod"><option value="">Select</option>@foreach(var o in Model.PaymentMethods){<option value="@o.Value">@o.Text</option>}<option value="Complementary">Complementary</option></select></div>
+                        <div class="pay-row"><label for="paidAmount">Paid Amount</label><div class="money-input" data-currency="@Model.Currency"><input id="paidAmount" type="number" min="0" step="0.01" value="0" /></div></div>
+                        <div class="pay-row"><label for="roomSecurity">Refundable Room Security</label><div class="money-input" data-currency="@Model.Currency"><input id="roomSecurity" type="number" readonly value="@Model.Totals.RoomSecurity.ToString("0.00")" /></div></div>
+                        <div class="pay-row"><label>Already Paid</label><input id="alreadyPaid" readonly value="@Money(Model.Totals.PaidAmount)" /></div>
+                        <div class="pay-row"><label>Payable</label><input id="payableAmount" readonly value="@Money(Model.Totals.Payable)" /></div>
+                        <div class="balance-box"><span>Outstanding Balance</span><b id="balance">@Money(Model.Totals.Remaining)</b></div>
+                        <button id="recordPayment" type="button" class="btn btn-primary btn-block"><i class="fa-solid fa-wallet"></i>Record Payment</button>
+                        @if(Model.CanCardPayment && (Model.IsStripeConfigured || Model.IsCloverConfigured))
+                        {
+                            <button id="openCardPayment" type="button" class="btn btn-outline btn-block"><i class="fa-solid fa-credit-card"></i>Card / PDQ Payment</button>
+                        }
+                    </div>
+                </section>
+
+                <section class="card" aria-labelledby="logHeading">
+                    <div class="card-head"><span class="card-icon"><i class="fa-solid fa-receipt"></i></span><div class="card-title"><h2 id="logHeading">Payment Log</h2></div></div>
+                    <div class="card-body payment-log-wrap"><table class="payment-log"><thead><tr><th>Sr#</th><th>Date</th><th class="num">Amount Received</th><th>Pay Method</th><th>Receipt</th><th>Option</th><th>Log</th></tr></thead><tbody id="paymentLogRows">
+                    @if(Model.PaymentLog.Count==0){<tr><td colspan="7" class="payment-log-empty">No payment recorded yet.</td></tr>}else{var pi=0;foreach(var p in Model.PaymentLog){pi++;<tr data-payment-log-id="@p.Id" data-amount="@p.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-refundable="@p.RemainingRefundable.ToString(System.Globalization.CultureInfo.InvariantCulture)"><td>@pi</td><td>@(p.Date?.ToString("dd MMM yyyy HH:mm") ?? "—")</td><td class="num">@Money(p.Amount)</td><td>@p.Method</td><td>@if(!string.IsNullOrWhiteSpace(p.Receipt)){<a href="@p.Receipt" target="_blank" rel="noopener">Receipt</a>}else{<span>—</span>}</td><td>@if(p.CanRefund){<button type="button" class="btn btn-ghost" data-payment-refund="@p.Id"><i class="fa-solid fa-rotate-left"></i> Refund</button>}</td><td><button type="button" class="btn btn-ghost btn-icon" data-payment-audit="@p.Id" title="View payment log"><i class="fa-solid fa-clock-rotate-left"></i></button></td></tr>}}
+                    </tbody></table></div>
+                </section>
+
+
+                <section class="card" aria-labelledby="depositHeading">
+                    <div class="card-head"><span class="card-icon"><i class="fa-solid fa-shield-halved"></i></span><div class="card-title"><h2 id="depositHeading">Security Deposit</h2></div><small class="card-meta">Separate from stay total</small></div>
+                    <div class="card-body">
+                        <div class="deposit-row"><span>Refundable Balance</span><b id="depositDisplay">@Money(Model.Totals.RoomSecurity)</b></div>
+                        <button id="openRoomSecurity" type="button" class="btn btn-outline btn-block"><i class="fa-solid fa-shield-halved"></i>Room Security</button>
+                        <div class="table-wrap compact-table security-table"><table class="table"><thead><tr><th>Date</th><th>Type</th><th>Method</th><th class="num">Amount</th><th>Status</th><th>Action</th></tr></thead><tbody id="securityRows">
+                        @if(Model.SecurityLog.Count==0){<tr class="table-empty"><td colspan="6">No security activity.</td></tr>}else{foreach(var row in Model.SecurityLog){<tr data-security-id="@row.Id" data-security-amount="@row.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)" data-security-pi="@row.PaymentIntentId"><td>@(row.Date?.ToString("dd MMM yyyy") ?? "—")</td><td>@row.Description</td><td>@row.Method</td><td class="num">@Money(row.Amount)</td><td>@row.Status</td><td>@if(row.CanSettle){<button type="button" class="btn btn-ghost" data-security-settle="@row.Id">Settle</button>}</td></tr>}}
+                        </tbody></table></div>
+                    </div>
+                </section>
+
+                <div id="message" class="message" role="status" aria-live="polite"></div>
+            </aside>
+        </div>
+    </form>
+
+    <div class="fixed-action-bar-spacer" aria-hidden="true"></div>
+    <div id="checkinFixedActions" class="checkin-fixed-action-bar" aria-label="Check-in actions">
+        <div class="checkin-fixed-action-inner">
+            <div class="checkin-footer-left">
+                @if (Model.ShowCheckOutAction)
+                {
+                    <button id="checkOutAction" type="button" class="footer-action-btn footer-checkout"><i class="fa-solid fa-right-from-bracket"></i>Check-Out</button>
+                }
+            </div>
+
+            <div class="checkin-footer-right">
+                @if (Model.ShowCheckInAction)
+                {
+                    <button id="complete" type="button" class="footer-action-btn footer-checkin"><i class="fa-solid fa-right-to-bracket"></i>Check-In</button>
+                    <button id="saveAndPrint" type="button" class="footer-action-btn footer-print"><i class="fa-solid fa-print"></i>Save &amp; Print</button>
+                }
+
+                @if (Model.CanExtendReservation || Model.ShowUndoCheckInAction || Model.IsExistingBooking || Model.CanPostAndPrint)
+                {
+                    <details class="footer-actions-dropdown">
+                        <summary class="footer-actions-toggle"><i class="fa-solid fa-bars-staggered"></i><span>Actions</span><i class="fa-solid fa-chevron-up footer-actions-arrow"></i></summary>
+                        <div class="footer-actions-menu">
+                            @if (Model.CanExtendReservation)
+                            {
+                                <button id="openExtend" type="button" class="footer-dd-item"><i class="fa-solid fa-calendar-plus"></i>Extend / Shrink Stay</button>
+                            }
+                            @if (Model.ShowUndoCheckInAction)
+                            {
+                                <button id="undoCheckIn" type="button" class="footer-dd-item"><i class="fa-solid fa-rotate-left"></i>Undo Check-In</button>
+                            }
+                            @if (Model.IsExistingBooking)
+                            {
+                                <button id="printInvoice" type="button" class="footer-dd-item"><i class="fa-solid fa-print"></i>Print Invoice</button>
+                                <button id="printLaundry" type="button" class="footer-dd-item"><i class="fa-solid fa-shirt"></i>Laundry Invoice</button>
+                            }
+                            @if (Model.CanPostAndPrint)
+                            {
+                                <button id="postFbr" type="button" class="footer-dd-item"><i class="fa-solid fa-file-invoice"></i>Post &amp; Print FBR</button>
+                            }
+                        </div>
+                    </details>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div id="securityModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="securityModalTitle">
+        <section class="payment-modal">
+            <div class="modal-head"><i class="modal-dot"></i><h2 id="securityModalTitle">ROOM SECURITY</h2><button type="button" class="modal-close" data-close-modal="securityModal">×</button></div>
+            <div class="modal-body">
+                <div class="modal-field"><label for="securityMovement">Movement</label><select id="securityMovement"><option value="deposit">Deposit</option><option value="refund">Refund to Guest</option><option value="deduct">Security Deduction</option></select></div>
+                <div class="modal-field"><label for="securityMethod">Payment Method</label><select id="securityMethod"><option>Cash</option>@foreach(var o in Model.PaymentMethods){<option value="@o.Value">@o.Text</option>}</select></div>
+                <div class="modal-field"><label for="securityReader">Card Reader</label><select id="securityReader"><option value="">--Select--</option>@foreach(var r in Model.StripeReaders){<option value="@r.Value">@r.Text</option>}</select></div>
+                <div class="modal-field"><label for="securityNote">Additional Info <b class="req">*</b></label><input id="securityNote" /></div>
+                <div class="modal-field"><label for="securityAmount">Amount</label><div class="money-input"><input id="securityAmount" type="number" min="0.01" step="0.01" /></div></div>
+                @if(Model.ShowSimulation){<div class="simulation"><label><input id="securitySimulate" type="checkbox" /> Use simulated terminal</label><select id="securitySimulationResult"><option value="success">Success</option><option value="declined">Declined</option><option value="timeout">Reader timeout</option></select></div>}
+                <div id="securityTerminalStatus" class="terminal-status"><b>Ready</b><span>Cash is posted directly. Card can use Stripe Terminal when configured.</span></div>
+                <div class="modal-actions"><button id="saveSecurity" type="button" class="btn btn-primary">Post Security</button><button type="button" class="btn btn-outline" data-close-modal="securityModal">Cancel</button></div>
+            </div>
+        </section>
+    </div>
+
+    <div id="cardModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="cardModalTitle">
+        <section class="payment-modal card-payment-modal">
+            <div class="modal-head"><i class="modal-dot"></i><h2 id="cardModalTitle">CARD / PDQ PAYMENT</h2><button type="button" class="modal-close" data-close-modal="cardModal">×</button></div>
+            <div class="modal-body">
+                <div class="card-mode-tabs" role="tablist" aria-label="Card payment mode">
+                    <button type="button" class="pay-tab active" data-card-mode="terminal"><i class="fa-solid fa-credit-card"></i> PDQ / Terminal</button>
+                    @if(Model.IsStripeConfigured){<button type="button" class="pay-tab" data-card-mode="manual"><i class="fa-solid fa-keyboard"></i> Manual Card</button>}
+                </div>
+
+                <div id="terminalCardArea" class="card-payment-mode">
+                    <div class="pay-tabs provider-tabs" id="cardProviderTabs">
+                        @if(Model.IsStripeConfigured){<button type="button" class="pay-tab active" data-card-provider="stripe">Stripe Terminal</button>}
+                        @if(Model.IsCloverConfigured){<button type="button" class="pay-tab @(Model.IsStripeConfigured ? "" : "active")" data-card-provider="clover">Clover PDQ</button>}
+                    </div>
+                    <div id="cardReaderWrap" class="modal-field"><label for="cardReader">Reader / Device</label><select id="cardReader"><option value="">--Select--</option>@foreach(var r in Model.StripeReaders){<option value="@r.Value">@r.Text</option>}</select></div>
+                </div>
+
+                <div id="manualCardArea" class="card-payment-mode hidden">
+                    <div class="stripe-checkout-note">
+                        <i class="fa-brands fa-stripe"></i>
+                        <div><b>Secure manual card payment</b><span>The card details are entered on Stripe Checkout and are not stored in ORA PMS.</span></div>
+                    </div>
+                </div>
+
+                <div class="modal-field"><label for="cardAmount">Amount</label><div class="money-input" data-currency="@Model.Currency"><input id="cardAmount" type="number" min="0.01" step="0.01" /></div></div>
+                <div class="modal-field"><label for="cardNote">Note</label><input id="cardNote" /></div>
+                @if(Model.ShowSimulation){<div id="cardSimulationWrap" class="simulation"><label><input id="cardSimulate" type="checkbox" /> Use simulated card</label><select id="cardSimulationResult"><option value="success">Success</option><option value="declined">Declined</option><option value="timeout">Reader timeout</option></select></div>}
+                <div id="cardTerminalStatus" class="terminal-status"><b>Ready</b><span>Select PDQ / Terminal or Manual Card.</span></div>
+                <div class="modal-actions"><button id="chargeCardNow" type="button" class="btn btn-primary">Charge Now</button><button id="cancelTerminal" type="button" class="btn btn-outline">Cancel</button></div>
+            </div>
+        </section>
+    </div>
+
+    <div id="extendModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="extendTitle">
+        <section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2 id="extendTitle">EXTEND / SHRINK RESERVATION</h2><button type="button" class="modal-close" data-close-modal="extendModal">×</button></div><div class="modal-body"><div class="modal-field"><label for="newDeparture">New Departure Date</label><input id="newDeparture" type="date" value="@DateValue(g.DepartureDate)" min="@(g.ArrivalDate == default ? "" : g.ArrivalDate.AddDays(1).ToString("yyyy-MM-dd"))" /></div><div class="checkin-note">Choose a later date to extend or an earlier date to shrink. Room-rent segments and totals follow the WebForms Calendar logic.</div><div class="modal-actions"><button id="extendSave" type="button" class="btn btn-primary">Apply Stay Change</button><button type="button" class="btn btn-outline" data-close-modal="extendModal">Cancel</button></div></div></section>
+    </div>
+
+    <div id="roomChangeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="roomChangeTitle">
+        <section class="dialog wide-dialog"><div class="modal-head"><i class="modal-dot"></i><h2 id="roomChangeTitle">CHANGE ROOM</h2><button type="button" class="modal-close" data-close-modal="roomChangeModal">×</button></div><div class="modal-body"><input id="roomChangePaymentId" type="hidden" /><div class="modal-field"><label for="roomChangeSelect">Available Rooms</label><select id="roomChangeSelect"><option value="">--Select available room--</option></select></div><div id="roomChangeHint" class="checkin-note"></div><div class="modal-actions"><button id="roomChangeSave" type="button" class="btn btn-primary">Change Room</button><button type="button" class="btn btn-outline" data-close-modal="roomChangeModal">Cancel</button></div></div></section>
+    </div>
+
+    <div id="sourceModal" class="modal-backdrop hidden" role="dialog" aria-modal="true"><section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2>MANAGE SOURCE</h2><button type="button" class="modal-close" data-close-modal="sourceModal">×</button></div><div class="modal-body"><div class="modal-field"><label for="sourceValue">Source</label><input id="sourceValue" /></div><div class="modal-actions"><button id="addSource" type="button" class="btn btn-primary">Add</button><button id="deleteSource" type="button" class="btn btn-outline">Delete</button></div></div></section></div>
+
+    <div id="companyModal" class="modal-backdrop hidden" role="dialog" aria-modal="true"><section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2>MANAGE COMPANY</h2><button type="button" class="modal-close" data-close-modal="companyModal">×</button></div><div class="modal-body company-modal-grid"><div class="modal-field"><label for="companyValue">Company</label><input id="companyValue" /></div><div class="modal-field"><label for="companyPerson">Contact Person</label><input id="companyPerson" /></div><div class="modal-field"><label for="companyEmail">Email</label><input id="companyEmail" type="email" /></div><div class="modal-field"><label for="companyPhone">Phone</label><input id="companyPhone" /></div><div class="modal-field"><label for="companyAddress">Address</label><input id="companyAddress" /></div><div class="modal-field"><label for="companyCountry">Country</label><select id="companyCountry"><option value="">--Select--</option>@foreach(var o in Model.Countries){<option value="@o.Value">@o.Text</option>}</select></div><div class="modal-actions"><button id="addCompany" type="button" class="btn btn-primary">Add</button><button id="deleteCompany" type="button" class="btn btn-outline">Delete</button></div></div></section></div>
+
+    <div id="refundPaymentModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="refundPaymentTitle">
+        <section class="dialog">
+            <div class="modal-head"><i class="modal-dot"></i><h2 id="refundPaymentTitle">REFUND PAYMENT</h2><button type="button" class="modal-close" data-close-modal="refundPaymentModal">×</button></div>
+            <div class="modal-body">
+                <input id="refundPaymentLogId" type="hidden" />
+                <div class="modal-field"><label for="refundPaymentAmount">Refund Amount</label><input id="refundPaymentAmount" type="number" min="0.01" step="0.01" /></div>
+                <div id="refundPaymentMax" class="checkin-note"></div>
+                <div class="modal-field"><label for="refundPaymentReason">Refund Reason</label><textarea id="refundPaymentReason" rows="3" placeholder="Enter refund reason..."></textarea></div>
+                <div class="modal-actions"><button id="refundPaymentSubmit" type="button" class="btn btn-primary">Refund Now</button><button type="button" class="btn btn-outline" data-close-modal="refundPaymentModal">Cancel</button></div>
+            </div>
+        </section>
+    </div>
+
+    <div id="auditModal" class="modal-backdrop hidden" role="dialog" aria-modal="true"><section class="dialog wide-dialog"><div class="modal-head"><i class="modal-dot"></i><h2>PAYMENT AUDIT LOG</h2><button type="button" class="modal-close" data-close-modal="auditModal">×</button></div><div class="modal-body"><pre id="auditContent" class="audit-content"></pre></div></section></div>
+
+    <div id="confirmDialog" class="modal-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle"><section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2 id="confirmTitle">Confirm</h2></div><div class="dialog-body"><p id="confirmMessage"></p></div><div class="dialog-actions"><button id="confirmCancel" type="button" class="btn btn-outline">Cancel</button><button id="confirmOk" type="button" class="btn btn-primary">Confirm</button></div></section></div>
+    <div id="inputDialog" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="inputDialogTitle"><section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2 id="inputDialogTitle">Enter Value</h2><button id="inputDialogClose" type="button" class="modal-close">×</button></div><div class="modal-body"><div class="modal-field"><label id="inputDialogLabel" for="inputDialogValue">Value</label><input id="inputDialogValue" /></div><div id="inputDialogHint" class="checkin-note hidden"></div><div class="modal-actions"><button id="inputDialogCancel" type="button" class="btn btn-outline">Cancel</button><button id="inputDialogOk" type="button" class="btn btn-primary">OK</button></div></div></section></div>
+    <div id="toastHost" class="toast-host"></div>
+    <div id="busyOverlay" class="busy-overlay hidden"><div class="busy-card"><i class="fa-solid fa-circle-notch fa-spin"></i><span id="busyText">Processing…</span></div></div>
+</div>
+
+@section Scripts {
+    <script src="~/js/checkin-mvc.js" asp-append-version="true"></script>
+}
