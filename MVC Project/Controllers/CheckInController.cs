@@ -15,7 +15,6 @@ public sealed class CheckInController : Controller
 {
     private readonly ICheckInService _service;
     private readonly ILogger<CheckInController> _logger;
-
     public CheckInController(
         IConfiguration configuration,
         IHotelClock hotelClock,
@@ -31,7 +30,6 @@ public sealed class CheckInController : Controller
             availabilityQueue,
             loggerFactory.CreateLogger<CheckInService>());
     }
-
     [HttpGet("")]
     [HttpGet("Index")]
     [HttpGet("/Reservation.aspx")]

@@ -188,11 +188,14 @@ public sealed class CheckInSecurityRow
     public DateTime? Date { get; set; }
     public string Description { get; set; } = string.Empty;
     public string Method { get; set; } = string.Empty;
+    public string Last4 { get; set; } = string.Empty;
+    public string ReceiptUrl { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public decimal Deducted { get; set; }
     public decimal Refunded { get; set; }
     public decimal Balance { get; set; }
     public string PaymentIntentId { get; set; } = string.Empty;
+    public string ChargeId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool CanSettle { get; set; }
 }
@@ -238,6 +241,12 @@ public sealed class SaveGuestRequest
 public sealed class UpdateGuestRequest
 {
     public GuestCheckInInput Guest { get; set; } = new();
+
+    // Used only when Update Guest Info changes the stay dates.
+    // The UI asks which property-configured taxes should apply to newly-added nights.
+    public bool DateTaxSelectionConfirmed { get; set; }
+    public bool ApplyGstToDateChange { get; set; }
+    public bool ApplyBedTaxToDateChange { get; set; }
 }
 
 /// <summary>Fast WebForms-compatible first/last name update.</summary>
@@ -390,6 +399,7 @@ public sealed class SecurityMovementRequest
     public string Movement { get; set; } = "deposit";
     public int SecurityId { get; set; }
     public string PaymentIntentId { get; set; } = string.Empty;
+    public string ChargeId { get; set; } = string.Empty;
 }
 
 public sealed class TerminalPaymentRequest

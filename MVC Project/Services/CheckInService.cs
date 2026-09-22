@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -94,13 +95,13 @@ public sealed class CheckInService : ICheckInService
         {
             model.Charges = (await LoadChargesAsync(cn, hotelId, model.ReservationId, permission, ct)).ToList();
 
-            // WebForms permits main stay-date editing only for Individual/Single records,
-            // and its date helper rejects multiple physical rooms/categories. Reflect that
-            // rule in the UI up front so the user cannot reach a known-invalid action.
-            var singleDateShape = HasSingleDateChangeShape(model.Charges);
-            model.CanEditDates = IsSingleReservationType(model.ReservationType) && singleDateShape;
-            model.CanExtendReservation = model.CanEditDates &&
-                (IsReservation(model.ReservationStatus) || IsCheckIn(model.ReservationStatus));
+            // Stay dates remain editable for an active Individual/Single booking whether
+            // it is still a reservation or already checked in. Multiple physical rooms are
+            // supported for departure Extend/Shrink; the service applies the change to the
+            // active room rows in one transaction.
+            var activeStay = IsReservation(model.ReservationStatus) || IsCheckIn(model.ReservationStatus);
+            model.CanEditDates = activeStay;
+            model.CanExtendReservation = activeStay;
 
             model.PaymentLog = (await LoadPaymentLogAsync(cn, hotelId, model.ReservationId, permission, ct)).ToList();
             model.SecurityLog = (await LoadSecurityLogAsync(cn, hotelId, model.ReservationId, ct)).ToList();
@@ -542,23 +543,12 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
         var dateChangeIgnored = false;
         DateChangeOutcome dateOutcome = new();
 
-        if (!isSingleReservation && requestedDatesDiffer)
-        {
-            // Same WebForms rule: guest details can still be updated, but the
-            // main arrival/departure controls do not rewrite room-level group dates.
-            dateChangeIgnored = true;
-            g.ArrivalDate = currentStay.Arrival.Value.Date;
-            g.DepartureDate = currentStay.Departure.Value.Date;
-        }
+        var arrivalChanged = currentStay.Arrival.Value.Date != requestedArrival;
 
-        // Defensive MVC adaptation: the WebForms date helper itself rejects an
-        // Individual/Single booking once it contains more than one physical room or
-        // category. Do not let that rule make a normal Update Guest action fail.
-        // The UI disables stay-date editing for this shape, and stale/open browser tabs
-        // simply keep the current payment-derived stay while still saving guest details.
-        if (isSingleReservation && requestedDatesDiffer &&
-            !await HasSingleDateChangeShapeAsync(cn, hotelId, g.RegId, ct))
+        if (!isSingleReservation && requestedDatesDiffer && arrivalChanged)
         {
+            // Multi-room/group stays may Extend/Shrink the common departure date here,
+            // but moving the arrival edge still belongs to room-level date management.
             dateChangeIgnored = true;
             g.ArrivalDate = currentStay.Arrival.Value.Date;
             g.DepartureDate = currentStay.Departure.Value.Date;
@@ -570,14 +560,31 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
-            if (isSingleReservation && requestedDatesDiffer && !dateChangeIgnored)
+            var dateTaxChoice = new DateChangeTaxChoice();
+            if (requestedDatesDiffer && !dateChangeIgnored)
             {
+                var propertyTax = await LoadTaxSettingsAsync(cn, hotelId, ct, tx);
+                dateTaxChoice = new DateChangeTaxChoice
+                {
+                    SelectionConfirmed = request.DateTaxSelectionConfirmed,
+                    ApplyGst = request.ApplyGstToDateChange &&
+                               propertyTax.GstPercent > 0m &&
+                               permissions.HasAny("gsttaxblock", "GST", "VAT", "gst"),
+                    ApplyBedTax = request.ApplyBedTaxToDateChange &&
+                                  propertyTax.BedTaxPercent > 0m &&
+                                  !propertyTax.Label.Equals("VAT", StringComparison.OrdinalIgnoreCase) &&
+                                  permissions.HasAny("bedtaxblock", "BedTax", "bedtax"),
+                    GstPercent = propertyTax.GstPercent,
+                    BedTaxPercent = propertyTax.BedTaxPercent
+                };
+
                 dateOutcome = await ApplySingleReservationDateAndRateChangeAsync(
                     cn, tx, hotelId, g.RegId,
                     currentStay.Arrival.Value.Date,
                     currentStay.Departure.Value.Date,
                     requestedArrival,
                     requestedDeparture,
+                    dateTaxChoice,
                     ct);
 
                 g.ArrivalDate = requestedArrival;
@@ -629,14 +636,14 @@ WHERE hotel_id=@hotel AND reg_id=@reg;";
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            if (isSingleReservation && requestedDatesDiffer && !dateChangeIgnored)
+            if (requestedDatesDiffer && !dateChangeIgnored)
                 await UpdatePaymentTotalsAsync(cn, tx, hotelId, g.RegId, ct);
 
             await InsertReservationActionLogAsync(
                 cn, tx, hotelId, userId, userName, ip, g.RegId,
                 "UPDATE GUEST", "Guest details updated from MVC check-in.", ct);
 
-            if (isSingleReservation && requestedDatesDiffer && !dateChangeIgnored)
+            if (requestedDatesDiffer && !dateChangeIgnored)
             {
                 var direction = requestedDeparture > currentStay.Departure.Value.Date
                     ? "Extend"
@@ -652,7 +659,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg;";
 
             await tx.CommitAsync(ct);
 
-            if (isSingleReservation && requestedDatesDiffer && !dateChangeIgnored)
+            if (requestedDatesDiffer && !dateChangeIgnored)
             {
                 var availabilityStart = currentStay.Arrival.Value.Date < requestedArrival
                     ? currentStay.Arrival.Value.Date
@@ -674,7 +681,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg;";
 
             return CheckInOperationResult.Ok(updateMessage, g.RegId, data: new
             {
-                datesChanged = isSingleReservation && requestedDatesDiffer && !dateChangeIgnored,
+                datesChanged = requestedDatesDiffer && !dateChangeIgnored,
                 dateChangeIgnored,
                 arrival = g.ArrivalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 departure = g.DepartureDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -1097,7 +1104,9 @@ WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
             return Array.Empty<LookupOption>();
 
         var row = await GetChargeRowAsync(cn, null, hotelId, string.Empty, paymentId, ct, ignoreReg: true);
-        if (row == null || !row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) || IsCheckedOut(row.ReservationStatus))
+        if (row == null
+            || !row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase)
+            || !IsReservation(row.ReservationStatus))
             return Array.Empty<LookupOption>();
 
         var regId = await GetRegIdForPaymentAsync(cn, paymentId, ct);
@@ -1128,8 +1137,8 @@ WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
             var row = await GetChargeRowAsync(cn, tx, hotelId, request.RegId, request.PaymentId, ct);
             if (row == null || !row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase))
                 return CheckInOperationResult.Fail("This Room Rent line is no longer available for editing.");
-            if (IsCheckedOut(row.ReservationStatus))
-                return CheckInOperationResult.Fail("Checked-out room cannot be changed.");
+            if (!IsReservation(row.ReservationStatus))
+                return CheckInOperationResult.Fail("Change Room is available only while this room is in Reservation status.");
             if (row.RoomNo.Equals(selectedRoom, StringComparison.OrdinalIgnoreCase))
                 return CheckInOperationResult.Fail("Please select a different room.");
 
@@ -1156,7 +1165,7 @@ WHERE ID=@id
   AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
   AND LTRIM(RTRIM(ISNULL(room_no,'')))=LTRIM(RTRIM(@oldRoom))
   AND LTRIM(RTRIM(ISNULL([Type],'')))=LTRIM(RTRIM(@category))
-  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) NOT IN ('check out','checkout','checked out');", cn, tx))
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) = 'reservation';", cn, tx))
             {
                 cmd.Parameters.Add("@newRoom", SqlDbType.VarChar, 50).Value = selectedRoom;
                 cmd.Parameters.Add("@id", SqlDbType.Int).Value = request.PaymentId;
@@ -1169,27 +1178,9 @@ WHERE ID=@id
                     throw new InvalidOperationException("The room line changed before confirmation. Please try again.");
             }
 
-            await using (var rooms = new SqlCommand(@"
-UPDATE dbo.RoomsTB
-SET room_status='Available'
-WHERE Hotel_id=@hotel AND room_no=@oldRoom
-  AND NOT EXISTS
-  (
-      SELECT 1 FROM dbo.payments p
-      WHERE p.hotel_id=@hotel
-        AND LTRIM(RTRIM(ISNULL(p.room_no,'')))=LTRIM(RTRIM(@oldRoom))
-        AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
-        AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) NOT IN
-            ('check out','checkout','checked out','cancelled','canceled')
-  );
-UPDATE dbo.RoomsTB SET room_status='Occupied'
-WHERE Hotel_id=@hotel AND room_no=@newRoom;", cn, tx))
-            {
-                rooms.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-                rooms.Parameters.Add("@oldRoom", SqlDbType.VarChar, 50).Value = row.RoomNo;
-                rooms.Parameters.Add("@newRoom", SqlDbType.VarChar, 50).Value = selectedRoom;
-                await rooms.ExecuteNonQueryAsync(ct);
-            }
+            // WebForms Reservation room-change does not alter RoomsTB status here.
+            // The assignment changes only the selected reservation payment row and
+            // writes the structured room-change logs.
 
             var oldCatId = await GetRoomLocalCategoryIdAsync(cn, tx, hotelId, row.RoomNo, row.Category, ct);
             var newCatId = await GetRoomLocalCategoryIdAsync(cn, tx, hotelId, selectedRoom, row.Category, ct);
@@ -1199,8 +1190,6 @@ WHERE Hotel_id=@hotel AND room_no=@newRoom;", cn, tx))
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "ROOM CHANGE", remarks, ct);
             await tx.CommitAsync(ct);
 
-            var categoryId = await GetCategoryIdAsync(hotelId, row.Category, ct);
-            QueueAvailability(hotelId, hotelName, userId, userName, ip, arrival, departure, categoryId);
             return CheckInOperationResult.Ok($"Room changed successfully from {row.RoomNo} to {selectedRoom}.", request.RegId,
                 data: new { paymentId=request.PaymentId, oldRoom=row.RoomNo, newRoom=selectedRoom, category=row.Category });
         }
@@ -1280,93 +1269,220 @@ WHERE Hotel_id=@hotel AND room_no=@newRoom;", cn, tx))
         string hotelId, string userId, string userName, string ip,
         RefundPaymentRequest request, CancellationToken ct = default)
     {
-        if (request.LogId <= 0 || request.Amount <= 0) return CheckInOperationResult.Fail("Enter a valid refund amount.");
-        if (string.IsNullOrWhiteSpace(request.Reason)) return CheckInOperationResult.Fail("Refund reason is required.");
+        if (request == null || request.LogId <= 0 || request.Amount <= 0)
+            return CheckInOperationResult.Fail("Enter a valid refund amount.");
+        if (string.IsNullOrWhiteSpace(request.RegId))
+            return CheckInOperationResult.Fail("Reservation ID is required.");
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return CheckInOperationResult.Fail("Refund reason is required.");
+
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
-        var permissions = await LoadPermissionsAsync(cn, hotelId, userId, ct);
-        if (!permissions.HasAction("Refund")) return CheckInOperationResult.Fail("You do not have refund permission.");
 
-        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+        var permissions = await LoadPermissionsAsync(cn, hotelId, userId, ct);
+        if (!permissions.HasAction("Refund"))
+            return CheckInOperationResult.Fail("You do not have refund permission.");
+
+        // Do all validation/provider work before opening the SQL transaction. This is
+        // the same shape as the WebForms refund flow and prevents an external Stripe/
+        // Clover call from holding database locks while the card processor responds.
+        var original = await GetPaymentLogRowAsync(cn, null, hotelId, request.RegId, request.LogId, ct);
+        if (original == null) return CheckInOperationResult.Fail("Payment record not found.");
+        if (original.Amount <= 0) return CheckInOperationResult.Fail("This row is not refundable.");
+
+        var already = await GetRefundedAmountAsync(
+            cn, null, hotelId, request.RegId,
+            original.PaymentId, original.ChargeId, request.LogId, ct);
+        var remainingRefundable = Math.Abs(original.Amount) - already;
+        if (remainingRefundable <= 0.005m)
+            return CheckInOperationResult.Fail("This payment is already fully refunded.");
+        if (request.Amount > remainingRefundable + 0.005m)
+            return CheckInOperationResult.Fail($"Maximum refundable amount is {remainingRefundable:0.00}.");
+
+        // Same provider split as WebForms: Cash is local; card refunds must be
+        // accepted by the provider before any PMS refund row is committed.
+        if (IsCashMethod(original.Method))
+        {
+            original.RefundId = "CASH_REFUND_" + Guid.NewGuid().ToString("N");
+        }
+        else if (original.Method.Contains("Clover", StringComparison.OrdinalIgnoreCase))
+        {
+            var provider = await RefundCloverProviderAsync(cn, hotelId, original, request.Amount, ct);
+            if (!provider.Success) return CheckInOperationResult.Fail(provider.Message);
+            original.RefundId = provider.PaymentIntentId;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(original.ChargeId) && string.IsNullOrWhiteSpace(original.PaymentId))
+                return CheckInOperationResult.Fail("Card refund requires the original Stripe payment/charge ID.");
+            var provider = await RefundStripeProviderAsync(cn, hotelId, original, request.Amount, ct);
+            if (!provider.Success) return CheckInOperationResult.Fail(provider.Message);
+            original.RefundId = provider.PaymentIntentId;
+        }
+
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
-            var original = await GetPaymentLogRowAsync(cn, tx, hotelId, request.RegId, request.LogId, ct);
-            if (original == null) return CheckInOperationResult.Fail("Payment record not found.");
-            if (original.Amount <= 0) return CheckInOperationResult.Fail("This row is not refundable.");
-            var already = await GetRefundedAmountAsync(cn, tx, hotelId, request.RegId, original.PaymentId, original.ChargeId, request.LogId, ct);
-            var remainingRefundable = Math.Abs(original.Amount) - already;
-            if (request.Amount > remainingRefundable + 0.005m)
-                return CheckInOperationResult.Fail($"Maximum refundable amount is {remainingRefundable:0.00}.");
+            string arrivalDate = string.Empty;
+            string departureDate = string.Empty;
+            string guestName = "Refund";
+            string status = "check in";
+            string visitId = string.Empty;
+            decimal grandTotal = 0m;
+            decimal roomSecurity = 0m;
+            decimal oldPayable = 0m;
+            decimal oldPaid = 0m;
+            decimal oldRemaining = 0m;
 
-            // Same split as WebForms: cash gets a local refund id; terminal/card
-            // refunds must succeed with the provider before the negative log is saved.
-            if (IsCashMethod(original.Method))
+            // WebForms takes its refund ledger snapshot from the latest
+            // PaymentsUpdateTB row and then applies the refund as:
+            // paid -= refund, remaining += refund, payable += refund.
+            await using (var snap = new SqlCommand(@"
+SELECT TOP 1
+       ISNULL(arrival_date,''),
+       ISNULL(departure_date,''),
+       ISNULL(name,''),
+       ISNULL(TRY_CONVERT(decimal(18,2),NULLIF(LTRIM(RTRIM(grand_total)),'')),0),
+       ISNULL(TRY_CONVERT(decimal(18,2),NULLIF(LTRIM(RTRIM(room_security)),'')),0),
+       ISNULL(TRY_CONVERT(decimal(18,2),NULLIF(LTRIM(RTRIM(payable)),'')),0),
+       ISNULL(TRY_CONVERT(decimal(18,2),NULLIF(LTRIM(RTRIM(paid_amount)),'')),0),
+       ISNULL(TRY_CONVERT(decimal(18,2),NULLIF(LTRIM(RTRIM(remaining_amount)),'')),0),
+       ISNULL(status,''),
+       ISNULL(visit_id,'')
+FROM dbo.PaymentsUpdateTB
+WHERE reg_id=@reg AND hotel_id=@hotel
+ORDER BY currentdate DESC, id DESC;", cn, tx))
             {
-                original.RefundId = "CASH_REFUND_" + Guid.NewGuid().ToString("N");
+                snap.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
+                snap.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                await using var rd = await snap.ExecuteReaderAsync(ct);
+                if (await rd.ReadAsync(ct))
+                {
+                    arrivalDate = Convert.ToString(rd.GetValue(0), CultureInfo.InvariantCulture) ?? string.Empty;
+                    departureDate = Convert.ToString(rd.GetValue(1), CultureInfo.InvariantCulture) ?? string.Empty;
+                    guestName = Convert.ToString(rd.GetValue(2), CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+                    grandTotal = DbDecimal(rd.GetValue(3));
+                    roomSecurity = DbDecimal(rd.GetValue(4));
+                    oldPayable = DbDecimal(rd.GetValue(5));
+                    oldPaid = DbDecimal(rd.GetValue(6));
+                    oldRemaining = DbDecimal(rd.GetValue(7));
+                    status = Convert.ToString(rd.GetValue(8), CultureInfo.InvariantCulture)?.Trim() ?? "check in";
+                    visitId = Convert.ToString(rd.GetValue(9), CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+                }
             }
-            else if (original.PaymentId.Length > 0)
+
+            if (string.IsNullOrWhiteSpace(guestName) || string.IsNullOrWhiteSpace(visitId))
             {
-                var provider = original.Method.Contains("Clover", StringComparison.OrdinalIgnoreCase)
-                    ? await RefundCloverProviderAsync(cn, hotelId, original, request.Amount, ct)
-                    : await RefundStripeProviderAsync(cn, hotelId, original, request.Amount, ct);
-                if (!provider.Success) return CheckInOperationResult.Fail(provider.Message);
-                original.RefundId = provider.PaymentIntentId;
+                var guest = await GetGuestSummaryAsync(cn, tx, hotelId, request.RegId, ct);
+                if (guest != null)
+                {
+                    if (string.IsNullOrWhiteSpace(guestName)) guestName = guest.Name;
+                    if (string.IsNullOrWhiteSpace(arrivalDate)) arrivalDate = guest.Arrival;
+                    if (string.IsNullOrWhiteSpace(departureDate)) departureDate = guest.Departure;
+                    if (string.IsNullOrWhiteSpace(status)) status = guest.Status;
+                    if (string.IsNullOrWhiteSpace(visitId)) visitId = guest.VisitId;
+                }
+            }
+            if (string.IsNullOrWhiteSpace(guestName)) guestName = "Refund";
+
+            var refundAmount = Math.Abs(request.Amount);
+            var negativeRefundAmount = -refundAmount;
+            var newPaid = oldPaid - refundAmount;
+            var newRemaining = oldRemaining + refundAmount;
+            var newPayable = oldPayable + refundAmount;
+
+            // The current PMS schema contains the provider/refund metadata used by
+            // WebForms. Keep a fallback for installations that still have the older
+            // PaymentsLogTB column set.
+            var hasRefundMetadata = false;
+            await using (var schema = new SqlCommand(@"
+SELECT CASE WHEN
+       COL_LENGTH('dbo.PaymentsLogTB','PaymentId') IS NOT NULL
+   AND COL_LENGTH('dbo.PaymentsLogTB','chargeid') IS NOT NULL
+   AND COL_LENGTH('dbo.PaymentsLogTB','RefundId') IS NOT NULL
+   AND COL_LENGTH('dbo.PaymentsLogTB','externalrefundid') IS NOT NULL
+   AND COL_LENGTH('dbo.PaymentsLogTB','notes') IS NOT NULL
+THEN 1 ELSE 0 END;", cn, tx))
+            {
+                hasRefundMetadata = Convert.ToInt32(await schema.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) == 1;
             }
 
-            var guest = await GetGuestSummaryAsync(cn, tx, hotelId, request.RegId, ct);
-            var totals = await LoadTotalsAsync(cn, tx, hotelId, request.RegId, false, ct);
-            var refundAmount = -Math.Abs(request.Amount);
-            var newPaid = totals.PaidAmount + refundAmount;
-            var remaining = totals.GrandTotal - newPaid;
-            // Link the negative refund row back to the original PaymentLog ID.
-            // This is also what keeps the original Refund button hidden once its
-            // refundable balance reaches zero, including cash payments with no PI/charge id.
-            var externalRefundId = request.LogId.ToString(CultureInfo.InvariantCulture);
-
-            const string insert = @"
+            var insert = hasRefundMetadata
+                ? @"
 INSERT INTO dbo.PaymentsLogTB
 (reg_id,arrival_date,departure_date,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,
  payment_method,status,visit_id,user_id,hotel_id,cb_status,systemUser,systemName,ipAddress,PaymentId,chargeid,RefundId,externalrefundid,notes)
 VALUES
-(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@remaining,
- @method,@status,@visit,@user,@hotel,'1',@systemUser,@systemName,@ip,@paymentId,@chargeId,@refundId,@externalRefundId,@notes);";
+(@reg,@arrival,@departure,@current,'Refund',@grand,@security,@payable,@paid,@remaining,
+ @method,@status,@visit,@user,@hotel,'1',@systemUser,@systemName,@ip,@paymentId,@chargeId,@refundId,@externalRefundId,@notes);"
+                : @"
+INSERT INTO dbo.PaymentsLogTB
+(reg_id,arrival_date,departure_date,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,
+ payment_method,status,visit_id,user_id,hotel_id,cb_status,systemUser,systemName,ipAddress)
+VALUES
+(@reg,@arrival,@departure,@current,'Refund',@grand,@security,@payable,@paid,@remaining,
+ @method,@status,@visit,@user,@hotel,'1',@systemUser,@systemName,@ip);";
+
             await using (var cmd = new SqlCommand(insert, cn, tx))
             {
-                cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId;
-                cmd.Parameters.Add("@arrival", SqlDbType.VarChar, 50).Value = guest?.Arrival ?? string.Empty;
-                cmd.Parameters.Add("@departure", SqlDbType.VarChar, 50).Value = guest?.Departure ?? string.Empty;
+                cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
+                cmd.Parameters.Add("@arrival", SqlDbType.VarChar, 50).Value = arrivalDate;
+                cmd.Parameters.Add("@departure", SqlDbType.VarChar, 50).Value = departureDate;
                 cmd.Parameters.Add("@current", SqlDbType.DateTime).Value = _hotelClock.GetHotelNow(hotelId);
-                cmd.Parameters.Add("@name", SqlDbType.VarChar, 250).Value = "Refund";
-                cmd.Parameters.Add("@grand", SqlDbType.VarChar, 50).Value = totals.GrandTotal.ToString(CultureInfo.InvariantCulture);
-                cmd.Parameters.Add("@security", SqlDbType.VarChar, 50).Value = totals.RoomSecurity.ToString(CultureInfo.InvariantCulture);
-                cmd.Parameters.Add("@payable", SqlDbType.VarChar, 50).Value = totals.GrandTotal.ToString(CultureInfo.InvariantCulture);
-                cmd.Parameters.Add("@paid", SqlDbType.VarChar, 50).Value = refundAmount.ToString(CultureInfo.InvariantCulture);
-                cmd.Parameters.Add("@remaining", SqlDbType.VarChar, 50).Value = remaining.ToString(CultureInfo.InvariantCulture);
+                cmd.Parameters.Add("@grand", SqlDbType.VarChar, 50).Value = grandTotal.ToString(CultureInfo.InvariantCulture);
+                cmd.Parameters.Add("@security", SqlDbType.VarChar, 50).Value = roomSecurity.ToString(CultureInfo.InvariantCulture);
+                cmd.Parameters.Add("@payable", SqlDbType.VarChar, 50).Value = oldPayable.ToString(CultureInfo.InvariantCulture);
+                cmd.Parameters.Add("@paid", SqlDbType.VarChar, 50).Value = negativeRefundAmount.ToString(CultureInfo.InvariantCulture);
+                cmd.Parameters.Add("@remaining", SqlDbType.VarChar, 50).Value = oldRemaining.ToString(CultureInfo.InvariantCulture);
                 cmd.Parameters.Add("@method", SqlDbType.VarChar, 100).Value = original.Method;
-                cmd.Parameters.Add("@status", SqlDbType.VarChar, 50).Value = guest?.Status ?? "refunded";
-                cmd.Parameters.Add("@visit", SqlDbType.VarChar, 50).Value = guest?.VisitId ?? string.Empty;
+                cmd.Parameters.Add("@status", SqlDbType.VarChar, 50).Value = string.IsNullOrWhiteSpace(status) ? "check in" : status;
+                cmd.Parameters.Add("@visit", SqlDbType.VarChar, 50).Value = visitId;
                 cmd.Parameters.Add("@user", SqlDbType.VarChar, 50).Value = userId;
                 cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 cmd.Parameters.Add("@systemUser", SqlDbType.VarChar, 150).Value = userName;
                 cmd.Parameters.Add("@systemName", SqlDbType.VarChar, 150).Value = Environment.MachineName;
-                cmd.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip;
-                cmd.Parameters.Add("@paymentId", SqlDbType.VarChar, 200).Value = original.PaymentId;
-                cmd.Parameters.Add("@chargeId", SqlDbType.VarChar, 200).Value = original.ChargeId;
-                cmd.Parameters.Add("@refundId", SqlDbType.VarChar, 200).Value = original.RefundId;
-                cmd.Parameters.Add("@externalRefundId", SqlDbType.VarChar, 200).Value = externalRefundId;
-                cmd.Parameters.Add("@notes", SqlDbType.VarChar, -1).Value = request.Reason.Trim();
+                cmd.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip ?? string.Empty;
+                if (hasRefundMetadata)
+                {
+                    cmd.Parameters.Add("@paymentId", SqlDbType.VarChar, 200).Value = original.PaymentId ?? string.Empty;
+                    cmd.Parameters.Add("@chargeId", SqlDbType.VarChar, 200).Value = original.ChargeId ?? string.Empty;
+                    cmd.Parameters.Add("@refundId", SqlDbType.VarChar, 200).Value = original.RefundId ?? string.Empty;
+                    // Link the refund row to the exact original payment log. This is
+                    // additional compatibility for cash rows that have no provider ID.
+                    cmd.Parameters.Add("@externalRefundId", SqlDbType.VarChar, 200).Value = request.LogId.ToString(CultureInfo.InvariantCulture);
+                    cmd.Parameters.Add("@notes", SqlDbType.VarChar, -1).Value = request.Reason.Trim();
+                }
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct);
-            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "REFUND",
-                $"PaymentLogId={request.LogId}, amount={request.Amount:0.00}, reason={request.Reason}", ct);
+            await using (var upd = new SqlCommand(@"
+UPDATE dbo.PaymentsUpdateTB
+SET paid_amount=@paid,
+    remaining_amount=@remaining,
+    payable=@payable,
+    currentdate=@now
+WHERE reg_id=@reg AND hotel_id=@hotel;", cn, tx))
+            {
+                upd.Parameters.Add("@paid", SqlDbType.VarChar, 50).Value = newPaid.ToString(CultureInfo.InvariantCulture);
+                upd.Parameters.Add("@remaining", SqlDbType.VarChar, 50).Value = newRemaining.ToString(CultureInfo.InvariantCulture);
+                upd.Parameters.Add("@payable", SqlDbType.VarChar, 50).Value = newPayable.ToString(CultureInfo.InvariantCulture);
+                upd.Parameters.Add("@now", SqlDbType.DateTime).Value = _hotelClock.GetHotelNow(hotelId);
+                upd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
+                upd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                await upd.ExecuteNonQueryAsync(ct);
+            }
+
+            await InsertReservationActionLogAsync(
+                cn, tx, hotelId, userId, userName, ip, request.RegId,
+                "REFUND",
+                $"PaymentLogId={request.LogId}, amount={refundAmount:0.00}, reason={request.Reason.Trim()}", ct);
+
             await tx.CommitAsync(ct);
-            return CheckInOperationResult.Ok("Refund recorded successfully.", request.RegId);
+            return CheckInOperationResult.Ok("Refund processed successfully.", request.RegId);
         }
         catch (Exception ex)
         {
-            await tx.RollbackAsync(ct);
+            try { await tx.RollbackAsync(ct); } catch { }
             _logger.LogError(ex, "Refund failed for {RegId}.", request.RegId);
             return CheckInOperationResult.Fail("Unable to refund payment. " + ex.Message);
         }
@@ -1793,18 +1909,12 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
         if (request.NewDepartureDate.Date == current.Departure.Value.Date)
             return CheckInOperationResult.Fail("Please select a different departure date.");
 
-        // WebForms allows main arrival/departure Extend/Shrink only for an
-        // Individual/Single reservation whose active Room Rent rows represent one
-        // physical room/category. Check this before opening the write transaction so
-        // stale pages cannot reach the expensive helper and fail after locking rows.
+        // Reservation and checked-in stays can both be extended/shortened from this page.
+        // Group bookings still keep their room-level dates separate.
         var reservationType = await GetReservationTypeForGuestUpdateAsync(cn, hotelId, request.RegId, ct);
         if (!IsSingleReservationType(reservationType))
             return CheckInOperationResult.Fail(
-                "Stay dates are managed per room for Group reservations. Update Guest Info can still save the guest details without changing the room dates.");
-
-        if (!await HasSingleDateChangeShapeAsync(cn, hotelId, request.RegId, ct))
-            return CheckInOperationResult.Fail(
-                "Stay dates cannot be changed as one range because this booking contains multiple rooms/categories. Update Guest Info can still save guest details without changing the room dates.");
+                "Stay dates are managed per room for Group reservations.");
 
         // Match the WebForms UpdateGuestInfo transaction isolation and avoid
         // unnecessary Serializable range locks. Availability is revalidated inside
@@ -1812,12 +1922,20 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
+            var propertyTax = await LoadTaxSettingsAsync(cn, hotelId, ct, tx);
+            var dateTaxChoice = new DateChangeTaxChoice
+            {
+                SelectionConfirmed = false,
+                GstPercent = propertyTax.GstPercent,
+                BedTaxPercent = propertyTax.BedTaxPercent
+            };
             var outcome = await ApplySingleReservationDateAndRateChangeAsync(
                 cn, tx, hotelId, request.RegId,
                 current.Arrival.Value.Date,
                 current.Departure.Value.Date,
                 current.Arrival.Value.Date,
                 request.NewDepartureDate.Date,
+                dateTaxChoice,
                 ct);
 
             await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct);
@@ -2103,12 +2221,21 @@ VALUES(@current,@qty,@amount,'1',@reg,@category,@sub,@item,@description,@rate,@v
         string hotelId, string userId, string userName, string ip,
         SecurityMovementRequest request, CancellationToken ct = default)
     {
-        if (request == null || string.IsNullOrWhiteSpace(request.RegId) || request.Amount <= 0)
-            return CheckInOperationResult.Fail("Enter a valid security amount.");
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId))
+            return CheckInOperationResult.Fail("Reservation ID is required.");
 
         var movement = (request.Movement ?? "deposit").Trim().ToLowerInvariant();
         if (movement is not ("deposit" or "refund" or "deduct" or "deduction"))
             return CheckInOperationResult.Fail("Invalid room security movement.");
+
+        // WebForms settle flow allows Refund Amount = 0, which means the whole
+        // selected security deposit is retained as a deduction. New deposits and
+        // direct deductions still require a positive amount.
+        var isSelectedSettlement = request.SecurityId > 0 && movement is ("refund" or "deduct" or "deduction");
+        if ((!isSelectedSettlement && request.Amount <= 0m) || request.Amount < 0m)
+            return CheckInOperationResult.Fail("Enter a valid security amount.");
+        if (string.IsNullOrWhiteSpace(request.Note))
+            return CheckInOperationResult.Fail("Additional info is required for room security.");
 
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
@@ -2116,10 +2243,11 @@ VALUES(@current,@qty,@amount,'1',@reg,@category,@sub,@item,@description,@rate,@v
         // When a specific deposit row is being settled, preserve the original WebForms
         // split behavior: the selected amount is either returned to the guest or kept as
         // a deduction, and the remaining authorized/deposit amount is settled at the same time.
-        if (request.SecurityId > 0 && movement is "refund" or "deduct" or "deduction")
+        if (request.SecurityId > 0 && movement is ("refund" or "deduct" or "deduction"))
         {
             decimal originalAmount = 0m;
             string paymentIntentId = string.Empty;
+            string chargeId = string.Empty;
             string originalMethod = string.Empty;
             string originalStatus = string.Empty;
 
@@ -2127,6 +2255,7 @@ VALUES(@current,@qty,@amount,'1',@reg,@category,@sub,@item,@description,@rate,@v
 SELECT TOP 1
        ISNULL(TRY_CONVERT(decimal(18,2),security),0) security,
        ISNULL(payment_intent_id,'') payment_intent_id,
+       ISNULL(charge_id,'') charge_id,
        ISNULL(payment_method,'') payment_method,
        ISNULL(status,'') status
 FROM dbo.RoomSecurityTB
@@ -2141,6 +2270,7 @@ WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn))
                     if (!await rd.ReadAsync(ct)) return CheckInOperationResult.Fail("The selected security deposit no longer exists.");
                     originalAmount = Math.Abs(M(rd, "security"));
                     paymentIntentId = S(rd, "payment_intent_id");
+                    chargeId = S(rd, "charge_id");
                     originalMethod = S(rd, "payment_method");
                     originalStatus = S(rd, "status");
                 }
@@ -2169,8 +2299,10 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
             var refundAmount = isRefundSelection ? request.Amount : Math.Max(0m, originalAmount - request.Amount);
             var deductionAmount = isRefundSelection ? Math.Max(0m, originalAmount - request.Amount) : request.Amount;
 
-            // Card pre-authorizations must be released/captured at Stripe before the PMS rows are posted.
-            if (!string.IsNullOrWhiteSpace(paymentIntentId))
+            // Card pre-authorizations must be released/captured/refunded at Stripe
+            // before the PMS rows are posted. WebForms identifies a card security
+            // row by either PaymentIntent or Charge, so support both.
+            if (!string.IsNullOrWhiteSpace(paymentIntentId) || !string.IsNullOrWhiteSpace(chargeId))
             {
                 try
                 {
@@ -2178,12 +2310,34 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
                     if (stripe.Secret.Length == 0)
                         return CheckInOperationResult.Fail("Stripe is not configured for this hotel.");
 
-                    using var piDoc = await StripeRequestAsync(stripe, HttpMethod.Get,
-                        $"https://api.stripe.com/v1/payment_intents/{Uri.EscapeDataString(paymentIntentId)}", null, ct);
-                    var root = piDoc.RootElement;
-                    var stripeStatus = JsonString(root, "status");
-                    var currency = JsonString(root, "currency");
-                    var providerAmountMinor = JsonLong(root, "amount");
+                    JsonElement piRoot = default;
+                    var stripeStatus = string.Empty;
+                    var currency = string.Empty;
+                    long providerAmountMinor = 0;
+
+                    if (string.IsNullOrWhiteSpace(paymentIntentId) && !string.IsNullOrWhiteSpace(chargeId))
+                    {
+                        using var chargeDoc = await StripeRequestAsync(stripe, HttpMethod.Get,
+                            $"https://api.stripe.com/v1/charges/{Uri.EscapeDataString(chargeId)}", null, ct);
+                        var chargeRoot = chargeDoc.RootElement;
+                        paymentIntentId = JsonString(chargeRoot, "payment_intent");
+                        currency = JsonString(chargeRoot, "currency");
+                        providerAmountMinor = JsonLong(chargeRoot, "amount");
+                        if (string.IsNullOrWhiteSpace(paymentIntentId))
+                            stripeStatus = chargeRoot.TryGetProperty("captured", out var capturedEl) && capturedEl.ValueKind == JsonValueKind.True ? "succeeded" : "unknown";
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(paymentIntentId))
+                    {
+                        using var piDoc = await StripeRequestAsync(stripe, HttpMethod.Get,
+                            $"https://api.stripe.com/v1/payment_intents/{Uri.EscapeDataString(paymentIntentId)}", null, ct);
+                        piRoot = piDoc.RootElement.Clone();
+                        stripeStatus = JsonString(piRoot, "status");
+                        if (string.IsNullOrWhiteSpace(currency)) currency = JsonString(piRoot, "currency");
+                        if (providerAmountMinor <= 0) providerAmountMinor = JsonLong(piRoot, "amount");
+                        if (string.IsNullOrWhiteSpace(chargeId)) chargeId = JsonString(piRoot, "latest_charge");
+                    }
+
                     var factor = IsZeroDecimalCurrency(currency) ? 1m : 100m;
                     var providerAmountMajor = providerAmountMinor > 0 ? providerAmountMinor / factor : originalAmount;
                     if (providerAmountMajor > 0) originalAmount = providerAmountMajor;
@@ -2201,18 +2355,17 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
                         }
                         else
                         {
-                            await StripeRequestAsync(stripe, HttpMethod.Post,
+                            using var captured = await StripeRequestAsync(stripe, HttpMethod.Post,
                                 $"https://api.stripe.com/v1/payment_intents/{Uri.EscapeDataString(paymentIntentId)}/capture",
                                 new Dictionary<string, string> { ["amount_to_capture"] = deductionMinor.ToString(CultureInfo.InvariantCulture) }, ct);
+                            if (string.IsNullOrWhiteSpace(chargeId)) chargeId = JsonString(captured.RootElement, "latest_charge");
                         }
                     }
                     else if (stripeStatus.Equals("succeeded", StringComparison.OrdinalIgnoreCase))
                     {
-                        // A previously captured security payment can still be partially/full refunded.
                         if (refundMinor > 0)
                         {
-                            var chargeId = JsonString(root, "latest_charge");
-                            if (chargeId.Length == 0)
+                            if (string.IsNullOrWhiteSpace(chargeId))
                                 return CheckInOperationResult.Fail("Stripe charge ID is missing for this captured security payment.");
                             await StripeRequestAsync(stripe, HttpMethod.Post, "https://api.stripe.com/v1/refunds",
                                 new Dictionary<string, string>
@@ -2234,7 +2387,7 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Stripe room-security settlement failed for {RegId} / {PaymentIntentId}.", request.RegId, paymentIntentId);
+                    _logger.LogError(ex, "Stripe room-security settlement failed for {RegId} / {PaymentIntentId} / {ChargeId}.", request.RegId, paymentIntentId, chargeId);
                     return CheckInOperationResult.Fail("Unable to settle the card security authorization. " + ex.Message);
                 }
             }
@@ -2250,7 +2403,7 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
                         {
                             RegId = request.RegId, VisitId = request.VisitId, Amount = refundAmount,
                             Note = request.Note, Method = baseMethod, Movement = "refund",
-                            SecurityId = request.SecurityId, PaymentIntentId = paymentIntentId
+                            SecurityId = request.SecurityId, PaymentIntentId = paymentIntentId, ChargeId = chargeId
                         }, ct);
                 }
                 if (deductionAmount > 0.005m)
@@ -2260,24 +2413,33 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
                         {
                             RegId = request.RegId, VisitId = request.VisitId, Amount = deductionAmount,
                             Note = request.Note, Method = baseMethod, Movement = "deduct",
-                            SecurityId = request.SecurityId, PaymentIntentId = paymentIntentId
+                            SecurityId = request.SecurityId, PaymentIntentId = paymentIntentId, ChargeId = chargeId
                         }, ct);
                 }
 
-                // Optional columns exist in the newer security schema; keep legacy schema compatibility.
-                if (!string.IsNullOrWhiteSpace(paymentIntentId))
+                // Optional terminal_status exists in the newer security schema.
+                // Mark the selected deposit itself as settled by row ID; this covers
+                // PaymentIntent-backed, charge-only and cash deposits.
+                try
                 {
-                    try
-                    {
-                        await using var update = new SqlCommand(@"
+                    await using var update = new SqlCommand(@"
 UPDATE dbo.RoomSecurityTB SET terminal_status='settled'
 WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn, settleTx);
-                        update.Parameters.Add("@id", SqlDbType.Int).Value = request.SecurityId;
-                        update.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-                        update.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
-                        await update.ExecuteNonQueryAsync(ct);
-                    }
-                    catch (SqlException) { }
+                    update.Parameters.Add("@id", SqlDbType.Int).Value = request.SecurityId;
+                    update.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    update.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
+                    await update.ExecuteNonQueryAsync(ct);
+                }
+                catch (SqlException) { }
+
+                if (deductionAmount > 0.005m)
+                {
+                    await InsertSecurityDeductionFinancialRowsAsync(
+                        cn, settleTx, hotelId, request.RegId, request.VisitId,
+                        userId, userName, ip, deductionAmount,
+                        string.IsNullOrWhiteSpace(paymentIntentId) ? string.Empty : paymentIntentId,
+                        string.IsNullOrWhiteSpace(chargeId) ? string.Empty : chargeId,
+                        ct);
                 }
 
                 await UpdatePaymentTotalsAsync(cn, settleTx, hotelId, request.RegId, ct);
@@ -2295,7 +2457,7 @@ WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn, settleTx);
         }
 
         var currentBalance = await GetRoomSecurityBalanceAsync(cn, null, hotelId, request.RegId, ct);
-        if ((movement is "refund" or "deduct" or "deduction") && request.Amount > currentBalance + 0.005m)
+        if ((movement is ("refund" or "deduct" or "deduction")) && request.Amount > currentBalance + 0.005m)
             return CheckInOperationResult.Fail("Refund/Deduction cannot exceed the refundable security balance.");
 
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
@@ -2558,10 +2720,15 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
                 ? "gbp"
                 : request.Currency.Trim().ToLowerInvariant();
 
-            var amountMinor = checked((long)Math.Round(request.Amount * 100m, MidpointRounding.AwayFromZero));
+            var currencyFactor = IsZeroDecimalCurrency(currency) ? 1m : 100m;
+            var amountMinor = checked((long)Math.Round(request.Amount * currencyFactor, MidpointRounding.AwayFromZero));
             var baseUrl = request.ReturnBaseUrl.Trim().TrimEnd('/');
             var successUrl = baseUrl + "/CheckIn/Stripe/CheckoutReturn?status=success&session_id={CHECKOUT_SESSION_ID}";
             var cancelUrl = baseUrl + "/CheckIn/Stripe/CheckoutReturn?status=canceled";
+
+            var productName = request.SecurityHold
+                ? "Security Deposit Pre-Authorization"
+                : "ORA PMS Reservation Payment";
 
             var form = new Dictionary<string, string>
             {
@@ -2569,18 +2736,24 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
                 ["payment_method_types[]"] = "card",
                 ["line_items[0][price_data][currency]"] = currency,
                 ["line_items[0][price_data][unit_amount]"] = amountMinor.ToString(CultureInfo.InvariantCulture),
-                ["line_items[0][price_data][product_data][name]"] = "ORA PMS Reservation Payment",
+                ["line_items[0][price_data][product_data][name]"] = productName,
                 ["line_items[0][price_data][product_data][description]"] =
-                    "Reservation " + (request.RegId ?? string.Empty),
+                    (request.SecurityHold ? "Security deposit for reservation " : "Reservation ") + (request.RegId ?? string.Empty),
                 ["line_items[0][quantity]"] = "1",
                 ["metadata[reg_id]"] = request.RegId ?? string.Empty,
                 ["metadata[visit_id]"] = request.VisitId ?? string.Empty,
                 ["metadata[hotel_id]"] = hotelId ?? string.Empty,
+                ["metadata[payment_for]"] = request.SecurityHold ? "security_deposit" : "reservation_payment",
+                ["metadata[payment_method]"] = request.SecurityHold ? "Card Pre-Authorization" : "Card Payment",
                 ["payment_intent_data[metadata][reg_id]"] = request.RegId ?? string.Empty,
                 ["payment_intent_data[metadata][visit_id]"] = request.VisitId ?? string.Empty,
+                ["payment_intent_data[metadata][payment_for]"] = request.SecurityHold ? "security_deposit" : "reservation_payment",
                 ["success_url"] = successUrl,
                 ["cancel_url"] = cancelUrl
             };
+
+            if (request.SecurityHold)
+                form["payment_intent_data[capture_method]"] = "manual";
 
             if (!string.IsNullOrWhiteSpace(request.Note))
             {
@@ -2706,23 +2879,30 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
                 }
             }
 
+            var authorized =
+                intentStatus.Equals("requires_capture", StringComparison.OrdinalIgnoreCase);
             var paid =
                 paymentStatus.Equals("paid", StringComparison.OrdinalIgnoreCase) ||
-                intentStatus.Equals("succeeded", StringComparison.OrdinalIgnoreCase);
+                intentStatus.Equals("succeeded", StringComparison.OrdinalIgnoreCase) ||
+                authorized;
 
             var amountMinor = JsonLong(intent, "amount_received");
             if (amountMinor <= 0) amountMinor = JsonLong(intent, "amount");
+            var intentCurrency = JsonString(intent, "currency");
+            var amountFactor = IsZeroDecimalCurrency(intentCurrency) ? 1m : 100m;
 
             return new TerminalPaymentResult
             {
                 Success = paid,
-                Message = paid ? "Stripe Checkout payment succeeded." : "Stripe payment status: " + intentStatus,
+                Message = authorized
+                    ? "Stripe Checkout card pre-authorization completed."
+                    : (paid ? "Stripe Checkout payment succeeded." : "Stripe payment status: " + intentStatus),
                 SessionId = sessionId.Trim(),
                 PaymentIntentId = paymentIntentId,
                 ChargeId = chargeId,
                 ReceiptUrl = receiptUrl,
-                Status = paid ? "succeeded" : (string.IsNullOrWhiteSpace(intentStatus) ? paymentStatus : intentStatus),
-                Amount = amountMinor / 100m
+                Status = authorized ? "requires_capture" : (paid ? "succeeded" : (string.IsNullOrWhiteSpace(intentStatus) ? paymentStatus : intentStatus)),
+                Amount = amountMinor / amountFactor
             };
         }
         catch (Exception ex)
@@ -3344,8 +3524,8 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room R
                 model.BookingId = g.BookingId;
                 model.GroupName = g.GroupName;
                 model.Guest = g;
-                model.CanEditDates = IsSingleReservationType(g.ReservationType);
-                model.CanExtendReservation = IsReservation(model.ReservationStatus) || IsCheckIn(model.ReservationStatus);
+                model.CanEditDates = IsReservation(model.ReservationStatus) || IsCheckIn(model.ReservationStatus);
+                model.CanExtendReservation = model.CanEditDates;
                 loaded = true;
                 break;
             }
@@ -3394,8 +3574,12 @@ SELECT * FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID;", 
                     CanSelectForCheckIn = descr.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) && IsReservation(status),
                     SelectedForCheckIn = descr.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) && IsReservation(status),
                     CanEditRate = p.HasAction("UpdateRate") && !IsCheckedOut(status),
+                    // WebForms parity: Change Reservation Room is exposed only for
+                    // Room Rent rows that are still in Reservation status.
                     CanChangeRoom = p.HasAny("ChangeRoom", "ChangeReservationRoom", "btnChangeReservationRoom")
-                        && descr.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) && room.Length > 0 && !IsCheckedOut(status)
+                        && descr.Equals("Room Rent", StringComparison.OrdinalIgnoreCase)
+                        && room.Length > 0
+                        && IsReservation(status)
                 };
                 row.CanDelete = p.HasAction("DeleteRoom") && CanDeleteByStatus(p, status);
                 row.DeleteLockTitle = row.CanDelete ? string.Empty : DeleteLockTitle(p, status);
@@ -3479,13 +3663,15 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
                 running += raw;
                 var method = S(rd, "payment_method");
                 var pi = S(rd, "payment_intent_id");
+                var chargeId = S(rd, "charge_id");
                 list.Add(new CheckInSecurityRow
                 {
                     Id = I(rd, "id"), Date = DateAny(rd, "currentdate"), Description = S(rd, "note"), Method = method,
+                    Last4 = S(rd, "last4"), ReceiptUrl = S(rd, "receipt_url"),
                     Amount = status.Equals("Deposit", StringComparison.OrdinalIgnoreCase) || raw > 0 ? Math.Abs(raw) : 0m,
                     Deducted = status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase) ? Math.Abs(raw) : 0m,
                     Refunded = status.Equals("refund", StringComparison.OrdinalIgnoreCase) ? Math.Abs(raw) : 0m,
-                    Balance = running, PaymentIntentId = pi, Status = status,
+                    Balance = running, PaymentIntentId = pi, ChargeId = chargeId, Status = status,
                     CanSettle = raw > 0m && status.Equals("Deposit", StringComparison.OrdinalIgnoreCase)
                 });
             }
@@ -3493,15 +3679,31 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
         catch (SqlException ex) { _logger.LogDebug(ex, "Room security log could not be loaded."); }
 
         // A deposit is settleable only while some of that specific deposit remains open.
-        // Card rows can be paired by PaymentIntentId. Legacy cash rows have no provider id,
+        // WebForms pairs card settlements by either PaymentIntentId or ChargeId and also
+        // recognises card/PDQ/Stripe methods. Legacy cash rows have no provider identifiers,
         // so consume later refund/deduction movements from the newest deposits backwards.
         for (var i = 0; i < list.Count; i++)
         {
             var deposit = list[i];
-            if (!deposit.CanSettle || string.IsNullOrWhiteSpace(deposit.PaymentIntentId)) continue;
+            if (!deposit.CanSettle) continue;
+
+            var isCardDeposit =
+                !string.IsNullOrWhiteSpace(deposit.PaymentIntentId) ||
+                !string.IsNullOrWhiteSpace(deposit.ChargeId) ||
+                deposit.Method.Contains("card", StringComparison.OrdinalIgnoreCase) ||
+                deposit.Method.Contains("pdq", StringComparison.OrdinalIgnoreCase) ||
+                deposit.Method.Contains("stripe", StringComparison.OrdinalIgnoreCase);
+
+            if (!isCardDeposit) continue;
+
             var settled = list.Skip(i + 1)
-                .Where(x => string.Equals(x.PaymentIntentId, deposit.PaymentIntentId, StringComparison.OrdinalIgnoreCase))
+                .Where(x =>
+                    (!string.IsNullOrWhiteSpace(deposit.PaymentIntentId) &&
+                     string.Equals(x.PaymentIntentId, deposit.PaymentIntentId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(deposit.ChargeId) &&
+                     string.Equals(x.ChargeId, deposit.ChargeId, StringComparison.OrdinalIgnoreCase)))
                 .Sum(x => x.Refunded + x.Deducted);
+
             if (settled + 0.005m >= deposit.Amount) deposit.CanSettle = false;
         }
 
@@ -3509,7 +3711,13 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
         for (var i = list.Count - 1; i >= 0; i--)
         {
             var row = list[i];
-            if (!string.IsNullOrWhiteSpace(row.PaymentIntentId)) continue;
+            var isProviderRow =
+                !string.IsNullOrWhiteSpace(row.PaymentIntentId) ||
+                !string.IsNullOrWhiteSpace(row.ChargeId) ||
+                row.Method.Contains("card", StringComparison.OrdinalIgnoreCase) ||
+                row.Method.Contains("pdq", StringComparison.OrdinalIgnoreCase) ||
+                row.Method.Contains("stripe", StringComparison.OrdinalIgnoreCase);
+            if (isProviderRow) continue;
             var settlement = row.Refunded + row.Deducted;
             if (settlement > 0m)
             {
@@ -3841,6 +4049,14 @@ VALUES(@customerno,@arrival,@arrivalTime,@departure,@departureTime,@first,@last,
 
     private sealed class StayInfo { public DateTime? Arrival { get; set; } public DateTime? Departure { get; set; } }
     private sealed class DateChangeOutcome { public string CategoryId { get; set; } = string.Empty; }
+    private sealed class DateChangeTaxChoice
+    {
+        public bool SelectionConfirmed { get; set; }
+        public bool ApplyGst { get; set; }
+        public bool ApplyBedTax { get; set; }
+        public decimal GstPercent { get; set; }
+        public decimal BedTaxPercent { get; set; }
+    }
     private sealed class GuestSummary
     {
         public string Name { get; set; } = string.Empty; public string Phone { get; set; } = string.Empty; public string Email { get; set; } = string.Empty;
@@ -3891,6 +4107,7 @@ ORDER BY ord,rid DESC;", cn);
         SqlConnection cn, SqlTransaction tx, string hotelId, string regId,
         DateTime oldArrival, DateTime oldDeparture,
         DateTime newArrival, DateTime newDeparture,
+        DateChangeTaxChoice dateTaxChoice,
         CancellationToken ct)
     {
         oldArrival = oldArrival.Date;
@@ -3903,7 +4120,7 @@ ORDER BY ord,rid DESC;", cn);
 
         if (newArrival == oldArrival && newDeparture > oldDeparture)
             return await ApplySingleReservationExtendLikeWebFormsAsync(
-                cn, tx, hotelId, regId, oldArrival, oldDeparture, newDeparture, ct);
+                cn, tx, hotelId, regId, oldArrival, oldDeparture, newDeparture, dateTaxChoice, ct);
 
         if (newArrival == oldArrival && newDeparture < oldDeparture)
             return await ApplySingleReservationShrinkLikeWebFormsAsync(
@@ -3936,7 +4153,7 @@ ORDER BY ord,rid DESC;", cn);
 SELECT
     COUNT(DISTINCT NULLIF(LTRIM(RTRIM(ISNULL(room_no,''))),'')) AS RoomCount,
     COUNT(DISTINCT NULLIF(LTRIM(RTRIM(ISNULL([Type],''))),'')) AS TypeCount,
-    COUNT(1) AS RowCount
+    COUNT(1) AS ActiveRowCount
 FROM dbo.payments
 WHERE hotel_id=@hotel
   AND reg_id=@reg
@@ -4114,13 +4331,19 @@ ORDER BY ord,rid DESC;", cn, tx);
     private async Task<DateChangeOutcome> ApplySingleReservationExtendLikeWebFormsAsync(
         SqlConnection cn, SqlTransaction tx, string hotelId, string regId,
         DateTime arrival, DateTime oldDeparture, DateTime newDeparture,
+        DateChangeTaxChoice dateTaxChoice,
         CancellationToken ct)
     {
         if (newDeparture.Date <= oldDeparture.Date)
             throw new InvalidOperationException("New departure must be after old departure.");
 
         var rows = await GetActiveRoomRowsForDateChangeAsync(cn, tx, hotelId, regId, ct);
-        EnsureSingleRoomDateChangeShape(rows);
+        if (rows.Count == 0)
+            throw new InvalidOperationException("No Room Rent row was found for this reservation.");
+
+        if (!HasSingleDateChangeShape(rows))
+            return await ApplyMultiRoomExtendLikeWebFormsAsync(
+                cn, tx, hotelId, regId, arrival, oldDeparture, newDeparture, rows, dateTaxChoice, ct);
 
         var roomNo = rows.Select(x => x.RoomNo?.Trim() ?? string.Empty)
             .FirstOrDefault(x => x.Length > 0 && !x.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
@@ -4147,10 +4370,25 @@ ORDER BY ord,rid DESC;", cn, tx);
             ? Math.Round(oldBaseTotal / oldRowNights, 2, MidpointRounding.AwayFromZero)
             : 0m;
         var extensionBase = Math.Round(perNightRate * extDays, 2, MidpointRounding.AwayFromZero);
-        // WebForms Update Guest Info follows the Calendar default: Add Tax/VAT is unchecked.
-        var extensionGst = 0m;
-        var extensionBed = 0m;
-        var extensionTotal = extensionBase;
+
+        // When the UI explicitly confirms the tax choice, use that choice.
+        // For an older/stale client that does not send the choice, preserve the
+        // existing stay's tax pattern so an already-taxed reservation is not
+        // accidentally extended with zero VAT/GST/Bed Tax.
+        var applyGst = dateTaxChoice.SelectionConfirmed
+            ? dateTaxChoice.ApplyGst
+            : rows.Any(x => x.Gst > 0m) && dateTaxChoice.GstPercent > 0m;
+        var applyBedTax = dateTaxChoice.SelectionConfirmed
+            ? dateTaxChoice.ApplyBedTax
+            : rows.Any(x => x.BedTax > 0m) && dateTaxChoice.BedTaxPercent > 0m;
+
+        var extensionGst = applyGst
+            ? Math.Round(extensionBase * dateTaxChoice.GstPercent / 100m, 2, MidpointRounding.AwayFromZero)
+            : 0m;
+        var extensionBed = applyBedTax
+            ? Math.Round(extensionBase * dateTaxChoice.BedTaxPercent / 100m, 2, MidpointRounding.AwayFromZero)
+            : 0m;
+        var extensionTotal = Math.Round(extensionBase + extensionGst + extensionBed, 2, MidpointRounding.AwayFromZero);
 
         await using (var dup = new SqlCommand(@"
 SELECT COUNT(1)
@@ -4209,6 +4447,158 @@ WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
         return new DateChangeOutcome { CategoryId = localCategoryId };
     }
 
+
+    private async Task<DateChangeOutcome> ApplyMultiRoomExtendLikeWebFormsAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId,
+        DateTime arrival, DateTime oldDeparture, DateTime newDeparture,
+        IReadOnlyCollection<CheckInChargeRow> rows,
+        DateChangeTaxChoice dateTaxChoice,
+        CancellationToken ct)
+    {
+        var extDays = (newDeparture.Date - oldDeparture.Date).Days;
+        if (extDays <= 0)
+            throw new InvalidOperationException("Invalid extension days.");
+
+        var parents = rows
+            .Where(x => !string.IsNullOrWhiteSpace(x.RoomNo) &&
+                        !x.RoomNo.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(x => x.RoomNo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+                g.Where(x => x.DepartureDate.HasValue &&
+                             x.DepartureDate.Value.Date == oldDeparture.Date)
+                 .OrderByDescending(x => x.Id)
+                 .FirstOrDefault()
+                ?? g.OrderByDescending(x => x.DepartureDate ?? DateTime.MinValue)
+                    .ThenByDescending(x => x.Id)
+                    .First())
+            .Where(x => x.DepartureDate.HasValue &&
+                        x.DepartureDate.Value.Date == oldDeparture.Date)
+            .ToList();
+
+        if (parents.Count == 0)
+            throw new InvalidOperationException(
+                "No active room ending on the current departure date could be extended.");
+
+        var categoryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var parent in parents)
+        {
+            var roomNo = (parent.RoomNo ?? string.Empty).Trim();
+            var roomType = (parent.Category ?? string.Empty).Trim();
+
+            if (roomNo.Length > 0 &&
+                !await IsRoomAvailableForGuestDateChangeAsync(
+                    cn, tx, hotelId, regId, roomNo, roomType, arrival, newDeparture, ct))
+            {
+                throw new InvalidOperationException(
+                    $"Room {roomNo} is blocked or already occupied during the extended dates.");
+            }
+
+            var parentArrival = parent.ArrivalDate?.Date ?? arrival.Date;
+            var parentOldDeparture = parent.DepartureDate?.Date ?? oldDeparture.Date;
+            var oldRowNights = GetDateChangeRowNights(parent, parentArrival, parentOldDeparture);
+
+            var oldBaseTotal = GetDateChangeBaseAmountLikeWebForms(parent);
+            var perNightRate = oldRowNights > 0
+                ? Math.Round(oldBaseTotal / oldRowNights, 2, MidpointRounding.AwayFromZero)
+                : 0m;
+            var extensionBase = Math.Round(
+                perNightRate * extDays, 2, MidpointRounding.AwayFromZero);
+
+            var applyGst = dateTaxChoice.SelectionConfirmed
+                ? dateTaxChoice.ApplyGst
+                : rows.Any(x => x.Gst > 0m) && dateTaxChoice.GstPercent > 0m;
+            var applyBedTax = dateTaxChoice.SelectionConfirmed
+                ? dateTaxChoice.ApplyBedTax
+                : rows.Any(x => x.BedTax > 0m) && dateTaxChoice.BedTaxPercent > 0m;
+            var extensionGst = applyGst
+                ? Math.Round(extensionBase * dateTaxChoice.GstPercent / 100m, 2, MidpointRounding.AwayFromZero)
+                : 0m;
+            var extensionBed = applyBedTax
+                ? Math.Round(extensionBase * dateTaxChoice.BedTaxPercent / 100m, 2, MidpointRounding.AwayFromZero)
+                : 0m;
+            var extensionTotal = Math.Round(extensionBase + extensionGst + extensionBed, 2, MidpointRounding.AwayFromZero);
+
+            await using (var dup = new SqlCommand(@"
+SELECT COUNT(1)
+FROM dbo.payments
+WHERE hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
+  AND LTRIM(RTRIM(ISNULL(room_no,'')))=LTRIM(RTRIM(@room))
+  AND COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,101),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate))=@arr
+  AND COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),TRY_CONVERT(date,DepartureDate,101),TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate))=@dep;", cn, tx))
+            {
+                dup.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                dup.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                dup.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = roomNo;
+                dup.Parameters.Add("@arr", SqlDbType.Date).Value = oldDeparture.Date;
+                dup.Parameters.Add("@dep", SqlDbType.Date).Value = newDeparture.Date;
+                if (Convert.ToInt32(await dup.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) > 0)
+                    continue;
+            }
+
+            await using (var ins = new SqlCommand(@"
+INSERT INTO dbo.payments
+([Type],room_no,ArrivalDate,DepartureDate,NumberOfRoom,rate,charge,Nights,totalamount,
+ reg_id,hotel_id,visit_id,payment_status,currentdate,descr,res_status,rateplan,rateplanname,
+ GST,Bed,discount,GuestName)
+SELECT [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),@rate,@charge,@nights,@total,
+       reg_id,hotel_id,visit_id,payment_status,GETDATE(),descr,res_status,rateplan,rateplanname,
+       @gst,@bed,0,GuestName
+FROM dbo.payments
+WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
+            {
+                ins.Parameters.Add("@arrDate", SqlDbType.VarChar, 50).Value = FmtLegacyDate(oldDeparture);
+                ins.Parameters.Add("@depDate", SqlDbType.VarChar, 50).Value = FmtLegacyDate(newDeparture);
+                ins.Parameters.Add("@rate", SqlDbType.Decimal).Value = extensionBase;
+                ins.Parameters.Add("@charge", SqlDbType.Decimal).Value = extensionBase;
+                ins.Parameters.Add("@nights", SqlDbType.Int).Value = extDays;
+                ins.Parameters.Add("@total", SqlDbType.Decimal).Value = extensionTotal;
+                ins.Parameters.Add("@gst", SqlDbType.Decimal).Value = extensionGst;
+                ins.Parameters.Add("@bed", SqlDbType.Decimal).Value = extensionBed;
+                ins.Parameters.Add("@parentId", SqlDbType.Int).Value = parent.Id;
+                ins.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                ins.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+
+                if (await ins.ExecuteNonQueryAsync(ct) <= 0)
+                    throw new InvalidOperationException(
+                        $"Failed to insert the extension row for room {roomNo}.");
+            }
+
+            var localCategoryId = await GetRoomLocalCategoryIdAsync(
+                cn, tx, hotelId, parent.RoomNo, parent.Category, ct);
+            if (localCategoryId.Length > 0)
+                categoryIds.Add(localCategoryId);
+
+            var planId = await GetDateChangePlanIdAsync(
+                cn, tx, hotelId, regId, parent, ct);
+            if (planId.Length > 0 && localCategoryId.Length > 0 && perNightRate > 0m)
+            {
+                var quote = new RateQuoteResult
+                {
+                    Total = extensionBase,
+                    StayCount = extDays,
+                    StayUnit = "Nights"
+                };
+                for (var d = oldDeparture.Date; d < newDeparture.Date; d = d.AddDays(1))
+                    quote.Rates.Add(new DailyRateRow
+                    {
+                        Date = d,
+                        Rate = perNightRate,
+                        Source = "MVC Multi-room Extend"
+                    });
+                await StoreRateSnapshotAsync(
+                    cn, tx, hotelId, regId, localCategoryId, planId, quote, ct);
+            }
+        }
+
+        await SyncDateChangeMasterDatesAsync(cn, tx, hotelId, regId, ct);
+
+        return new DateChangeOutcome
+        {
+            CategoryId = categoryIds.Count == 1 ? categoryIds.First() : string.Empty
+        };
+    }
+
     private async Task<DateChangeOutcome> ApplySingleReservationShrinkLikeWebFormsAsync(
         SqlConnection cn, SqlTransaction tx, string hotelId, string regId,
         DateTime arrival, DateTime oldDeparture, DateTime newDeparture,
@@ -4220,14 +4610,20 @@ WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
             throw new InvalidOperationException("New departure must be before old departure.");
 
         var rows = await GetActiveRoomRowsForDateChangeAsync(cn, tx, hotelId, regId, ct);
-        EnsureSingleRoomDateChangeShape(rows);
+        if (rows.Count == 0)
+            throw new InvalidOperationException("No Room Rent row was found for this reservation.");
 
-        var roomNo = rows.Select(x => x.RoomNo?.Trim() ?? string.Empty)
-            .FirstOrDefault(x => x.Length > 0 && !x.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
-        var roomType = rows.Select(x => x.Category?.Trim() ?? string.Empty).FirstOrDefault(x => x.Length > 0) ?? string.Empty;
-        if (roomNo.Length > 0 &&
-            !await IsRoomAvailableForGuestDateChangeAsync(cn, tx, hotelId, regId, roomNo, roomType, arrival, newDeparture, ct))
-            throw new InvalidOperationException("The assigned room is not available for the selected stay range.");
+        foreach (var room in rows
+            .Where(x => !string.IsNullOrWhiteSpace(x.RoomNo) &&
+                        !x.RoomNo.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(x => new { Room = x.RoomNo.Trim(), Type = (x.Category ?? string.Empty).Trim() })
+            .Select(g => g.Key))
+        {
+            if (!await IsRoomAvailableForGuestDateChangeAsync(
+                    cn, tx, hotelId, regId, room.Room, room.Type, arrival, newDeparture, ct))
+                throw new InvalidOperationException(
+                    $"Room {room.Room} is not available for the selected stay range.");
+        }
 
         var categoryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var changed = false;
@@ -4863,6 +5259,89 @@ SELECT TOP 1 visit_id FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND r
         catch{return 0m;}
     }
 
+    private async Task InsertSecurityDeductionFinancialRowsAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId, string visitId,
+        string userId, string userName, string ip, decimal deductionAmount,
+        string paymentIntentId, string chargeId, CancellationToken ct)
+    {
+        if (deductionAmount <= 0m) return;
+
+        var now = _hotelClock.GetHotelNow(hotelId);
+        var visit = string.IsNullOrWhiteSpace(visitId)
+            ? await GetVisitIdAsync(cn, tx, hotelId, regId, ct)
+            : visitId.Trim();
+        var sourceMethod = (!string.IsNullOrWhiteSpace(paymentIntentId) || !string.IsNullOrWhiteSpace(chargeId))
+            ? "PDQ Security Deduction"
+            : "Cash Security Deduction";
+
+        // Same WebForms settlement model: the amount retained from room security
+        // becomes an actual reservation charge so it contributes to Grand Total.
+        await using (var pay = new SqlCommand(@"
+INSERT INTO dbo.payments
+(currentdate,deductioninfo,descr,[Type],NumberOfRoom,Rate,Charge,GST,Bed,Nights,totalamount,
+ reg_id,payment_status,hid,cb_status,room_no,res_status,visit_id,hotel_id,ipAddress,systemUser,systemName,discount)
+VALUES
+(@now,'','Security Deduction','Security Deduction','1',@amount,@amount,0,0,1,@amount,
+ @reg,'1',@hotel,'1','','check in',@visit,@hotel,@ip,@systemUser,@systemName,0);", cn, tx))
+        {
+            pay.Parameters.Add("@now", SqlDbType.DateTime).Value = now;
+            pay.Parameters.Add("@amount", SqlDbType.Decimal).Value = deductionAmount;
+            pay.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+            pay.Parameters.Add("@visit", SqlDbType.VarChar, 50).Value = visit;
+            pay.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            pay.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip ?? string.Empty;
+            pay.Parameters.Add("@systemUser", SqlDbType.VarChar, 150).Value = userName ?? string.Empty;
+            pay.Parameters.Add("@systemName", SqlDbType.VarChar, 150).Value = Environment.MachineName;
+            await pay.ExecuteNonQueryAsync(ct);
+        }
+
+        var hasProviderColumns = false;
+        await using (var schema = new SqlCommand(@"
+SELECT CASE WHEN
+       COL_LENGTH('dbo.PaymentsLogTB','PaymentId') IS NOT NULL
+   AND COL_LENGTH('dbo.PaymentsLogTB','chargeid') IS NOT NULL
+THEN 1 ELSE 0 END;", cn, tx))
+        {
+            hasProviderColumns = Convert.ToInt32(await schema.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) == 1;
+        }
+
+        var logSql = hasProviderColumns
+            ? @"
+INSERT INTO dbo.PaymentsLogTB
+(reg_id,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,payment_method,status,
+ visit_id,user_id,hotel_id,cb_status,systemUser,systemName,ipAddress,PaymentId,chargeid)
+VALUES
+(@reg,@now,'Security Deduction','0','0','0',@amount,'0',@method,'security_deducted',
+ @visit,@user,@hotel,'1',@systemUser,@systemName,@ip,@pi,@charge);"
+            : @"
+INSERT INTO dbo.PaymentsLogTB
+(reg_id,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,payment_method,status,
+ visit_id,user_id,hotel_id,cb_status,systemUser,systemName,ipAddress)
+VALUES
+(@reg,@now,'Security Deduction','0','0','0',@amount,'0',@method,'security_deducted',
+ @visit,@user,@hotel,'1',@systemUser,@systemName,@ip);";
+
+        await using (var log = new SqlCommand(logSql, cn, tx))
+        {
+            log.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+            log.Parameters.Add("@now", SqlDbType.DateTime).Value = now;
+            log.Parameters.Add("@amount", SqlDbType.VarChar, 50).Value = deductionAmount.ToString(CultureInfo.InvariantCulture);
+            log.Parameters.Add("@method", SqlDbType.VarChar, 100).Value = sourceMethod;
+            log.Parameters.Add("@visit", SqlDbType.VarChar, 50).Value = visit;
+            log.Parameters.Add("@user", SqlDbType.VarChar, 50).Value = userId ?? string.Empty;
+            log.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            log.Parameters.Add("@systemUser", SqlDbType.VarChar, 150).Value = userName ?? string.Empty;
+            log.Parameters.Add("@systemName", SqlDbType.VarChar, 150).Value = Environment.MachineName;
+            log.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip ?? string.Empty;
+            if (hasProviderColumns)
+            {
+                log.Parameters.Add("@pi", SqlDbType.VarChar, 200).Value = paymentIntentId ?? string.Empty;
+                log.Parameters.Add("@charge", SqlDbType.VarChar, 200).Value = chargeId ?? string.Empty;
+            }
+            await log.ExecuteNonQueryAsync(ct);
+        }
+    }
+
     private async Task InsertSecurityMovementInternalAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string userId,string userName,string ip,SecurityMovementRequest request,CancellationToken ct)
     {
         var movement=(request.Movement??"deposit").Trim().ToLowerInvariant();
@@ -4873,13 +5352,13 @@ SELECT TOP 1 visit_id FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND r
         try
         {
             await using var cmd=new SqlCommand(@"
-INSERT INTO dbo.RoomSecurityTB(currentdate,security,status,reg_id,visit_id,hotel_id,systemUser,systemName,ipAddress,payment_method,payment_intent_id,note)
-VALUES(@date,@security,@status,@reg,@visit,@hotel,@user,@system,@ip,@method,@pi,@note);",cn,tx);
+INSERT INTO dbo.RoomSecurityTB(currentdate,security,status,reg_id,visit_id,hotel_id,systemUser,systemName,ipAddress,payment_method,payment_intent_id,charge_id,note)
+VALUES(@date,@security,@status,@reg,@visit,@hotel,@user,@system,@ip,@method,@pi,@charge,@note);",cn,tx);
             cmd.Parameters.Add("@date",SqlDbType.VarChar,50).Value=_hotelClock.GetHotelNow(hotelId).ToString("MM-dd-yyyy",CultureInfo.InvariantCulture);
             cmd.Parameters.Add("@security",SqlDbType.Decimal).Value=signed;cmd.Parameters.Add("@status",SqlDbType.VarChar,50).Value=status;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=request.RegId;
             cmd.Parameters.Add("@visit",SqlDbType.VarChar,50).Value=visit;cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@user",SqlDbType.VarChar,150).Value=userName;
             cmd.Parameters.Add("@system",SqlDbType.VarChar,150).Value=Environment.MachineName;cmd.Parameters.Add("@ip",SqlDbType.VarChar,64).Value=ip;cmd.Parameters.Add("@method",SqlDbType.VarChar,100).Value=request.Method??string.Empty;
-            cmd.Parameters.Add("@pi",SqlDbType.VarChar,200).Value=request.PaymentIntentId??string.Empty;cmd.Parameters.Add("@note",SqlDbType.VarChar,500).Value=request.Note??string.Empty;await cmd.ExecuteNonQueryAsync(ct);
+            cmd.Parameters.Add("@pi",SqlDbType.VarChar,200).Value=request.PaymentIntentId??string.Empty;cmd.Parameters.Add("@charge",SqlDbType.VarChar,200).Value=request.ChargeId??string.Empty;cmd.Parameters.Add("@note",SqlDbType.VarChar,500).Value=request.Note??string.Empty;await cmd.ExecuteNonQueryAsync(ct);
         }
         catch(SqlException)
         {
@@ -5059,17 +5538,157 @@ END;",cn,tx);
         return DbDecimal(await cmd.ExecuteScalarAsync(ct));
     }
 
-    private async Task<TerminalPaymentResult> RefundStripeProviderAsync(SqlConnection cn,string hotelId,PaymentLogInternal original,decimal amount,CancellationToken ct)
+    private async Task<TerminalPaymentResult> RefundStripeProviderAsync(
+        SqlConnection cn, string hotelId, PaymentLogInternal original, decimal amount, CancellationToken ct)
     {
         try
         {
-            var stripe=await GetStripeSettingsAsync(cn,hotelId,ct);if(stripe.Secret.Length==0)return TerminalFail("Stripe is not configured.");
-            var form=new Dictionary<string,string>{{"amount",((long)Math.Round(amount*100m,MidpointRounding.AwayFromZero)).ToString(CultureInfo.InvariantCulture)}};
-            if(original.ChargeId.Length>0)form["charge"]=original.ChargeId;else form["payment_intent"]=original.PaymentId;
-            var doc=await StripeRequestAsync(stripe,HttpMethod.Post,"https://api.stripe.com/v1/refunds",form,ct);var id=JsonString(doc.RootElement,"id");var status=JsonString(doc.RootElement,"status");
-            return new TerminalPaymentResult{Success=id.Length>0,Message=id.Length>0?"Stripe refund created.":"Stripe refund did not return an ID.",PaymentIntentId=id,Status=status,Amount=amount};
+            var chargeId = (original.ChargeId ?? string.Empty).Trim();
+            if (!chargeId.StartsWith("ch_", StringComparison.OrdinalIgnoreCase))
+                return TerminalFail("A valid Stripe charge ID is required for the refund.");
+
+            // Match WebForms exactly: tokenized auto-payments may live on the platform
+            // account, while normal PDQ/Terminal payments live on the hotel's connected
+            // account. Check the platform first, then retry the connected account only
+            // when Stripe reports that the charge is missing.
+            var platformSecret = await GetPlatformStripeSecretAsync(cn, ct);
+            if (string.IsNullOrWhiteSpace(platformSecret))
+                return TerminalFail("Stripe platform secret key is not configured.");
+
+            var connected = await GetStripeSettingsAsync(cn, hotelId, ct);
+            JsonDocument? chargeDoc = null;
+            string refundSecret = platformSecret;
+            string refundAccount = string.Empty;
+            bool isPlatformCharge = false;
+
+            async Task<(HttpStatusCode status, string raw)> SendStripeAsync(
+                HttpMethod method, string url, string secret, string accountId,
+                Dictionary<string, string>? form)
+            {
+                var client = _httpClientFactory.CreateClient();
+                using var msg = new HttpRequestMessage(method, url);
+                msg.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+                if (!string.IsNullOrWhiteSpace(accountId))
+                    msg.Headers.TryAddWithoutValidation("Stripe-Account", accountId);
+                if (form != null) msg.Content = new FormUrlEncodedContent(form);
+                using var resp = await client.SendAsync(msg, ct);
+                var raw = await resp.Content.ReadAsStringAsync(ct);
+                return (resp.StatusCode, raw);
+            }
+
+            var platformGet = await SendStripeAsync(
+                HttpMethod.Get,
+                $"https://api.stripe.com/v1/charges/{Uri.EscapeDataString(chargeId)}",
+                platformSecret, string.Empty, null);
+
+            if ((int)platformGet.status >= 200 && (int)platformGet.status < 300)
+            {
+                chargeDoc = JsonDocument.Parse(platformGet.raw);
+                isPlatformCharge = true;
+            }
+            else
+            {
+                var missing = (int)platformGet.status == 404 ||
+                              platformGet.raw.Contains("resource_missing", StringComparison.OrdinalIgnoreCase);
+                if (!missing)
+                    return TerminalFail("Stripe refund failed. " + ExtractApiError(platformGet.raw, platformGet.status.ToString()));
+
+                if (string.IsNullOrWhiteSpace(connected.Secret) || string.IsNullOrWhiteSpace(connected.AccountId))
+                    return TerminalFail("Unable to create the connected Stripe account request.");
+
+                var connectedGet = await SendStripeAsync(
+                    HttpMethod.Get,
+                    $"https://api.stripe.com/v1/charges/{Uri.EscapeDataString(chargeId)}",
+                    connected.Secret, connected.AccountId, null);
+
+                if ((int)connectedGet.status < 200 || (int)connectedGet.status >= 300)
+                    return TerminalFail("Stripe refund failed. " + ExtractApiError(connectedGet.raw, connectedGet.status.ToString()));
+
+                chargeDoc = JsonDocument.Parse(connectedGet.raw);
+                refundSecret = connected.Secret;
+                refundAccount = connected.AccountId;
+            }
+
+            using (chargeDoc)
+            {
+                var charge = chargeDoc.RootElement;
+                var paid = charge.TryGetProperty("paid", out var paidEl) && paidEl.ValueKind == JsonValueKind.True;
+                var captured = charge.TryGetProperty("captured", out var capturedEl) && capturedEl.ValueKind == JsonValueKind.True;
+                var refunded = charge.TryGetProperty("refunded", out var refundedEl) && refundedEl.ValueKind == JsonValueKind.True;
+                if (!paid) return TerminalFail("This Stripe charge was not successfully paid.");
+                if (!captured) return TerminalFail("This Stripe charge has not been captured.");
+
+                var currency = JsonString(charge, "currency");
+                if (string.IsNullOrWhiteSpace(currency)) currency = "gbp";
+                var factor = IsZeroDecimalCurrency(currency) ? 1m : 100m;
+                var refundMinor = checked((long)Math.Round(Math.Abs(amount) * factor, MidpointRounding.AwayFromZero));
+                var chargeMinor = JsonLong(charge, "amount");
+                var refundedMinor = JsonLong(charge, "amount_refunded");
+                var remainingMinor = chargeMinor - refundedMinor;
+
+                if (remainingMinor <= 0 || refunded)
+                    return TerminalFail("This Stripe charge is already fully refunded.");
+                if (refundMinor > remainingMinor)
+                    return TerminalFail(
+                        "Refund amount exceeds the remaining Stripe amount. Remaining refundable amount is " +
+                        (remainingMinor / factor).ToString("0.00", CultureInfo.InvariantCulture) + " " +
+                        currency.ToUpperInvariant() + ".");
+
+                var form = new Dictionary<string, string>
+                {
+                    ["charge"] = chargeId,
+                    ["amount"] = refundMinor.ToString(CultureInfo.InvariantCulture)
+                };
+
+                // Same destination-charge handling as WebForms.
+                if (isPlatformCharge)
+                {
+                    var transferId = JsonString(charge, "transfer");
+                    if (!string.IsNullOrWhiteSpace(transferId))
+                        form["reverse_transfer"] = "true";
+                }
+
+                var refundPost = await SendStripeAsync(
+                    HttpMethod.Post, "https://api.stripe.com/v1/refunds",
+                    refundSecret, refundAccount, form);
+
+                if ((int)refundPost.status < 200 || (int)refundPost.status >= 300)
+                    return TerminalFail("Stripe refund failed. " + ExtractApiError(refundPost.raw, refundPost.status.ToString()));
+
+                using var refundDoc = JsonDocument.Parse(refundPost.raw);
+                var id = JsonString(refundDoc.RootElement, "id");
+                var status = JsonString(refundDoc.RootElement, "status");
+                return new TerminalPaymentResult
+                {
+                    Success = !string.IsNullOrWhiteSpace(id),
+                    Message = !string.IsNullOrWhiteSpace(id) ? "Stripe refund created." : "Stripe refund did not return an ID.",
+                    PaymentIntentId = id,
+                    Status = status,
+                    Amount = amount
+                };
+            }
         }
-        catch(Exception ex){return TerminalFail("Stripe refund failed. "+ex.Message);}
+        catch (Exception ex)
+        {
+            return TerminalFail("Stripe refund failed. " + ex.Message);
+        }
+    }
+
+    private async Task<string> GetPlatformStripeSecretAsync(SqlConnection cn, CancellationToken ct)
+    {
+        try
+        {
+            await using var cmd = new SqlCommand(@"
+SELECT TOP 1 ISNULL(mainaccountSecretkey,'')
+FROM dbo.StripeSettingTB
+ORDER BY ID DESC;", cn);
+            return Convert.ToString(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogDebug(ex, "Stripe platform secret is unavailable.");
+            return string.Empty;
+        }
     }
 
     private async Task<TerminalPaymentResult> RefundCloverProviderAsync(SqlConnection cn,string hotelId,PaymentLogInternal original,decimal amount,CancellationToken ct)
@@ -5179,7 +5798,7 @@ END;",cn,tx);
         var s=new StripeSettings();
         try
         {
-            await using var cmd=new SqlCommand("SELECT TOP 1 AccessToken,StripeUserId FROM dbo.HotelStripeAccounts WHERE HotelId=@hotel",cn);cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+            await using var cmd=new SqlCommand("SELECT TOP 1 AccessToken,StripeUserId FROM dbo.HotelStripeAccounts WHERE HotelId=@hotel ORDER BY CreatedAt DESC",cn);cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
             await using var rd=await cmd.ExecuteReaderAsync(ct);if(await rd.ReadAsync(ct)){s.Secret=S(rd,"AccessToken");s.AccountId=S(rd,"StripeUserId");}
         }
         catch(SqlException ex){_logger.LogDebug(ex,"Stripe settings unavailable.");}

@@ -2,7 +2,7 @@
 /* =========================================================
        1. Design tokens (original palette, consolidated)
        ========================================================= */
-.ora-checkin{
+.ora-checkin {
     --navy: #0b3768;
     --navy-hover: #164f88;
     --ink: #102c4b;
@@ -48,20 +48,20 @@
     --control-h: 38px;
 }
 
-/* =========================================================
+    /* =========================================================
        2. Base
        ========================================================= */
-.ora-checkin *,
-.ora-checkin *::before,
-.ora-checkin *::after{
-    box-sizing: border-box
-}
+    .ora-checkin *,
+    .ora-checkin *::before,
+    .ora-checkin *::after {
+        box-sizing: border-box
+    }
 
-.ora-checkin{
+.ora-checkin {
     -webkit-text-size-adjust: 100%
 }
 
-.ora-checkin{
+.ora-checkin {
     margin: 0;
     background: var(--page);
     color: var(--ink);
@@ -69,222 +69,222 @@
     -webkit-font-smoothing: antialiased
 }
 
-.ora-checkin h1,
-.ora-checkin h2,
-.ora-checkin h3,
-.ora-checkin p{
-    margin: 0
-}
+    .ora-checkin h1,
+    .ora-checkin h2,
+    .ora-checkin h3,
+    .ora-checkin p {
+        margin: 0
+    }
 
-.ora-checkin button,
-.ora-checkin input,
-.ora-checkin select,
-.ora-checkin textarea{
-    font: inherit;
-    color: inherit
-}
+    .ora-checkin button,
+    .ora-checkin input,
+    .ora-checkin select,
+    .ora-checkin textarea {
+        font: inherit;
+        color: inherit
+    }
 
-.ora-checkin button{
-    cursor: pointer
-}
+    .ora-checkin button {
+        cursor: pointer
+    }
 
-.ora-checkin .hidden{
-    display: none !important
-}
+    .ora-checkin .hidden {
+        display: none !important
+    }
 
-.ora-checkin .sr-only{
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0,0,0,0);
-    white-space: nowrap;
-    border: 0
-}
+    .ora-checkin .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0,0,0,0);
+        white-space: nowrap;
+        border: 0
+    }
 
-.ora-checkin :focus-visible{
-    outline: 2px solid var(--navy);
-    outline-offset: 2px
-}
+    .ora-checkin :focus-visible {
+        outline: 2px solid var(--navy);
+        outline-offset: 2px
+    }
 
-.ora-checkin .i{
-    width: 16px;
-    height: 16px;
-    flex: none;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    vertical-align: middle
-}
+    .ora-checkin .i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vertical-align: middle
+    }
 
-.ora-checkin .i-sm{
-    width: 14px;
-    height: 14px
-}
+    .ora-checkin .i-sm {
+        width: 14px;
+        height: 14px
+    }
 
-.ora-checkin .i-lg{
-    width: 18px;
-    height: 18px
-}
+    .ora-checkin .i-lg {
+        width: 18px;
+        height: 18px
+    }
 
-.ora-checkin.app{
-    max-width: 1536px;
-    min-height: 100vh;
-    margin: 0 auto;
-    background: var(--app);
-    padding-bottom: 24px
-}
+    .ora-checkin.app {
+        max-width: 1536px;
+        min-height: 100vh;
+        margin: 0 auto;
+        background: var(--app);
+        padding-bottom: 24px
+    }
 
-/* =========================================================
+    /* =========================================================
        3. Top bar
        ========================================================= */
-.ora-checkin .topbar{
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    height: 58px;
-    margin: 8px 14px 0;
-    padding: 0 18px;
-    background: var(--white);
-    border: 1px solid var(--topbar-line);
-    border-radius: var(--radius);
-    box-shadow: 0 1px 4px rgba(26,52,79,.08)
-}
-
-.ora-checkin .brand{
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    margin-left: -8px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: none;
-    color: var(--navy);
-    font-size: 18px;
-    font-weight: 800;
-    white-space: nowrap
-}
-
-    .ora-checkin .brand:hover{
-        background: var(--soft-2)
+    .ora-checkin .topbar {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        height: 58px;
+        margin: 8px 14px 0;
+        padding: 0 18px;
+        background: var(--white);
+        border: 1px solid var(--topbar-line);
+        border-radius: var(--radius);
+        box-shadow: 0 1px 4px rgba(26,52,79,.08)
     }
 
-    .ora-checkin .brand .i-lg{
-        width: 20px;
-        height: 20px
+    .ora-checkin .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        margin-left: -8px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: none;
+        color: var(--navy);
+        font-size: 18px;
+        font-weight: 800;
+        white-space: nowrap
     }
 
-.ora-checkin .nav{
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex: 1;
-    min-width: 0
-}
+        .ora-checkin .brand:hover {
+            background: var(--soft-2)
+        }
 
-.ora-checkin .nav-link{
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    height: 36px;
-    padding: 0 10px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: none;
-    color: #111;
-    white-space: nowrap
-}
+        .ora-checkin .brand .i-lg {
+            width: 20px;
+            height: 20px
+        }
 
-    .ora-checkin .nav-link .i{
-        color: var(--muted)
+    .ora-checkin .nav {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 1;
+        min-width: 0
     }
 
-    .ora-checkin .nav-link:hover{
-        background: var(--soft-2);
-        color: var(--navy)
+    .ora-checkin .nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        height: 36px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: none;
+        color: #111;
+        white-space: nowrap
     }
 
-        .ora-checkin .nav-link:hover .i{
+        .ora-checkin .nav-link .i {
+            color: var(--muted)
+        }
+
+        .ora-checkin .nav-link:hover {
+            background: var(--soft-2);
             color: var(--navy)
         }
 
-.ora-checkin .nav-tools{
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto
-}
+            .ora-checkin .nav-link:hover .i {
+                color: var(--navy)
+            }
 
-.ora-checkin .round{
-    display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    border: 1px solid #e3e6e9;
-    border-radius: 50%;
-    background: #f3f4f5;
-    color: #172b40
-}
-
-    .ora-checkin .round:hover{
-        background: var(--soft-2);
-        border-color: var(--line-head)
+    .ora-checkin .nav-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto
     }
 
-    .ora-checkin .round.plain{
-        border-color: transparent;
-        background: none
+    .ora-checkin .round {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid #e3e6e9;
+        border-radius: 50%;
+        background: #f3f4f5;
+        color: #172b40
     }
 
-/* =========================================================
+        .ora-checkin .round:hover {
+            background: var(--soft-2);
+            border-color: var(--line-head)
+        }
+
+        .ora-checkin .round.plain {
+            border-color: transparent;
+            background: none
+        }
+
+    /* =========================================================
        4. Page header
        ========================================================= */
-.ora-checkin .page-title{
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 22px 34px 16px
-}
-
-.ora-checkin .pulse{
-    position: relative;
-    flex: none;
-    width: 31px;
-    height: 31px;
-    border-radius: 50%;
-    background: var(--green);
-    border: 5px solid var(--mint-ring);
-    box-shadow: 0 0 0 2px var(--green)
-}
-
-    .ora-checkin .pulse::after{
-        content: "";
-        position: absolute;
-        inset: -7px;
-        border-radius: 50%;
-        border: 2px solid var(--green);
-        opacity: 0;
-        animation: pulse 2.4s ease-out infinite
+    .ora-checkin .page-title {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 22px 34px 16px
     }
 
-@keyframes pulse{
-    0%{
+    .ora-checkin .pulse {
+        position: relative;
+        flex: none;
+        width: 31px;
+        height: 31px;
+        border-radius: 50%;
+        background: var(--green);
+        border: 5px solid var(--mint-ring);
+        box-shadow: 0 0 0 2px var(--green)
+    }
+
+        .ora-checkin .pulse::after {
+            content: "";
+            position: absolute;
+            inset: -7px;
+            border-radius: 50%;
+            border: 2px solid var(--green);
+            opacity: 0;
+            animation: pulse 2.4s ease-out infinite
+        }
+
+@keyframes pulse {
+    0% {
         transform: scale(.8);
         opacity: .55
     }
 
-    100%{
+    100% {
         transform: scale(1.35);
         opacity: 0
     }
 }
 
-.ora-checkin .page-title h1{
+.ora-checkin .page-title h1 {
     color: var(--navy);
     font-size: 26px;
     font-weight: 800;
@@ -292,19 +292,19 @@
     line-height: 1.15
 }
 
-.ora-checkin .page-title p{
+.ora-checkin .page-title p {
     margin-top: 3px;
     color: var(--muted)
 }
 
-.ora-checkin .search{
+.ora-checkin .search {
     position: relative;
     display: flex;
     width: min(510px,42vw);
     margin-left: auto
 }
 
-    .ora-checkin .search .search-icon{
+    .ora-checkin .search .search-icon {
         position: absolute;
         left: 11px;
         top: 50%;
@@ -313,13 +313,13 @@
         pointer-events: none
     }
 
-    .ora-checkin .search input{
+    .ora-checkin .search input {
         flex: 1;
         padding-left: 34px;
         border-radius: var(--radius-sm) 0 0 var(--radius-sm)
     }
 
-    .ora-checkin .search button{
+    .ora-checkin .search button {
         display: grid;
         place-items: center;
         width: 54px;
@@ -330,28 +330,28 @@
         color: var(--ink-2)
     }
 
-        .ora-checkin .search button:hover{
+        .ora-checkin .search button:hover {
             filter: brightness(1.04)
         }
 
 /* =========================================================
        5. Layout and cards
        ========================================================= */
-.ora-checkin .layout{
+.ora-checkin .layout {
     display: grid;
     grid-template-columns: minmax(0,2fr) minmax(340px,.88fr);
     gap: 20px;
     padding: 0 24px
 }
 
-.ora-checkin .stack{
+.ora-checkin .stack {
     position: relative;
     display: grid;
     gap: 16px;
     align-content: start
 }
 
-.ora-checkin .card{
+.ora-checkin .card {
     background: var(--white);
     border: 1px solid var(--line-card);
     border-radius: var(--radius);
@@ -359,7 +359,7 @@
     overflow: hidden
 }
 
-.ora-checkin .card-head{
+.ora-checkin .card-head {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -369,7 +369,7 @@
     color: var(--navy)
 }
 
-.ora-checkin .card-icon{
+.ora-checkin .card-icon {
     display: grid;
     place-items: center;
     flex: none;
@@ -381,7 +381,7 @@
     color: var(--navy)
 }
 
-.ora-checkin .card-title{
+.ora-checkin .card-title {
     display: flex;
     align-items: baseline;
     gap: 10px;
@@ -389,47 +389,47 @@
     min-width: 0
 }
 
-.ora-checkin .card-head h2{
+.ora-checkin .card-head h2 {
     font-size: 17px;
     font-weight: 700;
     line-height: 1.2
 }
 
-.ora-checkin .card-head small{
+.ora-checkin .card-head small {
     color: var(--muted-2);
     font-size: 12px
 }
 
-.ora-checkin .card-meta{
+.ora-checkin .card-meta {
     margin-left: auto;
     color: var(--muted-2);
     font-size: 12px;
     white-space: nowrap
 }
 
-.ora-checkin .chev{
+.ora-checkin .chev {
     margin-left: auto;
     color: var(--muted-2);
     display: grid;
     place-items: center
 }
 
-.ora-checkin .card-body{
+.ora-checkin .card-body {
     padding: 16px
 }
 
 /* Guest card must let the calendar overflow */
-.ora-checkin .guest-card{
+.ora-checkin .guest-card {
     overflow: visible;
     position: relative;
     z-index: 25
 }
 
-    .ora-checkin .guest-card .card-head{
+    .ora-checkin .guest-card .card-head {
         border-radius: var(--radius) var(--radius) 0 0
     }
 
-    .ora-checkin .guest-card .card-body{
+    .ora-checkin .guest-card .card-body {
         position: relative;
         z-index: 26
     }
@@ -437,36 +437,36 @@
 /* =========================================================
        6. Form controls
        ========================================================= */
-.ora-checkin .grid{
+.ora-checkin .grid {
     display: grid;
     grid-template-columns: repeat(4,minmax(0,1fr));
     gap: 14px 16px
 }
 
-.ora-checkin .span-2{
+.ora-checkin .span-2 {
     grid-column: span 2
 }
 
-.ora-checkin .field{
+.ora-checkin .field {
     min-width: 0
 }
 
     .ora-checkin .field > label,
-.ora-checkin .field-label{
+    .ora-checkin .field-label {
         display: block;
         margin-bottom: 6px;
         color: var(--ink-2);
         font-weight: 600
     }
 
-.ora-checkin .req{
+.ora-checkin .req {
     color: var(--req);
     font-weight: 700
 }
 
 .ora-checkin input,
 .ora-checkin select,
-.ora-checkin textarea{
+.ora-checkin textarea {
     width: 100%;
     min-height: var(--control-h);
     padding: 8px 10px;
@@ -479,29 +479,29 @@
 }
 
     .ora-checkin input::placeholder,
-.ora-checkin textarea::placeholder{
+    .ora-checkin textarea::placeholder {
         color: #8a9bb0
     }
 
     .ora-checkin input:hover,
-.ora-checkin select:hover,
-.ora-checkin textarea:hover{
+    .ora-checkin select:hover,
+    .ora-checkin textarea:hover {
         border-color: #9fb4cc
     }
 
     .ora-checkin input:focus,
-.ora-checkin select:focus,
-.ora-checkin textarea:focus{
+    .ora-checkin select:focus,
+    .ora-checkin textarea:focus {
         border-color: var(--focus);
         box-shadow: 0 0 0 2px var(--focus-ring)
     }
 
-    .ora-checkin input[readonly]:not(.date-picker-input){
+    .ora-checkin input[readonly]:not(.date-picker-input) {
         background: var(--soft);
         color: var(--ink)
     }
 
-.ora-checkin select{
+.ora-checkin select {
     appearance: none;
     -webkit-appearance: none;
     padding-right: 30px;
@@ -511,27 +511,27 @@
     cursor: pointer
 }
 
-.ora-checkin input[type=number]{
+.ora-checkin input[type=number] {
     font-variant-numeric: tabular-nums
 }
 
-.ora-checkin textarea{
+.ora-checkin textarea {
     min-height: 72px;
     resize: vertical;
     line-height: 1.5
 }
 
-.ora-checkin .invalid{
+.ora-checkin .invalid {
     border-color: var(--danger) !important;
     box-shadow: 0 0 0 2px rgba(207,23,23,.12) !important
 }
 
 /* Money input with £ prefix */
-.ora-checkin .money-input{
+.ora-checkin .money-input {
     position: relative
 }
 
-    .ora-checkin .money-input::before{
+    .ora-checkin .money-input::before {
         content: "£";
         position: absolute;
         left: 10px;
@@ -542,20 +542,54 @@
         pointer-events: none
     }
 
-    .ora-checkin .money-input input{
+    .ora-checkin .money-input input {
         padding-left: 24px;
         text-align: right
     }
 
+/* Charges & Payment: amount first, configured currency on the right. */
+.ora-checkin .summary .money-input-suffix::before {
+    content: none
+}
+
+.ora-checkin .summary .money-input-suffix::after {
+    content: attr(data-currency);
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted-2);
+    font-weight: 600;
+    pointer-events: none
+}
+
+.ora-checkin .summary .money-input-suffix input {
+    padding-left: 9px;
+    padding-right: 28px;
+    text-align: left
+}
+
+.ora-checkin .balance-box b {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px
+}
+
+.ora-checkin .balance-currency {
+    font-size: .65em;
+    color: var(--muted-2);
+    font-weight: 700
+}
+
 /* File upload */
-.ora-checkin .upload{
+.ora-checkin .upload {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap
 }
 
-    .ora-checkin .upload input[type=file]{
+    .ora-checkin .upload input[type=file] {
         flex: 1 1 180px;
         min-width: 0;
         padding: 4px 6px;
@@ -563,7 +597,7 @@
         color: var(--muted)
     }
 
-        .ora-checkin .upload input[type=file]::file-selector-button{
+        .ora-checkin .upload input[type=file]::file-selector-button {
             margin-right: 10px;
             padding: 5px 10px;
             border: 1px solid var(--line-input);
@@ -575,7 +609,7 @@
         }
 
 /* Status chip */
-.ora-checkin .status{
+.ora-checkin .status {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -588,18 +622,18 @@
     white-space: nowrap
 }
 
-    .ora-checkin .status .i{
+    .ora-checkin .status .i {
         width: 14px;
         height: 14px
     }
 
 /* Counter */
-.ora-checkin .counter{
+.ora-checkin .counter {
     display: grid;
     grid-template-columns: 38px 1fr 38px
 }
 
-    .ora-checkin .counter button{
+    .ora-checkin .counter button {
         display: grid;
         place-items: center;
         min-height: var(--control-h);
@@ -610,26 +644,26 @@
         transition: background-color .15s
     }
 
-        .ora-checkin .counter button:hover:not(:disabled){
+        .ora-checkin .counter button:hover:not(:disabled) {
             background: var(--navy-hover)
         }
 
-        .ora-checkin .counter button:first-child{
+        .ora-checkin .counter button:first-child {
             border-radius: var(--radius-sm) 0 0 var(--radius-sm)
         }
 
-        .ora-checkin .counter button:last-child{
+        .ora-checkin .counter button:last-child {
             border-radius: 0 var(--radius-sm) var(--radius-sm) 0
         }
 
-        .ora-checkin .counter button:disabled{
+        .ora-checkin .counter button:disabled {
             background: var(--disabled);
             border-color: var(--disabled);
             color: #f4f4f4;
             cursor: not-allowed
         }
 
-    .ora-checkin .counter input{
+    .ora-checkin .counter input {
         border-radius: 0;
         border-left: 0;
         border-right: 0;
@@ -639,18 +673,18 @@
     }
 
         .ora-checkin .counter input::-webkit-outer-spin-button,
-.ora-checkin .counter input::-webkit-inner-spin-button{
+        .ora-checkin .counter input::-webkit-inner-spin-button {
             -webkit-appearance: none;
             margin: 0
         }
 
 /* Checkbox chips */
-.ora-checkin .tax-group{
+.ora-checkin .tax-group {
     display: flex;
     gap: 8px
 }
 
-.ora-checkin .check{
+.ora-checkin .check {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -666,18 +700,18 @@
     transition: background-color .15s,border-color .15s
 }
 
-    .ora-checkin .check:hover{
+    .ora-checkin .check:hover {
         background: var(--soft)
     }
 
-    .ora-checkin .check:has(input:checked){
+    .ora-checkin .check:has(input:checked) {
         background: var(--soft-2);
         border-color: var(--navy);
         color: var(--navy);
         font-weight: 600
     }
 
-    .ora-checkin .check input{
+    .ora-checkin .check input {
         width: 16px;
         min-height: 16px;
         margin: 0;
@@ -688,7 +722,7 @@
 /* =========================================================
        7. Buttons
        ========================================================= */
-.ora-checkin .btn{
+.ora-checkin .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -702,31 +736,31 @@
     transition: background-color .15s,border-color .15s,box-shadow .15s,transform .05s
 }
 
-    .ora-checkin .btn:active:not(:disabled){
+    .ora-checkin .btn:active:not(:disabled) {
         transform: translateY(1px)
     }
 
-.ora-checkin .btn-primary{
+.ora-checkin .btn-primary {
     background: var(--navy);
     color: #fff;
     box-shadow: var(--shadow-btn)
 }
 
-    .ora-checkin .btn-primary:hover:not(:disabled){
+    .ora-checkin .btn-primary:hover:not(:disabled) {
         background: var(--navy-hover);
         border-color: var(--navy-hover)
     }
 
-.ora-checkin .btn-outline{
+.ora-checkin .btn-outline {
     background: var(--white);
     color: var(--navy)
 }
 
-    .ora-checkin .btn-outline:hover:not(:disabled){
+    .ora-checkin .btn-outline:hover:not(:disabled) {
         background: var(--soft-2)
     }
 
-.ora-checkin .btn-ghost{
+.ora-checkin .btn-ghost {
     min-height: 28px;
     padding: 4px 8px;
     border-color: transparent;
@@ -736,27 +770,27 @@
     font-weight: 600
 }
 
-    .ora-checkin .btn-ghost:hover{
+    .ora-checkin .btn-ghost:hover {
         background: var(--soft-2);
         border-color: var(--line-head)
     }
 
-.ora-checkin .btn-icon{
+.ora-checkin .btn-icon {
     width: 28px;
     padding: 0
 }
 
-.ora-checkin .btn-sm{
+.ora-checkin .btn-sm {
     min-height: 32px;
     padding: 5px 10px;
     font-size: 12px
 }
 
-.ora-checkin .btn-block{
+.ora-checkin .btn-block {
     width: 100%
 }
 
-.ora-checkin .btn:disabled{
+.ora-checkin .btn:disabled {
     background: var(--disabled);
     border-color: var(--disabled);
     color: #f4f4f4;
@@ -765,7 +799,7 @@
 }
 
 .ora-checkin .btn.is-done,
-.ora-checkin .btn.is-done:disabled{
+.ora-checkin .btn.is-done:disabled {
     background: var(--green);
     border-color: var(--green);
     color: #fff
@@ -774,18 +808,18 @@
 /* =========================================================
        8. Date range picker
        ========================================================= */
-.ora-checkin .date-picker{
+.ora-checkin .date-picker {
     position: relative
 }
 
-.ora-checkin .date-picker-input{
+.ora-checkin .date-picker-input {
     padding-right: 34px;
     cursor: pointer;
     background: var(--white) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%2336516f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E") no-repeat right 10px center;
     text-overflow: ellipsis
 }
 
-.ora-checkin .calendar-panel{
+.ora-checkin .calendar-panel {
     position: absolute;
     z-index: 100;
     top: calc(100% + 6px);
@@ -799,19 +833,19 @@
     animation: pop .14s ease-out
 }
 
-@keyframes pop{
-    from{
+@keyframes pop {
+    from {
         opacity: 0;
         transform: translateY(-4px)
     }
 
-    to{
+    to {
         opacity: 1;
         transform: none
     }
 }
 
-.ora-checkin .calendar-header{
+.ora-checkin .calendar-header {
     display: grid;
     grid-template-columns: 32px 1fr 32px;
     align-items: center;
@@ -819,13 +853,13 @@
     margin-bottom: 10px
 }
 
-    .ora-checkin .calendar-header strong{
+    .ora-checkin .calendar-header strong {
         text-align: center;
         color: var(--navy);
         font-size: 14px
     }
 
-.ora-checkin .calendar-nav{
+.ora-checkin .calendar-nav {
     display: grid;
     place-items: center;
     width: 32px;
@@ -836,18 +870,18 @@
     color: #fff
 }
 
-    .ora-checkin .calendar-nav:hover{
+    .ora-checkin .calendar-nav:hover {
         background: var(--navy-hover)
     }
 
 .ora-checkin .calendar-weekdays,
-.ora-checkin .calendar-days{
+.ora-checkin .calendar-days {
     display: grid;
     grid-template-columns: repeat(7,1fr);
     gap: 3px 0
 }
 
-    .ora-checkin .calendar-weekdays span{
+    .ora-checkin .calendar-weekdays span {
         padding: 3px 0;
         text-align: center;
         font-size: 10px;
@@ -856,11 +890,11 @@
     }
 
 .ora-checkin .calendar-day,
-.ora-checkin .calendar-blank{
+.ora-checkin .calendar-blank {
     height: 34px
 }
 
-.ora-checkin .calendar-day{
+.ora-checkin .calendar-day {
     position: relative;
     padding: 0;
     border: 1px solid transparent;
@@ -870,24 +904,24 @@
     font-variant-numeric: tabular-nums
 }
 
-    .ora-checkin .calendar-day:hover{
+    .ora-checkin .calendar-day:hover {
         background: var(--soft-2);
         border-color: var(--line-input)
     }
 
-    .ora-checkin .calendar-day.in-range{
+    .ora-checkin .calendar-day.in-range {
         background: var(--range);
         border-radius: 0
     }
 
-    .ora-checkin .calendar-day.selected{
+    .ora-checkin .calendar-day.selected {
         background: var(--navy);
         border-color: var(--navy);
         color: #fff;
         font-weight: 700
     }
 
-    .ora-checkin .calendar-day.today::after{
+    .ora-checkin .calendar-day.today::after {
         content: "";
         position: absolute;
         left: 50%;
@@ -899,11 +933,11 @@
         background: var(--green)
     }
 
-    .ora-checkin .calendar-day.selected.today::after{
+    .ora-checkin .calendar-day.selected.today::after {
         background: #fff
     }
 
-.ora-checkin .calendar-hint{
+.ora-checkin .calendar-hint {
     margin-top: 10px;
     padding-top: 8px;
     border-top: 1px solid var(--line-soft);
@@ -915,31 +949,31 @@
 /* =========================================================
        9. Rooms & services
        ========================================================= */
-.ora-checkin .charge-row{
+.ora-checkin .charge-row {
     display: grid;
     grid-template-columns: 1.1fr .8fr 1fr .75fr .8fr auto auto;
     gap: 12px;
     align-items: end
 }
 
-    .ora-checkin .charge-row.service-mode{
+    .ora-checkin .charge-row.service-mode {
         grid-template-columns: .9fr minmax(0,2.6fr) .75fr .8fr auto auto
     }
 
-.ora-checkin .table-wrap{
+.ora-checkin .table-wrap {
     margin-top: 16px;
     overflow-x: auto;
     border: 1px solid var(--line);
     border-radius: var(--radius)
 }
 
-.ora-checkin .table{
+.ora-checkin .table {
     width: 100%;
     border-collapse: collapse;
     color: #111
 }
 
-    .ora-checkin .table th{
+    .ora-checkin .table th {
         background: var(--soft-3);
         color: var(--ink-2);
         font-size: 11px;
@@ -949,7 +983,7 @@
     }
 
     .ora-checkin .table th,
-.ora-checkin .table td{
+    .ora-checkin .table td {
         padding: 9px 10px;
         border-bottom: 1px solid var(--line);
         border-right: 1px solid var(--line);
@@ -958,42 +992,42 @@
     }
 
         .ora-checkin .table th:last-child,
-.ora-checkin .table td:last-child{
+        .ora-checkin .table td:last-child {
             border-right: 0
         }
 
-    .ora-checkin .table tbody tr:last-child td{
+    .ora-checkin .table tbody tr:last-child td {
         border-bottom: 0
     }
 
-    .ora-checkin .table tbody tr:nth-child(even) td{
+    .ora-checkin .table tbody tr:nth-child(even) td {
         background: #fafcfe
     }
 
-    .ora-checkin .table tbody tr:hover td{
+    .ora-checkin .table tbody tr:hover td {
         background: var(--soft)
     }
 
-.ora-checkin .num{
+.ora-checkin .num {
     text-align: right !important;
     font-variant-numeric: tabular-nums
 }
 
-.ora-checkin .table-empty td{
+.ora-checkin .table-empty td {
     padding: 22px !important;
     text-align: center !important;
     color: var(--muted-2);
     background: var(--white) !important
 }
 
-.ora-checkin .totals{
+.ora-checkin .totals {
     display: grid;
     grid-template-columns: repeat(3,1fr);
     gap: 12px;
     margin-top: 14px
 }
 
-.ora-checkin .total{
+.ora-checkin .total {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1005,30 +1039,30 @@
     font-weight: 600
 }
 
-    .ora-checkin .total b{
+    .ora-checkin .total b {
         font-size: 17px;
         font-weight: 800;
         font-variant-numeric: tabular-nums
     }
 
-    .ora-checkin .total.grand{
+    .ora-checkin .total.grand {
         border-left: 4px solid var(--navy);
         font-weight: 700
     }
 
-        .ora-checkin .total.grand b{
+        .ora-checkin .total.grand b {
             font-size: 19px
         }
 
 /* =========================================================
        10. Payment side
        ========================================================= */
-.ora-checkin .summary{
+.ora-checkin .summary {
     display: grid;
     gap: 10px
 }
 
-.ora-checkin .pay-row{
+.ora-checkin .pay-row {
     display: grid;
     grid-template-columns: 1fr 170px;
     align-items: center;
@@ -1036,22 +1070,22 @@
     color: #111
 }
 
-    .ora-checkin .pay-row > label{
+    .ora-checkin .pay-row > label {
         font-weight: 600
     }
 
     .ora-checkin .pay-row input,
-.ora-checkin .pay-row select{
+    .ora-checkin .pay-row select {
         min-height: 36px
     }
 
-.ora-checkin #paymentTotal{
+.ora-checkin #paymentTotal {
     text-align: right;
     font-weight: 700;
     font-variant-numeric: tabular-nums
 }
 
-.ora-checkin .balance-box{
+.ora-checkin .balance-box {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
@@ -1064,14 +1098,14 @@
     color: var(--ink)
 }
 
-    .ora-checkin .balance-box span{
+    .ora-checkin .balance-box span {
         font-size: 12px;
         font-weight: 700;
         color: var(--muted);
         letter-spacing: .3px
     }
 
-    .ora-checkin .balance-box b{
+    .ora-checkin .balance-box b {
         font-size: 26px;
         font-weight: 800;
         line-height: 1;
@@ -1079,13 +1113,13 @@
         font-variant-numeric: tabular-nums
     }
 
-.ora-checkin .record{
+.ora-checkin .record {
     min-height: 44px;
     font-size: 15px;
     margin-top: 4px
 }
 
-.ora-checkin .deposit-row{
+.ora-checkin .deposit-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1093,29 +1127,29 @@
     font-size: 14px
 }
 
-    .ora-checkin .deposit-row b{
+    .ora-checkin .deposit-row b {
         font-size: 17px;
         font-variant-numeric: tabular-nums
     }
 
-.ora-checkin .deposit-foot{
+.ora-checkin .deposit-foot {
     display: flex;
     justify-content: flex-end;
     margin-top: 12px
 }
 
-.ora-checkin .payment-log-wrap{
+.ora-checkin .payment-log-wrap {
     overflow-x: auto;
     padding: 0
 }
 
-.ora-checkin .payment-log{
+.ora-checkin .payment-log {
     width: 100%;
     border-collapse: collapse;
     font-size: 12px
 }
 
-    .ora-checkin .payment-log th{
+    .ora-checkin .payment-log th {
         background: var(--soft-3);
         color: var(--ink-2);
         font-size: 11px;
@@ -1123,28 +1157,28 @@
     }
 
     .ora-checkin .payment-log th,
-.ora-checkin .payment-log td{
+    .ora-checkin .payment-log td {
         padding: 8px;
         border-bottom: 1px solid var(--line);
         text-align: left;
         white-space: nowrap
     }
 
-    .ora-checkin .payment-log tbody tr:last-child td{
+    .ora-checkin .payment-log tbody tr:last-child td {
         border-bottom: 0
     }
 
-    .ora-checkin .payment-log tbody tr:hover td{
+    .ora-checkin .payment-log tbody tr:hover td {
         background: var(--soft)
     }
 
-.ora-checkin .payment-log-empty{
+.ora-checkin .payment-log-empty {
     padding: 20px !important;
     text-align: center !important;
     color: var(--muted-2)
 }
 
-.ora-checkin .message{
+.ora-checkin .message {
     display: none;
     align-items: flex-start;
     gap: 8px;
@@ -1153,29 +1187,29 @@
     font-weight: 600
 }
 
-    .ora-checkin .message.show{
+    .ora-checkin .message.show {
         display: flex
     }
 
-    .ora-checkin .message.ok{
+    .ora-checkin .message.ok {
         background: var(--mint);
         border: 1px solid var(--mint-line);
         color: var(--green-ink)
     }
 
-    .ora-checkin .message.bad{
+    .ora-checkin .message.bad {
         background: #fdf0f0;
         border: 1px solid #f1c4c3;
         color: var(--danger)
     }
 
-.ora-checkin .actions{
+.ora-checkin .actions {
     display: grid;
     grid-template-columns: .7fr 1.3fr;
     gap: 12px
 }
 
-    .ora-checkin .actions .btn{
+    .ora-checkin .actions .btn {
         min-height: 52px;
         font-size: 15px
     }
@@ -1183,7 +1217,7 @@
 /* =========================================================
        11. Modal & confirm dialog
        ========================================================= */
-.ora-checkin .modal-backdrop{
+.ora-checkin .modal-backdrop {
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -1194,18 +1228,18 @@
     animation: fade .15s ease-out
 }
 
-@keyframes fade{
-    from{
+@keyframes fade {
+    from {
         opacity: 0
     }
 
-    to{
+    to {
         opacity: 1
     }
 }
 
 .ora-checkin .payment-modal,
-.ora-checkin .dialog{
+.ora-checkin .dialog {
     width: min(500px,100%);
     max-height: 94vh;
     overflow: auto;
@@ -1216,19 +1250,19 @@
     animation: rise .18s ease-out
 }
 
-@keyframes rise{
-    from{
+@keyframes rise {
+    from {
         opacity: 0;
         transform: translateY(8px) scale(.98)
     }
 
-    to{
+    to {
         opacity: 1;
         transform: none
     }
 }
 
-.ora-checkin .modal-head{
+.ora-checkin .modal-head {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1239,13 +1273,13 @@
     color: var(--navy)
 }
 
-    .ora-checkin .modal-head h2{
+    .ora-checkin .modal-head h2 {
         font-size: 15px;
         font-weight: 800;
         letter-spacing: .3px
     }
 
-.ora-checkin .modal-dot{
+.ora-checkin .modal-dot {
     flex: none;
     width: 18px;
     height: 18px;
@@ -1254,7 +1288,7 @@
     border: 4px solid var(--mint-ring)
 }
 
-.ora-checkin .modal-close{
+.ora-checkin .modal-close {
     display: grid;
     place-items: center;
     width: 34px;
@@ -1266,21 +1300,21 @@
     color: #fff
 }
 
-    .ora-checkin .modal-close:hover{
+    .ora-checkin .modal-close:hover {
         background: var(--navy-hover)
     }
 
-.ora-checkin .modal-body{
+.ora-checkin .modal-body {
     padding: 18px
 }
 
-.ora-checkin .modal-title{
+.ora-checkin .modal-title {
     margin-bottom: 10px;
     font-weight: 800;
     color: var(--ink)
 }
 
-.ora-checkin .pay-tabs{
+.ora-checkin .pay-tabs {
     display: grid;
     grid-template-columns: repeat(3,1fr);
     gap: 4px;
@@ -1291,7 +1325,7 @@
     background: var(--soft)
 }
 
-.ora-checkin .pay-tab{
+.ora-checkin .pay-tab {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1310,38 +1344,38 @@
     transition: opacity .15s,background-color .15s
 }
 
-    .ora-checkin .pay-tab:hover{
+    .ora-checkin .pay-tab:hover {
         opacity: 1
     }
 
-    .ora-checkin .pay-tab.active{
+    .ora-checkin .pay-tab.active {
         background: var(--navy-hover);
         opacity: 1;
         box-shadow: inset 0 0 0 1px #fff
     }
 
-.ora-checkin .modal-field{
+.ora-checkin .modal-field {
     margin-bottom: 14px
 }
 
-    .ora-checkin .modal-field label{
+    .ora-checkin .modal-field label {
         display: block;
         margin-bottom: 6px;
         font-weight: 700;
         color: var(--ink-2)
     }
 
-.ora-checkin .modal-actions{
+.ora-checkin .modal-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px
 }
 
-    .ora-checkin .modal-actions .btn{
+    .ora-checkin .modal-actions .btn {
         min-height: 42px
     }
 
-.ora-checkin .terminal-status{
+.ora-checkin .terminal-status {
     margin: 14px 0;
     padding: 16px;
     border: 1px solid #d7e2ee;
@@ -1351,22 +1385,22 @@
     color: #425a73
 }
 
-    .ora-checkin .terminal-status b{
+    .ora-checkin .terminal-status b {
         display: block;
         margin-bottom: 6px;
         color: var(--ink);
         font-size: 16px
     }
 
-        .ora-checkin .terminal-status b.is-bad{
+        .ora-checkin .terminal-status b.is-bad {
             color: var(--declined)
         }
 
-        .ora-checkin .terminal-status b.is-warn{
+        .ora-checkin .terminal-status b.is-warn {
             color: var(--timeout)
         }
 
-.ora-checkin .simulation{
+.ora-checkin .simulation {
     display: grid;
     gap: 8px;
     padding: 12px;
@@ -1374,14 +1408,14 @@
     border-radius: 12px
 }
 
-.ora-checkin .simulation-head{
+.ora-checkin .simulation-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-weight: 800
 }
 
-    .ora-checkin .simulation-head label{
+    .ora-checkin .simulation-head label {
         display: inline-flex;
         align-items: center;
         gap: 6px;
@@ -1389,31 +1423,31 @@
         cursor: pointer
     }
 
-    .ora-checkin .simulation-head input{
+    .ora-checkin .simulation-head input {
         width: 16px;
         min-height: 16px;
         margin: 0;
         accent-color: var(--navy)
     }
 
-.ora-checkin .simulation small{
+.ora-checkin .simulation small {
     color: #7891b3
 }
 
-.ora-checkin .dialog{
+.ora-checkin .dialog {
     width: min(420px,100%)
 }
 
-.ora-checkin .dialog-body{
+.ora-checkin .dialog-body {
     padding: 18px
 }
 
-    .ora-checkin .dialog-body p{
+    .ora-checkin .dialog-body p {
         color: var(--muted);
         font-size: 14px
     }
 
-.ora-checkin .dialog-actions{
+.ora-checkin .dialog-actions {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
@@ -1423,7 +1457,7 @@
 /* =========================================================
        12. Toasts
        ========================================================= */
-.ora-checkin .toast-host{
+.ora-checkin .toast-host {
     position: fixed;
     top: 16px;
     right: 16px;
@@ -1434,7 +1468,7 @@
     pointer-events: none
 }
 
-.ora-checkin .toast{
+.ora-checkin .toast {
     display: flex;
     align-items: flex-start;
     gap: 10px;
@@ -1449,17 +1483,17 @@
     animation: slide .2s ease-out
 }
 
-    .ora-checkin .toast .i{
+    .ora-checkin .toast .i {
         margin-top: 1px
     }
 
-.ora-checkin .toast-text{
+.ora-checkin .toast-text {
     flex: 1;
     white-space: pre-line;
     font-weight: 600
 }
 
-.ora-checkin .toast-close{
+.ora-checkin .toast-close {
     display: grid;
     place-items: center;
     width: 22px;
@@ -1471,47 +1505,47 @@
     color: var(--muted-2)
 }
 
-    .ora-checkin .toast-close:hover{
+    .ora-checkin .toast-close:hover {
         background: var(--soft-2)
     }
 
-.ora-checkin .toast-success{
+.ora-checkin .toast-success {
     border-left-color: var(--green)
 }
 
-    .ora-checkin .toast-success > .i{
+    .ora-checkin .toast-success > .i {
         color: var(--green-ink)
     }
 
-.ora-checkin .toast-error{
+.ora-checkin .toast-error {
     border-left-color: var(--danger)
 }
 
-    .ora-checkin .toast-error > .i{
+    .ora-checkin .toast-error > .i {
         color: var(--danger)
     }
 
-.ora-checkin .toast-info{
+.ora-checkin .toast-info {
     border-left-color: var(--navy)
 }
 
-    .ora-checkin .toast-info > .i{
+    .ora-checkin .toast-info > .i {
         color: var(--navy)
     }
 
-.ora-checkin .toast.leaving{
+.ora-checkin .toast.leaving {
     opacity: 0;
     transform: translateX(12px);
     transition: opacity .2s,transform .2s
 }
 
-@keyframes slide{
-    from{
+@keyframes slide {
+    from {
         opacity: 0;
         transform: translateX(12px)
     }
 
-    to{
+    to {
         opacity: 1;
         transform: none
     }
@@ -1520,176 +1554,176 @@
 /* =========================================================
        13. Responsive
        ========================================================= */
-@media (min-width:1101px) and (min-height:920px){
-    .ora-checkin .layout > aside{
+@media (min-width:1101px) and (min-height:920px) {
+    .ora-checkin .layout > aside {
         position: sticky;
         top: 16px;
         align-self: start
     }
 }
 
-@media (max-width:1400px){
-    .ora-checkin .nav-link{
+@media (max-width:1400px) {
+    .ora-checkin .nav-link {
         padding: 0 8px
     }
 
-    .ora-checkin .topbar{
+    .ora-checkin .topbar {
         gap: 16px
     }
 }
 
-@media (max-width:1280px){
+@media (max-width:1280px) {
     .ora-checkin .charge-row,
-.ora-checkin .charge-row.service-mode{
+    .ora-checkin .charge-row.service-mode {
         grid-template-columns: repeat(3,minmax(0,1fr))
     }
 
-        .ora-checkin .charge-row.service-mode #serviceDescriptionWrap{
+        .ora-checkin .charge-row.service-mode #serviceDescriptionWrap {
             grid-column: span 2
         }
 
-        .ora-checkin .charge-row .tax-group{
+        .ora-checkin .charge-row .tax-group {
             align-self: end
         }
 }
 
-@media (max-width:1100px){
-    .ora-checkin .nav-link:nth-child(-n/**/+5){
+@media (max-width:1100px) {
+    .ora-checkin .nav-link:nth-child(-n /**/ +5) {
         display: none
     }
 
-    .ora-checkin .layout{
+    .ora-checkin .layout {
         grid-template-columns: 1fr
     }
 
-    .ora-checkin .grid{
+    .ora-checkin .grid {
         grid-template-columns: repeat(2,minmax(0,1fr))
     }
 
-    .ora-checkin .search{
+    .ora-checkin .search {
         width: 40vw
     }
 }
 
-@media (max-width:800px){
+@media (max-width:800px) {
     .ora-checkin .charge-row,
-.ora-checkin .charge-row.service-mode{
+    .ora-checkin .charge-row.service-mode {
         grid-template-columns: repeat(2,minmax(0,1fr))
     }
 
-    .ora-checkin .totals{
+    .ora-checkin .totals {
         grid-template-columns: 1fr
     }
 }
 
-@media (max-width:650px){
-    .ora-checkin .topbar{
+@media (max-width:650px) {
+    .ora-checkin .topbar {
         gap: 8px;
         margin: 8px 8px 0;
         padding: 0 10px
     }
 
-    .ora-checkin .nav-link{
+    .ora-checkin .nav-link {
         display: none
     }
 
-    .ora-checkin .round.plain{
+    .ora-checkin .round.plain {
         display: none
     }
 
-    .ora-checkin .page-title{
+    .ora-checkin .page-title {
         flex-wrap: wrap;
         padding: 16px 12px 12px
     }
 
-        .ora-checkin .page-title h1{
+        .ora-checkin .page-title h1 {
             font-size: 21px
         }
 
-    .ora-checkin .search{
+    .ora-checkin .search {
         order: 2;
         width: 100%;
         margin: 0
     }
 
-    .ora-checkin .layout{
+    .ora-checkin .layout {
         gap: 12px;
         padding: 0 8px
     }
 
-    .ora-checkin .stack{
+    .ora-checkin .stack {
         gap: 12px
     }
 
     .ora-checkin .grid,
-.ora-checkin .charge-row,
-.ora-checkin .charge-row.service-mode{
+    .ora-checkin .charge-row,
+    .ora-checkin .charge-row.service-mode {
         grid-template-columns: 1fr
     }
 
         .ora-checkin .span-2,
-.ora-checkin .charge-row.service-mode #serviceDescriptionWrap{
+        .ora-checkin .charge-row.service-mode #serviceDescriptionWrap {
             grid-column: auto
         }
 
-    .ora-checkin .tax-group .check{
+    .ora-checkin .tax-group .check {
         flex: 1;
         justify-content: center
     }
 
-    .ora-checkin .card-body{
+    .ora-checkin .card-body {
         padding: 14px 12px
     }
 
-    .ora-checkin .card-head{
+    .ora-checkin .card-head {
         padding: 11px 12px
     }
 
-        .ora-checkin .card-head h2{
+        .ora-checkin .card-head h2 {
             font-size: 16px
         }
 
         .ora-checkin .card-head small,
-.ora-checkin .card-meta{
+        .ora-checkin .card-meta {
             display: none
         }
 
-    .ora-checkin .pay-row{
+    .ora-checkin .pay-row {
         grid-template-columns: 1fr;
         gap: 6px
     }
 
-    .ora-checkin .actions{
+    .ora-checkin .actions {
         grid-template-columns: 1fr
     }
 
-        .ora-checkin .actions #complete{
+        .ora-checkin .actions #complete {
             order: -1
         }
 
-    .ora-checkin .calendar-panel{
+    .ora-checkin .calendar-panel {
         width: min(310px,calc(100vw - 40px))
     }
 
-    .ora-checkin .pay-tab{
+    .ora-checkin .pay-tab {
         flex-direction: column;
         gap: 3px;
         font-size: 11px
     }
 
-    .ora-checkin .modal-body{
+    .ora-checkin .modal-body {
         padding: 14px
     }
 
-    .ora-checkin .modal-actions{
+    .ora-checkin .modal-actions {
         grid-template-columns: 1fr
     }
 }
 
-@media (prefers-reduced-motion:reduce){
+@media (prefers-reduced-motion:reduce) {
     .ora-checkin *,
-.ora-checkin *::before,
-.ora-checkin *::after{
+    .ora-checkin *::before,
+    .ora-checkin *::after {
         animation: none !important;
         transition: none !important
     }
@@ -1699,7 +1733,7 @@
 /* =========================================================
    MVC integration + WebForms parity controls
    ========================================================= */
-.pms-master-content .ora-checkin.app{
+.pms-master-content .ora-checkin.app {
     max-width: none;
     min-height: calc(100vh - 74px);
     margin: 0;
@@ -1707,15 +1741,15 @@
     padding: 0 0 28px
 }
 
-.ora-checkin .page-title{
+.ora-checkin .page-title {
     padding-top: 18px
 }
 
-.ora-checkin .checkin-title-copy{
+.ora-checkin .checkin-title-copy {
     min-width: 260px
 }
 
-.ora-checkin .booking-meta{
+.ora-checkin .booking-meta {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1725,14 +1759,14 @@
     font-size: 11px
 }
 
-    .ora-checkin .booking-meta > span:not(.booking-status){
+    .ora-checkin .booking-meta > span:not(.booking-status) {
         padding: 4px 7px;
         border: 1px solid var(--line-head);
         border-radius: 4px;
         background: #fff
     }
 
-.ora-checkin .booking-status{
+.ora-checkin .booking-status {
     display: inline-flex;
     align-items: center;
     padding: 4px 8px;
@@ -1745,34 +1779,34 @@
     white-space: nowrap
 }
 
-    .ora-checkin .booking-status.is-reservation{
+    .ora-checkin .booking-status.is-reservation {
         background: #eef5ff;
         border-color: #bdd4f2;
         color: #174b82
     }
 
-    .ora-checkin .booking-status.is-in{
+    .ora-checkin .booking-status.is-in {
         background: #eaf7f2;
         border-color: #bfe2d5;
         color: #17694e
     }
 
-    .ora-checkin .booking-status.is-out{
+    .ora-checkin .booking-status.is-out {
         background: #f2f4f7;
         border-color: #d4dae2;
         color: #576579
     }
 
-.ora-checkin .search-wrap{
+.ora-checkin .search-wrap {
     position: relative;
     margin-left: auto
 }
 
-    .ora-checkin .search-wrap .search{
+    .ora-checkin .search-wrap .search {
         margin-left: 0
     }
 
-.ora-checkin .search-results{
+.ora-checkin .search-results {
     position: absolute;
     z-index: 220;
     top: calc(100% + 6px);
@@ -1786,7 +1820,7 @@
     box-shadow: var(--shadow-pop)
 }
 
-.ora-checkin .search-result{
+.ora-checkin .search-result {
     display: block;
     width: 100%;
     padding: 10px 12px;
@@ -1797,27 +1831,27 @@
     color: var(--ink)
 }
 
-    .ora-checkin .search-result:last-child{
+    .ora-checkin .search-result:last-child {
         border-bottom: 0
     }
 
     .ora-checkin .search-result:hover,
-.ora-checkin .search-result:focus{
+    .ora-checkin .search-result:focus {
         background: var(--soft-2)
     }
 
-    .ora-checkin .search-result strong{
+    .ora-checkin .search-result strong {
         display: block;
         font-size: 12px
     }
 
-    .ora-checkin .search-result small{
+    .ora-checkin .search-result small {
         display: block;
         margin-top: 2px;
         color: var(--muted-2)
     }
 
-.ora-checkin .checkin-action-toolbar{
+.ora-checkin .checkin-action-toolbar {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1825,13 +1859,13 @@
     padding: 0 24px 14px
 }
 
-    .ora-checkin .checkin-action-toolbar .btn{
+    .ora-checkin .checkin-action-toolbar .btn {
         min-height: 34px;
         padding: 6px 11px;
         font-size: 11px
     }
 
-.ora-checkin .checkin-alert{
+.ora-checkin .checkin-alert {
     display: flex;
     align-items: center;
     gap: 9px;
@@ -1844,13 +1878,13 @@
     font-weight: 600
 }
 
-.ora-checkin .select-with-button{
+.ora-checkin .select-with-button {
     display: grid;
     grid-template-columns: minmax(0,1fr) 38px;
     gap: 5px
 }
 
-.ora-checkin .mini-action{
+.ora-checkin .mini-action {
     height: 38px;
     border: 1px solid var(--navy);
     border-radius: 4px;
@@ -1858,63 +1892,63 @@
     color: #fff
 }
 
-.ora-checkin .check-wide{
+.ora-checkin .check-wide {
     width: 100%;
     justify-content: flex-start;
     margin-top: 23px
 }
 
 .ora-checkin .group-only.hidden,
-.ora-checkin .room-date-col.hidden{
+.ora-checkin .room-date-col.hidden {
     display: none !important
 }
 
-.ora-checkin .charge-row-mvc{
+.ora-checkin .charge-row-mvc {
     grid-template-columns: repeat(6,minmax(120px,1fr));
     gap: 10px;
     align-items: end
 }
 
-    .ora-checkin .charge-row-mvc .span-2{
+    .ora-checkin .charge-row-mvc .span-2 {
         grid-column: span 2
     }
 
-    .ora-checkin .charge-row-mvc .tax-group{
+    .ora-checkin .charge-row-mvc .tax-group {
         align-self: end;
         min-height: 38px;
         flex-wrap: wrap
     }
 
-.ora-checkin .charge-table-wrap{
+.ora-checkin .charge-table-wrap {
     max-height: 520px;
     overflow: auto
 }
 
-.ora-checkin .charge-table th{
+.ora-checkin .charge-table th {
     position: sticky;
     top: 0;
     z-index: 2
 }
 
-.ora-checkin .charge-table td{
+.ora-checkin .charge-table td {
     vertical-align: middle
 }
 
-.ora-checkin .charge-table small{
+.ora-checkin .charge-table small {
     color: var(--muted-2)
 }
 
-.ora-checkin .table-lock{
+.ora-checkin .table-lock {
     color: #8c9bad
 }
 
-.ora-checkin .row-actions{
+.ora-checkin .row-actions {
     display: flex;
     align-items: center;
     gap: 3px
 }
 
-.ora-checkin .icon-action{
+.ora-checkin .icon-action {
     display: grid;
     place-items: center;
     width: 28px;
@@ -1925,21 +1959,21 @@
     color: var(--navy)
 }
 
-    .ora-checkin .icon-action:hover{
+    .ora-checkin .icon-action:hover {
         background: var(--soft-2)
     }
 
-    .ora-checkin .icon-action.danger{
+    .ora-checkin .icon-action.danger {
         color: #b42318
     }
 
-    .ora-checkin .icon-action.is-disabled{
+    .ora-checkin .icon-action.is-disabled {
         color: #9aa5b1;
         background: #f6f7f8;
         cursor: not-allowed
     }
 
-.ora-checkin .utility-tabs{
+.ora-checkin .utility-tabs {
     display: flex;
     gap: 5px;
     flex-wrap: wrap;
@@ -1947,7 +1981,7 @@
     border-bottom: 1px solid var(--line-soft)
 }
 
-.ora-checkin .utility-tab{
+.ora-checkin .utility-tab {
     padding: 8px 12px;
     border: 0;
     border-bottom: 2px solid transparent;
@@ -1956,57 +1990,57 @@
     font-weight: 700
 }
 
-    .ora-checkin .utility-tab.active{
+    .ora-checkin .utility-tab.active {
         border-bottom-color: var(--navy);
         color: var(--navy)
     }
 
-.ora-checkin .utility-panel{
+.ora-checkin .utility-panel {
     display: block
 }
 
-    .ora-checkin .utility-panel.hidden{
+    .ora-checkin .utility-panel.hidden {
         display: none
     }
 
-.ora-checkin .utility-grid{
+.ora-checkin .utility-grid {
     display: grid;
     grid-template-columns: repeat(6,minmax(110px,1fr));
     gap: 10px;
     align-items: end
 }
 
-    .ora-checkin .utility-grid .btn{
+    .ora-checkin .utility-grid .btn {
         align-self: end
     }
 
-.ora-checkin .compact-table{
+.ora-checkin .compact-table {
     margin-top: 12px;
     max-height: 260px;
     overflow: auto
 }
 
     .ora-checkin .compact-table .table th,
-.ora-checkin .compact-table .table td{
+    .ora-checkin .compact-table .table td {
         padding: 7px 8px;
         font-size: 11px
     }
 
-.ora-checkin .inline-tool{
+.ora-checkin .inline-tool {
     display: grid;
     grid-template-columns: minmax(180px,360px) auto;
     gap: 8px;
     align-items: end
 }
 
-.ora-checkin .discount-list{
+.ora-checkin .discount-list {
     display: flex;
     gap: 7px;
     flex-wrap: wrap;
     margin-top: 12px
 }
 
-.ora-checkin .discount-chip{
+.ora-checkin .discount-chip {
     padding: 6px 9px;
     border: 1px solid var(--line-head);
     border-radius: 999px;
@@ -2014,50 +2048,50 @@
     font-size: 11px
 }
 
-.ora-checkin .muted-text{
+.ora-checkin .muted-text {
     color: var(--muted-2)
 }
 
-.ora-checkin .summary .btn-block + .btn-block{
+.ora-checkin .summary .btn-block + .btn-block {
     margin-top: 8px
 }
 
-.ora-checkin .security-table{
+.ora-checkin .security-table {
     max-height: 220px
 }
 
-.ora-checkin .payment-log a{
+.ora-checkin .payment-log a {
     color: var(--navy);
     font-weight: 700
 }
 
-.ora-checkin .checkin-final-actions{
+.ora-checkin .checkin-final-actions {
     grid-template-columns: 1fr
 }
 
-    .ora-checkin .checkin-final-actions .btn{
+    .ora-checkin .checkin-final-actions .btn {
         width: 100%
     }
 
-.ora-checkin .wide-dialog{
+.ora-checkin .wide-dialog {
     width: min(660px,100%)
 }
 
-.ora-checkin .company-modal-grid{
+.ora-checkin .company-modal-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px
 }
 
-    .ora-checkin .company-modal-grid .modal-field{
+    .ora-checkin .company-modal-grid .modal-field {
         margin: 0
     }
 
-    .ora-checkin .company-modal-grid .modal-actions{
+    .ora-checkin .company-modal-grid .modal-actions {
         grid-column: 1/-1
     }
 
-.ora-checkin .audit-content{
+.ora-checkin .audit-content {
     max-height: 450px;
     overflow: auto;
     margin: 0;
@@ -2071,7 +2105,7 @@
     font: 11px/1.6 Consolas,monospace
 }
 
-.ora-checkin .checkin-note{
+.ora-checkin .checkin-note {
     margin: 8px 0 14px;
     padding: 9px 10px;
     border: 1px solid var(--line-head);
@@ -2081,7 +2115,7 @@
     font-size: 11px
 }
 
-.ora-checkin .busy-overlay{
+.ora-checkin .busy-overlay {
     position: fixed;
     z-index: 500;
     inset: 0;
@@ -2091,11 +2125,11 @@
     backdrop-filter: blur(2px)
 }
 
-    .ora-checkin .busy-overlay.hidden{
+    .ora-checkin .busy-overlay.hidden {
         display: none
     }
 
-.ora-checkin .busy-card{
+.ora-checkin .busy-card {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2107,67 +2141,67 @@
     color: var(--navy)
 }
 
-.ora-checkin .message{
+.ora-checkin .message {
     min-height: 0
 }
 
-    .ora-checkin .message:not(:empty){
+    .ora-checkin .message:not(:empty) {
         padding: 10px 12px;
         border: 1px solid var(--line-head);
         border-radius: 5px;
         background: #fff
     }
 
-@media (max-width:1380px){
-    .ora-checkin .charge-row-mvc{
+@media (max-width:1380px) {
+    .ora-checkin .charge-row-mvc {
         grid-template-columns: repeat(4,minmax(120px,1fr))
     }
 
-    .ora-checkin .utility-grid{
+    .ora-checkin .utility-grid {
         grid-template-columns: repeat(3,minmax(120px,1fr))
     }
 }
 
-@media (max-width:900px){
-    .ora-checkin .charge-row-mvc{
+@media (max-width:900px) {
+    .ora-checkin .charge-row-mvc {
         grid-template-columns: repeat(2,minmax(0,1fr))
     }
 
-    .ora-checkin .utility-grid{
+    .ora-checkin .utility-grid {
         grid-template-columns: repeat(2,minmax(0,1fr))
     }
 
-    .ora-checkin .search-wrap{
+    .ora-checkin .search-wrap {
         width: 100%;
         margin-left: 0
     }
 
-        .ora-checkin .search-wrap .search{
+        .ora-checkin .search-wrap .search {
             width: 100%
         }
 }
 
-@media (max-width:650px){
-    .ora-checkin .checkin-action-toolbar{
+@media (max-width:650px) {
+    .ora-checkin .checkin-action-toolbar {
         padding: 0 8px 12px
     }
 
     .ora-checkin .charge-row-mvc,
-.ora-checkin .utility-grid,
-.ora-checkin .company-modal-grid{
+    .ora-checkin .utility-grid,
+    .ora-checkin .company-modal-grid {
         grid-template-columns: 1fr
     }
 
         .ora-checkin .charge-row-mvc .span-2,
-.ora-checkin .company-modal-grid .modal-actions{
+        .ora-checkin .company-modal-grid .modal-actions {
             grid-column: auto
         }
 
-    .ora-checkin .inline-tool{
+    .ora-checkin .inline-tool {
         grid-template-columns: 1fr
     }
 
-    .ora-checkin .check-wide{
+    .ora-checkin .check-wide {
         margin-top: 0
     }
 }
@@ -2176,95 +2210,372 @@
 /* =========================================================
    Guest/payment compact layout + WebForms-style action footer
    ========================================================= */
-.ora-checkin{padding-bottom:8px}
-.ora-checkin .page-title{padding:10px 18px 8px;gap:10px}
-.ora-checkin .pulse{width:25px;height:25px;border-width:4px}
-.ora-checkin .page-title h1{font-size:23px}
-.ora-checkin .page-title p{margin-top:1px}
-.ora-checkin .layout{gap:10px;padding:0 18px 4px}
-.ora-checkin .stack{gap:10px}
-.ora-checkin .card-head{padding:8px 12px;gap:8px}
-.ora-checkin .card-icon{width:27px;height:27px}
-.ora-checkin .card-head h2{font-size:15px}
-.ora-checkin .card-head small,.ora-checkin .card-meta{font-size:11px}
-.ora-checkin .card-body{padding:10px 12px}
-.ora-checkin .grid{gap:8px 12px}
-.ora-checkin .field>label,.ora-checkin .field-label{margin-bottom:4px}
-.ora-checkin input,.ora-checkin select,.ora-checkin textarea{min-height:34px;padding:6px 9px}
-.ora-checkin textarea{min-height:58px}
-.ora-checkin .counter{grid-template-columns:34px 1fr 34px}
-.ora-checkin .counter button{min-height:34px}
-.ora-checkin .select-with-button{gap:5px}
-.ora-checkin .mini-action{width:34px;height:34px}
-.ora-checkin .guest-inline-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid #e1e8f0}
-.ora-checkin .guest-inline-actions .btn{min-width:150px}
-.ora-checkin .summary{gap:7px}
-.ora-checkin .pay-row{grid-template-columns:1fr 145px;gap:8px}
-.ora-checkin .pay-row input,.ora-checkin .pay-row select{min-height:34px}
-.ora-checkin .balance-box{margin-top:2px;padding:10px 12px}
-.ora-checkin .balance-box b{font-size:22px}
-.ora-checkin .record{min-height:38px;margin-top:2px}
-.ora-checkin .table th,.ora-checkin .table td{padding:7px 8px}
-.ora-checkin .table-wrap{margin-top:10px}
-.ora-checkin .totals{gap:8px;margin-top:9px}
-.ora-checkin .total{padding:9px 11px}
-.ora-checkin .utility-tabs{margin-bottom:8px}
-.ora-checkin .checkin-final-actions{display:none!important}
-.ora-checkin #roomSecurity[readonly]{background:#f1f6fc;color:#173653;cursor:not-allowed}
+.ora-checkin {
+    padding-bottom: 8px
+}
 
-.ora-checkin .fixed-action-bar-spacer{height:58px}
-.ora-checkin .checkin-fixed-action-bar{position:fixed;left:0;right:0;bottom:0;min-height:48px;background:#fff;border-top:1px solid #e1e7ee;box-shadow:0 -4px 16px rgba(15,35,60,.08);z-index:30000;padding:7px 14px}
-.ora-checkin .checkin-fixed-action-inner{display:flex;align-items:center;gap:10px;width:100%;min-height:34px}
-.ora-checkin .checkin-footer-left{margin-right:auto;display:flex;gap:8px}
-.ora-checkin .checkin-footer-right{display:flex;align-items:center;justify-content:flex-end;gap:8px}
-.ora-checkin .footer-action-btn,.ora-checkin .footer-actions-toggle{height:34px;min-width:118px;border:0;border-radius:4px;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:12px;font-weight:700;color:#fff;cursor:pointer}
-.ora-checkin .footer-checkout{background:#f0582a;min-width:145px}
-.ora-checkin .footer-checkin{background:#20a982}
-.ora-checkin .footer-print{background:#d69325}
-.ora-checkin .footer-actions-dropdown{position:relative}
-.ora-checkin .footer-actions-dropdown>summary{list-style:none;background:#102f5c}
-.ora-checkin .footer-actions-dropdown>summary::-webkit-details-marker{display:none}
-.ora-checkin .footer-actions-arrow{font-size:10px;margin-left:3px}
-.ora-checkin .footer-actions-dropdown[open] .footer-actions-arrow{transform:rotate(180deg)}
-.ora-checkin .footer-actions-menu{position:absolute;right:0;bottom:41px;width:220px;padding:7px;background:#fff;border:1px solid #dce5ef;border-radius:8px;box-shadow:0 16px 38px rgba(15,35,60,.18);z-index:30010}
-.ora-checkin .footer-dd-item{width:100%;height:34px;margin:0 0 5px;padding:0 10px;border:1px solid #e0e8f2;border-radius:5px;background:#fff;color:#17375e;display:flex;align-items:center;gap:9px;text-align:left;font-size:12px;font-weight:700}
-.ora-checkin .footer-dd-item:last-child{margin-bottom:0}
-.ora-checkin .footer-dd-item:hover{background:#102f5c;color:#fff;border-color:#102f5c}
-.ora-checkin .footer-dd-item i{width:18px;text-align:center}
+    .ora-checkin .page-title {
+        padding: 10px 18px 8px;
+        gap: 10px
+    }
 
-@media(max-width:900px){
-  .ora-checkin .guest-inline-actions{flex-wrap:wrap}
-  .ora-checkin .guest-inline-actions .btn{flex:1 1 180px}
-  .ora-checkin .checkin-fixed-action-bar{padding:6px 8px}
-  .ora-checkin .checkin-fixed-action-inner{flex-wrap:wrap;gap:6px}
-  .ora-checkin .checkin-footer-left,.ora-checkin .checkin-footer-right{width:100%;margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-  .ora-checkin .checkin-footer-right .footer-actions-dropdown{width:100%}
-  .ora-checkin .footer-action-btn,.ora-checkin .footer-actions-toggle{width:100%;min-width:0}
-  .ora-checkin .footer-actions-menu{left:0;right:0;width:100%}
-  .ora-checkin .fixed-action-bar-spacer{height:96px}
+    .ora-checkin .pulse {
+        width: 25px;
+        height: 25px;
+        border-width: 4px
+    }
+
+    .ora-checkin .page-title h1 {
+        font-size: 23px
+    }
+
+    .ora-checkin .page-title p {
+        margin-top: 1px
+    }
+
+    .ora-checkin .layout {
+        gap: 10px;
+        padding: 0 18px 4px
+    }
+
+    .ora-checkin .stack {
+        gap: 10px
+    }
+
+    .ora-checkin .card-head {
+        padding: 8px 12px;
+        gap: 8px
+    }
+
+    .ora-checkin .card-icon {
+        width: 27px;
+        height: 27px
+    }
+
+    .ora-checkin .card-head h2 {
+        font-size: 15px
+    }
+
+    .ora-checkin .card-head small, .ora-checkin .card-meta {
+        font-size: 11px
+    }
+
+    .ora-checkin .card-body {
+        padding: 10px 12px
+    }
+
+    .ora-checkin .grid {
+        gap: 8px 12px
+    }
+
+    .ora-checkin .field > label, .ora-checkin .field-label {
+        margin-bottom: 4px
+    }
+
+    .ora-checkin input, .ora-checkin select, .ora-checkin textarea {
+        min-height: 34px;
+        padding: 6px 9px
+    }
+
+    .ora-checkin textarea {
+        min-height: 58px
+    }
+
+    .ora-checkin .counter {
+        grid-template-columns: 34px 1fr 34px
+    }
+
+        .ora-checkin .counter button {
+            min-height: 34px
+        }
+
+    .ora-checkin .select-with-button {
+        gap: 5px
+    }
+
+    .ora-checkin .mini-action {
+        width: 34px;
+        height: 34px
+    }
+
+    .ora-checkin .guest-inline-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 9px;
+        border-top: 1px solid #e1e8f0
+    }
+
+        .ora-checkin .guest-inline-actions .btn {
+            min-width: 150px
+        }
+
+    .ora-checkin .summary {
+        gap: 7px
+    }
+
+    .ora-checkin .pay-row {
+        grid-template-columns: 1fr 145px;
+        gap: 8px
+    }
+
+        .ora-checkin .pay-row input, .ora-checkin .pay-row select {
+            min-height: 34px
+        }
+
+    .ora-checkin .balance-box {
+        margin-top: 2px;
+        padding: 10px 12px
+    }
+
+        .ora-checkin .balance-box b {
+            font-size: 22px
+        }
+
+    .ora-checkin .record {
+        min-height: 38px;
+        margin-top: 2px
+    }
+
+    .ora-checkin .table th, .ora-checkin .table td {
+        padding: 7px 8px
+    }
+
+    .ora-checkin .table-wrap {
+        margin-top: 10px
+    }
+
+    .ora-checkin .totals {
+        gap: 8px;
+        margin-top: 9px
+    }
+
+    .ora-checkin .total {
+        padding: 9px 11px
+    }
+
+    .ora-checkin .utility-tabs {
+        margin-bottom: 8px
+    }
+
+    .ora-checkin .checkin-final-actions {
+        display: none !important
+    }
+
+    .ora-checkin #roomSecurity[readonly] {
+        background: #f1f6fc;
+        color: #173653;
+        cursor: not-allowed
+    }
+
+    .ora-checkin .fixed-action-bar-spacer {
+        height: 58px
+    }
+
+    .ora-checkin .checkin-fixed-action-bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        min-height: 48px;
+        background: #fff;
+        border-top: 1px solid #e1e7ee;
+        box-shadow: 0 -4px 16px rgba(15,35,60,.08);
+        z-index: 30000;
+        padding: 7px 14px
+    }
+
+    .ora-checkin .checkin-fixed-action-inner {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        min-height: 34px
+    }
+
+    .ora-checkin .checkin-footer-left {
+        margin-right: auto;
+        display: flex;
+        gap: 8px
+    }
+
+    .ora-checkin .checkin-footer-right {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px
+    }
+
+    .ora-checkin .footer-action-btn, .ora-checkin .footer-actions-toggle {
+        height: 34px;
+        min-width: 118px;
+        border: 0;
+        border-radius: 4px;
+        padding: 0 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        cursor: pointer
+    }
+
+    .ora-checkin .footer-checkout {
+        background: #f0582a;
+        min-width: 145px
+    }
+
+    .ora-checkin .footer-checkin {
+        background: #20a982
+    }
+
+    .ora-checkin .footer-undo {
+        background: #102f5c;
+        min-width: 145px
+    }
+
+    .ora-checkin .footer-print {
+        background: #d69325
+    }
+
+    .ora-checkin .footer-actions-dropdown {
+        position: relative
+    }
+
+        .ora-checkin .footer-actions-dropdown > summary {
+            list-style: none;
+            background: #102f5c
+        }
+
+            .ora-checkin .footer-actions-dropdown > summary::-webkit-details-marker {
+                display: none
+            }
+
+    .ora-checkin .footer-actions-arrow {
+        font-size: 10px;
+        margin-left: 3px
+    }
+
+    .ora-checkin .footer-actions-dropdown[open] .footer-actions-arrow {
+        transform: rotate(180deg)
+    }
+
+    .ora-checkin .footer-actions-menu {
+        position: absolute;
+        right: 0;
+        bottom: 41px;
+        width: 220px;
+        padding: 7px;
+        background: #fff;
+        border: 1px solid #dce5ef;
+        border-radius: 8px;
+        box-shadow: 0 16px 38px rgba(15,35,60,.18);
+        z-index: 30010
+    }
+
+    .ora-checkin .footer-dd-item {
+        width: 100%;
+        height: 34px;
+        margin: 0 0 5px;
+        padding: 0 10px;
+        border: 1px solid #e0e8f2;
+        border-radius: 5px;
+        background: #fff;
+        color: #17375e;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 700
+    }
+
+        .ora-checkin .footer-dd-item:last-child {
+            margin-bottom: 0
+        }
+
+        .ora-checkin .footer-dd-item:hover {
+            background: #102f5c;
+            color: #fff;
+            border-color: #102f5c
+        }
+
+        .ora-checkin .footer-dd-item i {
+            width: 18px;
+            text-align: center
+        }
+
+@media(max-width:900px) {
+    .ora-checkin .guest-inline-actions {
+        flex-wrap: wrap
+    }
+
+        .ora-checkin .guest-inline-actions .btn {
+            flex: 1 1 180px
+        }
+
+    .ora-checkin .checkin-fixed-action-bar {
+        padding: 6px 8px
+    }
+
+    .ora-checkin .checkin-fixed-action-inner {
+        flex-wrap: wrap;
+        gap: 6px
+    }
+
+    .ora-checkin .checkin-footer-left, .ora-checkin .checkin-footer-right {
+        width: 100%;
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(2,minmax(0,1fr));
+        gap: 6px
+    }
+
+        .ora-checkin .checkin-footer-right .footer-actions-dropdown {
+            width: 100%
+        }
+
+    .ora-checkin .footer-action-btn, .ora-checkin .footer-actions-toggle {
+        width: 100%;
+        min-width: 0
+    }
+
+    .ora-checkin .footer-actions-menu {
+        left: 0;
+        right: 0;
+        width: 100%
+    }
+
+    .ora-checkin .fixed-action-bar-spacer {
+        height: 96px
+    }
 }
 
 /* =========================================================
    Guest date picker + guest action positioning refinement
    ========================================================= */
-.ora-checkin .guest-grid-mvc .stay-date-field{
+.ora-checkin .guest-grid-mvc .stay-date-field {
     grid-column: span 1;
     min-width: 0;
 }
 
-.ora-checkin .guest-grid-mvc .stay-date-field .date-picker{
-    width: 100%;
-    max-width: 100%;
-}
+    .ora-checkin .guest-grid-mvc .stay-date-field .date-picker {
+        width: 100%;
+        max-width: 100%;
+    }
 
-.ora-checkin .guest-grid-mvc .stay-date-field .date-picker-input{
-    width: 100%;
-    min-width: 0;
-    padding-right: 31px;
-    font-size: 12px;
-}
+    .ora-checkin .guest-grid-mvc .stay-date-field .date-picker-input {
+        width: 100%;
+        min-width: 0;
+        padding-right: 31px;
+        font-size: 12px;
+    }
 
-.ora-checkin .guest-grid-mvc .guest-inline-actions{
+.ora-checkin .guest-grid-mvc .guest-inline-actions {
     grid-column: 3 / -1;
     display: flex;
     align-items: end;
@@ -2277,16 +2588,16 @@
     border-top: 0;
 }
 
-.ora-checkin .guest-grid-mvc .guest-inline-actions .btn{
-    min-width: 154px;
-    min-height: 34px;
-    padding: 6px 13px;
-    font-size: 11px;
-    box-shadow: none;
-}
+    .ora-checkin .guest-grid-mvc .guest-inline-actions .btn {
+        min-width: 154px;
+        min-height: 34px;
+        padding: 6px 13px;
+        font-size: 11px;
+        box-shadow: none;
+    }
 
 /* Compact, clearer single-range calendar. */
-.ora-checkin .stay-date-field .calendar-panel{
+.ora-checkin .stay-date-field .calendar-panel {
     width: 286px;
     top: calc(100% + 5px);
     left: 0;
@@ -2297,7 +2608,7 @@
     box-shadow: 0 16px 38px rgba(16,44,75,.18);
 }
 
-.ora-checkin .stay-date-field .calendar-header{
+.ora-checkin .stay-date-field .calendar-header {
     grid-template-columns: 30px 1fr 30px;
     gap: 7px;
     min-height: 34px;
@@ -2307,13 +2618,13 @@
     background: #f1f6fc;
 }
 
-.ora-checkin .stay-date-field .calendar-header strong{
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: .1px;
-}
+    .ora-checkin .stay-date-field .calendar-header strong {
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: .1px;
+    }
 
-.ora-checkin .stay-date-field .calendar-nav{
+.ora-checkin .stay-date-field .calendar-nav {
     width: 30px;
     height: 30px;
     border-radius: 6px;
@@ -2321,56 +2632,56 @@
 }
 
 .ora-checkin .stay-date-field .calendar-weekdays,
-.ora-checkin .stay-date-field .calendar-days{
+.ora-checkin .stay-date-field .calendar-days {
     gap: 2px;
 }
 
-.ora-checkin .stay-date-field .calendar-weekdays span{
-    padding: 3px 0 4px;
-    font-size: 9px;
-    letter-spacing: .2px;
-    text-transform: uppercase;
-}
+    .ora-checkin .stay-date-field .calendar-weekdays span {
+        padding: 3px 0 4px;
+        font-size: 9px;
+        letter-spacing: .2px;
+        text-transform: uppercase;
+    }
 
 .ora-checkin .stay-date-field .calendar-day,
-.ora-checkin .stay-date-field .calendar-blank{
+.ora-checkin .stay-date-field .calendar-blank {
     height: 31px;
 }
 
-.ora-checkin .stay-date-field .calendar-day{
+.ora-checkin .stay-date-field .calendar-day {
     border-radius: 6px;
     font-size: 11px;
     transition: background-color .12s ease,border-color .12s ease,color .12s ease;
 }
 
-.ora-checkin .stay-date-field .calendar-day.in-range,
-.ora-checkin .stay-date-field .calendar-day.range-preview{
-    border-color: transparent;
-    border-radius: 4px;
-    background: #e7f0fb;
-    color: #173653;
-}
+    .ora-checkin .stay-date-field .calendar-day.in-range,
+    .ora-checkin .stay-date-field .calendar-day.range-preview {
+        border-color: transparent;
+        border-radius: 4px;
+        background: #e7f0fb;
+        color: #173653;
+    }
 
-.ora-checkin .stay-date-field .calendar-day.preview-end{
-    border-color: #8bb1dc;
-    background: #d6e7fa;
-    color: #0b3768;
-    font-weight: 800;
-}
+    .ora-checkin .stay-date-field .calendar-day.preview-end {
+        border-color: #8bb1dc;
+        background: #d6e7fa;
+        color: #0b3768;
+        font-weight: 800;
+    }
 
-.ora-checkin .stay-date-field .calendar-day.selected{
-    background: #0b3768;
-    border-color: #0b3768;
-    color: #fff;
-    font-weight: 800;
-}
+    .ora-checkin .stay-date-field .calendar-day.selected {
+        background: #0b3768;
+        border-color: #0b3768;
+        color: #fff;
+        font-weight: 800;
+    }
 
-.ora-checkin .stay-date-field .calendar-day.range-start,
-.ora-checkin .stay-date-field .calendar-day.range-end{
-    box-shadow: 0 2px 7px rgba(11,55,104,.18);
-}
+    .ora-checkin .stay-date-field .calendar-day.range-start,
+    .ora-checkin .stay-date-field .calendar-day.range-end {
+        box-shadow: 0 2px 7px rgba(11,55,104,.18);
+    }
 
-.ora-checkin .stay-date-field .calendar-hint{
+.ora-checkin .stay-date-field .calendar-hint {
     margin-top: 7px;
     padding: 7px 6px 1px;
     border-top: 1px solid #e3eaf2;
@@ -2378,28 +2689,31 @@
     font-weight: 600;
 }
 
-.ora-checkin .stay-date-field .calendar-hint.is-selecting-end{
-    color: #0b3768;
-}
+    .ora-checkin .stay-date-field .calendar-hint.is-selecting-end {
+        color: #0b3768;
+    }
 
-@media(max-width:1100px){
-    .ora-checkin .guest-grid-mvc .guest-inline-actions{
+@media(max-width:1100px) {
+    .ora-checkin .guest-grid-mvc .guest-inline-actions {
         grid-column: 1 / -1;
     }
 }
 
-@media(max-width:650px){
+@media(max-width:650px) {
     .ora-checkin .guest-grid-mvc .stay-date-field,
-    .ora-checkin .guest-grid-mvc .guest-inline-actions{
+    .ora-checkin .guest-grid-mvc .guest-inline-actions {
         grid-column: auto;
     }
-    .ora-checkin .guest-grid-mvc .guest-inline-actions{
+
+    .ora-checkin .guest-grid-mvc .guest-inline-actions {
         justify-content: stretch;
     }
-    .ora-checkin .guest-grid-mvc .guest-inline-actions .btn{
-        width: 100%;
-    }
-    .ora-checkin .stay-date-field .calendar-panel{
+
+        .ora-checkin .guest-grid-mvc .guest-inline-actions .btn {
+            width: 100%;
+        }
+
+    .ora-checkin .stay-date-field .calendar-panel {
         width: min(286px,calc(100vw - 36px));
     }
 }
@@ -2408,38 +2722,38 @@
 /* =========================================================
    Range picker / overlay stacking fixes
    ========================================================= */
-.ora-checkin .stack{
+.ora-checkin .stack {
     overflow: visible !important;
 }
 
-.ora-checkin .guest-card{
+.ora-checkin .guest-card {
     overflow: visible !important;
     position: relative !important;
     z-index: 12000 !important;
 }
 
-.ora-checkin .guest-card .card-body,
-.ora-checkin .stay-date-field,
-.ora-checkin #stayDatePicker{
-    overflow: visible !important;
-    position: relative;
-}
+    .ora-checkin .guest-card .card-body,
+    .ora-checkin .stay-date-field,
+    .ora-checkin #stayDatePicker {
+        overflow: visible !important;
+        position: relative;
+    }
 
-.ora-checkin .stay-date-field .calendar-panel,
-.ora-checkin #dateCalendar{
-    z-index: 12500 !important;
-    isolation: isolate;
-}
+        .ora-checkin .stay-date-field .calendar-panel,
+        .ora-checkin #dateCalendar {
+            z-index: 12500 !important;
+            isolation: isolate;
+        }
 
 /* Toasts must stay above the Site.Master / MVC layout header. */
-.ora-checkin .toast-host{
+.ora-checkin .toast-host {
     position: fixed !important;
     top: 68px !important;
     right: 18px !important;
     z-index: 2147483000 !important;
 }
 
-.ora-checkin .toast{
+.ora-checkin .toast {
     position: relative;
     z-index: 2147483001 !important;
 }
@@ -2447,186 +2761,221 @@
 /* =========================================================
    Rooms & Services — HTML template pattern
    ========================================================= */
-.ora-checkin #chargeEntry.charge-row-mvc{
-    display:grid;
-    grid-template-columns:minmax(150px,1.15fr) minmax(100px,.8fr) minmax(135px,1fr) minmax(105px,.78fr) minmax(100px,.72fr) auto 74px;
-    gap:8px;
-    align-items:end;
+.ora-checkin #chargeEntry.charge-row-mvc {
+    display: grid;
+    grid-template-columns: minmax(150px,1.15fr) minmax(100px,.8fr) minmax(135px,1fr) minmax(105px,.78fr) minmax(100px,.72fr) auto 74px;
+    gap: 8px;
+    align-items: end;
 }
 
-.ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-    grid-template-columns:minmax(135px,.9fr) minmax(165px,1.2fr) minmax(140px,1fr) minmax(105px,.72fr) minmax(100px,.7fr) auto 74px;
-}
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: minmax(135px,.9fr) minmax(165px,1.2fr) minmax(140px,1fr) minmax(105px,.72fr) minmax(100px,.7fr) auto 74px;
+    }
 
 .ora-checkin #chargeEntry .field,
-.ora-checkin #chargeOptionsRow .field{
-    min-width:0;
+.ora-checkin #chargeOptionsRow .field {
+    min-width: 0;
 }
 
-.ora-checkin #chargeEntry .charge-tax-group{
-    min-height:34px;
-    display:flex;
-    align-items:center;
-    gap:5px;
-    flex-wrap:nowrap;
+.ora-checkin #chargeEntry .charge-tax-group {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: nowrap;
 }
 
-.ora-checkin #chargeEntry .charge-tax-group .check{
-    min-height:34px;
-    padding:0 8px;
-    font-size:10px;
+    .ora-checkin #chargeEntry .charge-tax-group .check {
+        min-height: 34px;
+        padding: 0 8px;
+        font-size: 10px;
+    }
+
+.ora-checkin #chargeEntry .charge-add-btn {
+    width: 74px;
+    min-width: 74px;
+    min-height: 34px;
+    padding: 5px 8px;
 }
 
-.ora-checkin #chargeEntry .charge-add-btn{
-    width:74px;
-    min-width:74px;
-    min-height:34px;
-    padding:5px 8px;
+.ora-checkin .charge-options-row {
+    display: grid;
+    grid-template-columns: minmax(130px,.75fr) minmax(220px,1.6fr) minmax(120px,.7fr) minmax(135px,.8fr) minmax(135px,.8fr);
+    gap: 8px;
+    align-items: end;
+    margin-top: 8px;
 }
 
-.ora-checkin .charge-options-row{
-    display:grid;
-    grid-template-columns:minmax(130px,.75fr) minmax(220px,1.6fr) minmax(120px,.7fr) minmax(135px,.8fr) minmax(135px,.8fr);
-    gap:8px;
-    align-items:end;
-    margin-top:8px;
-}
+    .ora-checkin .charge-options-row:has(> .field:not(.hidden)) {
+        padding-top: 8px;
+        border-top: 1px solid #e5ebf2;
+    }
 
-.ora-checkin .charge-options-row:has(> .field:not(.hidden)){
-    padding-top:8px;
-    border-top:1px solid #e5ebf2;
-}
-
-.ora-checkin .charge-options-row .charge-detail-wrap{
-    grid-column:span 2;
-}
+    .ora-checkin .charge-options-row .charge-detail-wrap {
+        grid-column: span 2;
+    }
 
 .ora-checkin #chargeEntry label,
-.ora-checkin #chargeOptionsRow label{
-    margin-bottom:0;
-    font-size:10px;
+.ora-checkin #chargeOptionsRow label {
+    margin-bottom: 0;
+    font-size: 10px;
 }
 
 .ora-checkin #chargeEntry input,
 .ora-checkin #chargeEntry select,
 .ora-checkin #chargeOptionsRow input,
-.ora-checkin #chargeOptionsRow select{
-    min-height:34px;
-    padding-top:6px;
-    padding-bottom:6px;
-    font-size:11px;
+.ora-checkin #chargeOptionsRow select {
+    min-height: 34px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    font-size: 11px;
 }
 
-@media(max-width:1450px){
+@media(max-width:1450px) {
     .ora-checkin #chargeEntry.charge-row-mvc,
-    .ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-        grid-template-columns:repeat(4,minmax(120px,1fr));
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: repeat(4,minmax(120px,1fr));
     }
-    .ora-checkin #chargeEntry .charge-add-btn{width:100%;min-width:0}
+
+    .ora-checkin #chargeEntry .charge-add-btn {
+        width: 100%;
+        min-width: 0
+    }
 }
 
-@media(max-width:900px){
-    .ora-checkin #chargeEntry.charge-row-mvc,
-    .ora-checkin #chargeEntry.charge-row-mvc.service-mode,
-    .ora-checkin .charge-options-row{
-        grid-template-columns:repeat(2,minmax(0,1fr));
-    }
-    .ora-checkin .charge-options-row .charge-detail-wrap{grid-column:span 2}
-}
-
-@media(max-width:650px){
+@media(max-width:900px) {
     .ora-checkin #chargeEntry.charge-row-mvc,
     .ora-checkin #chargeEntry.charge-row-mvc.service-mode,
-    .ora-checkin .charge-options-row{
-        grid-template-columns:1fr;
+    .ora-checkin .charge-options-row {
+        grid-template-columns: repeat(2,minmax(0,1fr));
     }
-    .ora-checkin .charge-options-row .charge-detail-wrap{grid-column:auto}
+
+        .ora-checkin .charge-options-row .charge-detail-wrap {
+            grid-column: span 2
+        }
+}
+
+@media(max-width:650px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode,
+    .ora-checkin .charge-options-row {
+        grid-template-columns: 1fr;
+    }
+
+        .ora-checkin .charge-options-row .charge-detail-wrap {
+            grid-column: auto
+        }
 }
 
 /* =========================================================
    Check-In interaction refinements
    ========================================================= */
-.ora-checkin .money-input::before{
-    content:attr(data-currency) !important;
+.ora-checkin .money-input::before {
+    content: attr(data-currency) !important;
 }
 
-.ora-checkin .charge-table .is-column-hidden{
-    display:none !important;
+/* Charges & Payment keeps the numeric amount on the left and currency on the right. */
+.ora-checkin .summary .money-input-suffix::before {
+    content: none !important
+}
+
+.ora-checkin .summary .money-input-suffix::after {
+    content: attr(data-currency) !important
+}
+
+.ora-checkin .summary .money-input-suffix input,
+.ora-checkin .summary #paymentTotal {
+    padding-left: 9px !important;
+    padding-right: 28px !important;
+    text-align: left !important
+}
+
+.ora-checkin .charge-table .is-column-hidden {
+    display: none !important;
 }
 
 /* Keep all Check-In dialogs above the MVC/Site.Master header and sidebar. */
-.ora-checkin .modal-backdrop{
-    z-index:2147482500 !important;
-    padding-top:76px !important;
+.ora-checkin .modal-backdrop {
+    z-index: 2147482500 !important;
+    padding-top: 76px !important;
 }
-.ora-checkin .modal-backdrop > .dialog,
-.ora-checkin .modal-backdrop > .payment-modal{
-    position:relative;
-    z-index:2147482501 !important;
-}
+
+    .ora-checkin .modal-backdrop > .dialog,
+    .ora-checkin .modal-backdrop > .payment-modal {
+        position: relative;
+        z-index: 2147482501 !important;
+    }
 
 /* Services / Charges: template pattern = category + amount + discount/tax + add.
    The free-text Details field sits on its own row below. */
-.ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-    grid-template-columns:minmax(180px,1.2fr) minmax(125px,.78fr) minmax(120px,.74fr) auto 74px;
-}
-.ora-checkin #chargeOptionsRow.service-mode-options{
-    grid-template-columns:minmax(260px,1fr);
-}
-.ora-checkin #chargeOptionsRow.service-mode-options .charge-detail-wrap{
-    grid-column:1 / -1;
-    max-width:680px;
+.ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+    grid-template-columns: minmax(180px,1.2fr) minmax(125px,.78fr) minmax(120px,.74fr) auto 74px;
 }
 
-@media(max-width:1450px){
-    .ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-        grid-template-columns:repeat(3,minmax(130px,1fr));
+.ora-checkin #chargeOptionsRow.service-mode-options {
+    grid-template-columns: minmax(260px,1fr);
+}
+
+    .ora-checkin #chargeOptionsRow.service-mode-options .charge-detail-wrap {
+        grid-column: 1 / -1;
+        max-width: 680px;
+    }
+
+@media(max-width:1450px) {
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: repeat(3,minmax(130px,1fr));
     }
 }
-@media(max-width:900px){
+
+@media(max-width:900px) {
     .ora-checkin #chargeEntry.charge-row-mvc.service-mode,
-    .ora-checkin #chargeOptionsRow.service-mode-options{
-        grid-template-columns:1fr;
+    .ora-checkin #chargeOptionsRow.service-mode-options {
+        grid-template-columns: 1fr;
     }
-    .ora-checkin #chargeOptionsRow.service-mode-options .charge-detail-wrap{
-        grid-column:auto;
-        max-width:none;
-    }
-}
-.ora-checkin .money-input input{
-    padding-left:44px !important;
+
+        .ora-checkin #chargeOptionsRow.service-mode-options .charge-detail-wrap {
+            grid-column: auto;
+            max-width: none;
+        }
 }
 
-.ora-checkin .inline-cell-editor{
-    display:flex;
-    align-items:center;
-    gap:4px;
-    min-width:150px;
+.ora-checkin .money-input input {
+    padding-left: 44px !important;
 }
-.ora-checkin .inline-cell-editor .inline-cell-input{
-    min-width:90px;
-    min-height:28px;
-    height:28px;
-    padding:3px 6px;
-    font-size:11px;
+
+.ora-checkin .inline-cell-editor {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 150px;
 }
+
+    .ora-checkin .inline-cell-editor .inline-cell-input {
+        min-width: 90px;
+        min-height: 28px;
+        height: 28px;
+        padding: 3px 6px;
+        font-size: 11px;
+    }
+
 .ora-checkin .inline-cell-save,
-.ora-checkin .inline-cell-cancel{
-    width:28px;
-    height:28px;
-    min-width:28px;
-    padding:0;
-    border:1px solid #b9c9dc;
-    border-radius:4px;
-    background:#fff;
-    color:#0b3768;
-    display:inline-grid;
-    place-items:center;
+.ora-checkin .inline-cell-cancel {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    padding: 0;
+    border: 1px solid #b9c9dc;
+    border-radius: 4px;
+    background: #fff;
+    color: #0b3768;
+    display: inline-grid;
+    place-items: center;
 }
-.ora-checkin .inline-cell-save{
-    background:#0b3768;
-    border-color:#0b3768;
-    color:#fff;
+
+.ora-checkin .inline-cell-save {
+    background: #0b3768;
+    border-color: #0b3768;
+    color: #fff;
 }
 
 
@@ -2637,160 +2986,179 @@
 /* Guest card must stay above the normal content/cards so the stay-range calendar
    can overlap Rooms & Services without being clipped. Dialogs/toasts still have
    much higher z-index values. */
-.ora-checkin .guest-card{
-    position:relative !important;
-    z-index:15000 !important;
+.ora-checkin .guest-card {
+    position: relative !important;
+    z-index: 15000 !important;
 }
 
 /* Additional Stay Items are retained in markup for functionality but hidden
    from the current Check-In screen until this section is re-enabled. */
-.ora-checkin .additional-stay-items{
-    display:none !important;
+.ora-checkin .additional-stay-items {
+    display: none !important;
 }
 
 /* Services / Charges follows the supplied HTML template in one compact row:
    Category | Details | Total | Discount | Taxes | Add. */
-.ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-    grid-template-columns:minmax(155px,.95fr) minmax(260px,1.65fr) minmax(105px,.68fr) minmax(105px,.68fr) minmax(118px,.75fr) 74px;
-    gap:8px;
-    align-items:end;
-}
-.ora-checkin #chargeEntry.service-mode .charge-detail-wrap{
-    display:block !important;
-    grid-column:auto !important;
-    max-width:none !important;
-}
-.ora-checkin #chargeEntry.service-mode .charge-tax-group{
-    align-self:end;
-    min-height:34px;
-    height:34px;
-    display:flex;
-    align-items:center;
-    justify-content:flex-start;
-    margin:0;
-}
-.ora-checkin #chargeEntry.service-mode .charge-tax-group .check{
-    height:34px;
-    min-height:34px;
-    display:inline-flex;
-    align-items:center;
-    gap:5px;
-    margin:0;
-    padding:0 8px;
-    white-space:nowrap;
-}
-.ora-checkin #chargeEntry.service-mode .charge-tax-group input[type="checkbox"]{
-    width:14px !important;
-    height:14px !important;
-    min-width:14px !important;
-    min-height:14px !important;
-    margin:0 !important;
-    padding:0 !important;
-    flex:0 0 14px;
+.ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+    grid-template-columns: minmax(155px,.95fr) minmax(260px,1.65fr) minmax(105px,.68fr) minmax(105px,.68fr) minmax(118px,.75fr) 74px;
+    gap: 8px;
+    align-items: end;
 }
 
+.ora-checkin #chargeEntry.service-mode .charge-detail-wrap {
+    display: block !important;
+    grid-column: auto !important;
+    max-width: none !important;
+}
+
+.ora-checkin #chargeEntry.service-mode .charge-tax-group {
+    align-self: end;
+    min-height: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin: 0;
+}
+
+    .ora-checkin #chargeEntry.service-mode .charge-tax-group .check {
+        height: 34px;
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin: 0;
+        padding: 0 8px;
+        white-space: nowrap;
+    }
+
+    .ora-checkin #chargeEntry.service-mode .charge-tax-group input[type="checkbox"] {
+        width: 14px !important;
+        height: 14px !important;
+        min-width: 14px !important;
+        min-height: 14px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        flex: 0 0 14px;
+    }
+
 /* Keep normal charge row tax controls vertically aligned too. */
-.ora-checkin #chargeEntry .charge-tax-group{
-    align-self:end;
-    margin:0;
+.ora-checkin #chargeEntry .charge-tax-group {
+    align-self: end;
+    margin: 0;
 }
-.ora-checkin #chargeEntry .charge-tax-group input[type="checkbox"]{
-    width:14px !important;
-    height:14px !important;
-    min-width:14px !important;
-    min-height:14px !important;
-    margin:0 !important;
-    padding:0 !important;
-}
+
+    .ora-checkin #chargeEntry .charge-tax-group input[type="checkbox"] {
+        width: 14px !important;
+        height: 14px !important;
+        min-width: 14px !important;
+        min-height: 14px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
 
 /* The room-selection checkbox in the charge grid should be a normal table-size
    checkbox, not inherit the global full-width input rules. */
-.ora-checkin .charge-table .room-check{
-    appearance:auto;
-    -webkit-appearance:checkbox;
-    width:16px !important;
-    height:16px !important;
-    min-width:16px !important;
-    min-height:16px !important;
-    padding:0 !important;
-    margin:0 auto !important;
-    display:block;
-    border-radius:2px;
-    vertical-align:middle;
+.ora-checkin .charge-table .room-check {
+    appearance: auto;
+    -webkit-appearance: checkbox;
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px !important;
+    min-height: 16px !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    display: block;
+    border-radius: 2px;
+    vertical-align: middle;
 }
+
 .ora-checkin .charge-table th:first-child,
-.ora-checkin .charge-table td:first-child{
-    width:52px;
-    min-width:52px;
-    text-align:center;
+.ora-checkin .charge-table td:first-child {
+    width: 52px;
+    min-width: 52px;
+    text-align: center;
 }
 
 /* Card payment now offers the same device/PDQ flow plus Stripe hosted manual
    card entry, within one consistent modal. */
-.ora-checkin .card-payment-modal{
-    width:min(520px,calc(100vw - 28px));
-}
-.ora-checkin .card-mode-tabs{
-    display:grid;
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:8px;
-    margin-bottom:12px;
-}
-.ora-checkin .card-mode-tabs .pay-tab{
-    min-height:38px;
-}
-.ora-checkin .provider-tabs{
-    margin-bottom:10px;
-}
-.ora-checkin .stripe-checkout-note{
-    display:flex;
-    gap:12px;
-    align-items:center;
-    padding:12px;
-    margin-bottom:10px;
-    border:1px solid #d8e3f0;
-    border-radius:6px;
-    background:#f7faff;
-    color:#173653;
-}
-.ora-checkin .stripe-checkout-note>i{
-    font-size:30px;
-    color:#635bff;
-}
-.ora-checkin .stripe-checkout-note div{
-    display:grid;
-    gap:2px;
-}
-.ora-checkin .stripe-checkout-note span{
-    font-size:11px;
-    color:#66788d;
-}
-.ora-checkin .card-payment-mode.hidden{
-    display:none !important;
+.ora-checkin .card-payment-modal {
+    width: min(520px,calc(100vw - 28px));
 }
 
-@media(max-width:1450px){
-    .ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-        grid-template-columns:minmax(140px,.9fr) minmax(220px,1.5fr) minmax(95px,.65fr) minmax(95px,.65fr) minmax(112px,.75fr) 68px;
+.ora-checkin .card-mode-tabs {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+    .ora-checkin .card-mode-tabs .pay-tab {
+        min-height: 38px;
+    }
+
+.ora-checkin .provider-tabs {
+    margin-bottom: 10px;
+}
+
+.ora-checkin .stripe-checkout-note {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid #d8e3f0;
+    border-radius: 6px;
+    background: #f7faff;
+    color: #173653;
+}
+
+    .ora-checkin .stripe-checkout-note > i {
+        font-size: 30px;
+        color: #635bff;
+    }
+
+    .ora-checkin .stripe-checkout-note div {
+        display: grid;
+        gap: 2px;
+    }
+
+    .ora-checkin .stripe-checkout-note span {
+        font-size: 11px;
+        color: #66788d;
+    }
+
+.ora-checkin .card-payment-mode.hidden {
+    display: none !important;
+}
+
+@media(max-width:1450px) {
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: minmax(140px,.9fr) minmax(220px,1.5fr) minmax(95px,.65fr) minmax(95px,.65fr) minmax(112px,.75fr) 68px;
     }
 }
-@media(max-width:1050px){
-    .ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-        grid-template-columns:repeat(3,minmax(0,1fr));
+
+@media(max-width:1050px) {
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: repeat(3,minmax(0,1fr));
     }
-    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap{
-        grid-column:span 2 !important;
+
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap {
+        grid-column: span 2 !important;
     }
 }
-@media(max-width:650px){
-    .ora-checkin #chargeEntry.charge-row-mvc.service-mode{
-        grid-template-columns:1fr;
+
+@media(max-width:650px) {
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: 1fr;
     }
-    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap{
-        grid-column:auto !important;
+
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap {
+        grid-column: auto !important;
     }
-    .ora-checkin .card-mode-tabs{
-        grid-template-columns:1fr;
+
+    .ora-checkin .card-mode-tabs {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -2799,114 +3167,651 @@
    Final alignment refinements — promo, stacking, checkboxes
    ========================================================= */
 /* Promo Code is intentionally hidden until its workflow is re-enabled. */
-.ora-checkin #promoCodeWrap{
-    display:none !important;
+.ora-checkin #promoCodeWrap {
+    display: none !important;
 }
 
 /* Keep Guest & Registration only slightly above the normal content so the
    date-range popup can overlap the next card without sitting above the PMS UI. */
-.ora-checkin .guest-card{
-    position:relative !important;
-    z-index:20 !important;
+.ora-checkin .guest-card {
+    position: relative !important;
+    z-index: 20 !important;
 }
-.ora-checkin .guest-card .card-body,
-.ora-checkin .stay-date-field,
-.ora-checkin #stayDatePicker{
-    position:relative;
-    z-index:auto !important;
-}
-.ora-checkin .stay-date-field .calendar-panel,
-.ora-checkin #dateCalendar{
-    z-index:60 !important;
-}
+
+    .ora-checkin .guest-card .card-body,
+    .ora-checkin .stay-date-field,
+    .ora-checkin #stayDatePicker {
+        position: relative;
+        z-index: auto !important;
+    }
+
+        .ora-checkin .stay-date-field .calendar-panel,
+        .ora-checkin #dateCalendar {
+            z-index: 60 !important;
+        }
 
 /* One checkbox size everywhere on the Check-In page. This prevents generic
    form-control rules from stretching native checkboxes. */
-.ora-checkin input[type="checkbox"]{
-    appearance:auto;
-    -webkit-appearance:checkbox;
-    width:15px !important;
-    height:15px !important;
-    min-width:15px !important;
-    min-height:15px !important;
-    max-width:15px !important;
-    max-height:15px !important;
-    padding:0 !important;
-    margin:0 !important;
-    flex:0 0 15px !important;
-    vertical-align:middle !important;
-    line-height:15px !important;
-    accent-color:var(--navy);
+.ora-checkin input[type="checkbox"] {
+    appearance: auto;
+    -webkit-appearance: checkbox;
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 15px !important;
+    min-height: 15px !important;
+    max-width: 15px !important;
+    max-height: 15px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    flex: 0 0 15px !important;
+    vertical-align: middle !important;
+    line-height: 15px !important;
+    accent-color: var(--navy);
 }
+
 .ora-checkin .check,
 .ora-checkin .simulation label,
-.ora-checkin .charge-tax-group .check{
-    display:inline-flex !important;
-    align-items:center !important;
-    gap:6px !important;
+.ora-checkin .charge-tax-group .check {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
 }
-.ora-checkin .charge-table .room-check{
-    width:15px !important;
-    height:15px !important;
-    min-width:15px !important;
-    min-height:15px !important;
-    max-width:15px !important;
-    max-height:15px !important;
-    margin:0 auto !important;
+
+.ora-checkin .charge-table .room-check {
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 15px !important;
+    min-height: 15px !important;
+    max-width: 15px !important;
+    max-height: 15px !important;
+    margin: 0 auto !important;
 }
+
 .ora-checkin .charge-table th:first-child,
-.ora-checkin .charge-table td:first-child{
-    width:44px !important;
-    min-width:44px !important;
-    text-align:center !important;
-    vertical-align:middle !important;
+.ora-checkin .charge-table td:first-child {
+    width: 44px !important;
+    min-width: 44px !important;
+    text-align: center !important;
+    vertical-align: middle !important;
 }
 
 /* WebForms-style fast inline editing and pending-room feedback. */
-.ora-checkin .inline-editable-cell { cursor: text; }
+.ora-checkin .inline-editable-cell {
+    cursor: text;
+}
+
 .ora-checkin .charge-table tbody tr.row-attention > td {
-  animation: ora-row-attention 1.8s ease-out;
+    animation: ora-row-attention 1.8s ease-out;
 }
+
 @keyframes ora-row-attention {
-  0%, 35% { background: #fff7d6; }
-  100% { background: inherit; }
+    0%, 35% {
+        background: #fff7d6;
+    }
+
+    100% {
+        background: inherit;
+    }
 }
+
 .ora-checkin .room-check:focus-visible {
-  outline: 2px solid #0b4b87;
-  outline-offset: 2px;
+    outline: 2px solid #0b4b87;
+    outline-offset: 2px;
 }
 
 
 /* WebForms parity: Change Room lives beside the room number, not in Actions. */
-.ora-checkin .reservation-room-number-cell{
-    white-space:nowrap;
+.ora-checkin .reservation-room-number-cell {
+    white-space: nowrap;
 }
-.ora-checkin .reservation-room-number-cell .room-number-text{
-    display:inline-block;
-    vertical-align:middle;
+
+    .ora-checkin .reservation-room-number-cell .room-number-text {
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+.ora-checkin .reservation-room-edit-btn {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
+    margin-left: 5px;
+    padding: 0;
+    border: 1px solid #b8c9dc;
+    border-radius: 4px;
+    background: #fff;
+    color: #0b4b87;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    cursor: pointer;
 }
-.ora-checkin .reservation-room-edit-btn{
-    width:26px;
-    height:26px;
-    min-width:26px;
-    min-height:26px;
-    margin-left:5px;
-    padding:0;
-    border:1px solid #b8c9dc;
-    border-radius:4px;
-    background:#fff;
-    color:#0b4b87;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    vertical-align:middle;
-    cursor:pointer;
+
+    .ora-checkin .reservation-room-edit-btn:hover {
+        background: #edf5ff;
+        border-color: #0b4b87;
+    }
+
+    .ora-checkin .reservation-room-edit-btn:focus-visible {
+        outline: 2px solid #0b4b87;
+        outline-offset: 2px;
+    }
+
+/* ============================================================
+   Check-In parity refinements: payment buttons, Room Security,
+   and Reservation Room Change (mirrors WebForms interaction).
+   ============================================================ */
+.ora-checkin .payment-method-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 1px;
 }
-.ora-checkin .reservation-room-edit-btn:hover{
-    background:#edf5ff;
-    border-color:#0b4b87;
+
+    .ora-checkin .payment-method-actions .btn {
+        width: 100%;
+        min-width: 0
+    }
+
+/* Room Security popup */
+.ora-checkin .room-security-overlay {
+    z-index: 45100 !important;
+    align-items: center;
+    justify-content: center;
+    padding: 18px
 }
-.ora-checkin .reservation-room-edit-btn:focus-visible{
-    outline:2px solid #0b4b87;
-    outline-offset:2px;
+
+.ora-checkin .room-security-modal {
+    width: min(520px,calc(100vw - 28px));
+    max-height: calc(100vh - 34px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border: 1px solid rgba(255,255,255,.24);
+    border-radius: 16px;
+    box-shadow: 0 28px 80px rgba(7,24,46,.34)
+}
+
+.ora-checkin .room-security-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 18px;
+    color: #fff;
+    background: linear-gradient(135deg,#0b284d 0%,#123f72 56%,#0d315a 100%)
+}
+
+.ora-checkin .room-security-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 17px;
+    font-weight: 700
+}
+
+.ora-checkin .room-security-title-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #31c48d;
+    box-shadow: 0 0 0 4px rgba(49,196,141,.18)
+}
+
+.ora-checkin .room-security-modal-subtitle {
+    margin-top: 3px;
+    font-size: 11px;
+    color: rgba(255,255,255,.76)
+}
+
+.ora-checkin .room-security-close-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 9px;
+    background: rgba(255,255,255,.1);
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer
+}
+
+.ora-checkin .room-security-modal-body {
+    padding: 16px 18px;
+    overflow: auto
+}
+
+.ora-checkin .security-mode-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 13px
+}
+
+.ora-checkin .security-mode-tab {
+    min-height: 34px;
+    border: 1px solid #c9d7e7;
+    background: #f7faff;
+    color: #173f70;
+    border-radius: 5px;
+    font-weight: 700;
+    cursor: pointer
+}
+
+    .ora-checkin .security-mode-tab.active {
+        background: #173f70;
+        color: #fff;
+        border-color: #173f70
+    }
+
+.ora-checkin .security-method-label {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334e6d
+}
+
+.ora-checkin .security-pill-row {
+    display: grid;
+    grid-template-columns: repeat(3,minmax(0,1fr));
+    gap: 7px;
+    margin-bottom: 12px
+}
+
+.ora-checkin .security-pill {
+    min-height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #cbd8e6;
+    background: #fff;
+    color: #254665;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer
+}
+
+    .ora-checkin .security-pill.active {
+        border-color: #173f70;
+        background: #edf5ff;
+        color: #0b3768;
+        box-shadow: 0 0 0 1px #173f70 inset
+    }
+
+.ora-checkin .security-popup-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px
+}
+
+.ora-checkin .security-charge-btn, .ora-checkin .security-cancel-btn {
+    min-height: 36px;
+    padding: 7px 14px;
+    border-radius: 4px;
+    font-weight: 700;
+    cursor: pointer
+}
+
+.ora-checkin .security-charge-btn {
+    border: 1px solid #0b3768;
+    background: #0b3768;
+    color: #fff
+}
+
+.ora-checkin .security-cancel-btn {
+    border: 1px solid #cad6e4;
+    background: #fff;
+    color: #274763
+}
+
+.ora-checkin .security-status-card {
+    margin-top: 11px;
+    padding: 9px 11px;
+    border: 1px solid #dbe5ef;
+    background: #f8fbfe;
+    border-radius: 5px
+}
+
+.ora-checkin .security-status-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #173f70
+}
+
+.ora-checkin .security-status-subtitle {
+    margin-top: 2px;
+    font-size: 11px;
+    color: #6b7d91
+}
+
+.ora-checkin .security-status-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #edf5ff;
+    color: #244f7d;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap
+}
+
+.ora-checkin .security-row-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 28px;
+    padding: 4px 8px;
+    border: 1px solid #173f70;
+    background: #fff;
+    color: #173f70;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap
+}
+
+.ora-checkin .security-info-btn {
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #c7d6e5;
+    border-radius: 4px;
+    color: #173f70;
+    background: #fff;
+    text-decoration: none
+}
+
+.ora-checkin .security-receipt-cell {
+    text-align: center
+}
+
+.ora-checkin .security-receipt-empty {
+    color: #8b9aad
+}
+
+/* Reservation Room Change - same visual/interaction pattern as WebForms */
+.ora-checkin .reservation-room-change-overlay {
+    z-index: 45200 !important;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(8,20,38,.58);
+    backdrop-filter: blur(5px)
+}
+
+.ora-checkin .reservation-room-change-modal {
+    width: min(760px,calc(100vw - 28px));
+    max-height: calc(100vh - 34px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 30px 90px rgba(7,24,46,.34)
+}
+
+.ora-checkin .reservation-room-change-header {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    color: #fff;
+    background: linear-gradient(135deg,#0b284d 0%,#123f72 55%,#0d315a 100%)
+}
+
+.ora-checkin .reservation-room-change-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px
+}
+
+.ora-checkin .reservation-room-change-heading-icon {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 13px;
+    background: rgba(255,255,255,.12);
+    font-size: 17px
+}
+
+.ora-checkin .reservation-room-change-title {
+    margin: 0;
+    font-size: 18px;
+    line-height: 23px;
+    font-weight: 600
+}
+
+.ora-checkin .reservation-room-change-subtitle {
+    margin-top: 3px;
+    color: rgba(255,255,255,.76);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis
+}
+
+.ora-checkin .reservation-room-change-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex: 0 0 auto
+}
+
+.ora-checkin .reservation-room-change-current-only {
+    width: 155px;
+    min-height: 56px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,.3);
+    border-radius: 11px;
+    background: rgba(255,255,255,.12)
+}
+
+.ora-checkin .reservation-room-change-label {
+    display: block;
+    color: rgba(255,255,255,.7);
+    font-size: 9px;
+    line-height: 12px;
+    text-transform: uppercase;
+    letter-spacing: .07em
+}
+
+.ora-checkin .reservation-room-change-current-number {
+    display: block;
+    margin-top: 2px;
+    color: #fff;
+    font-size: 15px;
+    line-height: 19px;
+    font-weight: 600;
+    white-space: nowrap
+}
+
+.ora-checkin .reservation-room-change-close {
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 12px;
+    background: rgba(255,255,255,.1);
+    color: #fff;
+    font-size: 21px;
+    cursor: pointer
+}
+
+.ora-checkin .reservation-room-change-body {
+    padding: 18px 20px 16px;
+    overflow: auto
+}
+
+.ora-checkin .reservation-room-change-list-title {
+    margin: 0 0 10px;
+    color: #17375e;
+    font-size: 13px;
+    font-weight: 600
+}
+
+.ora-checkin .reservation-room-change-grid {
+    display: grid;
+    grid-template-columns: repeat(3,minmax(0,1fr));
+    gap: 10px;
+    max-height: 290px;
+    overflow-y: auto;
+    padding: 0 2px 3px
+}
+
+.ora-checkin .reservation-room-option {
+    min-height: 64px;
+    padding: 9px 10px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid #d9e4ef;
+    border-radius: 0;
+    background: #fff;
+    color: #233f60;
+    text-align: left;
+    cursor: pointer
+}
+
+    .ora-checkin .reservation-room-option:hover {
+        border-color: #8eb8df;
+        background: #f7fbff
+    }
+
+    .ora-checkin .reservation-room-option.is-selected {
+        border-color: #19a56a;
+        background: #effbf5;
+        box-shadow: 0 0 0 2px rgba(25,165,106,.11)
+    }
+
+.ora-checkin .reservation-room-option-icon {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: #eef5fc;
+    color: #245e95
+}
+
+.ora-checkin .reservation-room-option.is-selected .reservation-room-option-icon {
+    background: #d9f4e7;
+    color: #087647
+}
+
+.ora-checkin .reservation-room-option-number {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap
+}
+
+.ora-checkin .reservation-room-option-status {
+    display: block;
+    margin-top: 2px;
+    color: #718096;
+    font-size: 10px
+}
+
+.ora-checkin .reservation-room-change-empty {
+    padding: 25px 16px;
+    border: 1px dashed #c9d8e8;
+    border-radius: 14px;
+    background: #f9fbfd;
+    color: #64788f;
+    text-align: center;
+    font-size: 12px;
+    line-height: 19px
+}
+
+    .ora-checkin .reservation-room-change-empty i {
+        display: block;
+        margin-bottom: 8px;
+        color: #8ba1b8;
+        font-size: 22px
+    }
+
+.ora-checkin .reservation-room-change-footer {
+    padding: 13px 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    border-top: 1px solid #e3eaf2;
+    background: #f9fbfd
+}
+
+.ora-checkin .reservation-room-change-btn {
+    min-height: 38px;
+    padding: 0 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-radius: 0;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer
+}
+
+.ora-checkin .reservation-room-change-cancel {
+    border: 1px solid #d3deea;
+    background: #fff;
+    color: #445c75
+}
+
+.ora-checkin .reservation-room-change-confirm {
+    border: 1px solid #143f70;
+    background: #143f70;
+    color: #fff
+}
+
+    .ora-checkin .reservation-room-change-confirm.is-disabled, .ora-checkin .reservation-room-change-confirm:disabled {
+        border-color: #aebdcd;
+        background: #aebdcd;
+        cursor: not-allowed
+    }
+
+@media(max-width:680px) {
+    .ora-checkin .payment-method-actions {
+        grid-template-columns: 1fr
+    }
+
+    .ora-checkin .security-pill-row {
+        grid-template-columns: 1fr
+    }
+
+    .ora-checkin .reservation-room-change-subtitle {
+        display: none
+    }
+
+    .ora-checkin .reservation-room-change-current-only {
+        width: 132px;
+        min-height: 52px;
+        padding: 7px 10px
+    }
+
+    .ora-checkin .reservation-room-change-grid {
+        grid-template-columns: repeat(2,minmax(0,1fr))
+    }
+}
+
+@media(max-width:420px) {
+    .ora-checkin .reservation-room-change-grid {
+        grid-template-columns: 1fr
+    }
 }
