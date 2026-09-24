@@ -131,6 +131,13 @@ public sealed class LookupOption
     public string Meta2 { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public bool Disabled { get; set; }
+
+    // Room-level occupancy metadata. These are populated for Room Rent categories
+    // from create_room so the Check-In UI can enforce the same limits as Reservation.
+    public int AdultLimit { get; set; }
+    public int ChildLimit { get; set; }
+    public int InfantLimit { get; set; }
+    public bool HasOccupancySettings { get; set; }
 }
 
 public sealed class CheckInChargeRow
@@ -138,9 +145,13 @@ public sealed class CheckInChargeRow
     public int Id { get; set; }
     public string Description { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
+    public string CategoryId { get; set; } = string.Empty;
     public string TypeValue { get; set; } = string.Empty;
     public string DeductionInfo { get; set; } = string.Empty;
     public string RoomNo { get; set; } = string.Empty;
+    public int RoomAdults { get; set; }
+    public int RoomChildren { get; set; }
+    public int RoomInfants { get; set; }
     public string RatePlanId { get; set; } = string.Empty;
     public string RatePlanName { get; set; } = string.Empty;
     public string GuestName { get; set; } = string.Empty;
@@ -263,9 +274,13 @@ public sealed class AddCheckInChargeRequest
     public string VisitId { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
+    public string CategoryId { get; set; } = string.Empty;
     public string TypeValue { get; set; } = string.Empty;
     public string DeductionInfo { get; set; } = string.Empty;
     public string RoomNo { get; set; } = string.Empty;
+    public int RoomAdults { get; set; }
+    public int RoomChildren { get; set; }
+    public int RoomInfants { get; set; }
     public string RatePlanId { get; set; } = string.Empty;
     public string RatePlanName { get; set; } = string.Empty;
     public string PromoCode { get; set; } = string.Empty;

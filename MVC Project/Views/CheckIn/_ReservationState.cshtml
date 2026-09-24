@@ -1,0 +1,189 @@
+@model Orapmshms.Models.CheckInPageViewModel
+@using System.Text.Json
+@using System.Linq
+@using Orapmshms.Models
+@{
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var stateJson = JsonSerializer.Serialize(Model, jsonOptions);
+    var showDiscountColumn = Model.Charges.Any(x => x.Discount != 0m);
+    var showTaxColumn = Model.Charges.Any(x => x.Gst != 0m);
+    var showBedTaxColumn = Model.Charges.Any(x => x.BedTax != 0m);
+    string Money(decimal value) => $"{Model.Currency}{value:N2}";
+    string DateText(DateTime? value) => value.HasValue ? value.Value.ToString("dd MMM yyyy") : "—";
+    string SecurityType(string status)
+    {
+        status = (status ?? string.Empty).Trim();
+        if (status.Equals("refund", StringComparison.OrdinalIgnoreCase)) return "Refund";
+        if (status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase)) return "Deduct";
+        return status.Equals("Deposit", StringComparison.OrdinalIgnoreCase) ? "Deposit" : (string.IsNullOrWhiteSpace(status) ? "Deposit" : status);
+    }
+    string SecurityStatus(string status)
+    {
+        status = (status ?? string.Empty).Trim();
+        if (status.Equals("Deposit", StringComparison.OrdinalIgnoreCase)) return "On Hold";
+        if (status.Equals("refund", StringComparison.OrdinalIgnoreCase)) return "Refunded";
+        if (status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase)) return "Deduct";
+        return string.IsNullOrWhiteSpace(status) ? "On Hold" : status;
+    }
+    string SecurityMode(CheckInSecurityRow row)
+    {
+        var pm = (row.Method ?? string.Empty).Trim();
+        var isMovement = row.Status.Equals("refund", StringComparison.OrdinalIgnoreCase) || row.Status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase);
+        var isCard = !string.IsNullOrWhiteSpace(row.PaymentIntentId) || !string.IsNullOrWhiteSpace(row.ChargeId) ||
+                     pm.Contains("card", StringComparison.OrdinalIgnoreCase) || pm.Contains("pdq", StringComparison.OrdinalIgnoreCase) || pm.Contains("stripe", StringComparison.OrdinalIgnoreCase);
+        if (isMovement) return isCard ? "Card" : "Cash";
+        var isPreAuth = pm.Contains("pre-authorization", StringComparison.OrdinalIgnoreCase) || pm.Contains("pre-auth", StringComparison.OrdinalIgnoreCase);
+        if (isPreAuth) return string.IsNullOrWhiteSpace(row.Last4) ? "Card Pre-Auth" : $"Card Pre-Auth (*** {row.Last4})";
+        if (isCard) return string.IsNullOrWhiteSpace(row.Last4) ? "Card Terminal Hold" : $"Card Terminal (*** {row.Last4})";
+        return "Cash";
+    }
+}
+<div id="reservationStatePayload" data-reg-id="@Model.ReservationId" data-visit-id="@Model.VisitId">
+    <script id="reservationStateJson" type="application/json">@Html.Raw(stateJson)</script>
+
+    <template id="reservationChargeRowsTemplate">
+        @if (Model.Charges.Count == 0)
+        {
+            <tr class="table-empty"><td colspan="16">No charges added yet. Save the guest, then add a room or service.</td></tr>
+        }
+        else
+        {
+            foreach (var row in Model.Charges)
+            {
+                var isRoomRentRow = row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase);
+                var rowStatusKey = (row.ReservationStatus ?? string.Empty).Replace("-", string.Empty).Replace("_", string.Empty).Replace(" ", string.Empty).ToLowerInvariant();
+                var isCheckedOutRoomRow = isRoomRentRow && (rowStatusKey == "checkout" || rowStatusKey == "checkedout");
+                <tr class="@(isCheckedOutRoomRow ? "charge-row-checkedout" : string.Empty)" data-charge-id="@row.Id" data-room="@row.RoomNo" data-category="@row.Category" data-status="@row.ReservationStatus" data-arrival="@(row.ArrivalDate?.ToString("yyyy-MM-dd") ?? "")" data-departure="@(row.DepartureDate?.ToString("yyyy-MM-dd") ?? "")">
+                    <td>
+                        @if (row.CanSelectForCheckIn)
+                        {
+                            <input class="room-check" type="checkbox" value="@row.Id" data-room="@row.RoomNo" checked="@row.SelectedForCheckIn" title="Select this pending room for check-in" />
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-lock table-lock" title="This row is not available for check-in selection."></i>
+                        }
+                    </td>
+                    <td>@(isRoomRentRow ? row.Description : (!string.IsNullOrWhiteSpace(row.DeductionInfo) ? row.DeductionInfo : row.Description))</td>
+                    <td>@(isRoomRentRow ? row.Category : string.Empty)</td>
+                    <td class="room-cell reservation-room-number-cell">
+                        @if (isRoomRentRow)
+                        {
+                            <span class="room-number-text">@(string.IsNullOrWhiteSpace(row.RoomNo) ? "—" : row.RoomNo)</span>
+                            @if (row.CanChangeRoom)
+                            {
+                                <button type="button" class="reservation-room-edit-btn" data-room-change="@row.Id" title="Change this room" aria-label="Change room @row.RoomNo"><i class="fa-solid fa-pen"></i></button>
+                            }
+                        }
+                    </td>
+                    <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomAdults.ToString() : string.Empty)</td>
+                    <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomChildren.ToString() : string.Empty)</td>
+                    <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomInfants.ToString() : string.Empty)</td>
+                    <td class="guest-cell inline-editable-cell" data-value="@(isRoomRentRow ? row.GuestName : string.Empty)" data-can-edit-guest="@(isRoomRentRow ? "1" : "0")" title="@(isRoomRentRow ? "Double-click to edit guest name" : "")">@(isRoomRentRow ? (string.IsNullOrWhiteSpace(row.GuestName) ? "—" : row.GuestName) : string.Empty)</td>
+                    <td>@if (isRoomRentRow)
+                        {
+                            @DateText(row.ArrivalDate) <text> → </text> @DateText(row.DepartureDate)<br /><small>@row.Nights.ToString("0.##") @(Model.IsMonthWise ? "month(s)" : "night(s)")</small>
+                        }</td>
+                    <td>@(string.IsNullOrWhiteSpace(row.RatePlanName) ? row.RatePlanId : row.RatePlanName)</td>
+                    @{
+                        var ratePerNight = isRoomRentRow && row.Nights > 1m && Math.Abs(row.Rate - row.Charge) < 0.01m ? Math.Round(row.Rate / row.Nights, 2) : row.Rate;
+                    }
+                    <td class="num rate-cell inline-editable-cell" data-value="@ratePerNight.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-can-edit-rate="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "1" : "0")" title="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "Double-click to edit rate per night" : "Rate update not permitted")">@Money(ratePerNight)</td>
+                    <td data-charge-col="discount" data-value="@row.Discount.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showDiscountColumn ? "is-column-hidden" : "")">@Money(row.Discount)</td>
+                    <td data-charge-col="gst" data-value="@row.Gst.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showTaxColumn ? "is-column-hidden" : "")">@Money(row.Gst)</td>
+                    <td data-charge-col="bedtax" data-value="@row.BedTax.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showBedTaxColumn ? "is-column-hidden" : "")">@Money(row.BedTax)</td>
+                    <td class="num charge-total-cell" data-value="@row.TotalAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)"><b>@Money(row.TotalAmount)</b></td>
+                    <td class="row-actions">
+                        @if (row.CanDelete)
+                        {
+                            <button type="button" class="icon-action danger" data-action="delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(row.DeleteLockTitle))
+                        {
+                            <span class="icon-action is-disabled" title="@row.DeleteLockTitle"><i class="fa-solid fa-lock"></i></span>
+                        }
+                    </td>
+                </tr>
+            }
+        }
+    </template>
+
+    <template id="reservationPaymentRowsTemplate">
+        @if (Model.PaymentLog.Count == 0)
+        {
+            <tr><td colspan="6" class="payment-log-empty">No payment recorded yet.</td></tr>
+        }
+        else
+        {
+            var pi = 0;
+            foreach (var p in Model.PaymentLog)
+            {
+                pi++;
+                <tr data-payment-log-id="@p.Id" data-amount="@p.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-refundable="@p.RemainingRefundable.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+                    <td>@pi</td>
+                    <td>@(p.Date?.ToString("dd MMM yyyy HH:mm") ?? "—")</td>
+                    <td class="num">@Money(p.Amount)</td>
+                    <td>@p.Method</td>
+                    <td>@if (!string.IsNullOrWhiteSpace(p.Receipt)) { <a href="@p.Receipt" target="_blank" rel="noopener">Receipt</a> } else { <span>—</span> }</td>
+                    <td class="payment-option-cell">@if (p.CanRefund) { <button type="button" class="btn btn-ghost" data-payment-refund="@p.Id"><i class="fa-solid fa-rotate-left"></i> Refund</button> }<button type="button" class="btn btn-ghost btn-icon payment-log-audit-btn" data-payment-audit="@p.Id" title="View payment audit" aria-label="View payment audit"><i class="fa-solid fa-clipboard-list"></i></button></td>
+                </tr>
+            }
+        }
+    </template>
+
+    <template id="reservationSecurityRowsTemplate">
+        @if (Model.SecurityLog.Count == 0)
+        {
+            <tr class="table-empty"><td colspan="6">No security deposit movement found for this reservation.</td></tr>
+        }
+        else
+        {
+            foreach (var row in Model.SecurityLog)
+            {
+                var movementAmount = row.Amount > 0 ? row.Amount : (row.Refunded > 0 ? row.Refunded : row.Deducted);
+                <tr data-security-id="@row.Id"
+                    data-security-amount="@row.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                    data-security-pi="@row.PaymentIntentId"
+                    data-security-charge="@row.ChargeId"
+                    data-security-method="@row.Method">
+                    <td>@SecurityType(row.Status)</td>
+                    <td>@SecurityMode(row)</td>
+                    <td class="num">@Money(movementAmount)</td>
+                    <td><span class="security-status-badge">@SecurityStatus(row.Status)</span></td>
+                    <td>@if (row.CanSettle) { <button type="button" class="security-row-action" data-security-settle="@row.Id"><i class="fa-solid fa-rotate-left"></i> Refund / Deduct</button> }</td>
+                    <td class="security-receipt-cell">@if (!string.IsNullOrWhiteSpace(row.ReceiptUrl)) { <a class="security-info-btn" href="@row.ReceiptUrl" target="_blank" rel="noopener" title="View Receipt"><i class="fa-solid fa-receipt"></i></a> } else { <span class="security-receipt-empty">—</span> }</td>
+                </tr>
+            }
+        }
+    </template>
+
+    <template id="reservationLaundryRowsTemplate">
+        @if (Model.Laundry.Count == 0)
+        {
+            <tr class="table-empty"><td colspan="7">No laundry added.</td></tr>
+        }
+        else
+        {
+            var li = 0;
+            foreach (var row in Model.Laundry)
+            {
+                li++;
+                <tr><td>@li</td><td>@row.Category</td><td>@row.Item</td><td>@row.Quantity</td><td class="num">@Money(row.Rate)</td><td class="num">@Money(row.Amount)</td><td><button type="button" class="btn btn-ghost" data-laundry-delete="@row.Id"><i class="fa-solid fa-trash"></i> Delete</button></td></tr>
+            }
+        }
+    </template>
+
+    <template id="reservationDiscountTemplate">
+        @if (Model.Discounts.Count == 0)
+        {
+            <span class="muted-text">No discount code applied.</span>
+        }
+        else
+        {
+            foreach (var d in Model.Discounts)
+            {
+                <span class="discount-chip"><b>@d.Code</b> @Money(d.Amount)</span>
+            }
+        }
+    </template>
+</div>

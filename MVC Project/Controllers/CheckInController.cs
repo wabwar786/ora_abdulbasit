@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Orapmshms.Models;
 using Orapmshms.Services;
@@ -54,6 +55,31 @@ public sealed class CheckInController : Controller
                 HotelToday = DateTime.Today,
                 Guest = new GuestCheckInInput { ArrivalDate = DateTime.Today, DepartureDate = DateTime.Today.AddDays(1) }
             });
+        }
+    }
+
+    [HttpGet("ReservationState")]
+    public async Task<IActionResult> ReservationState(string regId, CancellationToken ct)
+    {
+        if (!HasSession()) return UnauthorizedJson();
+        if (string.IsNullOrWhiteSpace(regId)) return BadRequest(new { ok = false, message = "Reservation ID is required." });
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            var model = await _service.GetReservationStateAsync(HotelId, HotelName, UserId, UserName, regId.Trim(), ct);
+            sw.Stop();
+            Response.Headers["Server-Timing"] = $"checkin;dur={sw.Elapsed.TotalMilliseconds:0}";
+            _logger.LogInformation("Check-in reservation {RegId} loaded in {ElapsedMs} ms.", regId.Trim(), sw.ElapsedMilliseconds);
+            return PartialView("~/Views/CheckIn/_ReservationState.cshtml", model);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { ok = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fast reservation state load failed for {RegId}.", regId);
+            return StatusCode(500, new { ok = false, message = "Unable to load reservation details. " + ex.Message });
         }
     }
 

@@ -2091,18 +2091,125 @@
         grid-column: 1/-1
     }
 
-.ora-checkin .audit-content {
-    max-height: 450px;
-    overflow: auto;
+.ora-checkin .payment-audit-dialog {
+    width: min(500px, calc(100vw - 30px));
+    max-width: 500px;
+    overflow: hidden;
+    border: 1px solid #d9e1ec;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 22px 70px rgba(15,23,42,.25)
+}
+
+.ora-checkin .payment-audit-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #d9e1ec;
+    background: #fff
+}
+
+.ora-checkin .payment-audit-title {
     margin: 0;
-    padding: 12px;
-    border: 1px solid var(--line-soft);
-    border-radius: 6px;
+    color: #111827;
+    font-size: 18px;
+    line-height: 20px;
+    font-weight: 700
+}
+
+.ora-checkin .payment-audit-subtitle {
+    margin-top: 5px;
+    color: #667085;
+    font-size: 11px
+}
+
+.ora-checkin .payment-audit-close {
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: #f3f6fb;
+    color: #ef4444;
+    font-size: 17px;
+    line-height: 32px;
+    cursor: pointer
+}
+
+.ora-checkin .payment-audit-body {
+    padding: 15px 16px 16px
+}
+
+.ora-checkin .payment-audit-box {
+    border: 1px solid #d9e1ec;
+    border-radius: 4px;
     background: #f8fafc;
-    color: #19344f;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font: 11px/1.6 Consolas,monospace
+    padding: 12px
+}
+
+.ora-checkin .payment-audit-row {
+    display: grid;
+    grid-template-columns: 130px minmax(0,1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #e5eaf1
+}
+
+.ora-checkin .payment-audit-row:last-child {
+    border-bottom: 0
+}
+
+.ora-checkin .payment-audit-label {
+    color: #667085;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .3px
+}
+
+.ora-checkin .payment-audit-value {
+    color: #1f2937;
+    font-size: 12px;
+    word-break: break-word
+}
+
+.ora-checkin .payment-audit-loading {
+    color: #667085;
+    font-size: 12px;
+    padding: 10px 0
+}
+
+.ora-checkin .payment-audit-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 14px
+}
+
+.ora-checkin .payment-audit-btn {
+    height: 34px;
+    min-width: 92px;
+    padding: 0 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+    color: #475569;
+    font-size: 12px;
+    cursor: pointer
+}
+
+.ora-checkin .payment-audit-btn:hover,
+.ora-checkin .payment-audit-close:hover {
+    background: #eaf1fb
+}
+
+@media (max-width:600px) {
+    .ora-checkin .payment-audit-row {
+        grid-template-columns: 1fr;
+        gap: 3px
+    }
 }
 
 .ora-checkin .checkin-note {
@@ -3814,4 +3921,1296 @@
     .ora-checkin .reservation-room-change-grid {
         grid-template-columns: 1fr
     }
+}
+
+/* =========================================================
+   Check-In UX/performance refresh — 2026-09
+   Keeps the existing design/functions while tightening the areas requested.
+   ========================================================= */
+.ora-checkin .page-title {
+    display: grid;
+    grid-template-columns: minmax(0,2fr) minmax(340px,.88fr);
+    gap: 10px;
+    align-items: center;
+    padding-left: 18px;
+    padding-right: 18px;
+}
+
+.ora-checkin .checkin-title-copy h1 {
+    font-size: 20px;
+    line-height: 1.15;
+}
+
+.ora-checkin .search-wrap,
+.ora-checkin .search-wrap .search {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+}
+
+.ora-checkin #chargeEntry label,
+.ora-checkin #chargeOptionsRow label {
+    font-size: 13px;
+    line-height: 1.25;
+    font-weight: 600;
+    color: #173653;
+    margin-bottom: 4px;
+}
+
+.ora-checkin .charge-table th:last-child,
+.ora-checkin .charge-table td.row-actions {
+    text-align: center;
+}
+
+.ora-checkin .charge-table td.row-actions {
+    justify-content: center;
+    align-items: center;
+}
+
+.ora-checkin .charge-table td.row-actions .icon-action {
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.ora-checkin .search-wrap.is-loading .search input {
+    background-image: linear-gradient(90deg, transparent, rgba(11,55,104,.05), transparent);
+    background-size: 200% 100%;
+    animation: ora-search-loading 1.1s linear infinite;
+}
+
+.ora-checkin .row-is-busy {
+    opacity: .58;
+    pointer-events: none;
+}
+
+@keyframes ora-search-loading {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+}
+
+@media(max-width:1100px) {
+    .ora-checkin .page-title {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* =========================================================
+   Check-In room-date UX refinements (24 Sep 2026)
+   - compact equal Arrival/Departure fields
+   - keep Tax/VAT aligned with the input row and Add button
+   - subtle room availability refresh without visual reset
+   ========================================================= */
+.ora-checkin .charge-options-row.room-different-mode {
+    grid-template-columns: 160px 160px minmax(0, 1fr) !important;
+    justify-content: start;
+    column-gap: 8px;
+}
+
+.ora-checkin .charge-options-row.room-different-mode .room-date-col {
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+}
+
+.ora-checkin .charge-options-row.room-different-mode .room-date-col input[type="date"] {
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
+}
+
+.ora-checkin #chargeEntry .charge-tax-field {
+    min-width: 96px;
+    align-self: end;
+}
+
+.ora-checkin #chargeEntry .charge-tax-caption {
+    display: block;
+    min-height: 14px;
+    margin: 0 0 3px 0;
+    font-size: 10px;
+    line-height: 1.1;
+    color: var(--muted, #53657d);
+}
+
+.ora-checkin #chargeEntry .charge-tax-field .charge-tax-group {
+    height: 34px;
+    min-height: 34px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.ora-checkin #chargeEntry .charge-tax-field .charge-tax-group .check {
+    height: 34px;
+    min-height: 34px;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.ora-checkin #chargeEntry .charge-add-btn {
+    align-self: end;
+    height: 34px;
+    min-height: 34px;
+    margin: 0;
+}
+
+.ora-checkin #chargeRoom.is-refreshing {
+    background-image: linear-gradient(90deg, rgba(11,42,91,.035), rgba(11,42,91,.09), rgba(11,42,91,.035));
+    background-size: 220% 100%;
+    animation: ora-room-availability-loading 1s linear infinite;
+}
+
+@keyframes ora-room-availability-loading {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+}
+
+@media (max-width: 900px) {
+    .ora-checkin .charge-options-row.room-different-mode {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .ora-checkin .charge-options-row.room-different-mode .room-date-col,
+    .ora-checkin .charge-options-row.room-different-mode .room-date-col input[type="date"] {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+    }
+}
+
+@media (max-width: 650px) {
+    .ora-checkin .charge-options-row.room-different-mode {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+
+/* =========================================================
+   Check-In rate-plan/date-width correction (24 Sep 2026)
+   Keep room-level Arrival and Departure exactly the same width.
+   Flex is used here intentionally so older grid rules cannot stretch Departure.
+   ========================================================= */
+.ora-checkin #chargeRoomDatesRow.room-different-mode {
+    display: flex !important;
+    flex-flow: row wrap !important;
+    align-items: flex-end !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+}
+
+.ora-checkin #chargeRoomDatesRow.room-different-mode > .room-date-col {
+    flex: 0 0 180px !important;
+    inline-size: 180px !important;
+    width: 180px !important;
+    min-inline-size: 180px !important;
+    min-width: 180px !important;
+    max-inline-size: 180px !important;
+    max-width: 180px !important;
+    justify-self: start !important;
+}
+
+.ora-checkin #chargeRoomDatesRow.room-different-mode #chargeArrival,
+.ora-checkin #chargeRoomDatesRow.room-different-mode #chargeDeparture {
+    box-sizing: border-box !important;
+    inline-size: 100% !important;
+    width: 100% !important;
+    min-inline-size: 0 !important;
+    min-width: 0 !important;
+    max-inline-size: 100% !important;
+    max-width: 100% !important;
+}
+
+@media (max-width: 650px) {
+    .ora-checkin #chargeRoomDatesRow.room-different-mode {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+    }
+
+    .ora-checkin #chargeRoomDatesRow.room-different-mode > .room-date-col {
+        inline-size: 100% !important;
+        width: 100% !important;
+        min-inline-size: 0 !important;
+        min-width: 0 !important;
+        max-inline-size: none !important;
+        max-width: none !important;
+    }
+}
+
+/* =========================================================
+   Check-In room occupancy + responsive Rooms & Services
+   24 Sep 2026
+   - Adults / Children / Infants belong to each room, not Guest Details
+   - responsive add-room / service-charge entry layout
+   - charge grid has no fixed column/table width
+   ========================================================= */
+.ora-checkin #chargeEntry.charge-row-mvc,
+.ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    align-items: end !important;
+}
+
+.ora-checkin #chargeEntry .charge-category-field { grid-column: span 2; }
+.ora-checkin #chargeEntry .charge-room-field { grid-column: span 1; }
+.ora-checkin #chargeEntry .room-occupancy-field { grid-column: span 1; min-width: 0; }
+.ora-checkin #chargeEntry .rate-plan-field { grid-column: span 2; }
+.ora-checkin #chargeEntry .charge-total-field { grid-column: span 1; }
+.ora-checkin #chargeEntry .charge-discount-field { grid-column: span 1; }
+.ora-checkin #chargeEntry .charge-tax-field { grid-column: span 1; min-width: 0 !important; }
+.ora-checkin #chargeEntry .charge-add-btn {
+    grid-column: span 1;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 36px !important;
+    min-height: 36px !important;
+}
+
+.ora-checkin #chargeEntry.service-mode .charge-category-field { grid-column: span 2; }
+.ora-checkin #chargeEntry.service-mode .charge-detail-wrap { grid-column: span 4 !important; }
+.ora-checkin #chargeEntry.service-mode .charge-total-field { grid-column: span 2; }
+.ora-checkin #chargeEntry.service-mode .charge-discount-field { grid-column: span 2; }
+.ora-checkin #chargeEntry.service-mode .charge-tax-field { grid-column: span 1; }
+.ora-checkin #chargeEntry.service-mode .charge-add-btn { grid-column: span 1; }
+
+.ora-checkin #chargeEntry .room-occupancy-field input[type="number"] {
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.ora-checkin #chargeEntry .occupancy-limit {
+    display: block;
+    min-height: 13px;
+    margin-top: 2px;
+    color: #6c7c90;
+    font-size: 9px;
+    line-height: 1.15;
+    text-align: center;
+}
+
+.ora-checkin #chargeEntry .room-occupancy-field input:disabled {
+    background: #f3f6fa;
+    color: #8090a4;
+}
+
+/* Different room dates stay equal in width, but can contract responsively. */
+.ora-checkin #chargeRoomDatesRow.room-different-mode {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(140px, 180px)) !important;
+    width: 100% !important;
+    gap: 10px !important;
+    justify-content: start !important;
+    align-items: end !important;
+}
+
+.ora-checkin #chargeRoomDatesRow.room-different-mode > .room-date-col,
+.ora-checkin #chargeRoomDatesRow.room-different-mode > .room-date-col input[type="date"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    inline-size: auto !important;
+    min-inline-size: 0 !important;
+    max-inline-size: none !important;
+}
+
+/* Let the grid size itself from content instead of forcing a fixed width. */
+.ora-checkin .charge-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.ora-checkin .charge-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+}
+
+.ora-checkin .charge-table th,
+.ora-checkin .charge-table td {
+    width: auto !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+}
+
+.ora-checkin .charge-table th:first-child,
+.ora-checkin .charge-table td:first-child {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    text-align: center;
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+.ora-checkin .charge-table .occupancy-cell {
+    text-align: center !important;
+    white-space: nowrap !important;
+    font-variant-numeric: tabular-nums;
+}
+
+.ora-checkin .charge-table .num,
+.ora-checkin .charge-table .row-actions,
+.ora-checkin .charge-table .room-cell {
+    white-space: nowrap !important;
+}
+
+@media (max-width: 1250px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-category-field { grid-column: span 2; }
+    .ora-checkin #chargeEntry .charge-room-field { grid-column: span 1; }
+    .ora-checkin #chargeEntry .room-occupancy-field { grid-column: span 1; }
+    .ora-checkin #chargeEntry .rate-plan-field { grid-column: span 2; }
+    .ora-checkin #chargeEntry .charge-total-field,
+    .ora-checkin #chargeEntry .charge-discount-field,
+    .ora-checkin #chargeEntry .charge-tax-field,
+    .ora-checkin #chargeEntry .charge-add-btn { grid-column: span 1; }
+
+    .ora-checkin #chargeEntry.service-mode .charge-category-field { grid-column: span 2; }
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap { grid-column: span 4 !important; }
+    .ora-checkin #chargeEntry.service-mode .charge-total-field,
+    .ora-checkin #chargeEntry.service-mode .charge-discount-field { grid-column: span 2; }
+    .ora-checkin #chargeEntry.service-mode .charge-tax-field,
+    .ora-checkin #chargeEntry.service-mode .charge-add-btn { grid-column: span 1; }
+}
+
+@media (max-width: 850px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-category-field,
+    .ora-checkin #chargeEntry .rate-plan-field,
+    .ora-checkin #chargeEntry.service-mode .charge-category-field,
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap {
+        grid-column: 1 / -1 !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-room-field,
+    .ora-checkin #chargeEntry .room-occupancy-field,
+    .ora-checkin #chargeEntry .charge-total-field,
+    .ora-checkin #chargeEntry .charge-discount-field,
+    .ora-checkin #chargeEntry .charge-tax-field,
+    .ora-checkin #chargeEntry .charge-add-btn,
+    .ora-checkin #chargeEntry.service-mode .charge-total-field,
+    .ora-checkin #chargeEntry.service-mode .charge-discount-field,
+    .ora-checkin #chargeEntry.service-mode .charge-tax-field,
+    .ora-checkin #chargeEntry.service-mode .charge-add-btn {
+        grid-column: span 1;
+    }
+
+    .ora-checkin #chargeRoomDatesRow.room-different-mode {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .ora-checkin .charge-table th,
+    .ora-checkin .charge-table td {
+        padding: 6px 5px !important;
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 520px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: 1fr !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-category-field,
+    .ora-checkin #chargeEntry .charge-room-field,
+    .ora-checkin #chargeEntry .room-occupancy-field,
+    .ora-checkin #chargeEntry .rate-plan-field,
+    .ora-checkin #chargeEntry .charge-total-field,
+    .ora-checkin #chargeEntry .charge-discount-field,
+    .ora-checkin #chargeEntry .charge-tax-field,
+    .ora-checkin #chargeEntry .charge-add-btn,
+    .ora-checkin #chargeEntry.service-mode .charge-category-field,
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap,
+    .ora-checkin #chargeEntry.service-mode .charge-total-field,
+    .ora-checkin #chargeEntry.service-mode .charge-discount-field,
+    .ora-checkin #chargeEntry.service-mode .charge-tax-field,
+    .ora-checkin #chargeEntry.service-mode .charge-add-btn {
+        grid-column: 1 !important;
+    }
+
+    .ora-checkin #chargeRoomDatesRow.room-different-mode {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 380px) {
+    .ora-checkin #chargeRoomDatesRow.room-different-mode {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* =========================================================
+   Professional responsive Rooms & Services refinement
+   24 Sep 2026
+   - avoids squeezing room controls into one crowded row
+   - natural-width charge grid (no fixed pixel table width)
+   - tester-requested balance/payment emphasis
+   ========================================================= */
+
+/* Slightly stronger form labels in this working area. */
+.ora-checkin #chargeEntry label,
+.ora-checkin #chargeOptionsRow label {
+    font-size: 13.5px !important;
+    line-height: 1.2 !important;
+    font-weight: 600 !important;
+    color: #173653 !important;
+    margin-bottom: 6px !important;
+}
+
+.ora-checkin #chargeEntry input,
+.ora-checkin #chargeEntry select,
+.ora-checkin #chargeOptionsRow input,
+.ora-checkin #chargeOptionsRow select {
+    min-height: 38px;
+}
+
+/* Desktop / ordinary laptop: deliberately use two clean rows.
+   This works better in the narrower left pane beside Charges & Payment. */
+.ora-checkin #chargeEntry.charge-row-mvc,
+.ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    grid-auto-flow: row !important;
+    column-gap: 12px !important;
+    row-gap: 14px !important;
+    align-items: end !important;
+}
+
+/* Room mode – row 1 */
+.ora-checkin #chargeEntry:not(.service-mode) .charge-category-field { grid-column: 1 / span 3 !important; grid-row: 1; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-room-field     { grid-column: 4 / span 2 !important; grid-row: 1; }
+.ora-checkin #chargeEntry:not(.service-mode) .rate-plan-field       { grid-column: 6 / span 3 !important; grid-row: 1; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-total-field    { grid-column: 9 / span 2 !important; grid-row: 1; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-discount-field { grid-column: 11 / span 2 !important; grid-row: 1; }
+
+/* Room mode – row 2. Occupancy stays with the room-add area but gets breathing room. */
+.ora-checkin #chargeEntry:not(.service-mode) #roomAdultsWrap   { grid-column: 1 / span 2 !important; grid-row: 2; }
+.ora-checkin #chargeEntry:not(.service-mode) #roomChildrenWrap { grid-column: 3 / span 2 !important; grid-row: 2; }
+.ora-checkin #chargeEntry:not(.service-mode) #roomInfantsWrap  { grid-column: 5 / span 2 !important; grid-row: 2; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-tax-field { grid-column: 7 / span 3 !important; grid-row: 2; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-add-btn    { grid-column: 10 / span 3 !important; grid-row: 2; }
+
+/* Service/charge mode uses a wider description instead of room occupancy. */
+.ora-checkin #chargeEntry.service-mode .charge-category-field { grid-column: 1 / span 3 !important; grid-row: 1; }
+.ora-checkin #chargeEntry.service-mode .charge-detail-wrap    { grid-column: 4 / span 5 !important; grid-row: 1; }
+.ora-checkin #chargeEntry.service-mode .charge-total-field    { grid-column: 9 / span 2 !important; grid-row: 1; }
+.ora-checkin #chargeEntry.service-mode .charge-discount-field { grid-column: 11 / span 2 !important; grid-row: 1; }
+.ora-checkin #chargeEntry.service-mode .charge-tax-field      { grid-column: 7 / span 3 !important; grid-row: 2; }
+.ora-checkin #chargeEntry.service-mode .charge-add-btn        { grid-column: 10 / span 3 !important; grid-row: 2; }
+
+.ora-checkin #chargeEntry .charge-tax-field,
+.ora-checkin #chargeEntry .charge-add-btn {
+    min-width: 0 !important;
+    width: 100% !important;
+}
+
+.ora-checkin #chargeEntry .charge-add-btn {
+    height: 38px !important;
+    min-height: 38px !important;
+    justify-self: stretch;
+    font-weight: 700;
+}
+
+.ora-checkin #chargeEntry .room-occupancy-field input[type="number"] {
+    font-weight: 700;
+    font-size: 14px;
+    text-align: center;
+}
+
+.ora-checkin #chargeEntry .occupancy-limit {
+    min-height: 14px;
+    margin-top: 4px;
+    font-size: 10px;
+    line-height: 1.1;
+    color: #71839a;
+}
+
+/* Group/different-date controls: equal and compact, never one stretched field. */
+.ora-checkin #chargeRoomDatesRow.room-different-mode {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 180px)) !important;
+    gap: 12px !important;
+    justify-content: start !important;
+    width: 100% !important;
+    margin-top: 12px;
+}
+.ora-checkin #chargeRoomDatesRow.room-different-mode > .room-date-col,
+.ora-checkin #chargeRoomDatesRow.room-different-mode > .room-date-col input[type="date"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+}
+
+/* Charge grid: no fixed pixel width. It grows from content and scrolls only if needed. */
+.ora-checkin .charge-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-gutter: stable;
+}
+.ora-checkin .charge-table {
+    width: max-content !important;
+    min-width: 100% !important;
+    max-width: none !important;
+    table-layout: auto !important;
+}
+.ora-checkin .charge-table th,
+.ora-checkin .charge-table td {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 8px 9px !important;
+    white-space: nowrap !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    vertical-align: middle !important;
+}
+.ora-checkin .charge-table th {
+    font-size: 11px !important;
+    line-height: 1.2;
+    letter-spacing: .02em;
+}
+.ora-checkin .charge-table td {
+    font-size: 12px !important;
+}
+.ora-checkin .charge-table th:first-child,
+.ora-checkin .charge-table td:first-child {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    text-align: center !important;
+}
+.ora-checkin .charge-table .row-actions,
+.ora-checkin .charge-table th:last-child {
+    text-align: center !important;
+}
+.ora-checkin .charge-table .row-actions {
+    display: table-cell !important;
+    vertical-align: middle !important;
+}
+.ora-checkin .charge-table .row-actions .icon-action {
+    display: inline-grid !important;
+    place-items: center;
+    margin: 0 auto !important;
+}
+
+/* Payment tester notes: clearer balance and shorter log columns. */
+.ora-checkin .balance-box {
+    border: 1.5px solid #8fb1d9 !important;
+    background: #edf5ff !important;
+    box-shadow: inset 3px 0 0 var(--navy), 0 1px 2px rgba(11,55,104,.06);
+}
+.ora-checkin .balance-box > span {
+    color: var(--navy) !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+}
+.ora-checkin .balance-box b,
+.ora-checkin .balance-box b #balance {
+    color: #0b3768 !important;
+    font-weight: 900 !important;
+}
+.ora-checkin .payment-log {
+    width: max-content;
+    min-width: 100%;
+}
+.ora-checkin .payment-log th,
+.ora-checkin .payment-log td {
+    white-space: nowrap;
+}
+.ora-checkin .payment-option-cell {
+    white-space: nowrap;
+}
+.ora-checkin .payment-option-cell .btn {
+    margin-right: 4px;
+}
+
+/* Search is intentionally explicit (button/Enter); give the button a stronger affordance. */
+.ora-checkin #guestSearchButton {
+    min-width: 54px;
+}
+
+/* Medium viewport: six-column rhythm, still not cramped. */
+@media (max-width: 1000px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    }
+
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-category-field { grid-column: 1 / span 2 !important; grid-row: 1; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-room-field     { grid-column: 3 / span 1 !important; grid-row: 1; }
+    .ora-checkin #chargeEntry:not(.service-mode) .rate-plan-field       { grid-column: 4 / span 2 !important; grid-row: 1; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-total-field    { grid-column: 6 / span 1 !important; grid-row: 1; }
+    .ora-checkin #chargeEntry:not(.service-mode) #roomAdultsWrap        { grid-column: 1 / span 2 !important; grid-row: 2; }
+    .ora-checkin #chargeEntry:not(.service-mode) #roomChildrenWrap      { grid-column: 3 / span 2 !important; grid-row: 2; }
+    .ora-checkin #chargeEntry:not(.service-mode) #roomInfantsWrap       { grid-column: 5 / span 2 !important; grid-row: 2; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-discount-field { grid-column: 1 / span 2 !important; grid-row: 3; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-tax-field      { grid-column: 3 / span 2 !important; grid-row: 3; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-add-btn        { grid-column: 5 / span 2 !important; grid-row: 3; }
+
+    .ora-checkin #chargeEntry.service-mode .charge-category-field { grid-column: 1 / span 2 !important; grid-row: 1; }
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap    { grid-column: 3 / span 4 !important; grid-row: 1; }
+    .ora-checkin #chargeEntry.service-mode .charge-total-field    { grid-column: 1 / span 2 !important; grid-row: 2; }
+    .ora-checkin #chargeEntry.service-mode .charge-discount-field { grid-column: 3 / span 2 !important; grid-row: 2; }
+    .ora-checkin #chargeEntry.service-mode .charge-tax-field      { grid-column: 5 / span 2 !important; grid-row: 2; }
+    .ora-checkin #chargeEntry.service-mode .charge-add-btn        { grid-column: 5 / span 2 !important; grid-row: 3; }
+}
+
+/* Tablet / small laptop after side panel stacks. */
+@media (max-width: 720px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 12px !important;
+    }
+
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-category-field { grid-column: 1 / -1 !important; grid-row: auto; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-room-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .rate-plan-field,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomAdultsWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomChildrenWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomInfantsWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-total-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-discount-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-tax-field {
+        grid-column: span 1 !important;
+        grid-row: auto;
+    }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-add-btn { grid-column: 1 / -1 !important; grid-row: auto; }
+
+    .ora-checkin #chargeEntry.service-mode .charge-category-field,
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap,
+    .ora-checkin #chargeEntry.service-mode .charge-add-btn {
+        grid-column: 1 / -1 !important;
+        grid-row: auto;
+    }
+    .ora-checkin #chargeEntry.service-mode .charge-total-field,
+    .ora-checkin #chargeEntry.service-mode .charge-discount-field,
+    .ora-checkin #chargeEntry.service-mode .charge-tax-field {
+        grid-column: span 1 !important;
+        grid-row: auto;
+    }
+
+    .ora-checkin #chargeRoomDatesRow.room-different-mode {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 460px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode,
+    .ora-checkin #chargeRoomDatesRow.room-different-mode {
+        grid-template-columns: 1fr !important;
+    }
+    .ora-checkin #chargeEntry .field,
+    .ora-checkin #chargeEntry .charge-add-btn,
+    .ora-checkin #chargeEntry.service-mode .field,
+    .ora-checkin #chargeEntry.service-mode .charge-add-btn {
+        grid-column: 1 !important;
+        grid-row: auto !important;
+    }
+}
+
+/* =========================================================
+   Rooms & Services — compact content-driven layout
+   2026-09-24
+   Prevents empty reserved grid spaces when optional room fields are hidden.
+   ========================================================= */
+@media (min-width: 721px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        display: flex !important;
+        flex-flow: row wrap !important;
+        align-items: flex-end !important;
+        justify-content: flex-start !important;
+        column-gap: 12px !important;
+        row-gap: 12px !important;
+    }
+
+    /* Only visible controls consume space. Hidden room controls therefore do not
+       leave holes on initial page load. */
+    .ora-checkin #chargeEntry .field {
+        grid-column: auto !important;
+        grid-row: auto !important;
+        min-width: 0 !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-category-field {
+        flex: 1 1 220px !important;
+        min-width: 190px !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-detail-wrap {
+        flex: 2 1 300px !important;
+        min-width: 240px !important;
+        max-width: none !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-room-field {
+        flex: 0 1 140px !important;
+        min-width: 120px !important;
+    }
+
+    .ora-checkin #chargeEntry .room-occupancy-field {
+        flex: 0 1 92px !important;
+        min-width: 82px !important;
+    }
+
+    .ora-checkin #chargeEntry .rate-plan-field {
+        flex: 1 1 165px !important;
+        min-width: 145px !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-total-field,
+    .ora-checkin #chargeEntry .charge-discount-field {
+        flex: 0 1 140px !important;
+        min-width: 125px !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-tax-field {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 138px !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-tax-group {
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    /* Add is an action, not a data field. Keep it compact on desktop/laptop. */
+    .ora-checkin #chargeEntry .charge-add-btn {
+        flex: 0 0 86px !important;
+        width: 86px !important;
+        min-width: 86px !important;
+        max-width: 86px !important;
+        height: 38px !important;
+        min-height: 38px !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+        justify-self: auto !important;
+        align-self: flex-end !important;
+    }
+}
+
+/* On narrower screens keep the natural wrapping, but use comfortable two-column
+   controls instead of squeezing labels/inputs. */
+@media (min-width: 721px) and (max-width: 1050px) {
+    .ora-checkin #chargeEntry .charge-category-field {
+        flex-basis: 200px !important;
+    }
+
+    .ora-checkin #chargeEntry .charge-detail-wrap {
+        flex-basis: 260px !important;
+    }
+
+    .ora-checkin #chargeEntry .rate-plan-field {
+        flex-basis: 155px !important;
+    }
+}
+
+/* Small screens: full-width action is easier to tap and prevents clipping. */
+@media (max-width: 720px) {
+    .ora-checkin #chargeEntry .charge-add-btn {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+    }
+}
+
+
+/* =========================================================
+   2026-09-24 — Group room dates, occupancy labels, search UX,
+   and checked-out room identification.
+   ========================================================= */
+
+/* Show room capacity beside the field label instead of using a second line. */
+.ora-checkin #chargeEntry .room-occupancy-field > label {
+    display: flex !important;
+    align-items: baseline !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+    white-space: nowrap;
+}
+.ora-checkin #chargeEntry .occupancy-limit-inline {
+    color: #73869d;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+}
+/* Old below-input capacity text is no longer used. */
+.ora-checkin #chargeEntry .occupancy-limit {
+    display: none !important;
+}
+
+/* For Group + Different Dates, dates are now rendered before room details. */
+.ora-checkin #chargeRoomDatesRow.room-different-mode {
+    margin: 0 0 14px 0 !important;
+    padding: 10px 12px !important;
+    background: #f7faff;
+    border: 1px solid #d8e4f2;
+    border-radius: 7px;
+    align-items: end;
+}
+.ora-checkin #chargeRoomDatesRow.room-different-mode .room-date-col label {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: #244766;
+}
+
+/* Type-ahead results should remain visually attached to the search field. */
+.ora-checkin .search-wrap {
+    position: relative;
+}
+.ora-checkin .search-results {
+    z-index: 50;
+}
+
+/* Checked-out room rows are completed stay rows. Keep the financial data readable,
+   but make the completed room/guest visually obvious in group reservations too. */
+.ora-checkin .charge-table tbody tr.charge-row-checkedout > td {
+    background: #f2f7f5 !important;
+    color: #5f6f69;
+}
+.ora-checkin .charge-table tbody tr.charge-row-checkedout > td:first-child {
+    box-shadow: inset 3px 0 0 #5c9b83;
+}
+.ora-checkin .charge-table tbody tr.charge-row-checkedout .room-number-text,
+.ora-checkin .charge-table tbody tr.charge-row-checkedout .guest-cell {
+    color: #2f715b !important;
+    font-weight: 700 !important;
+}
+.ora-checkin .charge-table tbody tr.charge-row-checkedout .table-lock {
+    color: #5c9b83 !important;
+}
+
+.ora-checkin #chargeRoomDatesRow .field { min-width: 0; }
+.ora-checkin #chargeRoomDatesRow label { margin-bottom: 4px; }
+.ora-checkin #chargeRoomDatesRow input { width: 100%; }
+
+
+/* =========================================================
+   Group Check-In — room-led stay presentation
+   The master stay values remain in the DOM for calculations,
+   but Group reservations do not show Stay Dates / Nights in
+   Guest & Registration. The room grid remains the date source
+   visible to staff.
+   ========================================================= */
+.ora-checkin .guest-grid-mvc.group-reservation-mode .guest-inline-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+}
+
+@media(max-width:650px) {
+    .ora-checkin .guest-grid-mvc.group-reservation-mode .guest-inline-actions {
+        justify-content: stretch;
+    }
+}
+
+/* =========================================================
+   2026-09-24 — Compact Categories field width
+   Keep the empty/default Rooms & Services state visually balanced.
+   ========================================================= */
+@media (min-width: 1051px) {
+    .ora-checkin #chargeEntry .charge-category-field {
+        flex: 0 1 200px !important;
+        width: 200px !important;
+        min-width: 180px !important;
+        max-width: 220px !important;
+    }
+}
+
+@media (min-width: 721px) and (max-width: 1050px) {
+    .ora-checkin #chargeEntry .charge-category-field {
+        flex: 0 1 190px !important;
+        width: 190px !important;
+        min-width: 170px !important;
+        max-width: 210px !important;
+    }
+}
+
+@media (max-width: 720px) {
+    .ora-checkin #chargeEntry .charge-category-field {
+        width: 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+    }
+}
+
+/* =========================================================
+   2026-09-24 — Add button field-height alignment
+   Keep the action visually aligned with the adjacent form controls
+   and remove any inherited left spacing.
+   ========================================================= */
+@media (min-width: 721px) {
+    .ora-checkin #chargeEntry .charge-add-btn {
+        height: var(--control-h) !important;
+        min-height: var(--control-h) !important;
+        max-height: var(--control-h) !important;
+        margin: 0 !important;
+        margin-left: 0 !important;
+        margin-inline-start: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+        align-self: flex-end !important;
+        box-sizing: border-box !important;
+        line-height: 1 !important;
+    }
+
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        column-gap: 10px !important;
+    }
+}
+
+
+/* =========================================================
+   2026-09-24 — Search suggestion clarity + charge field order
+   ========================================================= */
+
+/* Search suggestions: labeled information + explicit reservation state badge. */
+.ora-checkin .search-results {
+    padding: 4px 0 !important;
+    background: #fff;
+    border: 1px solid #cfdbea;
+    border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(16, 45, 78, .14);
+    overflow-y: auto;
+}
+
+.ora-checkin .search-result.search-result-card {
+    display: block !important;
+    width: 100%;
+    padding: 10px 12px !important;
+    border: 0 !important;
+    border-bottom: 1px solid #e7edf4 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    text-align: left;
+}
+
+.ora-checkin .search-result.search-result-card:last-child {
+    border-bottom: 0 !important;
+}
+
+.ora-checkin .search-result.search-result-card:hover,
+.ora-checkin .search-result.search-result-card:focus {
+    background: #f5f9fe !important;
+    outline: 0;
+}
+
+.ora-checkin .search-result-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 7px;
+}
+
+.ora-checkin .search-result-name {
+    min-width: 0;
+    color: #102f50;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ora-checkin .search-status-badge {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 20px;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: .02em;
+    white-space: nowrap;
+}
+
+.ora-checkin .search-status-badge.is-reservation {
+    color: #174f87;
+    background: #edf5ff;
+    border-color: #c9def5;
+}
+
+.ora-checkin .search-status-badge.is-checkin {
+    color: #17603f;
+    background: #ecf8f2;
+    border-color: #c7e8d8;
+}
+
+.ora-checkin .search-status-badge.is-checkout {
+    color: #536273;
+    background: #f1f4f7;
+    border-color: #d7dfe7;
+}
+
+.ora-checkin .search-status-badge.is-cancelled {
+    color: #9b3030;
+    background: #fff1f1;
+    border-color: #f0cccc;
+}
+
+.ora-checkin .search-status-badge.is-other {
+    color: #604d1d;
+    background: #fff8e7;
+    border-color: #ead8a6;
+}
+
+.ora-checkin .search-result-meta {
+    display: grid;
+    grid-template-columns: minmax(115px, .8fr) minmax(180px, 1.45fr) minmax(165px, 1.15fr);
+    gap: 7px 12px;
+    align-items: start;
+}
+
+.ora-checkin .search-meta-item {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ora-checkin .search-meta-label {
+    color: #7a8ba0;
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: .045em;
+}
+
+.ora-checkin .search-meta-value {
+    color: #304861;
+    font-size: 10px;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Requested room-entry sequence:
+   Category → Room → Rate Plan → Total → Discount
+   Tax → Adults → Children → Infants → Add
+*/
+.ora-checkin #chargeEntry:not(.service-mode) .charge-category-field { grid-column: 1 / span 3 !important; grid-row: 1 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-room-field     { grid-column: 4 / span 2 !important; grid-row: 1 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) .rate-plan-field      { grid-column: 6 / span 3 !important; grid-row: 1 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-total-field   { grid-column: 9 / span 2 !important; grid-row: 1 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-discount-field{ grid-column: 11 / span 2 !important; grid-row: 1 !important; }
+
+.ora-checkin #chargeEntry:not(.service-mode) .charge-tax-field     { grid-column: 1 / span 3 !important; grid-row: 2 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) #roomAdultsWrap       { grid-column: 4 / span 2 !important; grid-row: 2 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) #roomChildrenWrap     { grid-column: 6 / span 2 !important; grid-row: 2 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) #roomInfantsWrap      { grid-column: 8 / span 2 !important; grid-row: 2 !important; }
+.ora-checkin #chargeEntry:not(.service-mode) .charge-add-btn       { grid-column: 10 / span 3 !important; grid-row: 2 !important; }
+
+.ora-checkin .payment-log-audit-btn,
+.ora-checkin [data-payment-audit] {
+    color: #154b7d !important;
+}
+
+.ora-checkin .payment-log-audit-btn i,
+.ora-checkin [data-payment-audit] i {
+    font-size: 12px;
+}
+
+@media (max-width: 980px) {
+    .ora-checkin .search-result-meta {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .ora-checkin .search-meta-stay {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 850px) {
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-category-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .rate-plan-field {
+        grid-column: 1 / -1 !important;
+        grid-row: auto !important;
+    }
+
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-room-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-total-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-discount-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-tax-field,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomAdultsWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomChildrenWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomInfantsWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-add-btn {
+        grid-column: span 1 !important;
+        grid-row: auto !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .ora-checkin .search-result-top {
+        align-items: flex-start;
+    }
+
+    .ora-checkin .search-result-meta {
+        grid-template-columns: 1fr;
+    }
+
+    .ora-checkin .search-meta-stay {
+        grid-column: auto;
+    }
+
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-category-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-room-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .rate-plan-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-total-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-discount-field,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-tax-field,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomAdultsWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomChildrenWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) #roomInfantsWrap,
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-add-btn {
+        grid-column: 1 !important;
+        grid-row: auto !important;
+    }
+}
+
+
+/* 2026-09-24 — Search suggestion simplification + WebForms-style Terminal simulation */
+.ora-checkin .search-result.search-result-card .search-result-meta {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.ora-checkin .security-simulation-box #simulateCardNow {
+    width: 100%;
+    min-height: 36px;
+    font-weight: 800;
+}
+
+.ora-checkin .security-simulation-box #simulateCardNow:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+    .ora-checkin .search-result.search-result-card .search-result-meta {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* ============================================================================
+   2026-09-24 Check-In polish
+   - Services/Charges form text is easier to read.
+   - Rate Plan / Total / Discount are intentionally narrower on desktop.
+   - Row 2 order is Tax -> Adults -> Children -> Infants -> Add.
+   - Payment audit uses a dedicated clipboard/log glyph.
+   ============================================================================ */
+.ora-checkin #chargeEntry label,
+.ora-checkin #chargeEntry .charge-tax-caption {
+    font-size: 13px !important;
+    line-height: 1.25 !important;
+    font-weight: 700 !important;
+}
+
+.ora-checkin #chargeEntry select,
+.ora-checkin #chargeEntry input,
+.ora-checkin #chargeEntry textarea,
+.ora-checkin #chargeEntry .check,
+.ora-checkin #chargeEntry .tax-group,
+.ora-checkin #chargeEntry .btn {
+    font-size: 13px !important;
+}
+
+.ora-checkin #chargeEntry select,
+.ora-checkin #chargeEntry input[type="text"],
+.ora-checkin #chargeEntry input[type="number"],
+.ora-checkin #chargeEntry input[type="date"] {
+    min-height: 38px !important;
+}
+
+.ora-checkin #chargeEntry .occupancy-limit-inline {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+}
+
+/* Desktop: use five intentional columns instead of equal 12-column spans.
+   This gives more room to Category/Room while keeping Rate Plan, Total and
+   Discount compact, exactly in the requested order. */
+@media (min-width: 1001px) {
+    .ora-checkin #chargeEntry.charge-row-mvc,
+    .ora-checkin #chargeEntry.charge-row-mvc.service-mode {
+        grid-template-columns:
+            minmax(165px, 1.55fr)
+            minmax(120px, 1.05fr)
+            minmax(125px, 1.05fr)
+            minmax(90px, .72fr)
+            minmax(90px, .72fr) !important;
+        column-gap: 10px !important;
+        row-gap: 12px !important;
+    }
+
+    /* Room row 1: Category | Room | Rate Plan | Total | Discount */
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-category-field { grid-column: 1 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-room-field     { grid-column: 2 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) .rate-plan-field       { grid-column: 3 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-total-field    { grid-column: 4 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-discount-field { grid-column: 5 !important; grid-row: 1 !important; }
+
+    /* Room row 2: Tax | Adults | Children | Infants | Add */
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-tax-field      { grid-column: 1 !important; grid-row: 2 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) #roomAdultsWrap        { grid-column: 2 !important; grid-row: 2 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) #roomChildrenWrap      { grid-column: 3 !important; grid-row: 2 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) #roomInfantsWrap       { grid-column: 4 !important; grid-row: 2 !important; }
+    .ora-checkin #chargeEntry:not(.service-mode) .charge-add-btn        { grid-column: 5 !important; grid-row: 2 !important; }
+
+    /* Service mode keeps Details wide and the money boxes compact. */
+    .ora-checkin #chargeEntry.service-mode .charge-category-field { grid-column: 1 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry.service-mode .charge-detail-wrap    { grid-column: 2 / span 2 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry.service-mode .charge-total-field    { grid-column: 4 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry.service-mode .charge-discount-field { grid-column: 5 !important; grid-row: 1 !important; }
+    .ora-checkin #chargeEntry.service-mode .charge-tax-field      { grid-column: 1 !important; grid-row: 2 !important; }
+    .ora-checkin #chargeEntry.service-mode .charge-add-btn        { grid-column: 5 !important; grid-row: 2 !important; }
+
+    .ora-checkin #chargeEntry .rate-plan-field select,
+    .ora-checkin #chargeEntry .charge-total-field input,
+    .ora-checkin #chargeEntry .charge-discount-field input {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+}
+
+.ora-checkin .payment-log-audit-btn,
+.ora-checkin [data-payment-audit].btn-icon {
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+}
+
+.ora-checkin .payment-log-audit-btn i,
+.ora-checkin [data-payment-audit].btn-icon i {
+    font-size: 14px !important;
 }
