@@ -5,6 +5,7 @@ namespace Orapmshms.Services;
 public interface ICheckInService
 {
     Task<CheckInPageViewModel> GetPageAsync(string hotelId, string hotelName, string userId, string userName, string? lookup, CancellationToken ct = default);
+    Task<CheckInPageViewModel> GetReservationStateAsync(string hotelId, string hotelName, string userId, string userName, string lookup, CancellationToken ct = default);
     Task<IReadOnlyList<CheckInSearchResult>> SearchAsync(string hotelId, string term, CancellationToken ct = default);
     Task<IReadOnlyList<CheckInSearchResult>> SearchGuestSuggestionsAsync(string hotelId, string term, CancellationToken ct = default);
     Task<GuestCheckInInput?> GetGuestByPhoneOrEmailAsync(string hotelId, string value, CancellationToken ct = default);

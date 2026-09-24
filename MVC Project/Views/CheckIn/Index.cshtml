@@ -95,7 +95,8 @@
             }
 
             .ora-checkin .page-title {
-                display: flex;
+                display: grid;
+                grid-template-columns: minmax(0,2fr) minmax(340px,.88fr);
                 align-items: center;
                 gap: 10px;
                 padding: 10px 18px 8px
@@ -104,7 +105,7 @@
             .ora-checkin .checkin-title-copy h1 {
                 margin: 0;
                 color: #0b3768;
-                font-size: 23px;
+                font-size: 20px;
                 font-weight: 800
             }
 
@@ -115,8 +116,8 @@
 
             .ora-checkin .search-wrap {
                 position: relative;
-                margin-left: auto;
-                width: min(510px,42vw)
+                margin-left: 0;
+                width: 100%
             }
 
             .ora-checkin .search {
@@ -285,19 +286,19 @@
             }
 
         @@media(max-width:1100px) {
-            .ora-checkin .layout {
+            .ora-checkin .layout,
+            .ora-checkin .page-title {
                 grid-template-columns: 1fr
             }
 
             .ora-checkin .search-wrap {
-                width: min(520px,48vw)
+                width: 100%
             }
         }
 
         @@media(max-width:760px) {
             .ora-checkin .page-title {
-                align-items: flex-start;
-                flex-wrap: wrap
+                align-items: flex-start
             }
 
             .ora-checkin .search-wrap {
@@ -331,6 +332,30 @@
                 grid-template-columns: 1fr
             }
         }
+
+        /* Requested Check-In alignment overrides. */
+        .ora-checkin #chargeEntry label,
+        .ora-checkin #chargeOptionsRow label {
+            font-size: 13px;
+            line-height: 1.25;
+            font-weight: 600;
+            margin-bottom: 4px
+        }
+
+        .ora-checkin .charge-table th:last-child,
+        .ora-checkin .charge-table td.row-actions {
+            text-align: center
+        }
+
+        .ora-checkin .charge-table td.row-actions {
+            justify-content: center;
+            align-items: center
+        }
+
+        .ora-checkin .charge-table td.row-actions .icon-action {
+            margin-left: auto;
+            margin-right: auto
+        }
     </style>
 }
 
@@ -359,7 +384,6 @@
     }
 
     <section class="page-title">
-        <i class="pulse" aria-hidden="true"></i>
         <div class="checkin-title-copy">
             <h1>GUEST CHECK-IN</h1>
             <p>Register the guest, manage room/services, payments and stay actions from one screen.</p>
@@ -385,7 +409,7 @@
                         <span class="card-meta">Hotel date: @Model.HotelToday.ToString("dd MMM yyyy")</span>
                     </div>
                     <div class="card-body">
-                        <div class="grid guest-grid-mvc">
+                        <div id="guestRegistrationGrid" class="grid guest-grid-mvc">
                             <div class="field"><label for="firstName">First Name <b class="req">*</b></label><input id="firstName" maxlength="20" required autocomplete="given-name" value="@g.FirstName" /></div>
                             <div class="field"><label for="lastName">Last Name</label><input id="lastName" maxlength="20" autocomplete="family-name" value="@g.LastName" /></div>
                             <div class="field"><label for="phone">Contact Number</label><input id="phone" maxlength="50" type="tel" autocomplete="tel" value="@g.Phone" /></div>
@@ -403,7 +427,7 @@
                                     }</select></div>
 
                             <div class="field span-2 guest-address-field"><label for="address">Complete Address</label><input id="address" maxlength="200" value="@g.Address" /></div>
-                            <div class="field stay-date-field">
+                            <div id="guestStayDatesField" class="field stay-date-field">
                                 <label for="stayDateDisplay">Stay Dates</label>
                                 <div id="stayDatePicker" class="date-picker">
                                     <input id="stayDateDisplay" class="date-picker-input" readonly aria-haspopup="dialog" aria-expanded="false" aria-controls="dateCalendar" />
@@ -422,7 +446,7 @@
                                 </div>
                             </div>
 
-                            <div class="field"><label for="stayCount">@(Model.IsMonthWise ? "Months" : "Nights")</label><input id="stayCount" readonly /></div>
+                            <div id="guestStayCountField" class="field"><label for="stayCount">@(Model.IsMonthWise ? "Months" : "Nights")</label><input id="stayCount" readonly /></div>
                             <div class="field"><label for="source">Booking Source</label><div class="select-with-button"><select id="source"><option value="">--Select--</option>@foreach (var o in Model.Sources)
                                         {
                                             <option value="@o.Value">@o.Text</option>
@@ -431,21 +455,10 @@
                                         {
                                             <option value="@o.Value">@o.Text</option>
                                         }</select><button id="manageCompany" type="button" class="mini-action" title="Manage company"><i class="fa-solid fa-plus"></i></button></div></div>
-                            <div class="field"><label for="adults">Adults</label><div class="counter"><button type="button" data-target="adults" data-delta="-1"><i class="fa-solid fa-minus"></i></button><input id="adults" type="number" min="1" value="@Math.Max(1,g.Adults)" /><button type="button" data-target="adults" data-delta="1"><i class="fa-solid fa-plus"></i></button></div></div>
-                            <div class="field"><label for="children">Minors</label><div class="counter"><button type="button" data-target="children" data-delta="-1"><i class="fa-solid fa-minus"></i></button><input id="children" type="number" min="0" value="@Math.Max(0,g.Children)" /><button type="button" data-target="children" data-delta="1"><i class="fa-solid fa-plus"></i></button></div></div>
 
                             <div id="guestActionRow" class="guest-inline-actions" aria-label="Guest actions">
-                                @if (!Model.IsExistingBooking)
-
-                                {
-                                    <button id="guestProceedCheckIn" type="button" class="btn btn-primary"><i class="fa-solid fa-arrow-right-to-bracket"></i>Proceed Check-In</button>
-                                }
-
-                                else if (Model.CanUpdateGuest)
-
-                                {
-                                    <button id="updateGuest" type="button" class="btn btn-primary"><i class="fa-solid fa-user-pen"></i>Update Guest Info</button>
-                                }
+                                <button id="guestProceedCheckIn" type="button" class="btn btn-primary @((Model.IsExistingBooking) ? "hidden" : "")"><i class="fa-solid fa-arrow-right-to-bracket"></i>Proceed Check-In</button>
+                                <button id="updateGuest" type="button" class="btn btn-primary @((!Model.IsExistingBooking || !Model.CanUpdateGuest) ? "hidden" : "")"><i class="fa-solid fa-user-pen"></i>Update Guest Info</button>
                             </div>
                         </div>
 
@@ -470,15 +483,21 @@
                         <div class="card-title"><h2 id="roomsHeading">Rooms &amp; Services</h2></div>
                     </div>
                     <div class="card-body">
+                        <div id="chargeRoomDatesRow" class="charge-options-row charge-room-dates-row">
+                            <div class="field room-date-col hidden"><label for="chargeArrival">Arrival</label><input id="chargeArrival" type="date" value="@DateValue(g.ArrivalDate)" /></div>
+                            <div class="field room-date-col hidden"><label for="chargeDeparture">Departure</label><input id="chargeDeparture" type="date" value="@DateValue(g.DepartureDate)" /></div>
+                            <input id="chargeNights" type="hidden" value="@Math.Max(0, (g.DepartureDate.Date - g.ArrivalDate.Date).Days)" />
+                        </div>
+
                         <div id="chargeEntry" class="charge-row charge-row-mvc">
-                            <div class="field">
+                            <div class="field charge-category-field">
                                 <label for="chargeCategory">Categories</label>
                                 <select id="chargeCategory">
                                     <option value="">--Select--</option>
                                     @foreach (var o in Model.Categories)
 
                                     {
-                                        <option value="@o.Text" data-category-id="@o.Value">@o.Text</option>
+                                        <option value="@o.Text" data-category-id="@o.Value" data-adult-limit="@o.AdultLimit" data-child-limit="@o.ChildLimit" data-infant-limit="@o.InfantLimit" data-occupancy-configured="@(o.HasOccupancySettings ? 1 : 0)">@o.Text</option>
                                     }
                                     <option value="Services" data-service="1">Services / Charges</option>
                                 </select>
@@ -489,17 +508,17 @@
                                 <input id="chargeDetail" maxlength="500" placeholder="Enter service / charge details" />
                             </div>
 
-                            <div id="chargeRoomWrap" class="field hidden">
+                            <div id="chargeRoomWrap" class="field charge-room-field hidden">
                                 <label for="chargeRoom">Room No.</label>
                                 <select id="chargeRoom"><option value="">--Select--</option></select>
                             </div>
 
-                            <div id="ratePlanWrap" class="field hidden">
+                            <div id="ratePlanWrap" class="field rate-plan-field hidden">
                                 <label for="ratePlan">Rate Plan</label>
                                 <select id="ratePlan"><option value="">--Select--</option></select>
                             </div>
 
-                            <div class="field">
+                            <div class="field charge-total-field">
                                 <label for="chargeTotal">Total (@Model.Currency)</label>
                                 <input id="chargeTotal" type="number" min="-999999999" step="0.01" />
                             </div>
@@ -507,18 +526,38 @@
                             @if (Model.HasDiscountPermission)
 
                             {
-                                <div class="field"><label for="discount">Discount (@Model.Currency)</label><input id="discount" type="number" min="0" step="0.01" value="0" /></div>
+                                <div class="field charge-discount-field"><label for="discount">Discount (@Model.Currency)</label><input id="discount" type="number" min="0" step="0.01" value="0" /></div>
                             }
 
-                            <div class="tax-group charge-tax-group" role="group" aria-label="Taxes">
-                                @if (Model.HasGstPermission && Model.HasGst)
-                                {
-                                    <label class="check"><input id="gst" type="checkbox" /> @Model.TaxLabel (@Model.GstPercent.ToString("0.##")%)</label>
-                                }
-                                @if (Model.HasBedTaxPermission && Model.HasBedTax && !Model.TaxLabel.Equals("VAT", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    <label class="check"><input id="bedTax" type="checkbox" /> Bed Tax (@Model.BedTaxPercent.ToString("0.##")%)</label>
-                                }
+                            @if ((Model.HasGstPermission && Model.HasGst) ||
+                                 (Model.HasBedTaxPermission && Model.HasBedTax && !Model.TaxLabel.Equals("VAT", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                <div class="field charge-tax-field">
+                                    <label class="charge-tax-caption">Tax</label>
+                                    <div class="tax-group charge-tax-group" role="group" aria-label="Taxes">
+                                        @if (Model.HasGstPermission && Model.HasGst)
+                                        {
+                                            <label class="check"><input id="gst" type="checkbox" /> @Model.TaxLabel (@Model.GstPercent.ToString("0.##")%)</label>
+                                        }
+                                        @if (Model.HasBedTaxPermission && Model.HasBedTax && !Model.TaxLabel.Equals("VAT", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <label class="check"><input id="bedTax" type="checkbox" /> Bed Tax (@Model.BedTaxPercent.ToString("0.##")%)</label>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <div id="roomAdultsWrap" class="field room-occupancy-field hidden">
+                                <label for="roomAdults">Adults <span id="roomAdultsLimit" class="occupancy-limit-inline">(Max 0)</span></label>
+                                <input id="roomAdults" type="number" min="0" max="0" value="0" inputmode="numeric" />
+                            </div>
+                            <div id="roomChildrenWrap" class="field room-occupancy-field hidden">
+                                <label for="roomChildren">Children <span id="roomChildrenLimit" class="occupancy-limit-inline">(Max 0)</span></label>
+                                <input id="roomChildren" type="number" min="0" max="0" value="0" inputmode="numeric" />
+                            </div>
+                            <div id="roomInfantsWrap" class="field room-occupancy-field hidden">
+                                <label for="roomInfants">Infants <span id="roomInfantsLimit" class="occupancy-limit-inline">(Max 0)</span></label>
+                                <input id="roomInfants" type="number" min="0" max="0" value="0" inputmode="numeric" />
                             </div>
 
                             <button id="addCharge" type="button" class="btn btn-primary charge-add-btn"><i class="fa-solid fa-plus"></i>Add</button>
@@ -527,36 +566,33 @@
                         <div id="chargeOptionsRow" class="charge-options-row">
                             <div id="promoCodeWrap" class="field hidden" hidden aria-hidden="true"><select id="promoCode" tabindex="-1"><option value="" selected></option></select></div>
                             <div id="monthlyRateWrap" class="field hidden"><label for="monthlyRate">Monthly Rate</label><input id="monthlyRate" type="number" min="0" step="0.01" /></div>
-                            <div class="field room-date-col hidden"><label for="chargeArrival">Arrival</label><input id="chargeArrival" type="date" value="@DateValue(g.ArrivalDate)" /></div>
-                            <div class="field room-date-col hidden"><label for="chargeDeparture">Departure</label><input id="chargeDeparture" type="date" value="@DateValue(g.DepartureDate)" /></div>
-                            <input id="chargeNights" type="hidden" value="@Math.Max(0, (g.DepartureDate.Date - g.ArrivalDate.Date).Days)" />
                             <input id="numberOfRooms" type="hidden" value="1" />
                         </div>
 
                         <div class="table-wrap charge-table-wrap">
                             <table class="table charge-table">
                                 <thead>
-                                    <tr><th>Check-In</th><th>#</th><th>Description</th><th>Type</th><th>Room</th><th>Guest</th><th>Stay</th><th>Rate Plan</th><th class="num">Rate / Night</th><th data-charge-col="discount" class="num @(!showDiscountColumn ? "is-column-hidden" : "")">Discount</th><th data-charge-col="gst" class="num @(!showTaxColumn ? "is-column-hidden" : "")">@Model.TaxLabel</th><th data-charge-col="bedtax" class="num @(!showBedTaxColumn ? "is-column-hidden" : "")">Bed Tax</th><th class="num">Total</th><th>Actions</th></tr>
+                                    <tr><th aria-label="Room selection"></th><th>Description</th><th>Type</th><th>Room</th><th>Adult</th><th>Child</th><th>Infant</th><th>Guest</th><th>Stay</th><th>Rate Plan</th><th class="num">Rate / Night</th><th data-charge-col="discount" class="num @(!showDiscountColumn ? "is-column-hidden" : "")">Discount</th><th data-charge-col="gst" class="num @(!showTaxColumn ? "is-column-hidden" : "")">@Model.TaxLabel</th><th data-charge-col="bedtax" class="num @(!showBedTaxColumn ? "is-column-hidden" : "")">Bed Tax</th><th class="num">Total</th><th>Actions</th></tr>
                                 </thead>
                                 <tbody id="chargeRows">
                                     @if (Model.Charges.Count == 0)
 
                                     {
-                                        <tr class="table-empty"><td colspan="14">No charges added yet. Save the guest, then add a room or service.</td></tr>
+                                        <tr class="table-empty"><td colspan="16">No charges added yet. Save the guest, then add a room or service.</td></tr>
                                     }
 
                                     else
 
                                     {
 
-                                        var sr = 0;
-
                                         foreach (var row in Model.Charges)
 
                                         {
 
-                                            sr++;
-                                            <tr data-charge-id="@row.Id" data-room="@row.RoomNo" data-category="@row.Category" data-status="@row.ReservationStatus" data-arrival="@(row.ArrivalDate?.ToString("yyyy-MM-dd") ?? "")" data-departure="@(row.DepartureDate?.ToString("yyyy-MM-dd") ?? "")">
+                                            var isRoomRentRow = row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase);
+                                            var rowStatusKey = (row.ReservationStatus ?? string.Empty).Replace("-", string.Empty).Replace("_", string.Empty).Replace(" ", string.Empty).ToLowerInvariant();
+                                            var isCheckedOutRoomRow = isRoomRentRow && (rowStatusKey == "checkout" || rowStatusKey == "checkedout");
+                                            <tr class="@(isCheckedOutRoomRow ? "charge-row-checkedout" : string.Empty)" data-charge-id="@row.Id" data-room="@row.RoomNo" data-category="@row.Category" data-status="@row.ReservationStatus" data-arrival="@(row.ArrivalDate?.ToString("yyyy-MM-dd") ?? "")" data-departure="@(row.DepartureDate?.ToString("yyyy-MM-dd") ?? "")">
                                                 <td>@if (row.CanSelectForCheckIn)
                                                     {
                                                         <input class="room-check" type="checkbox" value="@row.Id" data-room="@row.RoomNo" checked="@row.SelectedForCheckIn" title="Select this pending room for check-in" />
@@ -565,22 +601,29 @@
                                                     {
                                                         <i class="fa-solid fa-lock table-lock" title="This row is not available for check-in selection."></i>
                                                     }</td>
-                                                <td>@sr</td>
-                                                <td>@(row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? row.Description : (!string.IsNullOrWhiteSpace(row.DeductionInfo) ? row.DeductionInfo : row.Description))</td>
-                                                <td>@row.Category</td>
+                                                <td>@(isRoomRentRow ? row.Description : (!string.IsNullOrWhiteSpace(row.DeductionInfo) ? row.DeductionInfo : row.Description))</td>
+                                                <td>@(isRoomRentRow ? row.Category : string.Empty)</td>
                                                 <td class="room-cell reservation-room-number-cell">
-                                                    <span class="room-number-text">@(string.IsNullOrWhiteSpace(row.RoomNo) ? "—" : row.RoomNo)</span>
-                                                    @if (row.CanChangeRoom)
-
+                                                    @if (isRoomRentRow)
                                                     {
-                                                        <button type="button" class="reservation-room-edit-btn" data-room-change="@row.Id" title="Change this room" aria-label="Change room @row.RoomNo"><i class="fa-solid fa-pen"></i></button>
+                                                        <span class="room-number-text">@(string.IsNullOrWhiteSpace(row.RoomNo) ? "—" : row.RoomNo)</span>
+                                                        @if (row.CanChangeRoom)
+                                                        {
+                                                            <button type="button" class="reservation-room-edit-btn" data-room-change="@row.Id" title="Change this room" aria-label="Change room @row.RoomNo"><i class="fa-solid fa-pen"></i></button>
+                                                        }
                                                     }
                                                 </td>
-                                                <td class="guest-cell inline-editable-cell" data-value="@row.GuestName" data-can-edit-guest="@(row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "1" : "0")" title="@(row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "Double-click to edit guest name" : "")">@(string.IsNullOrWhiteSpace(row.GuestName) ? "—" : row.GuestName)</td>
-                                                <td>@DateText(row.ArrivalDate) → @DateText(row.DepartureDate)<br /><small>@row.Nights.ToString("0.##") @(Model.IsMonthWise ? "month(s)" : "night(s)")</small></td>
+                                                <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomAdults.ToString() : string.Empty)</td>
+                                                <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomChildren.ToString() : string.Empty)</td>
+                                                <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomInfants.ToString() : string.Empty)</td>
+                                                <td class="guest-cell inline-editable-cell" data-value="@(isRoomRentRow ? row.GuestName : string.Empty)" data-can-edit-guest="@(isRoomRentRow ? "1" : "0")" title="@(isRoomRentRow ? "Double-click to edit guest name" : "")">@(isRoomRentRow ? (string.IsNullOrWhiteSpace(row.GuestName) ? "—" : row.GuestName) : string.Empty)</td>
+                                                <td>@if (isRoomRentRow)
+                                                    {
+                                                        @DateText(row.ArrivalDate) <text> → </text> @DateText(row.DepartureDate)<br /><small>@row.Nights.ToString("0.##") @(Model.IsMonthWise ? "month(s)" : "night(s)")</small>
+                                                    }</td>
                                                 <td>@(string.IsNullOrWhiteSpace(row.RatePlanName) ? row.RatePlanId : row.RatePlanName)</td>
                                                 @{
-                                                    var ratePerNight = row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) && row.Nights > 1m && Math.Abs(row.Rate - row.Charge) < 0.01m ? Math.Round(row.Rate / row.Nights, 2) : row.Rate;
+                                                    var ratePerNight = isRoomRentRow && row.Nights > 1m && Math.Abs(row.Rate - row.Charge) < 0.01m ? Math.Round(row.Rate / row.Nights, 2) : row.Rate;
                                                 }
                                                 <td class="num rate-cell inline-editable-cell" data-value="@ratePerNight.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-can-edit-rate="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "1" : "0")" title="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "Double-click to edit rate per night" : "Rate update not permitted")">@Money(ratePerNight)</td>
                                                 <td data-charge-col="discount" data-value="@row.Discount.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showDiscountColumn ? "is-column-hidden" : "")">@Money(row.Discount)</td>
@@ -710,11 +753,11 @@
                     <div class="card-head"><span class="card-icon"><i class="fa-solid fa-receipt"></i></span><div class="card-title"><h2 id="logHeading">Payment Log</h2></div></div>
                     <div class="card-body payment-log-wrap">
                         <table class="payment-log">
-                            <thead><tr><th>Sr#</th><th>Date</th><th class="num">Amount Received</th><th>Pay Method</th><th>Receipt</th><th>Option</th><th>Log</th></tr></thead>
+                            <thead><tr><th>Sr#</th><th>Date</th><th class="num">Amount</th><th>Method</th><th>Receipt</th><th>Option</th></tr></thead>
                             <tbody id="paymentLogRows">
                                 @if (Model.PaymentLog.Count == 0)
                                 {
-                                    <tr><td colspan="7" class="payment-log-empty">No payment recorded yet.</td></tr>
+                                    <tr><td colspan="6" class="payment-log-empty">No payment recorded yet.</td></tr>
                                 }
                                 else
                                 {
@@ -728,10 +771,10 @@
                                                 else
                                                 {
                                                     <span>—</span>
-                                                }</td><td>@if (p.CanRefund)
+                                                }</td><td class="payment-option-cell">@if (p.CanRefund)
                                                 {
                                                     <button type="button" class="btn btn-ghost" data-payment-refund="@p.Id"><i class="fa-solid fa-rotate-left"></i> Refund</button>
-                                                }</td><td><button type="button" class="btn btn-ghost btn-icon" data-payment-audit="@p.Id" title="View payment log"><i class="fa-solid fa-clock-rotate-left"></i></button></td></tr>
+                                                }<button type="button" class="btn btn-ghost btn-icon payment-log-audit-btn" data-payment-audit="@p.Id" title="View audit log" aria-label="View audit log"><i class="fa-solid fa-clipboard-list"></i></button></td></tr>
                                     }
                                 }
                             </tbody>
@@ -804,30 +847,13 @@
     <div id="checkinFixedActions" class="checkin-fixed-action-bar" aria-label="Check-in actions">
         <div class="checkin-fixed-action-inner">
             <div class="checkin-footer-left">
-                @if (Model.ShowCheckOutAction)
-
-                {
-                    <button id="checkOutAction" type="button" class="footer-action-btn footer-checkout"><i class="fa-solid fa-right-from-bracket"></i>Check-Out</button>
-                }
+                <button id="checkOutAction" type="button" class="footer-action-btn footer-checkout @(!Model.ShowCheckOutAction ? "hidden" : "")"><i class="fa-solid fa-right-from-bracket"></i>Check-Out</button>
             </div>
 
             <div class="checkin-footer-right">
-                @if (Model.ShowCheckInAction)
-
-                {
-                    <button id="complete" type="button" class="footer-action-btn footer-checkin"><i class="fa-solid fa-right-to-bracket"></i>Check-In</button>
-                }
-
-                @if (Model.ShowUndoCheckInAction)
-
-                {
-                    <button id="undoCheckIn" type="button" class="footer-action-btn footer-undo"><i class="fa-solid fa-rotate-left"></i>Undo Check-In</button>
-                }
-                @if (Model.IsExistingBooking)
-
-                {
-                    <button id="printInvoice" type="button" class="footer-action-btn footer-print"><i class="fa-solid fa-print"></i>Print</button>
-                }
+                <button id="complete" type="button" class="footer-action-btn footer-checkin @(!Model.ShowCheckInAction ? "hidden" : "")"><i class="fa-solid fa-right-to-bracket"></i>Check-In</button>
+                <button id="undoCheckIn" type="button" class="footer-action-btn footer-undo @(!Model.ShowUndoCheckInAction ? "hidden" : "")"><i class="fa-solid fa-rotate-left"></i>Undo Check-In</button>
+                <button id="printInvoice" type="button" class="footer-action-btn footer-print @(!Model.IsExistingBooking ? "hidden" : "")"><i class="fa-solid fa-print"></i>Print</button>
             </div>
         </div>
     </div>
@@ -951,7 +977,19 @@
                 <div class="modal-field"><label for="cardNote">Note</label><input id="cardNote" /></div>
                 @if (Model.ShowSimulation)
                 {
-                    <div id="cardSimulationWrap" class="simulation"><label><input id="cardSimulate" type="checkbox" /> Use simulated card</label><select id="cardSimulationResult"><option value="success">Success</option><option value="declined">Declined</option><option value="timeout">Reader timeout</option></select></div>
+                    <div id="cardSimulationWrap" class="simulation security-simulation-box">
+                        <div class="simulation-head">
+                            <strong>Simulation</strong>
+                            <label><input id="cardSimulate" type="checkbox" /> Use simulated card</label>
+                        </div>
+                        <select id="cardSimulationResult">
+                            <option value="success">Success (Visa 4242...4242)</option>
+                            <option value="decline">Decline</option>
+                            <option value="insufficient_funds">Insufficient Funds</option>
+                        </select>
+                        <button id="simulateCardNow" type="button" class="btn btn-outline btn-block" disabled>Simulate</button>
+                        <small>Use after “Handing off to reader...”.</small>
+                    </div>
                 }
                 <div id="cardTerminalStatus" class="terminal-status"><b>Ready</b><span>Select a terminal/PDQ device and process the payment.</span></div>
                 <div class="modal-actions"><button id="chargeCardNow" type="button" class="btn btn-primary">Charge Now</button><button id="cancelTerminal" type="button" class="btn btn-outline">Cancel</button></div>
@@ -1011,9 +1049,25 @@
         </section>
     </div>
 
-    <div id="auditModal" class="modal-backdrop hidden" role="dialog" aria-modal="true"><section class="dialog wide-dialog"><div class="modal-head"><i class="modal-dot"></i><h2>PAYMENT AUDIT LOG</h2><button type="button" class="modal-close" data-close-modal="auditModal">×</button></div><div class="modal-body"><pre id="auditContent" class="audit-content"></pre></div></section></div>
+    <div id="auditModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="auditModalTitle">
+        <section class="dialog payment-audit-dialog">
+            <div class="payment-audit-header">
+                <div>
+                    <h2 id="auditModalTitle" class="payment-audit-title">Payment Log</h2>
+                    <div class="payment-audit-subtitle">Created date, user, IP and PC information</div>
+                </div>
+                <button type="button" class="payment-audit-close" data-close-modal="auditModal" aria-label="Close">×</button>
+            </div>
+            <div class="payment-audit-body">
+                <div id="auditContent" class="payment-audit-loading">Loading...</div>
+                <div class="payment-audit-footer">
+                    <button type="button" class="payment-audit-btn" data-close-modal="auditModal">Close</button>
+                </div>
+            </div>
+        </section>
+    </div>
 
-    <div id="confirmDialog" class="modal-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle"><section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2 id="confirmTitle">Confirm</h2></div><div class="dialog-body"><p id="confirmMessage"></p></div><div class="dialog-actions"><button id="confirmCancel" type="button" class="btn btn-outline">Cancel</button><button id="confirmOk" type="button" class="btn btn-primary">Confirm</button></div></section></div>
+    <div id="confirmDialog" class="modal-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle"><section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2 id="confirmTitle">Confirm</h2></div><div class="dialog-body"><p id="confirmMessage"></p></div><div class="dialog-actions"><button id="confirmCancel" type="button" class="btn btn-outline">No</button><button id="confirmOk" type="button" class="btn btn-primary">Confirm</button></div></section></div>
     <div id="inputDialog" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="inputDialogTitle"><section class="dialog"><div class="modal-head"><i class="modal-dot"></i><h2 id="inputDialogTitle">Enter Value</h2><button id="inputDialogClose" type="button" class="modal-close">×</button></div><div class="modal-body"><div class="modal-field"><label id="inputDialogLabel" for="inputDialogValue">Value</label><input id="inputDialogValue" /></div><div id="inputDialogHint" class="checkin-note hidden"></div><div class="modal-actions"><button id="inputDialogCancel" type="button" class="btn btn-outline">Cancel</button><button id="inputDialogOk" type="button" class="btn btn-primary">OK</button></div></div></section></div>
     <div id="toastHost" class="toast-host"></div>
     <div id="busyOverlay" class="busy-overlay hidden"><div class="busy-card"><i class="fa-solid fa-circle-notch fa-spin"></i><span id="busyText">Processing…</span></div></div>

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
 using System.Net;
@@ -23,6 +24,17 @@ public sealed class CheckInService : ICheckInService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAvailabilityAutoUpdateQueue _availabilityQueue;
     private readonly ILogger<CheckInService> _logger;
+
+    // Check-In is a very interactive page. Hotel configuration and page permissions do not
+    // change on every reservation click, so keep a short in-process cache. The normal page
+    // load warms these entries and subsequent AJAX reservation loads avoid the same 6-8
+    // configuration/permission round trips. Short TTLs keep administration changes fresh.
+    private static readonly ConcurrentDictionary<string, HotelSettingsCacheEntry> HotelSettingsCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, PermissionCacheEntry> PermissionCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan HotelSettingsCacheTtl = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan PermissionCacheTtl = TimeSpan.FromSeconds(60);
 
     public CheckInService(
         IConfiguration configuration,
@@ -94,6 +106,7 @@ public sealed class CheckInService : ICheckInService
         if (model.ReservationId.Length > 0)
         {
             model.Charges = (await LoadChargesAsync(cn, hotelId, model.ReservationId, permission, ct)).ToList();
+            ApplyReservationDateModeFromCharges(model);
 
             // Stay dates remain editable for an active Individual/Single booking whether
             // it is still a reservation or already checked in. Multiple physical rooms are
@@ -121,6 +134,97 @@ public sealed class CheckInService : ICheckInService
         return model;
     }
 
+    /// <summary>
+    /// Lightweight reservation refresh used by the Check-In AJAX UI.  Unlike GetPageAsync,
+    /// this intentionally skips static page lookups (countries, companies, sources, categories,
+    /// payment methods, readers, etc.) because those controls are already present in the browser.
+    /// Only reservation-specific data is reloaded, which makes search selection and post-action
+    /// refreshes much faster without changing the underlying business rules.
+    /// </summary>
+    public async Task<CheckInPageViewModel> GetReservationStateAsync(
+        string hotelId,
+        string hotelName,
+        string userId,
+        string userName,
+        string lookup,
+        CancellationToken ct = default)
+    {
+        EnsureSession(hotelId, userId);
+        if (string.IsNullOrWhiteSpace(lookup))
+            throw new ArgumentException("Reservation ID is required.", nameof(lookup));
+
+        var now = _hotelClock.GetHotelNow(hotelId);
+        var model = new CheckInPageViewModel
+        {
+            HotelId = hotelId,
+            HotelName = hotelName,
+            UserId = userId,
+            UserName = userName,
+            HotelToday = now.Date,
+            Guest = new GuestCheckInInput
+            {
+                ArrivalDate = now.Date,
+                DepartureDate = now.Date.AddDays(1),
+                ArrivalTime = now.ToString("HH:mm", CultureInfo.InvariantCulture),
+                DepartureTime = "12:00"
+            }
+        };
+
+        var stateLoadStarted = Environment.TickCount64;
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+
+        // Settings and permissions affect row actions, totals and action buttons, so they remain
+        // part of the lightweight refresh.  Static dropdown data is deliberately not reloaded.
+        await LoadHotelSettingsAsync(cn, model, ct);
+        var permission = await LoadPermissionsAsync(cn, hotelId, userId, ct);
+        ApplyPermissions(model, permission);
+
+        await LoadExistingAsync(cn, model, lookup.Trim(), permission, ct);
+        var coreLoadMs = Environment.TickCount64 - stateLoadStarted;
+        if (string.IsNullOrWhiteSpace(model.ReservationId))
+            throw new KeyNotFoundException("Reservation was not found.");
+
+        // These reservation panels are independent read operations. Loading them serially was
+        // the main reason a search-result click felt slow: every panel waited for the previous
+        // SQL round trip. Run them in parallel on pooled SQL connections, while keeping the
+        // same queries/business rules and the same final model.
+        var reservationId = model.ReservationId;
+        var chargesTask = WithOpenConnectionAsync(c => LoadChargesAsync(c, hotelId, reservationId, permission, ct), ct);
+        var paymentTask = WithOpenConnectionAsync(c => LoadPaymentLogAsync(c, hotelId, reservationId, permission, ct), ct);
+        var securityTask = WithOpenConnectionAsync(c => LoadSecurityLogAsync(c, hotelId, reservationId, ct), ct);
+        var laundryTask = WithOpenConnectionAsync(c => LoadLaundryAsync(c, hotelId, reservationId, ct), ct);
+        var discountTask = WithOpenConnectionAsync(c => LoadDiscountsAsync(c, hotelId, reservationId, ct), ct);
+        var totalsTask = WithOpenConnectionAsync(c => LoadTotalsAsync(c, hotelId, reservationId, model.IsRoundTotal, ct), ct);
+        var fbrTask = model.FbrEnabled
+            ? WithOpenConnectionAsync(c => HasValidFbrInvoiceAsync(c, hotelId, reservationId, ct), ct)
+            : Task.FromResult(false);
+
+        var panelsStarted = Environment.TickCount64;
+        await Task.WhenAll(new Task[] { chargesTask, paymentTask, securityTask, laundryTask, discountTask, totalsTask, fbrTask });
+        var panelsLoadMs = Environment.TickCount64 - panelsStarted;
+
+        model.Charges = (await chargesTask).ToList();
+        ApplyReservationDateModeFromCharges(model);
+        model.PaymentLog = (await paymentTask).ToList();
+        model.SecurityLog = (await securityTask).ToList();
+        model.Laundry = (await laundryTask).ToList();
+        model.Discounts = (await discountTask).ToList();
+        model.Totals = await totalsTask;
+        model.CanPostAndPrint = model.FbrEnabled && !await fbrTask;
+
+        var activeStay = IsReservation(model.ReservationStatus) || IsCheckIn(model.ReservationStatus);
+        model.CanEditDates = activeStay;
+        model.CanExtendReservation = activeStay;
+        ApplyActionMenu(model);
+
+        _logger.LogInformation(
+            "Check-in reservation state {RegId}: core {CoreMs} ms, panels {PanelsMs} ms, total {TotalMs} ms.",
+            model.ReservationId, coreLoadMs, panelsLoadMs, Environment.TickCount64 - stateLoadStarted);
+
+        return model;
+    }
+
     public async Task<IReadOnlyList<CheckInSearchResult>> SearchAsync(string hotelId, string term, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(term))
@@ -130,52 +234,139 @@ public sealed class CheckInService : ICheckInService
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
 
-        const string sql = @"
-SELECT TOP (30)
-    reg_id, RowId, GuestName, LastName, PhoneNo, Email, res_status,
-    ArrivalDate, DepartureDate, SourceTable
+        var cleanTerm = term.Trim();
+        var exactId = int.TryParse(cleanTerm, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId) ? parsedId : -1;
+
+        // Fast path for reservation number / row ID. Do NOT mix exact predicates with name, phone
+        // and email OR predicates in the same statement; SQL Server can otherwise choose a scan.
+        // Most front-desk searches use the reservation number, so return immediately when found.
+        const string exactSql = @"
+SELECT TOP (24) reg_id, RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, DepartureDate, SourceTable
 FROM
 (
-    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status,
-           ArrivalDate, DepartureDate, 'GuestInformationLogTB' AS SourceTable, 0 AS SourceOrder
+    /* Keep reg_id and numeric-ID lookups as separate seekable branches.
+       The previous OR predicate could make SQL Server scan a large reservation table. */
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, DepartureDate,
+           'GuestInformationLogTB' AS SourceTable, 0 AS MatchOrder, 0 AS SourceOrder
+    FROM dbo.GuestInformationLogTB
+    WHERE hotel_id=@hotel AND reg_id=@exact
+
+    UNION ALL
+
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, dept_date AS DepartureDate,
+           'NewReservationsTB' AS SourceTable, 0 AS MatchOrder, 1 AS SourceOrder
+    FROM dbo.NewReservationsTB
+    WHERE hotel_id=@hotel AND reg_id=@exact
+
+    UNION ALL
+
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, DepartureDate,
+           'GuestInformationLogTB' AS SourceTable, 1 AS MatchOrder, 0 AS SourceOrder
+    FROM dbo.GuestInformationLogTB
+    WHERE @exactId>=0 AND hotel_id=@hotel AND ID=@exactId AND ISNULL(reg_id,'')<>@exact
+
+    UNION ALL
+
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, dept_date AS DepartureDate,
+           'NewReservationsTB' AS SourceTable, 1 AS MatchOrder, 1 AS SourceOrder
+    FROM dbo.NewReservationsTB
+    WHERE @exactId>=0 AND hotel_id=@hotel AND ID=@exactId AND ISNULL(reg_id,'')<>@exact
+) x
+ORDER BY MatchOrder, SourceOrder, RowId DESC
+OPTION (RECOMPILE);";
+
+        await using (var exact = new SqlCommand(exactSql, cn) { CommandTimeout = 5 })
+        {
+            exact.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+            exact.Parameters.Add("@exact", SqlDbType.VarChar, 180).Value = cleanTerm;
+            exact.Parameters.Add("@exactId", SqlDbType.Int).Value = exactId;
+            await using var rd = await exact.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct)) list.Add(ReadSearchResult(rd));
+        }
+        if (list.Count > 0) return list;
+
+        // Prefix search is the normal live-search path and remains index-friendly.
+        const string prefixSql = @"
+SELECT TOP (24) reg_id, RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, DepartureDate, SourceTable
+FROM
+(
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, DepartureDate,
+           'GuestInformationLogTB' AS SourceTable, 0 AS SourceOrder
+    FROM dbo.GuestInformationLogTB
+    WHERE hotel_id=@hotel
+      AND (reg_id LIKE @prefix OR GuestName LIKE @prefix OR LastName LIKE @prefix
+           OR CONCAT(ISNULL(GuestName,''),' ',ISNULL(LastName,'')) LIKE @prefix
+           OR PhoneNo LIKE @prefix OR Email LIKE @prefix)
+
+    UNION ALL
+
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, dept_date AS DepartureDate,
+           'NewReservationsTB' AS SourceTable, 1 AS SourceOrder
+    FROM dbo.NewReservationsTB
+    WHERE hotel_id=@hotel
+      AND (reg_id LIKE @prefix OR GuestName LIKE @prefix OR LastName LIKE @prefix
+           OR CONCAT(ISNULL(GuestName,''),' ',ISNULL(LastName,'')) LIKE @prefix
+           OR PhoneNo LIKE @prefix OR Email LIKE @prefix)
+) x
+ORDER BY SourceOrder, RowId DESC
+OPTION (RECOMPILE);";
+
+        await using (var prefix = new SqlCommand(prefixSql, cn) { CommandTimeout = 6 })
+        {
+            prefix.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+            prefix.Parameters.Add("@prefix", SqlDbType.VarChar, 200).Value = cleanTerm + "%";
+            await using var rd = await prefix.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct)) list.Add(ReadSearchResult(rd));
+        }
+
+        // Preserve legacy mid-string search only when prefix search did not provide enough results.
+        if (list.Count < 10 && cleanTerm.Length >= 3)
+        {
+            const string fallbackSql = @"
+SELECT TOP (16) reg_id, RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, DepartureDate, SourceTable
+FROM
+(
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, DepartureDate,
+           'GuestInformationLogTB' AS SourceTable, 0 AS SourceOrder
     FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel
     UNION ALL
-    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status,
-           ArrivalDate, dept_date AS DepartureDate, 'NewReservationsTB' AS SourceTable, 1 AS SourceOrder
+    SELECT reg_id, ID AS RowId, GuestName, LastName, PhoneNo, Email, res_status, ArrivalDate, dept_date AS DepartureDate,
+           'NewReservationsTB' AS SourceTable, 1 AS SourceOrder
     FROM dbo.NewReservationsTB WHERE hotel_id=@hotel
 ) x
-WHERE CONVERT(varchar(50),RowId)=@exact
-   OR reg_id=@exact
-   OR reg_id LIKE @q
-   OR ISNULL(GuestName,'') LIKE @q
-   OR ISNULL(LastName,'') LIKE @q
-   OR ISNULL(PhoneNo,'') LIKE @q
-   OR ISNULL(Email,'') LIKE @q
-ORDER BY CASE WHEN reg_id=@exact OR CONVERT(varchar(50),RowId)=@exact THEN 0 ELSE 1 END,
-         SourceOrder, RowId DESC;";
-        await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
-        cmd.Parameters.Add("@exact", SqlDbType.VarChar, 180).Value = term.Trim();
-        cmd.Parameters.Add("@q", SqlDbType.VarChar, 200).Value = "%" + term.Trim() + "%";
-        await using var rd = await cmd.ExecuteReaderAsync(ct);
-        while (await rd.ReadAsync(ct))
-        {
-            list.Add(new CheckInSearchResult
+WHERE reg_id LIKE @contains OR ISNULL(GuestName,'') LIKE @contains OR ISNULL(LastName,'') LIKE @contains
+   OR CONCAT(ISNULL(GuestName,''),' ',ISNULL(LastName,'')) LIKE @contains
+   OR ISNULL(PhoneNo,'') LIKE @contains OR ISNULL(Email,'') LIKE @contains
+ORDER BY SourceOrder, RowId DESC
+OPTION (RECOMPILE);";
+            await using var fallback = new SqlCommand(fallbackSql, cn) { CommandTimeout = 6 };
+            fallback.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+            fallback.Parameters.Add("@contains", SqlDbType.VarChar, 200).Value = "%" + cleanTerm + "%";
+            await using var rd = await fallback.ExecuteReaderAsync(ct);
+            var seen = new HashSet<string>(list.Select(x => $"{x.SourceTable}|{x.RowId}|{x.RegId}"), StringComparer.OrdinalIgnoreCase);
+            while (list.Count < 24 && await rd.ReadAsync(ct))
             {
-                RegId = S(rd, "reg_id"),
-                RowId = I(rd, "RowId"),
-                GuestName = S(rd, "GuestName"),
-                LastName = S(rd, "LastName"),
-                Phone = S(rd, "PhoneNo"),
-                Email = S(rd, "Email"),
-                Status = S(rd, "res_status"),
-                Arrival = DateAny(rd, "ArrivalDate"),
-                Departure = DateAny(rd, "DepartureDate"),
-                SourceTable = S(rd, "SourceTable")
-            });
+                var item = ReadSearchResult(rd);
+                if (seen.Add($"{item.SourceTable}|{item.RowId}|{item.RegId}")) list.Add(item);
+            }
         }
+
         return list;
     }
+
+    private static CheckInSearchResult ReadSearchResult(SqlDataReader rd) => new()
+    {
+        RegId = S(rd, "reg_id"),
+        RowId = I(rd, "RowId"),
+        GuestName = S(rd, "GuestName"),
+        LastName = S(rd, "LastName"),
+        Phone = S(rd, "PhoneNo"),
+        Email = S(rd, "Email"),
+        Status = S(rd, "res_status"),
+        Arrival = DateAny(rd, "ArrivalDate"),
+        Departure = DateAny(rd, "DepartureDate"),
+        SourceTable = S(rd, "SourceTable")
+    };
 
     public Task<IReadOnlyList<CheckInSearchResult>> SearchGuestSuggestionsAsync(string hotelId, string term, CancellationToken ct = default)
         => SearchAsync(hotelId, term, ct);
@@ -356,18 +547,33 @@ ORDER BY TRY_CONVERT(int,c.room_no),c.room_no;";
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
         const string sql = @"
-SELECT localplanid, planname, ISNULL(category_id,'') AS category_id, ISNULL(rate,0) AS rate
+SELECT localplanid, planname,
+       ISNULL(category_id,'') AS category_id,
+       ISNULL(category,'') AS category,
+       ISNULL(rate,0) AS rate
 FROM dbo.category_plan
 WHERE hotel_id=@hotel
-  AND (LTRIM(RTRIM(ISNULL(category,'')))=@category
-       OR LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),category_id),'')))=@category)
-ORDER BY planname;";
+  AND (
+        @all=1
+        OR LTRIM(RTRIM(ISNULL(category,'')))=@category
+        OR LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),category_id),'')))=@category
+      )
+ORDER BY category, planname;";
         await using var cmd = new SqlCommand(sql, cn);
+        var cleanCategory = category?.Trim() ?? string.Empty;
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-        cmd.Parameters.Add("@category", SqlDbType.VarChar, 150).Value = category?.Trim() ?? string.Empty;
+        cmd.Parameters.Add("@category", SqlDbType.VarChar, 150).Value = cleanCategory;
+        cmd.Parameters.Add("@all", SqlDbType.Bit).Value = cleanCategory == "*" || cleanCategory.Length == 0;
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
-            list.Add(new LookupOption { Value = S(rd, "localplanid"), Text = S(rd, "planname"), Meta = S(rd, "category_id"), Amount = M(rd, "rate") });
+            list.Add(new LookupOption
+            {
+                Value = S(rd, "localplanid"),
+                Text = S(rd, "planname"),
+                Meta = S(rd, "category_id"),
+                Meta2 = S(rd, "category"),
+                Amount = M(rd, "rate")
+            });
         return list;
     }
 
@@ -759,23 +965,49 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
         var permissions = await LoadPermissionsAsync(cn, hotelId, userId, ct);
+        var hotelSettings = await GetHotelSettingsSnapshotAsync(cn, hotelId, ct);
 
         if (!permissions.HasAny("GST", "VAT", "gst", "gsttaxblock")) request.ApplyGst = false;
         if (!permissions.HasAny("BedTax", "bedtax", "bedtaxblock")) request.ApplyBedTax = false;
         if (!permissions.HasAny("Discount", "discount", "divdiscount")) request.Discount = 0;
 
-        var settings = await LoadTaxSettingsAsync(cn, hotelId, ct);
+        // Tax/month-wise/round-total settings are already cached for this highly interactive page.
+        // Reuse the same snapshot instead of querying taxes + HotelsSignUpTB on every Add click.
+        var settings = new TaxSettings
+        {
+            GstPercent = hotelSettings.GstPercent,
+            BedTaxPercent = hotelSettings.BedTaxPercent,
+            BankTransferTaxPercent = hotelSettings.BankTransferTaxPercent,
+            IncludeInRate = hotelSettings.TaxIncludedInRate,
+            Label = hotelSettings.TaxLabel
+        };
         var isRoomRent = request.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase);
-        var monthWise = await ScalarBoolAsync(cn, "SELECT TOP 1 ISNULL(monthwise,0) FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel", hotelId, ct);
+        var monthWise = hotelSettings.IsMonthWise;
         var arrival = request.ArrivalDate.Date;
         var departure = request.DepartureDate.Date;
         if (departure <= arrival) return CheckInOperationResult.Fail("Departure date must be after arrival date.");
 
+        RoomOccupancyLimits? occupancyLimits = null;
         if (isRoomRent)
         {
             if (string.IsNullOrWhiteSpace(request.Category)) return CheckInOperationResult.Fail("Room category is required.");
             if (string.IsNullOrWhiteSpace(request.RoomNo)) return CheckInOperationResult.Fail("Room number is required.");
             if (!monthWise && string.IsNullOrWhiteSpace(request.RatePlanId)) return CheckInOperationResult.Fail("Rate plan is required.");
+            if (request.RoomAdults < 0 || request.RoomChildren < 0 || request.RoomInfants < 0)
+                return CheckInOperationResult.Fail("Room occupancy cannot be negative.");
+
+            occupancyLimits = await GetRoomOccupancyLimitsAsync(
+                cn, null, hotelId, request.CategoryId, request.Category, ct);
+            if (occupancyLimits == null)
+                return CheckInOperationResult.Fail("Room occupancy settings are not configured for this room category.");
+
+            if (request.RoomAdults > occupancyLimits.Adults ||
+                request.RoomChildren > occupancyLimits.Children ||
+                request.RoomInfants > occupancyLimits.Infants)
+            {
+                return CheckInOperationResult.Fail(
+                    $"Room capacity exceeded. Maximum per room: Adults {occupancyLimits.Adults}, Children {occupancyLimits.Children}, Infants {occupancyLimits.Infants}.");
+            }
 
             if (!await IsRoomAvailableAsync(cn, null, hotelId, request.Category, request.RoomNo, arrival, departure, request.RegId, ct))
                 return CheckInOperationResult.Fail("The selected room is no longer available for these dates.");
@@ -848,11 +1080,13 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
 INSERT INTO dbo.payments
 (currentdate, ArrivalDate, DepartureDate, deductioninfo, descr, Type, NumberOfRoom,
  Rate, Charge, GST, Bed, Nights, totalamount, reg_id, payment_status, hid, cb_status,
- room_no, res_status, visit_id, hotel_id, ipAddress, systemUser, systemName, discount, rateplan, rateplanname)
+ room_no, res_status, visit_id, hotel_id, ipAddress, systemUser, systemName, discount, rateplan, rateplanname,
+ category_id, room_adults, room_children, room_infants)
 OUTPUT INSERTED.ID
 VALUES
 (@currentdate,@arrival,@departure,@deduction,@descr,@type,@rooms,@rate,@charge,@gst,@bed,@nights,@total,
- @reg,'','','',@room,@status,@visit,@hotel,@ip,@systemUser,@systemName,@discount,@rateplan,@rateplanname);";
+ @reg,'','','',@room,@status,@visit,@hotel,@ip,@systemUser,@systemName,@discount,@rateplan,@rateplanname,
+ @category_id,@room_adults,@room_children,@room_infants);";
             int insertedId;
             await using (var cmd = new SqlCommand(sql, cn, tx))
             {
@@ -880,6 +1114,12 @@ VALUES
                 cmd.Parameters.Add("@discount", SqlDbType.Decimal).Value = discount;
                 cmd.Parameters.Add("@rateplan", SqlDbType.VarChar, 100).Value = monthWise && isRoomRent ? "Monthly" : Db(request.RatePlanId);
                 cmd.Parameters.Add("@rateplanname", SqlDbType.VarChar, 150).Value = monthWise && isRoomRent ? "Monthly" : Db(request.RatePlanName);
+                cmd.Parameters.Add("@category_id", SqlDbType.VarChar, 100).Value = isRoomRent
+                    ? Db(occupancyLimits?.CategoryId ?? request.CategoryId)
+                    : DBNull.Value;
+                cmd.Parameters.Add("@room_adults", SqlDbType.Int).Value = isRoomRent ? request.RoomAdults : 0;
+                cmd.Parameters.Add("@room_children", SqlDbType.Int).Value = isRoomRent ? request.RoomChildren : 0;
+                cmd.Parameters.Add("@room_infants", SqlDbType.Int).Value = isRoomRent ? request.RoomInfants : 0;
                 insertedId = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
             }
 
@@ -894,7 +1134,11 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
 
                 if (!monthWise && request.RatePlanId.Length > 0)
                 {
-                    var categoryIdForSnapshot = await GetCategoryIdInternalAsync(cn, tx, hotelId, request.Category, ct);
+                    // Occupancy validation already resolved this category before the transaction.
+                    // Reuse that ID instead of performing another category lookup on every Add.
+                    var categoryIdForSnapshot = occupancyLimits?.CategoryId ?? request.CategoryId ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(categoryIdForSnapshot))
+                        categoryIdForSnapshot = await GetCategoryIdInternalAsync(cn, tx, hotelId, request.Category, ct);
                     var snapshotQuote = await GetRateQuoteInternalAsync(cn, tx, hotelId, new RateQuoteRequest
                     {
                         RegId = request.RegId,
@@ -907,17 +1151,54 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
                 }
             }
 
-            await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct);
+            if (isRoomRent)
+                await SyncMasterGuestCountsFromRoomOccupancyAsync(cn, tx, hotelId, request.RegId, ct);
+
+            // Update the financial summary once and reuse the resulting totals for the AJAX response.
+            // Previously Add Room recalculated the same totals again a few lines later.
+            var refreshedTotals = await UpdatePaymentTotalsAsync(
+                cn, tx, hotelId, request.RegId, ct, roundTotalOverride: hotelSettings.IsRoundTotal);
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
                 isRoomRent ? "ADD ROOM" : "ADD SERVICE", $"{description}, {request.RoomNo}, {total:0.00}", ct);
+
+            // Build the response snapshot inside the same transaction.  This avoids a second
+            // request after Add and guarantees the row/totals returned to the browser match
+            // exactly what is committed below.
+            var addedRow = await GetChargeRowAsync(cn, tx, hotelId, request.RegId, insertedId, ct);
+            if (addedRow != null)
+            {
+                addedRow.CanSelectForCheckIn = addedRow.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) && IsReservation(addedRow.ReservationStatus);
+                addedRow.SelectedForCheckIn = addedRow.CanSelectForCheckIn;
+                addedRow.CanEditRate = permissions.HasAction("UpdateRate") && !IsCheckedOut(addedRow.ReservationStatus);
+                addedRow.CanChangeRoom = permissions.HasAny("ChangeRoom", "ChangeReservationRoom", "btnChangeReservationRoom")
+                    && addedRow.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase)
+                    && addedRow.RoomNo.Length > 0
+                    && IsReservation(addedRow.ReservationStatus);
+                addedRow.CanDelete = permissions.HasAction("DeleteRoom") && CanDeleteByStatus(permissions, addedRow.ReservationStatus);
+                addedRow.DeleteLockTitle = addedRow.CanDelete ? string.Empty : DeleteLockTitle(permissions, addedRow.ReservationStatus);
+            }
             await tx.CommitAsync(ct);
 
             if (isRoomRent)
             {
-                var categoryId = await GetCategoryIdAsync(hotelId, request.Category, ct);
-                QueueAvailability(hotelId, hotelName, userId, userName, ip, arrival, departure, categoryId);
+                try
+                {
+                    // Occupancy validation already resolved the category id; do not open a new
+                    // SQL connection and look it up again only for the background availability job.
+                    var categoryId = occupancyLimits?.CategoryId ?? request.CategoryId ?? string.Empty;
+                    QueueAvailability(hotelId, hotelName, userId, userName, ip, arrival, departure, categoryId);
+                }
+                catch (Exception queueEx)
+                {
+                    _logger.LogDebug(queueEx, "Room was added but availability refresh could not be queued for {RegId}.", request.RegId);
+                }
             }
-            return CheckInOperationResult.Ok(isRoomRent && IsCheckIn(currentStatus) ? "Room added. Select it in the grid and click Check-In when the room is ready." : (isRoomRent ? "Room added." : "Service/charge added."), request.RegId, insertedId, data: new { status = rowStatus });
+
+            return CheckInOperationResult.Ok(
+                isRoomRent && IsCheckIn(currentStatus)
+                    ? "Room added. Select it in the grid and click Check-In when the room is ready."
+                    : (isRoomRent ? "Room added." : "Service/charge added."),
+                request.RegId, insertedId, data: new { status = rowStatus, charge = addedRow, totals = refreshedTotals });
         }
         catch (Exception ex)
         {
@@ -969,20 +1250,40 @@ WHERE Hotel_id=@hotel AND room_no=@room
                 await room.ExecuteNonQueryAsync(ct);
             }
 
+            if (row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase))
+                await SyncMasterGuestCountsFromRoomOccupancyAsync(cn, tx, hotelId, regId, ct);
+
             await UpdatePaymentTotalsAsync(cn, tx, hotelId, regId, ct);
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
                 row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "DELETE ROOM" : "DELETE SERVICE",
                 $"PaymentId={paymentId}, {row.Description}, room={row.RoomNo}", ct);
+            var refreshedTotals = await LoadTotalsAsync(cn, tx, hotelId, regId, await IsRoundTotalAsync(cn, tx, hotelId, ct), ct);
             await tx.CommitAsync(ct);
 
             if (row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase))
             {
-                var categoryId = await GetCategoryIdAsync(hotelId, row.Category, ct);
-                QueueAvailability(hotelId, hotelName, userId, userName, ip,
-                    row.ArrivalDate ?? _hotelClock.GetHotelToday(hotelId),
-                    row.DepartureDate ?? _hotelClock.GetHotelToday(hotelId).AddDays(1), categoryId);
+                try
+                {
+                    var categoryId = await GetCategoryIdAsync(hotelId, row.Category, ct);
+                    QueueAvailability(hotelId, hotelName, userId, userName, ip,
+                        row.ArrivalDate ?? _hotelClock.GetHotelToday(hotelId),
+                        row.DepartureDate ?? _hotelClock.GetHotelToday(hotelId).AddDays(1), categoryId);
+                }
+                catch (Exception queueEx)
+                {
+                    _logger.LogDebug(queueEx, "Room was deleted but availability refresh could not be queued for {RegId}.", regId);
+                }
             }
-            return CheckInOperationResult.Ok("Charge deleted.", regId);
+
+            // Return the new totals with the delete response.  The client removes the row
+            // locally and updates Charges & Payment immediately, avoiding a page refresh.
+            return CheckInOperationResult.Ok("Charge deleted.", regId, data: new
+            {
+                deletedId = paymentId,
+                roomNo = row.RoomNo,
+                category = row.Category,
+                totals = refreshedTotals
+            });
         }
         catch (Exception ex)
         {
@@ -1228,12 +1529,14 @@ WHERE ID=@id
             if (!complementary && amount > Math.Max(0m, totals.Remaining))
                 return CheckInOperationResult.Fail("Cannot save amount more than payable amount.");
 
+            var insertedPaymentLogId = 0;
+            var paymentDate = _hotelClock.GetHotelNow(hotelId);
             if (amount > 0)
             {
                 var newPaid = totals.PaidAmount + amount;
                 var remaining = totals.GrandTotal - newPaid;
                 var payable = complementary ? 0m : totals.GrandTotal;
-                await InsertPaymentLogInternalAsync(cn, tx, hotelId, userId, userName, ip, request, guest, totals,
+                insertedPaymentLogId = await InsertPaymentLogInternalAsync(cn, tx, hotelId, userId, userName, ip, request, guest, totals,
                     amount, payable, newPaid, remaining, ct);
             }
 
@@ -1251,11 +1554,42 @@ WHERE ID=@id
                     }, ct);
             }
 
-            await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct, request.Method);
+            var updatedTotals = await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct, request.Method);
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
                 "PAYMENT", $"{request.Method}: {amount:0.00}; security={request.RoomSecurity:0.00}", ct);
             await tx.CommitAsync(ct);
-            return CheckInOperationResult.Ok("Payment recorded successfully.", request.RegId);
+
+            var canRefund =
+                insertedPaymentLogId > 0 &&
+                amount > 0m &&
+                permissions.HasAction("Refund") &&
+                (IsCashMethod(request.Method) ||
+                 (!string.IsNullOrWhiteSpace(request.PaymentId) && !string.IsNullOrWhiteSpace(request.ChargeId)));
+
+            return CheckInOperationResult.Ok(
+                "Payment recorded successfully.",
+                request.RegId,
+                insertedPaymentLogId,
+                data: new
+                {
+                    totals = updatedTotals,
+                    payment = insertedPaymentLogId > 0 ? new
+                    {
+                        id = insertedPaymentLogId,
+                        date = paymentDate,
+                        amount,
+                        method = request.Method ?? string.Empty,
+                        receipt = request.ReceiptUrl ?? string.Empty,
+                        paymentId = request.PaymentId ?? string.Empty,
+                        chargeId = request.ChargeId ?? string.Empty,
+                        status = string.IsNullOrWhiteSpace(guest.Status) ? "reservation" : guest.Status,
+                        userName,
+                        ipAddress = ip,
+                        systemName = Environment.MachineName,
+                        remainingRefundable = canRefund ? Math.Abs(amount) : 0m,
+                        canRefund
+                    } : null
+                });
         }
         catch (Exception ex)
         {
@@ -2456,6 +2790,44 @@ WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn, settleTx);
             }
         }
 
+        // Card-security authorizations may arrive through two safe paths:
+        // 1) Stripe webhook (the production WebForms behavior), and
+        // 2) the MVC page fallback used for simulated/local Terminal testing.
+        // Never create a second Deposit row for the same Stripe PaymentIntent.
+        if (movement == "deposit" && !string.IsNullOrWhiteSpace(request.PaymentIntentId))
+        {
+            try
+            {
+                await using var existing = new SqlCommand(@"
+SELECT TOP 1 id
+FROM dbo.RoomSecurityTB
+WHERE hotel_id=@hotel
+  AND reg_id=@reg
+  AND status='Deposit'
+  AND payment_intent_id=@pi
+ORDER BY id DESC;", cn);
+                existing.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                existing.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
+                existing.Parameters.Add("@pi", SqlDbType.VarChar, 200).Value = request.PaymentIntentId.Trim();
+
+                var existingId = await existing.ExecuteScalarAsync(ct);
+                if (existingId != null && existingId != DBNull.Value)
+                {
+                    var existingBalance = await GetRoomSecurityBalanceAsync(cn, null, hotelId, request.RegId, ct);
+                    return CheckInOperationResult.Ok(
+                        "Room security already saved.",
+                        request.RegId,
+                        Convert.ToInt32(existingId, CultureInfo.InvariantCulture),
+                        data: new { duplicate = true, securityBalance = existingBalance });
+                }
+            }
+            catch (SqlException ex)
+            {
+                // Older RoomSecurityTB schemas do not have payment_intent_id.
+                _logger.LogDebug(ex, "RoomSecurityTB payment-intent duplicate check skipped for legacy schema.");
+            }
+        }
+
         var currentBalance = await GetRoomSecurityBalanceAsync(cn, null, hotelId, request.RegId, ct);
         if ((movement is ("refund" or "deduct" or "deduction")) && request.Amount > currentBalance + 0.005m)
             return CheckInOperationResult.Fail("Refund/Deduction cannot exceed the refundable security balance.");
@@ -2549,26 +2921,50 @@ INSERT INTO dbo.SourceTB(source,hotel_id,systemUser,systemName,ipAddress) VALUES
 
     public async Task<object> GetPaymentAuditAsync(string hotelId, int logId, CancellationToken ct = default)
     {
-        await using var cn = new SqlConnection(_connectionString); await cn.OpenAsync(ct);
+        if (logId <= 0) return new { ok = false, message = "Invalid payment log id." };
+
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+
+        // Keep the Check-In audit result aligned with the existing Web Forms page:
+        // Created Date, Username and IP Address are the user-facing audit details.
+        // SystemName is retained in the response for compatibility, but payment/refund
+        // gateway identifiers are intentionally not returned to this UI endpoint.
         await using var cmd = new SqlCommand(@"
-SELECT TOP 1 currentdate,systemUser,ipAddress,systemName,payment_method,paid_amount,status,PaymentId,chargeid,RefundId,externalrefundid
-FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
+SELECT TOP (1)
+    pl.currentdate AS CreatedDateTime,
+    COALESCE(NULLIF(LTRIM(RTRIM(ha.username)), ''), NULLIF(LTRIM(RTRIM(pl.systemUser)), ''), '') AS Username,
+    ISNULL(pl.ipAddress, '') AS IpAddress,
+    ISNULL(pl.systemName, '') AS SystemName
+FROM dbo.PaymentsLogTB pl
+LEFT JOIN dbo.Hms_accounts ha
+       ON CONVERT(varchar(50), ha.user_id) = CONVERT(varchar(50), pl.user_id)
+WHERE pl.hotel_id = @hotel
+  AND pl.id = @id;", cn);
+
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         cmd.Parameters.Add("@id", SqlDbType.Int).Value = logId;
+
         try
         {
             await using var rd = await cmd.ExecuteReaderAsync(ct);
             if (!await rd.ReadAsync(ct)) return new { ok = false, message = "Payment log not found." };
+
             return new
             {
                 ok = true,
-                createdDateTime = DateAny(rd["currentdate"])?.ToString("dd MMM yyyy hh:mm tt", CultureInfo.InvariantCulture) ?? S(rd, "currentdate"),
-                username = S(rd, "systemUser"), ipAddress = S(rd, "ipAddress"), systemName = S(rd, "systemName"),
-                method = S(rd, "payment_method"), amount = M(rd, "paid_amount"), status = S(rd, "status"),
-                paymentId = S(rd, "PaymentId"), chargeId = S(rd, "chargeid"), refundId = S(rd, "RefundId"), externalRefundId = S(rd, "externalrefundid")
+                createdDateTime = DateAny(rd["CreatedDateTime"])?.ToString("dd MMM yyyy hh:mm tt", CultureInfo.InvariantCulture)
+                                  ?? S(rd, "CreatedDateTime"),
+                username = S(rd, "Username"),
+                ipAddress = S(rd, "IpAddress"),
+                systemName = S(rd, "SystemName")
             };
         }
-        catch (Exception ex) { return new { ok = false, message = ex.Message }; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to load payment audit {PaymentLogId} for hotel {HotelId}.", logId, hotelId);
+            return new { ok = false, message = "Unable to load payment log." };
+        }
     }
 
     public async Task<TerminalPaymentResult> StripeCreateAsync(string hotelId, TerminalPaymentRequest request, CancellationToken ct = default)
@@ -2585,11 +2981,26 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
             {
                 ["amount"] = amountMinor.ToString(CultureInfo.InvariantCulture),
                 ["currency"] = currency,
-                ["payment_method_types[]"] = "card",
+
+                // Stripe Terminal server-driven readers only process card-present PaymentIntents.
+                // Using "card" here creates an online-card PaymentIntent and Stripe rejects it
+                // when /terminal/readers/{id}/process_payment_intent is called.
+                ["payment_method_types[]"] = "card_present",
+
+                // Normal terminal payment = immediate capture.
+                // Room-security card hold = authorize only and leave the PI in requires_capture.
+                ["capture_method"] = request.SecurityHold ? "manual" : "automatic",
+
+                ["metadata[hotel_id]"] = hotelId ?? string.Empty,
                 ["metadata[reg_id]"] = request.RegId ?? string.Empty,
-                ["metadata[visit_id]"] = request.VisitId ?? string.Empty
+                ["metadata[visit_id]"] = request.VisitId ?? string.Empty,
+                ["metadata[note]"] = request.Note ?? string.Empty,
+                ["metadata[description]"] = request.Note ?? string.Empty,
+                ["metadata[source]"] = "pdq_terminal",
+                ["metadata[payment_for]"] = request.SecurityHold ? "security_deposit" : "reservation_payment",
+                ["metadata[payment_method]"] = request.SecurityHold ? "PDQ Hold" : "Card Payment",
+                ["metadata[webhook_action]"] = request.SecurityHold ? "save_room_security_deposit" : "save_payment"
             };
-            if (request.SecurityHold) form["capture_method"] = "manual";
             var doc = await StripeRequestAsync(stripe, HttpMethod.Post, "https://api.stripe.com/v1/payment_intents", form, ct);
             var id = JsonString(doc.RootElement, "id");
             var status = JsonString(doc.RootElement, "status");
@@ -2610,14 +3021,47 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
 
             if (request.Simulate)
             {
-                var sim = string.IsNullOrWhiteSpace(request.SimulationResult) ? "succeeded" : request.SimulationResult.Trim().ToLowerInvariant();
-                var formSim = new Dictionary<string, string> { ["type"] = sim.Contains("declin") ? "card_declined" : "visa" };
-                try
+                // WebForms parity: simulation is a SEPARATE action that runs only after
+                // process_payment_intent has handed the PaymentIntent to the test reader.
+                // Do not call process_payment_intent again from the simulator button.
+                var sim = string.IsNullOrWhiteSpace(request.SimulationResult)
+                    ? "success"
+                    : request.SimulationResult.Trim().ToLowerInvariant();
+
+                var formSim = new Dictionary<string, string>();
+                if (sim == "decline" || sim == "declined")
                 {
-                    await StripeRequestAsync(stripe, HttpMethod.Post,
-                        $"https://api.stripe.com/v1/test_helpers/terminal/readers/{Uri.EscapeDataString(request.ReaderId)}/present_payment_method", formSim, ct);
+                    formSim["type"] = "card";
+                    formSim["card[number]"] = "4000000000000002";
+                    formSim["card[exp_month]"] = "12";
+                    formSim["card[exp_year]"] = "34";
+                    formSim["card[cvc]"] = "123";
                 }
-                catch (Exception ex) { _logger.LogDebug(ex, "Stripe Terminal simulation helper failed; processing still attempted."); }
+                else if (sim == "insufficient_funds")
+                {
+                    formSim["type"] = "card";
+                    formSim["card[number]"] = "4000000000009995";
+                    formSim["card[exp_month]"] = "12";
+                    formSim["card[exp_year]"] = "34";
+                    formSim["card[cvc]"] = "123";
+                }
+                else
+                {
+                    formSim["type"] = "card_present";
+                }
+
+                var simDoc = await StripeRequestAsync(stripe, HttpMethod.Post,
+                    $"https://api.stripe.com/v1/test_helpers/terminal/readers/{Uri.EscapeDataString(request.ReaderId)}/present_payment_method", formSim, ct);
+                var simAction = JsonObject(simDoc.RootElement, "action");
+                var simStatus = simAction.HasValue ? JsonString(simAction.Value, "status") : "in_progress";
+                return new TerminalPaymentResult
+                {
+                    Success = true,
+                    Message = "Simulated card presented to Stripe test reader.",
+                    PaymentIntentId = request.PaymentIntentId.Trim(),
+                    Status = simStatus,
+                    Amount = request.Amount
+                };
             }
 
             var doc = await StripeRequestAsync(stripe, HttpMethod.Post,
@@ -2745,9 +3189,13 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
                 ["metadata[hotel_id]"] = hotelId ?? string.Empty,
                 ["metadata[payment_for]"] = request.SecurityHold ? "security_deposit" : "reservation_payment",
                 ["metadata[payment_method]"] = request.SecurityHold ? "Card Pre-Authorization" : "Card Payment",
+                ["payment_intent_data[metadata][hotel_id]"] = hotelId ?? string.Empty,
                 ["payment_intent_data[metadata][reg_id]"] = request.RegId ?? string.Empty,
                 ["payment_intent_data[metadata][visit_id]"] = request.VisitId ?? string.Empty,
                 ["payment_intent_data[metadata][payment_for]"] = request.SecurityHold ? "security_deposit" : "reservation_payment",
+                ["payment_intent_data[metadata][payment_method]"] = request.SecurityHold ? "Card Pre-Authorization" : "Card Payment",
+                ["payment_intent_data[metadata][source]"] = "stripe_checkout",
+                ["payment_intent_data[metadata][webhook_action]"] = request.SecurityHold ? "save_room_security_deposit" : "save_payment",
                 ["success_url"] = successUrl,
                 ["cancel_url"] = cancelUrl
             };
@@ -2758,6 +3206,8 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND id=@id;", cn);
             if (!string.IsNullOrWhiteSpace(request.Note))
             {
                 form["metadata[note]"] = request.Note.Trim();
+                form["payment_intent_data[metadata][note]"] = request.Note.Trim();
+                form["payment_intent_data[metadata][description]"] = request.Note.Trim();
                 form["payment_intent_data[description]"] = request.Note.Trim();
             }
 
@@ -3175,6 +3625,59 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
     // -----------------------------------------------------------------
     // Shared data access / legacy compatibility helpers
     // -----------------------------------------------------------------
+    private sealed record HotelSettingsCacheEntry(DateTime ExpiresAtUtc, HotelSettingsSnapshot Snapshot);
+    private sealed record PermissionCacheEntry(DateTime ExpiresAtUtc, PermissionState State);
+
+    private sealed class HotelSettingsSnapshot
+    {
+        public string CurrencyCode { get; init; } = "GBP";
+        public string Currency { get; init; } = "£";
+        public string PropertyId { get; init; } = string.Empty;
+        public bool IsMonthWise { get; init; }
+        public bool IsCardPaymentEnabled { get; init; }
+        public bool FbrEnabled { get; init; }
+        public bool ShowSimulation { get; init; }
+        public decimal GstPercent { get; init; }
+        public decimal BedTaxPercent { get; init; }
+        public decimal BankTransferTaxPercent { get; init; }
+        public string TaxLabel { get; init; } = string.Empty;
+        public bool HasGst { get; init; }
+        public bool HasBedTax { get; init; }
+        public bool TaxIncludedInRate { get; init; }
+        public bool IsRoundTotal { get; init; }
+        public bool IsStripeConfigured { get; init; }
+        public bool IsCloverConfigured { get; init; }
+
+        public static HotelSettingsSnapshot From(CheckInPageViewModel m) => new()
+        {
+            CurrencyCode = m.CurrencyCode, Currency = m.Currency, PropertyId = m.PropertyId,
+            IsMonthWise = m.IsMonthWise, IsCardPaymentEnabled = m.IsCardPaymentEnabled,
+            FbrEnabled = m.FbrEnabled, ShowSimulation = m.ShowSimulation, GstPercent = m.GstPercent,
+            BedTaxPercent = m.BedTaxPercent, BankTransferTaxPercent = m.BankTransferTaxPercent,
+            TaxLabel = m.TaxLabel, HasGst = m.HasGst, HasBedTax = m.HasBedTax,
+            TaxIncludedInRate = m.TaxIncludedInRate, IsRoundTotal = m.IsRoundTotal,
+            IsStripeConfigured = m.IsStripeConfigured, IsCloverConfigured = m.IsCloverConfigured
+        };
+
+        public void ApplyTo(CheckInPageViewModel m)
+        {
+            m.CurrencyCode = CurrencyCode; m.Currency = Currency; m.PropertyId = PropertyId;
+            m.IsMonthWise = IsMonthWise; m.IsCardPaymentEnabled = IsCardPaymentEnabled;
+            m.FbrEnabled = FbrEnabled; m.ShowSimulation = ShowSimulation; m.GstPercent = GstPercent;
+            m.BedTaxPercent = BedTaxPercent; m.BankTransferTaxPercent = BankTransferTaxPercent;
+            m.TaxLabel = TaxLabel; m.HasGst = HasGst; m.HasBedTax = HasBedTax;
+            m.TaxIncludedInRate = TaxIncludedInRate; m.IsRoundTotal = IsRoundTotal;
+            m.IsStripeConfigured = IsStripeConfigured; m.IsCloverConfigured = IsCloverConfigured;
+        }
+    }
+
+    private async Task<T> WithOpenConnectionAsync<T>(Func<SqlConnection, Task<T>> work, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        return await work(cn);
+    }
+
     private static void EnsureSession(string hotelId, string userId)
     {
         if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(userId))
@@ -3182,6 +3685,35 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
     }
 
     private async Task LoadHotelSettingsAsync(SqlConnection cn, CheckInPageViewModel model, CancellationToken ct)
+    {
+        var key = model.HotelId?.Trim() ?? string.Empty;
+        if (key.Length > 0 && HotelSettingsCache.TryGetValue(key, out var cached) && cached.ExpiresAtUtc > DateTime.UtcNow)
+        {
+            cached.Snapshot.ApplyTo(model);
+            return;
+        }
+
+        await LoadHotelSettingsCoreAsync(cn, model, ct);
+        if (key.Length > 0)
+            HotelSettingsCache[key] = new HotelSettingsCacheEntry(DateTime.UtcNow.Add(HotelSettingsCacheTtl), HotelSettingsSnapshot.From(model));
+    }
+
+    private async Task<HotelSettingsSnapshot> GetHotelSettingsSnapshotAsync(
+        SqlConnection cn, string hotelId, CancellationToken ct)
+    {
+        var key = hotelId?.Trim() ?? string.Empty;
+        if (key.Length > 0 && HotelSettingsCache.TryGetValue(key, out var cached) && cached.ExpiresAtUtc > DateTime.UtcNow)
+            return cached.Snapshot;
+
+        var model = new CheckInPageViewModel { HotelId = hotelId };
+        await LoadHotelSettingsCoreAsync(cn, model, ct);
+        var snapshot = HotelSettingsSnapshot.From(model);
+        if (key.Length > 0)
+            HotelSettingsCache[key] = new HotelSettingsCacheEntry(DateTime.UtcNow.Add(HotelSettingsCacheTtl), snapshot);
+        return snapshot;
+    }
+
+    private async Task LoadHotelSettingsCoreAsync(SqlConnection cn, CheckInPageViewModel model, CancellationToken ct)
     {
         try
         {
@@ -3198,7 +3730,12 @@ SELECT TOP 1 * FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;", cn);
                 model.IsMonthWise = B(rd, "monthwise");
                 model.IsCardPaymentEnabled = B(rd, "cardpayment");
                 model.FbrEnabled = B(rd, "fbr_enabled");
-                model.ShowSimulation = model.HotelId == "638935275363396747";
+                // Match Reservation.aspx WebForms exactly: simulation controls are
+                // available only for the dedicated Stripe test hotel.
+                model.ShowSimulation = string.Equals(
+                    model.HotelId?.Trim(),
+                    "638935275363396747",
+                    StringComparison.OrdinalIgnoreCase);
             }
         }
         catch (SqlException ex) { _logger.LogDebug(ex, "Hotel settings could not be loaded for check-in."); }
@@ -3248,6 +3785,17 @@ SELECT TOP 1 * FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;", cn);
     }
 
     private async Task<PermissionState> LoadPermissionsAsync(SqlConnection cn, string hotelId, string userId, CancellationToken ct)
+    {
+        var key = $"{hotelId?.Trim()}|{userId?.Trim()}";
+        if (PermissionCache.TryGetValue(key, out var cached) && cached.ExpiresAtUtc > DateTime.UtcNow)
+            return cached.State;
+
+        var state = await LoadPermissionsCoreAsync(cn, hotelId, userId, ct);
+        PermissionCache[key] = new PermissionCacheEntry(DateTime.UtcNow.Add(PermissionCacheTtl), state);
+        return state;
+    }
+
+    private async Task<PermissionState> LoadPermissionsCoreAsync(SqlConnection cn, string hotelId, string userId, CancellationToken ct)
     {
         var menuId = 0;
         try
@@ -3382,25 +3930,76 @@ WHERE pa.menuid=@menuid AND ISNULL(pa.is_active,0)=1;", cn);
     private async Task<IReadOnlyList<LookupOption>> LoadRoomCategoriesAsync(SqlConnection cn, string hotelId, CancellationToken ct)
     {
         var list = new List<LookupOption>();
+
+        // Reservation.aspx treats create_room as the authoritative room-category and
+        // occupancy source. Load it first so Check-In uses the exact same Adults /
+        // Children / Infants limits without another request when the category changes.
+        try
+        {
+            await using var cmd = new SqlCommand(@"
+SELECT
+    CONVERT(varchar(100), localcategoryid) AS id,
+    description AS name,
+    MAX(ISNULL(TRY_CONVERT(int,Adult_Spaces),0)) AS AdultLimit,
+    MAX(ISNULL(TRY_CONVERT(int,Children_Spaces),0)) AS ChildLimit,
+    MAX(ISNULL(TRY_CONVERT(int,Cot_Spaces),0)) AS InfantLimit
+FROM dbo.create_room
+WHERE hotel_id=@hotel AND category='Room Rent'
+GROUP BY localcategoryid, description
+ORDER BY description;", cn);
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct))
+            {
+                var id = S(rd, "id");
+                var name = S(rd, "name");
+                if (name.Length == 0 || list.Any(x => x.Text.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                list.Add(new LookupOption
+                {
+                    Value = id.Length > 0 ? id : name,
+                    Text = name,
+                    AdultLimit = Math.Max(0, I(rd, "AdultLimit")),
+                    ChildLimit = Math.Max(0, I(rd, "ChildLimit")),
+                    InfantLimit = Math.Max(0, I(rd, "InfantLimit")),
+                    HasOccupancySettings = true
+                });
+            }
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogDebug(ex, "create_room room categories could not be loaded for {HotelId}.", hotelId);
+            list.Clear();
+        }
+
+        if (list.Count > 0) return list;
+
+        // Legacy fallbacks keep the existing page usable on older properties. Occupancy
+        // remains unconfigured so the server will not silently allow an unsafe capacity.
         foreach (var query in new[]
         {
             "SELECT DISTINCT localcategoryid AS id,category AS name FROM dbo.RoomCategoriesTB WHERE hotel_id=@hotel ORDER BY category",
-            "SELECT DISTINCT category_id AS id,category AS name FROM dbo.RoomsTB WHERE hotel_id=@hotel ORDER BY category",
-            "SELECT DISTINCT localcategoryid AS id,description AS name FROM dbo.create_room WHERE hotel_id=@hotel AND category='Room Rent' ORDER BY description"
+            "SELECT DISTINCT category_id AS id,room_category AS name FROM dbo.RoomsTB WHERE Hotel_id=@hotel ORDER BY room_category"
         })
         {
             try
             {
-                await using var cmd = new SqlCommand(query, cn); cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                await using var cmd = new SqlCommand(query, cn);
+                cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 await using var rd = await cmd.ExecuteReaderAsync(ct);
                 while (await rd.ReadAsync(ct))
                 {
-                    var id = S(rd, "id"); var name = S(rd, "name");
-                    if (name.Length > 0 && !list.Any(x => x.Text.Equals(name, StringComparison.OrdinalIgnoreCase))) list.Add(new LookupOption { Value = id.Length > 0 ? id : name, Text = name });
+                    var id = S(rd, "id");
+                    var name = S(rd, "name");
+                    if (name.Length > 0 && !list.Any(x => x.Text.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                        list.Add(new LookupOption { Value = id.Length > 0 ? id : name, Text = name });
                 }
                 if (list.Count > 0) break;
             }
-            catch (SqlException) { list.Clear(); }
+            catch (SqlException)
+            {
+                list.Clear();
+            }
         }
         return list;
     }
@@ -3441,79 +4040,79 @@ WHERE hotel_id=@hotel AND NULLIF(LTRIM(RTRIM(ISNULL(Discount_code,''))),'') IS N
 
     private async Task LoadExistingAsync(SqlConnection cn, CheckInPageViewModel model, string lookup, PermissionState permission, CancellationToken ct)
     {
-        // Same precedence as WebForms: load reservation table first, then guest log fallback.
+        // Search-result clicks always pass reg_id. Keep that normal path as a pure
+        // hotel_id + reg_id seek. The older "reg_id OR ID" predicate could force a scan
+        // even when the reservation number was already known.
         var loaded = false;
         foreach (var source in new[] { "NewReservationsTB", "GuestInformationLogTB" })
         {
-            var departureColumn = source == "NewReservationsTB" ? "dept_date" : "DepartureDate";
+            var isNewReservation = source == "NewReservationsTB";
+            var resolvedVisitSql = isNewReservation
+                ? "COALESCE(NULLIF(LTRIM(RTRIM(CONVERT(varchar(50),s.visit_id))),''),(SELECT TOP (1) NULLIF(LTRIM(RTRIM(CONVERT(varchar(50),g.visit_id))), '') FROM dbo.GuestInformationLogTB g WHERE g.hotel_id=s.hotel_id AND g.reg_id=s.reg_id ORDER BY g.ID DESC),'')"
+                : "ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(varchar(50),s.visit_id))),''),'')";
+
             var sql = $@"
-SELECT TOP (1) * FROM dbo.{source}
-WHERE hotel_id=@hotel AND (reg_id=@lookup OR ID=TRY_CONVERT(int,@lookup))
-ORDER BY ID DESC;";
+SELECT TOP (1)
+       s.*,
+       ResolvedVisitId = {resolvedVisitSql},
+       span.amin,
+       span.dmax
+FROM dbo.{source} s
+OUTER APPLY
+(
+    SELECT
+        MIN(COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,23),TRY_CONVERT(date,p.ArrivalDate,101),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate))) amin,
+        MAX(COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,23),TRY_CONVERT(date,p.DepartureDate,101),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate))) dmax
+    FROM dbo.payments p
+    WHERE p.hotel_id=s.hotel_id
+      AND p.reg_id=s.reg_id
+      AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
+) span
+WHERE s.hotel_id=@hotel AND s.reg_id=@lookup
+ORDER BY s.ID DESC;";
+
             try
             {
-                await using var cmd = new SqlCommand(sql, cn);
+                await using var cmd = new SqlCommand(sql, cn) { CommandTimeout = 6 };
                 cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = model.HotelId;
                 cmd.Parameters.Add("@lookup", SqlDbType.VarChar, 100).Value = lookup;
                 await using var rd = await cmd.ExecuteReaderAsync(ct);
                 if (!await rd.ReadAsync(ct)) continue;
+
                 var reg = S(rd, "reg_id");
                 var g = new GuestCheckInInput
                 {
                     RegId = reg,
-                    VisitId = S(rd, "visit_id"),
+                    VisitId = S(rd, "ResolvedVisitId"),
                     FirstName = S(rd, "GuestName"), LastName = S(rd, "LastName"),
                     Phone = S(rd, "PhoneNo"), Email = S(rd, "Email"), Address = S(rd, "Address"),
                     Country = S(rd, "Country"), City = S(rd, "City"),
-                    PassportNo = source == "NewReservationsTB" ? S(rd, "visa") : S(rd, "VisaPassportNo"),
-                    IdNumber = source == "NewReservationsTB" ? S(rd, "cnic") : S(rd, "CNIC"),
+                    PassportNo = isNewReservation ? S(rd, "visa") : S(rd, "VisaPassportNo"),
+                    IdNumber = isNewReservation ? S(rd, "cnic") : S(rd, "CNIC"),
                     VatNo = S(rd, "vatno"),
                     ArrivalDate = DateAny(rd, "ArrivalDate") ?? model.HotelToday,
-                    DepartureDate = DateAny(rd, departureColumn) ?? model.HotelToday.AddDays(1),
+                    DepartureDate = DateAny(rd, isNewReservation ? "dept_date" : "DepartureDate") ?? model.HotelToday.AddDays(1),
                     ArrivalTime = NormalizeTime(S(rd, "ArrivalTime"), "12:00"),
                     DepartureTime = NormalizeTime(S(rd, "DepartureTime"), "12:00"),
-                    Adults = Math.Max(1, source == "NewReservationsTB" ? I(rd, "number_of_adult") : I(rd, "NumberOfAdults")),
-                    Children = Math.Max(0, source == "NewReservationsTB" ? I(rd, "number_of_minor") : I(rd, "NumberOfMinors")),
+                    Adults = Math.Max(1, isNewReservation ? I(rd, "number_of_adult") : I(rd, "NumberOfAdults")),
+                    Children = Math.Max(0, isNewReservation ? I(rd, "number_of_minor") : I(rd, "NumberOfMinors")),
                     Company = S(rd, "Agency"), Source = S(rd, "Status"), Notes = S(rd, "notes"),
                     Reason = S(rd, "reason"), CouncilId = S(rd, "council_id"),
                     ReservationType = S(rd, "reservtype"), BookingId = S(rd, "Bookid"), GroupName = S(rd, "groupname"),
                     RoomCategory = S(rd, "room_category"), RoomNo = S(rd, "room_no"),
                     AdvancePaid = M(rd, "advancepaid"), Complementary = S(rd, "Complementary").Equals("Yes", StringComparison.OrdinalIgnoreCase) || B(rd, "Complementary")
                 };
-                if (string.IsNullOrWhiteSpace(g.ReservationType)) g.ReservationType = "Individual";
-                if (g.VisitId.Length == 0) g.VisitId = await GetVisitIdAsync(cn, null, model.HotelId, reg, ct);
 
-                // WebForms parity: FillGuestFormFromGuestInfo / FillGuestFormFromNewReservation
-                // always call ApplyPaymentStayRangeToMainDates().  Therefore the visible
-                // main stay must come from the Room Rent payment span for BOTH Individual
-                // and Group bookings, with the master row used only as a fallback.
-                // This also prevents Update Guest from treating a stale master date as an
-                // intentional Extend/Shrink after split/extension payment rows already exist.
-                try
+                if (string.IsNullOrWhiteSpace(g.ReservationType)) g.ReservationType = "Individual";
+
+                // ApplyPaymentStayRangeToMainDates parity, now from the same SQL round trip
+                // as the guest row rather than a second payments query.
+                var paymentArrival = DateAny(rd, "amin");
+                var paymentDeparture = DateAny(rd, "dmax");
+                if (paymentArrival.HasValue && paymentDeparture.HasValue && paymentDeparture.Value.Date > paymentArrival.Value.Date)
                 {
-                    await using var span = new SqlCommand(@"
-SELECT
-    MIN(COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,101),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate))) amin,
-    MAX(COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),TRY_CONVERT(date,DepartureDate,101),TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate))) dmax
-FROM dbo.payments
-WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent';", cn);
-                    span.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = model.HotelId;
-                    span.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = reg;
-                    await using var sr = await span.ExecuteReaderAsync(ct);
-                    if (await sr.ReadAsync(ct))
-                    {
-                        var a = DateAny(sr, "amin");
-                        var d = DateAny(sr, "dmax");
-                        if (a.HasValue && d.HasValue && d.Value.Date > a.Value.Date)
-                        {
-                            g.ArrivalDate = a.Value.Date;
-                            g.DepartureDate = d.Value.Date;
-                        }
-                    }
-                }
-                catch (SqlException ex)
-                {
-                    _logger.LogDebug(ex, "Unable to apply payment stay range while loading {RegId}.", reg);
+                    g.ArrivalDate = paymentArrival.Value.Date;
+                    g.DepartureDate = paymentDeparture.Value.Date;
                 }
 
                 model.ReservationId = reg;
@@ -3529,23 +4128,38 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room R
                 loaded = true;
                 break;
             }
-            catch (SqlException ex) { _logger.LogDebug(ex, "Existing booking lookup in {Table} failed.", source); }
+            catch (SqlException ex)
+            {
+                _logger.LogDebug(ex, "Existing booking lookup in {Table} failed.", source);
+            }
         }
 
-        if (!loaded)
+        if (!loaded && int.TryParse(lookup, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rowId))
         {
-            // The exact legacy RI can also be a NewReservations ID whose row has already migrated to GILT.
+            // Direct links may still contain a legacy table row ID. Resolve it only after the
+            // normal reg_id path misses, so search-result clicks do not pay for this fallback.
             try
             {
                 await using var map = new SqlCommand(@"
-SELECT TOP 1 r.reg_id FROM dbo.NewReservationsTB r WHERE r.hotel_id=@hotel AND r.ID=TRY_CONVERT(int,@lookup);", cn);
+SELECT TOP (1) reg_id
+FROM
+(
+    SELECT reg_id, 0 ord, ID rid FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND ID=@rowId
+    UNION ALL
+    SELECT reg_id, 1 ord, ID rid FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND ID=@rowId
+) x
+WHERE ISNULL(LTRIM(RTRIM(reg_id)),'')<>''
+ORDER BY ord, rid DESC;", cn) { CommandTimeout = 4 };
                 map.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = model.HotelId;
-                map.Parameters.Add("@lookup", SqlDbType.VarChar, 100).Value = lookup;
+                map.Parameters.Add("@rowId", SqlDbType.Int).Value = rowId;
                 var mapped = Convert.ToString(await map.ExecuteScalarAsync(ct))?.Trim();
                 if (!string.IsNullOrWhiteSpace(mapped) && !mapped.Equals(lookup, StringComparison.OrdinalIgnoreCase))
                     await LoadExistingAsync(cn, model, mapped, permission, ct);
             }
-            catch { }
+            catch (SqlException ex)
+            {
+                _logger.LogDebug(ex, "Legacy reservation row-ID mapping failed for {Lookup}.", lookup);
+            }
         }
     }
 
@@ -3553,7 +4167,11 @@ SELECT TOP 1 r.reg_id FROM dbo.NewReservationsTB r WHERE r.hotel_id=@hotel AND r
     {
         var list = new List<CheckInChargeRow>();
         await using var cmd = new SqlCommand(@"
-SELECT * FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID;", cn);
+SELECT ID,res_status,descr,[Type],category_id,deductioninfo,room_no,room_adults,room_children,room_infants,
+       rateplan,rateplanname,guestname,ArrivalDate,DepartureDate,Rate,Charge,discount,GST,Bed,Nights,totalamount
+FROM dbo.payments
+WHERE hotel_id=@hotel AND reg_id=@reg
+ORDER BY ID;", cn) { CommandTimeout = 6 };
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
         try
@@ -3566,8 +4184,10 @@ SELECT * FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID;", 
                 var room = S(rd, "room_no");
                 var row = new CheckInChargeRow
                 {
-                    Id = I(rd, "ID"), Description = descr, Category = S(rd, "Type"), TypeValue = S(rd, "Type"),
-                    DeductionInfo = S(rd, "deductioninfo"), RoomNo = room, RatePlanId = S(rd, "rateplan"), RatePlanName = S(rd, "rateplanname"),
+                    Id = I(rd, "ID"), Description = descr, Category = S(rd, "Type"), CategoryId = S(rd, "category_id"), TypeValue = S(rd, "Type"),
+                    DeductionInfo = S(rd, "deductioninfo"), RoomNo = room,
+                    RoomAdults = I(rd, "room_adults"), RoomChildren = I(rd, "room_children"), RoomInfants = I(rd, "room_infants"),
+                    RatePlanId = S(rd, "rateplan"), RatePlanName = S(rd, "rateplanname"),
                     GuestName = S(rd, "guestname"), ArrivalDate = DateAny(rd, "ArrivalDate"), DepartureDate = DateAny(rd, "DepartureDate"),
                     Rate = M(rd, "Rate"), Charge = M(rd, "Charge"), Discount = M(rd, "discount"), Gst = M(rd, "GST"), BedTax = M(rd, "Bed"),
                     Nights = M(rd, "Nights"), TotalAmount = M(rd, "totalamount"), ReservationStatus = status,
@@ -3593,6 +4213,111 @@ SELECT * FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID;", 
     private async Task<IReadOnlyList<CheckInPaymentLogRow>> LoadPaymentLogAsync(SqlConnection cn, string hotelId, string regId, PermissionState p, CancellationToken ct)
     {
         var list = new List<CheckInPaymentLogRow>();
+        try
+        {
+            // Load the reservation payment rows once. Refund matching is intentionally done in
+            // memory below; the previous SQL used several correlated subqueries for every row,
+            // which became expensive as PaymentsLogTB grew.
+            await using var cmd = new SqlCommand(@"
+SELECT id,currentdate,paid_amount,payment_method,receipturl,PaymentId,chargeid,RefundId,externalrefundid,
+       status,systemUser,ipAddress,systemName
+FROM dbo.PaymentsLogTB
+WHERE hotel_id=@hotel AND reg_id=@reg
+ORDER BY id DESC;", cn) { CommandTimeout = 6 };
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+
+            await using (var rd = await cmd.ExecuteReaderAsync(ct))
+            {
+                while (await rd.ReadAsync(ct))
+                {
+                    list.Add(new CheckInPaymentLogRow
+                    {
+                        Id = I(rd, "id"),
+                        Date = DateAny(rd, "currentdate"),
+                        Amount = M(rd, "paid_amount"),
+                        Method = S(rd, "payment_method"),
+                        Receipt = S(rd, "receipturl"),
+                        PaymentId = S(rd, "PaymentId"),
+                        ChargeId = S(rd, "chargeid"),
+                        RefundId = S(rd, "RefundId"),
+                        ExternalRefundId = S(rd, "externalrefundid"),
+                        Status = S(rd, "status"),
+                        UserName = S(rd, "systemUser"),
+                        IpAddress = S(rd, "ipAddress"),
+                        SystemName = S(rd, "systemName"),
+                        CanRefund = false
+                    });
+                }
+            }
+
+            if (!p.HasAction("Refund") || list.Count == 0)
+                return list;
+
+            var refunds = list.Where(x => x.Amount < 0m).ToArray();
+            foreach (var row in list)
+            {
+                if (row.Amount <= 0m)
+                {
+                    row.CanRefund = false;
+                    row.RemainingRefundable = 0m;
+                    continue;
+                }
+
+                var isCash = IsCashMethod(row.Method);
+                var isCard = !string.IsNullOrWhiteSpace(row.PaymentId) && !string.IsNullOrWhiteSpace(row.ChargeId);
+                if (!isCash && !isCard)
+                {
+                    row.CanRefund = false;
+                    row.RemainingRefundable = 0m;
+                    continue;
+                }
+
+                var targetId = row.Id.ToString(CultureInfo.InvariantCulture);
+                var hasExplicitLink = false;
+                decimal alreadyRefunded = 0m;
+
+                // Preferred legacy link: refund.externalrefundid -> original payment-log ID.
+                foreach (var refund in refunds)
+                {
+                    if (refund.Id == row.Id) continue;
+                    if (!string.Equals((refund.ExternalRefundId ?? string.Empty).Trim(), targetId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    hasExplicitLink = true;
+                    alreadyRefunded += Math.Abs(refund.Amount);
+                }
+
+                // Legacy fallback when there is no explicit target link. Count each matching
+                // refund row once even when both provider identifiers happen to match.
+                if (!hasExplicitLink)
+                {
+                    alreadyRefunded = 0m;
+                    foreach (var refund in refunds)
+                    {
+                        if (refund.Id == row.Id) continue;
+                        var matches =
+                            (!string.IsNullOrWhiteSpace(row.PaymentId) && string.Equals(refund.PaymentId, row.PaymentId, StringComparison.OrdinalIgnoreCase)) ||
+                            (!string.IsNullOrWhiteSpace(row.ChargeId) && string.Equals(refund.ChargeId, row.ChargeId, StringComparison.OrdinalIgnoreCase)) ||
+                            (string.IsNullOrWhiteSpace(row.PaymentId) && string.IsNullOrWhiteSpace(row.ChargeId) && !string.IsNullOrWhiteSpace(refund.RefundId));
+                        if (matches) alreadyRefunded += Math.Abs(refund.Amount);
+                    }
+                }
+
+                row.RemainingRefundable = Math.Max(0m, Math.Abs(row.Amount) - alreadyRefunded);
+                row.CanRefund = row.RemainingRefundable > 0.005m;
+            }
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogDebug(ex, "Fast payment log query failed; using compatibility path.");
+            return await LoadPaymentLogLegacyAsync(cn, hotelId, regId, p, ct);
+        }
+        return list;
+    }
+
+    private async Task<IReadOnlyList<CheckInPaymentLogRow>> LoadPaymentLogLegacyAsync(SqlConnection cn, string hotelId, string regId, PermissionState p, CancellationToken ct)
+    {
+        var list = new List<CheckInPaymentLogRow>();
         await using var cmd = new SqlCommand(@"
 SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id DESC;", cn);
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
@@ -3614,8 +4339,6 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
                 }
             }
 
-            // Same rule as WebForms CanShowRefundButton: the button represents
-            // the remaining refundable balance, not merely a positive original row.
             foreach (var row in list)
             {
                 if (!p.HasAction("Refund") || row.Amount <= 0m)
@@ -3634,8 +4357,7 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
                     continue;
                 }
 
-                var alreadyRefunded = await GetRefundedAmountAsync(
-                    cn, null, hotelId, regId, row.PaymentId, row.ChargeId, row.Id, ct);
+                var alreadyRefunded = await GetRefundedAmountAsync(cn, null, hotelId, regId, row.PaymentId, row.ChargeId, row.Id, ct);
                 row.RemainingRefundable = Math.Max(0m, Math.Abs(row.Amount) - alreadyRefunded);
                 row.CanRefund = row.RemainingRefundable > 0.005m;
             }
@@ -3772,6 +4494,81 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
         => await LoadTotalsAsync(cn, null, hotelId, regId, roundTotal, ct);
 
     private async Task<CheckInTotals> LoadTotalsAsync(SqlConnection cn, SqlTransaction? tx, string hotelId, string regId, bool roundTotal, CancellationToken ct)
+    {
+        var totals = new CheckInTotals();
+        try
+        {
+            // One round trip, with one aggregate scan per table. In particular payments is
+            // scanned once for both GrandTotal and TaxTotal instead of twice.
+            await using var cmd = new SqlCommand(@"
+SELECT
+    GrandTotal = ISNULL(p.GrandTotal,0),
+    TaxTotal = ISNULL(p.TaxTotal,0),
+    PaidAmount = ISNULL(l.PaidAmount,0),
+    RoomSecurity = ISNULL(s.RoomSecurity,0),
+    AdvancePaid = ISNULL(g.AdvancePaid,0),
+    PaymentMethod = ISNULL(u.PaymentMethod,'')
+FROM
+(
+    SELECT
+        GrandTotal = SUM(ISNULL(TRY_CONVERT(decimal(18,2),totalamount),0)),
+        TaxTotal = SUM(ISNULL(TRY_CONVERT(decimal(18,2),GST),0)+ISNULL(TRY_CONVERT(decimal(18,2),Bed),0))
+    FROM dbo.payments
+    WHERE hotel_id=@hotel AND reg_id=@reg
+) p
+CROSS JOIN
+(
+    SELECT PaidAmount = SUM(ISNULL(TRY_CONVERT(decimal(18,2),paid_amount),0))
+    FROM dbo.PaymentsLogTB
+    WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(name,'')<>'Security Deduction'
+) l
+CROSS JOIN
+(
+    SELECT RoomSecurity = SUM(ISNULL(TRY_CONVERT(decimal(18,2),security),0))
+    FROM dbo.RoomSecurityTB
+    WHERE hotel_id=@hotel AND reg_id=@reg
+) s
+OUTER APPLY
+(
+    SELECT TOP (1) AdvancePaid = ISNULL(TRY_CONVERT(decimal(18,2),advancepaid),0)
+    FROM dbo.GuestInformationLogTB
+    WHERE hotel_id=@hotel AND reg_id=@reg
+    ORDER BY ID DESC
+) g
+OUTER APPLY
+(
+    SELECT TOP (1) PaymentMethod = payment_method
+    FROM dbo.PaymentsUpdateTB
+    WHERE hotel_id=@hotel AND reg_id=@reg
+    ORDER BY id DESC
+) u;", cn, tx)
+            { CommandTimeout = 6 };
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (await rd.ReadAsync(ct))
+            {
+                totals.GrandTotal = M(rd, "GrandTotal");
+                totals.TaxTotal = M(rd, "TaxTotal");
+                totals.SubTotal = totals.GrandTotal - totals.TaxTotal;
+                totals.PaidAmount = M(rd, "PaidAmount");
+                totals.RoomSecurity = Math.Max(0m, M(rd, "RoomSecurity"));
+                totals.AdvancePaid = M(rd, "AdvancePaid");
+                totals.PaymentMethod = S(rd, "PaymentMethod");
+            }
+            if (roundTotal) totals.GrandTotal = Math.Round(totals.GrandTotal, 0, MidpointRounding.AwayFromZero);
+            totals.Payable = totals.GrandTotal;
+            totals.Remaining = Math.Round(totals.GrandTotal - totals.PaidAmount, 2);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogDebug(ex, "Optimized totals query failed; using compatibility path.");
+            return await LoadTotalsLegacyAsync(cn, tx, hotelId, regId, roundTotal, ct);
+        }
+        return totals;
+    }
+
+    private async Task<CheckInTotals> LoadTotalsLegacyAsync(SqlConnection cn, SqlTransaction? tx, string hotelId, string regId, bool roundTotal, CancellationToken ct)
     {
         var totals = new CheckInTotals();
         try
@@ -4413,8 +5210,8 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
 
         await using (var ins = new SqlCommand(@"
 INSERT INTO dbo.payments
-([Type],room_no,ArrivalDate,DepartureDate,NumberOfRoom,rate,charge,Nights,totalamount,reg_id,hotel_id,visit_id,payment_status,currentdate,descr,res_status,rateplan,rateplanname,GST,Bed)
-SELECT [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),@rate,@charge,@nights,@total,reg_id,hotel_id,visit_id,payment_status,GETDATE(),descr,res_status,rateplan,rateplanname,@gst,@bed
+([Type],room_no,ArrivalDate,DepartureDate,NumberOfRoom,rate,charge,Nights,totalamount,reg_id,hotel_id,visit_id,payment_status,currentdate,descr,res_status,rateplan,rateplanname,GST,Bed,category_id,room_adults,room_children,room_infants)
+SELECT [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),@rate,@charge,@nights,@total,reg_id,hotel_id,visit_id,payment_status,GETDATE(),descr,res_status,rateplan,rateplanname,@gst,@bed,category_id,room_adults,room_children,room_infants
 FROM dbo.payments
 WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
         {
@@ -4540,10 +5337,10 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
 INSERT INTO dbo.payments
 ([Type],room_no,ArrivalDate,DepartureDate,NumberOfRoom,rate,charge,Nights,totalamount,
  reg_id,hotel_id,visit_id,payment_status,currentdate,descr,res_status,rateplan,rateplanname,
- GST,Bed,discount,GuestName)
+ GST,Bed,discount,GuestName,category_id,room_adults,room_children,room_infants)
 SELECT [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),@rate,@charge,@nights,@total,
        reg_id,hotel_id,visit_id,payment_status,GETDATE(),descr,res_status,rateplan,rateplanname,
-       @gst,@bed,0,GuestName
+       @gst,@bed,0,GuestName,category_id,room_adults,room_children,room_infants
 FROM dbo.payments
 WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
             {
@@ -4952,10 +5749,93 @@ WHERE hotel_id=@hotel
 
     private static CheckInChargeRow MapChargeRow(SqlDataReader rd) => new()
     {
-        Id=I(rd,"ID"),Description=S(rd,"descr"),Category=S(rd,"Type"),TypeValue=S(rd,"Type"),DeductionInfo=S(rd,"deductioninfo"),RoomNo=S(rd,"room_no"),
+        Id=I(rd,"ID"),Description=S(rd,"descr"),Category=S(rd,"Type"),CategoryId=S(rd,"category_id"),TypeValue=S(rd,"Type"),DeductionInfo=S(rd,"deductioninfo"),RoomNo=S(rd,"room_no"),
+        RoomAdults=I(rd,"room_adults"),RoomChildren=I(rd,"room_children"),RoomInfants=I(rd,"room_infants"),
         RatePlanId=S(rd,"rateplan"),RatePlanName=S(rd,"rateplanname"),GuestName=S(rd,"guestname"),ArrivalDate=DateAny(rd,"ArrivalDate"),DepartureDate=DateAny(rd,"DepartureDate"),
         Rate=M(rd,"Rate"),Charge=M(rd,"Charge"),Discount=M(rd,"discount"),Gst=M(rd,"GST"),BedTax=M(rd,"Bed"),Nights=M(rd,"Nights"),TotalAmount=M(rd,"totalamount"),ReservationStatus=S(rd,"res_status")
     };
+
+    private sealed class RoomOccupancyLimits
+    {
+        public string CategoryId { get; init; } = string.Empty;
+        public int Adults { get; init; }
+        public int Children { get; init; }
+        public int Infants { get; init; }
+    }
+
+    private async Task<RoomOccupancyLimits?> GetRoomOccupancyLimitsAsync(
+        SqlConnection cn, SqlTransaction? tx, string hotelId, string? categoryId, string? categoryName, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    CONVERT(varchar(100),ISNULL(localcategoryid,'')) AS localcategoryid,
+    ISNULL(TRY_CONVERT(int,Adult_Spaces),0) AS Adult_Spaces,
+    ISNULL(TRY_CONVERT(int,Children_Spaces),0) AS Children_Spaces,
+    ISNULL(TRY_CONVERT(int,Cot_Spaces),0) AS Cot_Spaces
+FROM dbo.create_room
+WHERE hotel_id=@hotel
+  AND LTRIM(RTRIM(ISNULL(category,'')))='Room Rent'
+  AND
+  (
+      (@categoryId<>'' AND
+       (LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),localcategoryid),'')))=@categoryId
+        OR LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),category_id),'')))=@categoryId))
+      OR LTRIM(RTRIM(ISNULL(description,'')))=@categoryName
+  )
+ORDER BY CASE
+           WHEN @categoryId<>'' AND LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),localcategoryid),'')))=@categoryId THEN 0
+           WHEN @categoryId<>'' AND LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),category_id),'')))=@categoryId THEN 1
+           ELSE 2
+         END;", cn, tx);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@categoryId", SqlDbType.VarChar, 100).Value = (categoryId ?? string.Empty).Trim();
+        cmd.Parameters.Add("@categoryName", SqlDbType.VarChar, 150).Value = (categoryName ?? string.Empty).Trim();
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct)) return null;
+        return new RoomOccupancyLimits
+        {
+            CategoryId = S(rd, "localcategoryid"),
+            Adults = Math.Max(0, I(rd, "Adult_Spaces")),
+            Children = Math.Max(0, I(rd, "Children_Spaces")),
+            Infants = Math.Max(0, I(rd, "Cot_Spaces"))
+        };
+    }
+
+    private async Task SyncMasterGuestCountsFromRoomOccupancyAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId, CancellationToken ct)
+    {
+        // A stay extension may create another payments row for the same physical room.
+        // Collapse those segments by room number before calculating compatibility totals
+        // so the guest-level NumberOfAdults / NumberOfMinors is not double counted.
+        await using var cmd = new SqlCommand(@"
+DECLARE @adults int = 0, @minors int = 0;
+;WITH RoomOccupancy AS
+(
+    SELECT
+        Adults = MAX(ISNULL(room_adults,0)),
+        Children = MAX(ISNULL(room_children,0)),
+        Infants = MAX(ISNULL(room_infants,0)),
+        RoomCount = MAX(CASE WHEN TRY_CONVERT(int,NumberOfRoom)>0 THEN TRY_CONVERT(int,NumberOfRoom) ELSE 1 END)
+    FROM dbo.payments
+    WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+    GROUP BY NULLIF(LTRIM(RTRIM(ISNULL(room_no,''))),'')
+)
+SELECT
+    @adults = ISNULL(SUM(Adults * RoomCount),0),
+    @minors = ISNULL(SUM((Children + Infants) * RoomCount),0)
+FROM RoomOccupancy;
+
+UPDATE dbo.GuestInformationLogTB
+SET NumberOfAdults=@adults, NumberOfMinors=@minors
+WHERE hotel_id=@hotel AND reg_id=@reg;
+
+UPDATE dbo.NewReservationsTB
+SET number_of_adult=@adults, number_of_minor=@minors
+WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 
     private async Task<bool> IsRoomAvailableAsync(SqlConnection cn, SqlTransaction? tx, string hotelId, string category, string roomNo, DateTime arrival, DateTime departure, string? regId, CancellationToken ct)
     {
@@ -5184,16 +6064,60 @@ END",cn,tx);
         result.StayCount=result.Rates.Count;result.Total=Math.Round(result.Total,2);return result;
     }
 
-    private async Task StoreRateSnapshotAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string regId,string categoryId,string planId,RateQuoteResult quote,CancellationToken ct)
+    private async Task StoreRateSnapshotAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId, string categoryId,
+        string planId, RateQuoteResult quote, CancellationToken ct)
     {
-        foreach(var r in quote.Rates)
+        if (quote?.Rates == null || quote.Rates.Count == 0) return;
+
+        // The old implementation sent one UPDATE/INSERT command to SQL Server per night.
+        // A six-night room therefore cost six network round trips just to persist the rate
+        // snapshot. Send the dates/rates as one parameterized batch (chunked safely below
+        // SQL Server's parameter limit) while preserving the exact upsert semantics.
+        const int batchSize = 500;
+        for (var offset = 0; offset < quote.Rates.Count; offset += batchSize)
         {
-            await using var cmd=new SqlCommand(@"
-IF EXISTS(SELECT 1 FROM dbo.NewReservationRate WHERE hotel_id=@hotel AND reg_id=@reg AND rate_date=@date AND plan_name=@plan AND category_id=@category)
- UPDATE dbo.NewReservationRate SET rate=@rate WHERE hotel_id=@hotel AND reg_id=@reg AND rate_date=@date AND plan_name=@plan AND category_id=@category;
-ELSE INSERT INTO dbo.NewReservationRate(reg_id,rate_date,rate,hotel_id,plan_name,category_id) VALUES(@reg,@date,@rate,@hotel,@plan,@category);",cn,tx);
-            cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=regId;cmd.Parameters.Add("@date",SqlDbType.Date).Value=r.Date.Date;cmd.Parameters.Add("@rate",SqlDbType.Decimal).Value=r.Rate;
-            cmd.Parameters.Add("@plan",SqlDbType.VarChar,100).Value=planId??string.Empty;cmd.Parameters.Add("@category",SqlDbType.VarChar,100).Value=categoryId??string.Empty;await cmd.ExecuteNonQueryAsync(ct);
+            var batch = quote.Rates.Skip(offset).Take(batchSize).ToList();
+            var sql = new StringBuilder();
+            sql.AppendLine("DECLARE @src TABLE(rate_date date NOT NULL, rate decimal(18,2) NOT NULL);");
+            sql.Append("INSERT INTO @src(rate_date,rate) VALUES ");
+            for (var i = 0; i < batch.Count; i++)
+            {
+                if (i > 0) sql.Append(',');
+                sql.Append($"(@d{i},@r{i})");
+            }
+            sql.AppendLine(";");
+            sql.AppendLine(@"
+UPDATE target
+SET target.rate = src.rate
+FROM dbo.NewReservationRate target
+INNER JOIN @src src ON src.rate_date = target.rate_date
+WHERE target.hotel_id=@hotel AND target.reg_id=@reg
+  AND target.plan_name=@plan AND target.category_id=@category;
+
+INSERT INTO dbo.NewReservationRate(reg_id,rate_date,rate,hotel_id,plan_name,category_id)
+SELECT @reg,src.rate_date,src.rate,@hotel,@plan,@category
+FROM @src src
+WHERE NOT EXISTS
+(
+    SELECT 1
+    FROM dbo.NewReservationRate target
+    WHERE target.hotel_id=@hotel AND target.reg_id=@reg
+      AND target.rate_date=src.rate_date AND target.plan_name=@plan
+      AND target.category_id=@category
+);");
+
+            await using var cmd = new SqlCommand(sql.ToString(), cn, tx) { CommandTimeout = 15 };
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+            cmd.Parameters.Add("@plan", SqlDbType.VarChar, 100).Value = planId ?? string.Empty;
+            cmd.Parameters.Add("@category", SqlDbType.VarChar, 100).Value = categoryId ?? string.Empty;
+            for (var i = 0; i < batch.Count; i++)
+            {
+                cmd.Parameters.Add($"@d{i}", SqlDbType.Date).Value = batch[i].Date.Date;
+                cmd.Parameters.Add($"@r{i}", SqlDbType.Decimal).Value = batch[i].Rate;
+            }
+            await cmd.ExecuteNonQueryAsync(ct);
         }
     }
 
@@ -5378,7 +6302,7 @@ VALUES(@date,@security,@status,@reg,@visit,@hotel,@user,@system,@ip);",cn,tx);
         catch { }
     }
 
-    private async Task InsertPaymentLogInternalAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string userId,string userName,string ip,RecordCheckInPaymentRequest request,GuestSummary guest,CheckInTotals totals,decimal amount,decimal payable,decimal newPaid,decimal remaining,CancellationToken ct)
+    private async Task<int> InsertPaymentLogInternalAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string userId,string userName,string ip,RecordCheckInPaymentRequest request,GuestSummary guest,CheckInTotals totals,decimal amount,decimal payable,decimal newPaid,decimal remaining,CancellationToken ct)
     {
         var visit = string.IsNullOrWhiteSpace(request.VisitId) ? guest.VisitId : request.VisitId;
         var now = _hotelClock.GetHotelNow(hotelId);
@@ -5403,10 +6327,12 @@ THEN 1 ELSE 0 END;", cn, tx))
             ? @"
 INSERT INTO dbo.PaymentsLogTB
 (reg_id,arrival_date,departure_date,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,payment_method,status,visit_id,user_id,hotel_id,cb_status,ipAddress,systemUser,systemName,PaymentId,chargeid,receipturl,paymentstatus,paymessage)
+OUTPUT INSERTED.id
 VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@remaining,@method,@status,@visit,@user,@hotel,'1',@ip,@systemUser,@systemName,@paymentId,@chargeId,@receipt,@paymentStatus,@paymessage);"
             : @"
 INSERT INTO dbo.PaymentsLogTB
 (reg_id,arrival_date,departure_date,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,payment_method,status,visit_id,user_id,hotel_id,cb_status,ipAddress,systemUser,systemName)
+OUTPUT INSERTED.id
 VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@remaining,@method,@status,@visit,@user,@hotel,'1',@ip,@systemUser,@systemName);";
 
         await using var cmd = new SqlCommand(sql, cn, tx);
@@ -5438,12 +6364,19 @@ VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@
             cmd.Parameters.Add("@paymessage",SqlDbType.VarChar,-1).Value=request.PayMessage??string.Empty;
         }
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        var inserted = await cmd.ExecuteScalarAsync(ct);
+        return inserted == null || inserted == DBNull.Value
+            ? 0
+            : Convert.ToInt32(inserted, CultureInfo.InvariantCulture);
     }
 
-    private async Task UpdatePaymentTotalsAsync(SqlConnection cn,SqlTransaction? tx,string hotelId,string regId,CancellationToken ct,string? paymentMethod=null)
+    private async Task<CheckInTotals> UpdatePaymentTotalsAsync(
+        SqlConnection cn, SqlTransaction? tx, string hotelId, string regId, CancellationToken ct,
+        string? paymentMethod = null, bool? roundTotalOverride = null)
     {
-        var round=await IsRoundTotalAsync(cn,tx,hotelId,ct);var totals=await LoadTotalsAsync(cn,tx,hotelId,regId,round,ct);var guest=await GetGuestSummaryAsync(cn,tx,hotelId,regId,ct);
+        var round = roundTotalOverride ?? await IsRoundTotalAsync(cn, tx, hotelId, ct);
+        var totals = await LoadTotalsAsync(cn, tx, hotelId, regId, round, ct);
+        var guest = await GetGuestSummaryAsync(cn, tx, hotelId, regId, ct);
         var method=paymentMethod??totals.PaymentMethod??string.Empty;
         const string sql=@"
 MERGE dbo.PaymentsUpdateTB AS target
@@ -5456,7 +6389,9 @@ VALUES(@reg,@arrival,@departure,@now,@name,@grand,@security,@payable,@paid,@rema
         cmd.Parameters.Add("@name",SqlDbType.VarChar,250).Value=guest?.Name??string.Empty;cmd.Parameters.Add("@grand",SqlDbType.VarChar,50).Value=totals.GrandTotal.ToString(CultureInfo.InvariantCulture);cmd.Parameters.Add("@security",SqlDbType.VarChar,50).Value=totals.RoomSecurity.ToString(CultureInfo.InvariantCulture);
         cmd.Parameters.Add("@payable",SqlDbType.VarChar,50).Value=totals.Payable.ToString(CultureInfo.InvariantCulture);cmd.Parameters.Add("@paid",SqlDbType.VarChar,50).Value=totals.PaidAmount.ToString(CultureInfo.InvariantCulture);cmd.Parameters.Add("@remaining",SqlDbType.VarChar,50).Value=totals.Remaining.ToString(CultureInfo.InvariantCulture);
         cmd.Parameters.Add("@method",SqlDbType.VarChar,100).Value=method;cmd.Parameters.Add("@status",SqlDbType.VarChar,50).Value=guest?.Status??string.Empty;cmd.Parameters.Add("@visit",SqlDbType.VarChar,50).Value=guest?.VisitId??string.Empty;cmd.Parameters.Add("@system",SqlDbType.VarChar,150).Value=Environment.MachineName;
-        try{await cmd.ExecuteNonQueryAsync(ct);}catch(SqlException ex){_logger.LogDebug(ex,"PaymentsUpdateTB MERGE failed for {RegId}.",regId);}
+        try { await cmd.ExecuteNonQueryAsync(ct); }
+        catch (SqlException ex) { _logger.LogDebug(ex, "PaymentsUpdateTB MERGE failed for {RegId}.", regId); }
+        return totals;
     }
 
     private async Task InsertSystemLogAsync(SqlConnection cn,SqlTransaction? tx,string hotelId,string userId,string userName,string ip,string description,string regId,CancellationToken ct)
@@ -5901,6 +6836,38 @@ UPDATE dbo.NewReservationsTB SET fbr_invoice_no=@invoice,fbr_posted_at=GETDATE()
     {
         if(departure.Date<=arrival.Date)return 0;var months=(departure.Year-arrival.Year)*12+departure.Month-arrival.Month;if(departure.Day>arrival.Day)months++;return Math.Max(1,months);
     }
+    private static void ApplyReservationDateModeFromCharges(CheckInPageViewModel model)
+    {
+        if (IsSingleReservationType(model.ReservationType))
+        {
+            model.ReservationDateMode = "single";
+            return;
+        }
+
+        // Group reservations can be created either with one common stay range for
+        // every room or with room-level dates.  The legacy data does not persist a
+        // dedicated date-mode flag, so derive it from Room Rent rows instead of
+        // assuming every Group booking uses different dates.
+        var roomRows = (model.Charges ?? new List<CheckInChargeRow>())
+            .Where(x => x.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase))
+            .Where(x => x.ArrivalDate.HasValue && x.DepartureDate.HasValue)
+            .ToList();
+
+        if (roomRows.Count <= 1)
+        {
+            model.ReservationDateMode = "groupSame";
+            return;
+        }
+
+        var firstArrival = roomRows[0].ArrivalDate!.Value.Date;
+        var firstDeparture = roomRows[0].DepartureDate!.Value.Date;
+        var allSame = roomRows.All(x =>
+            x.ArrivalDate!.Value.Date == firstArrival &&
+            x.DepartureDate!.Value.Date == firstDeparture);
+
+        model.ReservationDateMode = allSame ? "groupSame" : "groupDifferent";
+    }
+
     private static bool IsSingleReservationType(string? type)
     {
         var s=(type??string.Empty).Trim();return s.Length==0||s.Equals("Individual",StringComparison.OrdinalIgnoreCase)||s.Equals("Single",StringComparison.OrdinalIgnoreCase);

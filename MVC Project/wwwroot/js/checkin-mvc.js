@@ -16,6 +16,7 @@
 
     const urls = {
         search: '/CheckIn/Search',
+        reservationState: '/CheckIn/ReservationState',
         guestSuggestions: '/CheckIn/GuestSuggestions',
         guestByContact: '/CheckIn/GuestByContact',
         cities: '/CheckIn/Cities',
@@ -65,6 +66,7 @@
     let regId = (app.dataset.regId || state.reservationId || '').trim();
     let visitId = (app.dataset.visitId || state.visitId || '').trim();
     let currentPaymentIntentId = '';
+    let terminalHandoffReady = false;
     let cardSecurityMode = false;
     let pendingSecurityId = 0;
     let pendingSecurityMethod = '';
@@ -76,6 +78,19 @@
     let manualCheckoutPoll = 0;
     let manualCheckoutContext = null;
     let searchTimer = 0;
+    let searchAbortController = null;
+    const searchCache = new Map();
+    const cityCache = new Map();
+
+    // Rate plans are loaded once when the page starts, then served from memory when
+    // the user changes room category. This removes the visible category-change delay.
+    const ratePlanCache = new Map();
+    let allRatePlansPromise = null;
+
+    let reservationStateAbortController = null;
+    let roomLookupAbortController = null;
+    let roomDateRefreshTimer = 0;
+    let roomAvailabilityRefreshVersion = 0;
     let calendarView = null;
     let calendarStage = 0;
     let calendarHoverDate = null;
@@ -170,6 +185,17 @@
         const d = parseIso(value);
         return d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
     };
+
+    const formatDateTime = value => {
+        if (!value) return '—';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return String(value);
+        return d.toLocaleString('en-GB', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        }).replace(',', '');
+    };
+
     const isGroup = () => (byId('reservationType')?.value || '').toLowerCase() === 'group';
     const dateMode = () => isGroup() ? (byId('reservationDateMode')?.value || 'groupSame') : 'single';
     const normalizedStayStatus = String(state.reservationStatus || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
@@ -177,9 +203,9 @@
     // Active reservations and checked-in stays can always open the main Stay Dates picker.
     // This intentionally overrides older server-side type/shape locks that were preventing
     // multi-room active stays from being extended or shortened from this page.
-    const canEditDates = state.canEditDates !== false || activeStayAllowsDateEdit;
-    const loadedStayArrival = byId('checkIn')?.value || '';
-    const loadedStayDeparture = byId('checkOut')?.value || '';
+    let canEditDates = state.canEditDates !== false || activeStayAllowsDateEdit;
+    let loadedStayArrival = byId('checkIn')?.value || '';
+    let loadedStayDeparture = byId('checkOut')?.value || '';
 
     async function api(url, options = {}) {
         const opts = { credentials: 'same-origin', ...options };
@@ -250,6 +276,7 @@
         byId('confirmTitle').textContent = title;
         byId('confirmMessage').textContent = text;
         byId('confirmOk').textContent = okText;
+        if (byId('confirmCancel')) byId('confirmCancel').textContent = 'No';
         openModal('confirmDialog');
         return new Promise(resolve => { confirmResolver = resolve; });
     }
@@ -341,7 +368,35 @@
         el.value = v;
     }
 
+    function masterGuestCountsFromRooms() {
+        const rows = Array.isArray(state.charges) ? state.charges : [];
+        const byRoom = new Map();
+        rows.forEach(row => {
+            if (String(row?.description || '').trim().toLowerCase() !== 'room rent') return;
+            const roomNo = String(row?.roomNo || '').trim();
+            const key = roomNo || `payment-${row?.id || byRoom.size}`;
+            const current = byRoom.get(key) || { adults: 0, children: 0, infants: 0 };
+            current.adults = Math.max(current.adults, Math.max(0, Number(row?.roomAdults || 0)));
+            current.children = Math.max(current.children, Math.max(0, Number(row?.roomChildren || 0)));
+            current.infants = Math.max(current.infants, Math.max(0, Number(row?.roomInfants || 0)));
+            byRoom.set(key, current);
+        });
+
+        let adults = 0, children = 0, infants = 0;
+        byRoom.forEach(x => { adults += x.adults; children += x.children; infants += x.infants; });
+
+        // Older reservations may not yet have room occupancy stored. Preserve their
+        // existing compatibility totals until a room is added with occupancy values.
+        if (adults + children + infants === 0) {
+            adults = Math.max(0, Number(state.guest?.adults || 0));
+            children = Math.max(0, Number(state.guest?.children || 0));
+            infants = 0;
+        }
+        return { adults, minors: children + infants };
+    }
+
     function guestPayload() {
+        const compatibilityCounts = masterGuestCountsFromRooms();
         return {
             regId,
             visitId,
@@ -360,8 +415,8 @@
             departureDate: byId('checkOut')?.value || '',
             arrivalTime: byId('arrivalTime')?.value || '',
             departureTime: byId('departureTime')?.value || '',
-            adults: Math.max(1, parseInt(byId('adults')?.value || '1', 10) || 1),
-            children: Math.max(0, parseInt(byId('children')?.value || '0', 10) || 0),
+            adults: compatibilityCounts.adults,
+            children: compatibilityCounts.minors,
             company: byId('company')?.value || '',
             source: byId('source')?.value || '',
             notes: byId('notes')?.value.trim() || '',
@@ -437,8 +492,18 @@
     function applyReservationMode() {
         const group = isGroup();
         $$('.group-only').forEach(x => x.classList.toggle('hidden', !group));
+
+        // Group reservations are room-led on Check-In. Keep the master dates in the DOM
+        // for existing calculations/availability, but do not show Stay Dates / Nights in
+        // Guest & Registration. Individual reservations continue to show both fields.
+        byId('guestStayDatesField')?.classList.toggle('hidden', group);
+        byId('guestStayCountField')?.classList.toggle('hidden', group);
+        byId('guestRegistrationGrid')?.classList.toggle('group-reservation-mode', group);
+        if (group) setCalendarOpen(false);
+
         const different = group && dateMode() === 'groupDifferent' && isRoomChargeMode();
         $$('.room-date-col').forEach(x => x.classList.toggle('hidden', !different));
+        byId('chargeRoomDatesRow')?.classList.toggle('room-different-mode', different);
         if (!different) syncChargeDatesFromMain();
     }
 
@@ -584,10 +649,16 @@
         }
 
         try {
-            const response = await api(`${urls.cities}?country=${encodeURIComponent(country)}`);
-            const items = Array.isArray(response)
-                ? response
-                : (Array.isArray(response?.data) ? response.data : []);
+            const cacheKey = country.toLowerCase();
+            let items = cityCache.get(cacheKey);
+            if (!items) {
+                const response = await api(`${urls.cities}?country=${encodeURIComponent(country)}`);
+                items = Array.isArray(response)
+                    ? response
+                    : (Array.isArray(response?.data) ? response.data : []);
+                cityCache.set(cacheKey, items);
+                if (cityCache.size > 30) cityCache.delete(cityCache.keys().next().value);
+            }
 
             city.innerHTML = '<option value="">--Select--</option>';
             items.forEach(x => {
@@ -629,16 +700,73 @@
         if (guest.source) setSelectValue('source', guest.source);
     }
 
+    function searchStatusInfo(value) {
+        const raw = String(value || '').trim();
+        const key = raw.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+        if (['check in', 'checkin', 'checked in', 'in house', 'inhouse'].includes(key))
+            return { label: 'Check-In', css: 'is-checkin' };
+        if (['check out', 'checkout', 'checked out'].includes(key))
+            return { label: 'Check-Out', css: 'is-checkout' };
+        if (['reservation', 'reserved', 'provisional'].includes(key))
+            return { label: 'Reservation', css: 'is-reservation' };
+        if (['cancelled', 'canceled'].includes(key))
+            return { label: 'Cancelled', css: 'is-cancelled' };
+        return { label: raw || 'Reservation', css: 'is-other' };
+    }
+
+    function renderSearchSuggestion(x) {
+        const fullName = `${x?.guestName || ''} ${x?.lastName || ''}`.trim() || 'Unnamed guest';
+        const reg = String(x?.regId || '').trim();
+        const phone = String(x?.phone || '').trim() || '—';
+        const status = searchStatusInfo(x?.status);
+
+        return `
+          <button type="button" class="search-result search-result-card" data-reg="${esc(reg)}">
+            <span class="search-result-top">
+              <span class="search-result-name">${esc(fullName)}</span>
+              <span class="search-status-badge ${status.css}">${esc(status.label)}</span>
+            </span>
+            <span class="search-result-meta">
+              <span class="search-meta-item"><span class="search-meta-label">Reservation ID</span><span class="search-meta-value">${esc(reg || '—')}</span></span>
+              <span class="search-meta-item"><span class="search-meta-label">Contact</span><span class="search-meta-value">${esc(phone)}</span></span>
+            </span>
+          </button>`;
+    }
+
     async function searchGuests() {
         const term = byId('guestSearch')?.value.trim() || '';
         const results = byId('searchResults');
         if (!results) return;
-        if (term.length < 2) { results.classList.add('hidden'); results.innerHTML = ''; return; }
-        const items = await api(`${urls.search}?term=${encodeURIComponent(term)}`);
-        results.innerHTML = (Array.isArray(items) && items.length)
-            ? items.map(x => `<button type="button" class="search-result" data-reg="${esc(x.regId)}"><b>${esc(`${x.guestName || ''} ${x.lastName || ''}`.trim())}</b><span>${esc(x.regId)} · ${esc(x.phone || x.email || '')}</span><small>${esc(x.status || '')}</small></button>`).join('')
-            : '<div class="search-result-empty">No matching guest or reservation found.</div>';
-        results.classList.remove('hidden');
+        if (term.length < 2) {
+            searchAbortController?.abort();
+            results.classList.add('hidden');
+            results.innerHTML = '';
+            return;
+        }
+
+        // Cancel the previous keystroke request so a slow response can never overwrite
+        // a newer search result.
+        searchAbortController?.abort();
+        searchAbortController = new AbortController();
+        const searchWrap = document.querySelector('.search-wrap');
+        searchWrap?.classList.add('is-loading');
+        try {
+            const cacheKey = term.toLowerCase();
+            let items = searchCache.get(cacheKey);
+            if (!items) {
+                items = await api(`${urls.search}?term=${encodeURIComponent(term)}`, { signal: searchAbortController.signal });
+                searchCache.set(cacheKey, Array.isArray(items) ? items : []);
+                if (searchCache.size > 30) searchCache.delete(searchCache.keys().next().value);
+            }
+            results.innerHTML = (Array.isArray(items) && items.length)
+                ? items.map(renderSearchSuggestion).join('')
+                : '<div class="search-result-empty">No matching guest or reservation found.</div>';
+            results.classList.remove('hidden');
+        } catch (e) {
+            if (e?.name !== 'AbortError') throw e;
+        } finally {
+            searchWrap?.classList.remove('is-loading');
+        }
     }
 
     function currentNameSnapshot() {
@@ -646,27 +774,20 @@
     }
 
 
-    function reloadReservation(targetRegId = regId) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('RI');
-        if (targetRegId) url.searchParams.set('q', targetRegId);
-        else url.searchParams.delete('q');
-        window.location.assign(url.toString());
-    }
-
-    function replaceInnerFromDocument(doc, id) {
-        const current = byId(id);
-        const fresh = doc.getElementById(id);
-        if (!current || !fresh) return;
-        current.innerHTML = fresh.innerHTML;
-    }
-
-    function replaceValueFromDocument(doc, id) {
-        const current = byId(id);
-        const fresh = doc.getElementById(id);
-        if (!current || !fresh) return;
-        if ('value' in current && 'value' in fresh) current.value = fresh.value;
-        else current.textContent = fresh.textContent || '';
+    async function reloadReservation(targetRegId = regId) {
+        const target = String(targetRegId || '').trim();
+        if (!target) return;
+        byId('searchResults')?.classList.add('hidden');
+        document.querySelector('.search-wrap')?.classList.add('is-loading');
+        showBusy('Loading reservation details…');
+        const started = performance.now();
+        try {
+            await refreshReservationUi(target, '', 'success', true);
+        } finally {
+            hideBusy();
+            document.querySelector('.search-wrap')?.classList.remove('is-loading');
+            if (window.console?.debug) console.debug(`Check-In reservation loaded in ${Math.round(performance.now() - started)} ms`);
+        }
     }
 
     function syncChargeOptionalColumns() {
@@ -692,8 +813,9 @@
         setAmountValue('paymentTotal', totals.grandTotal);
         setAmountValue('alreadyPaid', totals.paidAmount);
         setValue('payableAmount', totals.payable);
+        if (byId('advancePaid')) byId('advancePaid').value = Number(totals.advancePaid || 0).toFixed(2);
+        if (byId('roomSecurity')) byId('roomSecurity').value = Number(totals.roomSecurity || 0).toFixed(2);
         if (totals.roomSecurity != null) {
-            setValue('roomSecurity', totals.roomSecurity);
             setText('depositDisplay', totals.roomSecurity);
         }
     }
@@ -753,11 +875,152 @@
         try { sessionStorage.setItem('oraCheckInReloadToast', JSON.stringify({ text, type })); } catch { }
     }
 
-    function refreshReservationUi(targetRegId = regId, toastText = '', toastType = 'success') {
-        // A successful mutation now performs one normal page navigation instead of
-        // downloading the page through fetch, parsing a second DOM and patching many
-        // fragments. This keeps the screen fully in sync with the database and removes
-        // the extra partial-refresh processing path.
+    function setFieldValue(id, value) {
+        const el = byId(id);
+        if (el) el.value = value == null ? '' : String(value);
+    }
+
+    function setVisible(id, visible) {
+        byId(id)?.classList.toggle('hidden', !visible);
+    }
+
+    function replaceFromTemplate(root, targetId, templateId) {
+        const target = byId(targetId);
+        const template = root.querySelector(`#${templateId}`);
+        if (!target || !template) return;
+        target.innerHTML = template.innerHTML;
+    }
+
+    async function applyReservationState(root, fresh) {
+        if (!fresh || typeof fresh !== 'object') throw new Error('Reservation data is invalid.');
+
+        Object.keys(state).forEach(key => delete state[key]);
+        Object.assign(state, fresh);
+
+        regId = String(fresh.reservationId || fresh.guest?.regId || '').trim();
+        visitId = String(fresh.visitId || fresh.guest?.visitId || '').trim();
+        currency = fresh.currency || currency;
+        currencyCode = String(fresh.currencyCode || currencyCode || 'GBP').toLowerCase();
+        app.dataset.regId = regId;
+        app.dataset.visitId = visitId;
+        app.dataset.currency = currency;
+        app.dataset.currencyCode = currencyCode;
+        app.dataset.monthWise = fresh.isMonthWise ? '1' : '0';
+
+        const g = fresh.guest || {};
+        setFieldValue('firstName', g.firstName);
+        setFieldValue('lastName', g.lastName);
+        setFieldValue('phone', g.phone);
+        setFieldValue('email', g.email);
+        setFieldValue('passportNo', g.passportNo);
+        setFieldValue('vatNo', g.vatNo);
+        setFieldValue('address', g.address);
+        setFieldValue('arrivalTime', g.arrivalTime || '');
+        setFieldValue('departureTime', g.departureTime || '');
+        setFieldValue('bookingId', g.bookingId || fresh.bookingId || '');
+        setFieldValue('groupName', g.groupName || fresh.groupName || '');
+        if (byId('complementary')) byId('complementary').checked = !!g.complementary;
+
+        const arrival = String(g.arrivalDate || '').slice(0, 10);
+        const departure = String(g.departureDate || '').slice(0, 10);
+        setFieldValue('checkIn', arrival);
+        setFieldValue('checkOut', departure);
+        setFieldValue('chargeArrival', arrival);
+        setFieldValue('chargeDeparture', departure);
+        loadedStayArrival = arrival;
+        loadedStayDeparture = departure;
+
+        setSelectValue('reservationType', fresh.reservationType || g.reservationType || 'Individual');
+        setSelectValue('reservationDateMode', fresh.reservationDateMode || 'single');
+        setSelectValue('source', g.source || '');
+        setSelectValue('company', g.company || '');
+        setSelectValue('country', g.country || '');
+
+        // Do not block the rest of the reservation UI on a secondary city lookup.
+        // Paint guest, room, payment and action data immediately; city options finish in parallel.
+        const cityLoadPromise = loadCities(g.city || '').catch(() => {
+            const city = byId('city');
+            if (city && g.city) {
+                city.innerHTML = `<option value="${esc(g.city)}">${esc(g.city)}</option>`;
+                city.value = g.city;
+                city.disabled = false;
+            }
+        });
+
+        applyTotalsSnapshot(fresh.totals || {});
+        setSelectValue('paymentMethod', fresh.totals?.paymentMethod || '');
+        setFieldValue('paidAmount', '0');
+
+        replaceFromTemplate(root, 'chargeRows', 'reservationChargeRowsTemplate');
+        replaceFromTemplate(root, 'paymentLogRows', 'reservationPaymentRowsTemplate');
+        replaceFromTemplate(root, 'securityRows', 'reservationSecurityRowsTemplate');
+        replaceFromTemplate(root, 'laundryRows', 'reservationLaundryRowsTemplate');
+        replaceFromTemplate(root, 'discountList', 'reservationDiscountTemplate');
+
+        const status = String(fresh.reservationStatus || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+        const active = ['reservation', 'reserved', 'provisional', 'check in', 'checkin', 'checked in'].includes(status);
+        canEditDates = fresh.canEditDates !== false || active;
+        const stayDisplay = byId('stayDateDisplay');
+        stayDisplay?.classList.toggle('is-disabled', !canEditDates);
+        if (canEditDates) stayDisplay?.removeAttribute('aria-disabled');
+        else stayDisplay?.setAttribute('aria-disabled', 'true');
+
+        setVisible('guestProceedCheckIn', !regId);
+        setVisible('updateGuest', !!regId && fresh.canUpdateGuest !== false);
+        setVisible('complete', !!fresh.showCheckInAction);
+        setVisible('undoCheckIn', !!fresh.showUndoCheckInAction);
+        setVisible('checkOutAction', !!fresh.showCheckOutAction);
+        setVisible('printInvoice', !!regId);
+
+        if (byId('guestSearch')) byId('guestSearch').value = regId;
+        applyReservationMode();
+        updateStayCount();
+        updateChargeStayCount();
+        syncChargeOptionalColumns();
+        setCalendarOpen(false);
+        lastQuickNameSnapshot = currentNameSnapshot();
+        syncFixedActionBar();
+
+        // City is secondary data. Do not keep the global reservation loader open while the
+        // country/city lookup finishes; the selected city is applied in the background.
+        // The promise already has an error fallback above, so this is safe to leave un-awaited.
+        void cityLoadPromise;
+    }
+
+    async function refreshReservationUi(targetRegId = regId, toastText = '', toastType = 'success', updateHistory = false) {
+        const target = String(targetRegId || '').trim();
+        if (!target) return false;
+
+        reservationStateAbortController?.abort();
+        reservationStateAbortController = new AbortController();
+        const response = await fetch(`${urls.reservationState}?regId=${encodeURIComponent(target)}&_=${Date.now()}`, {
+            credentials: 'same-origin',
+            headers: { Accept: 'text/html' },
+            signal: reservationStateAbortController.signal,
+            cache: 'no-store'
+        });
+        if (!response.ok) {
+            const raw = await response.text().catch(() => '');
+            let msg = raw;
+            try { msg = JSON.parse(raw)?.message || raw; } catch { }
+            throw new Error(msg || `Unable to refresh reservation (${response.status}).`);
+        }
+
+        const html = await response.text();
+        const host = document.createElement('div');
+        host.innerHTML = html;
+        const jsonNode = host.querySelector('#reservationStateJson');
+        if (!jsonNode) throw new Error('Reservation refresh response is incomplete.');
+        const fresh = JSON.parse(jsonNode.textContent || '{}');
+        await applyReservationState(host, fresh);
+
+        if (updateHistory || target !== new URL(window.location.href).searchParams.get('q')) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('RI');
+            url.searchParams.set('q', target);
+            window.history.replaceState({}, '', url.toString());
+        }
+
         if (!toastText) {
             const box = byId('message');
             toastText = box?.textContent?.trim() || '';
@@ -765,12 +1028,8 @@
             else if (box?.classList.contains('is-info')) toastType = 'info';
             else if (box?.classList.contains('is-success')) toastType = 'success';
         }
-        if (toastText) queueReloadToast(toastText, toastType);
-        const url = new URL(window.location.href);
-        url.searchParams.delete('RI');
-        if (targetRegId) url.searchParams.set('q', targetRegId);
-        window.location.assign(url.toString());
-        return new Promise(() => { });
+        if (toastText) message(toastText, toastType);
+        return true;
     }
 
     function showQueuedReloadToast() {
@@ -946,6 +1205,69 @@
         return option?.dataset.categoryId || option?.value || '';
     }
 
+    function selectedRoomOccupancyLimits() {
+        const option = byId('chargeCategory')?.selectedOptions?.[0];
+        return {
+            configured: option?.dataset.occupancyConfigured === '1',
+            adults: Math.max(0, Number(option?.dataset.adultLimit || 0)),
+            children: Math.max(0, Number(option?.dataset.childLimit || 0)),
+            infants: Math.max(0, Number(option?.dataset.infantLimit || 0))
+        };
+    }
+
+    function setOccupancyInput(inputId, limitId, max, value) {
+        const input = byId(inputId);
+        const label = byId(limitId);
+        if (!input) return;
+        const safeMax = Math.max(0, Number(max || 0));
+        input.min = '0';
+        input.max = String(safeMax);
+        input.value = String(Math.min(safeMax, Math.max(0, Number(value || 0))));
+        input.disabled = !isRoomChargeMode();
+        if (label) label.textContent = `(Max ${safeMax})`;
+    }
+
+    function applyRoomOccupancyLimits({ preserveValues = false } = {}) {
+        const limits = selectedRoomOccupancyLimits();
+        const currentAdults = preserveValues ? Number(byId('roomAdults')?.value || 0) : (limits.adults > 0 ? 1 : 0);
+        const currentChildren = preserveValues ? Number(byId('roomChildren')?.value || 0) : 0;
+        const currentInfants = preserveValues ? Number(byId('roomInfants')?.value || 0) : 0;
+        setOccupancyInput('roomAdults', 'roomAdultsLimit', limits.adults, currentAdults);
+        setOccupancyInput('roomChildren', 'roomChildrenLimit', limits.children, currentChildren);
+        setOccupancyInput('roomInfants', 'roomInfantsLimit', limits.infants, currentInfants);
+        return limits;
+    }
+
+    function clampRoomOccupancyInput(input) {
+        if (!input) return;
+        const min = Number(input.min || 0);
+        const max = Number(input.max || 0);
+        const value = Math.max(min, Math.min(max, Math.floor(Number(input.value || 0))));
+        input.value = String(Number.isFinite(value) ? value : min);
+    }
+
+    function roomOccupancyPayload() {
+        return {
+            adults: Math.max(0, parseInt(byId('roomAdults')?.value || '0', 10) || 0),
+            children: Math.max(0, parseInt(byId('roomChildren')?.value || '0', 10) || 0),
+            infants: Math.max(0, parseInt(byId('roomInfants')?.value || '0', 10) || 0)
+        };
+    }
+
+    function validateRoomOccupancy() {
+        const limits = selectedRoomOccupancyLimits();
+        const occ = roomOccupancyPayload();
+        if (!limits.configured) {
+            message('Room occupancy settings are not configured for this room category.', 'error');
+            return false;
+        }
+        if (occ.adults > limits.adults || occ.children > limits.children || occ.infants > limits.infants) {
+            message(`Room capacity exceeded. Maximum per room: Adults ${limits.adults}, Children ${limits.children}, Infants ${limits.infants}.`, 'error');
+            return false;
+        }
+        return true;
+    }
+
     function currentChargeDescription() {
         return isRoomChargeMode() ? 'Room Rent' : 'Extras';
     }
@@ -970,6 +1292,9 @@
         byId('chargeDetailWrap')?.classList.toggle('hidden', !serviceMode);
         byId('chargeOptionsRow')?.classList.toggle('service-mode-options', serviceMode);
         byId('chargeRoomWrap')?.classList.toggle('hidden', !roomMode);
+        byId('roomAdultsWrap')?.classList.toggle('hidden', !roomMode);
+        byId('roomChildrenWrap')?.classList.toggle('hidden', !roomMode);
+        byId('roomInfantsWrap')?.classList.toggle('hidden', !roomMode);
         byId('ratePlanWrap')?.classList.toggle('hidden', !roomMode || app.dataset.monthWise === '1');
         byId('promoCodeWrap')?.classList.add('hidden');
         if (byId('promoCode')) byId('promoCode').value = '';
@@ -977,7 +1302,14 @@
 
         if (!serviceMode && byId('chargeDetail')) byId('chargeDetail').value = '';
 
-        if (!roomMode) clearRoomPlan();
+        if (!roomMode) {
+            clearRoomPlan();
+            setOccupancyInput('roomAdults', 'roomAdultsLimit', 0, 0);
+            setOccupancyInput('roomChildren', 'roomChildrenLimit', 0, 0);
+            setOccupancyInput('roomInfants', 'roomInfantsLimit', 0, 0);
+        } else {
+            applyRoomOccupancyLimits({ preserveValues: true });
+        }
         applyReservationMode();
     }
 
@@ -994,77 +1326,227 @@
         });
     }
 
-    async function loadRoomsAndPlans() {
-        if (!isRoomChargeMode()) { clearRoomPlan(); return; }
+    function setRoomAvailabilityBusy(isBusy) {
+        const room = byId('chargeRoom');
+        const add = byId('addCharge');
+        if (room) {
+            room.classList.toggle('is-refreshing', !!isBusy);
+            room.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+        }
+        if (add && isRoomChargeMode()) add.disabled = !!isBusy;
+    }
+
+    async function loadAvailableRooms({ preserveSelection = false, quietUnavailable = false } = {}) {
+        if (!isRoomChargeMode()) return { kept: false, selectedRoom: '' };
 
         const category = byId('chargeCategory')?.value || '';
-        if (!category) { clearRoomPlan(); return; }
         const categoryId = selectedRoomCategoryId();
-        const lookupKeys = [...new Set([categoryId, category].filter(Boolean))];
+        if (!category) return { kept: false, selectedRoom: '' };
 
         const arrival = byId('chargeArrival')?.value || byId('checkIn')?.value || '';
         const departure = byId('chargeDeparture')?.value || byId('checkOut')?.value || '';
+        const room = byId('chargeRoom');
+        if (!room) return { kept: false, selectedRoom: '' };
+
         if (!arrival || !departure) {
-            if (byId('chargeRoom')) byId('chargeRoom').innerHTML = '<option value="">Select stay dates first</option>';
-            return;
+            if (!preserveSelection) room.innerHTML = '<option value="">Select stay dates first</option>';
+            return { kept: false, selectedRoom: '' };
         }
 
-        const room = byId('chargeRoom');
-        const plan = byId('ratePlan');
-        if (room) room.innerHTML = '<option value="">Loading rooms…</option>';
-        if (plan) plan.innerHTML = '<option value="">Loading rate plans…</option>';
+        const arrivalDate = parseIso(arrival);
+        const departureDate = parseIso(departure);
+        if (!arrivalDate || !departureDate || departureDate <= arrivalDate) {
+            return { kept: false, selectedRoom: room.value || '' };
+        }
 
-        // Load rooms independently from rate plans. A rate-plan lookup problem must
-        // never stop the Room No. dropdown from being populated.
+        const previousRoom = preserveSelection ? String(room.value || '') : '';
+        const previousText = previousRoom ? (room.selectedOptions?.[0]?.text || previousRoom) : '';
+        const lookupKeys = [...new Set([categoryId, category].filter(Boolean))];
+        const version = ++roomAvailabilityRefreshVersion;
+
+        roomLookupAbortController?.abort();
+        roomLookupAbortController = new AbortController();
+        setRoomAvailabilityBusy(true);
+
+        // Keep the user's current choice visible while availability is re-checked.
+        // Replacing the dropdown with "Loading..." made date editing feel like a reset.
+        if (!preserveSelection) room.innerHTML = '<option value="">Loading rooms…</option>';
+
         try {
             let list = [];
             for (const key of lookupKeys) {
-                const rooms = await api(`${urls.rooms}?category=${encodeURIComponent(key)}&arrival=${encodeURIComponent(arrival)}&departure=${encodeURIComponent(departure)}&regId=${encodeURIComponent(regId)}`);
+                const rooms = await api(`${urls.rooms}?category=${encodeURIComponent(key)}&arrival=${encodeURIComponent(arrival)}&departure=${encodeURIComponent(departure)}&regId=${encodeURIComponent(regId)}`, {
+                    signal: roomLookupAbortController.signal
+                });
                 list = Array.isArray(rooms) ? rooms : [];
                 if (list.length) break;
             }
-            if (room) {
-                room.innerHTML = '<option value="">--Select--</option>';
-                list.forEach(x => room.insertAdjacentHTML('beforeend', `<option value="${esc(x.value)}" data-category-id="${esc(x.meta2 || categoryId)}" data-room-status="${esc(x.meta || '')}">${esc(x.text || x.value)}</option>`));
-                if (!list.length) room.insertAdjacentHTML('beforeend', '<option value="" disabled>No available rooms</option>');
+
+            if (version !== roomAvailabilityRefreshVersion) return { kept: false, selectedRoom: previousRoom };
+
+            room.innerHTML = '<option value="">--Select--</option>';
+            list.forEach(x => room.insertAdjacentHTML('beforeend', `<option value="${esc(x.value)}" data-category-id="${esc(x.meta2 || categoryId)}" data-room-status="${esc(x.meta || '')}">${esc(x.text || x.value)}</option>`));
+            if (!list.length) room.insertAdjacentHTML('beforeend', '<option value="" disabled>No available rooms</option>');
+
+            const canKeep = previousRoom && list.some(x => String(x.value || '') === previousRoom);
+            if (canKeep) {
+                room.value = previousRoom;
+            } else if (previousRoom && !quietUnavailable) {
+                message(`Room ${previousText} is not available for the new dates. Please select another room.`, 'info');
+            } else if (previousRoom && quietUnavailable) {
+                message(`Room ${previousText} is not available for the new dates. Please select another room.`, 'info');
             }
+
+            return { kept: !!canKeep, selectedRoom: canKeep ? previousRoom : '' };
         } catch (e) {
-            if (room) room.innerHTML = '<option value="">Unable to load rooms</option>';
+            if (e?.name === 'AbortError') return { kept: false, selectedRoom: previousRoom };
+            if (!preserveSelection) room.innerHTML = '<option value="">Unable to load rooms</option>';
             message(e.message || 'Unable to load room numbers.', 'error');
+            return { kept: false, selectedRoom: previousRoom };
+        } finally {
+            if (version === roomAvailabilityRefreshVersion) setRoomAvailabilityBusy(false);
         }
-
-        try {
-            let list = [];
-            for (const key of lookupKeys) {
-                const plans = await api(`${urls.ratePlans}?category=${encodeURIComponent(key)}`);
-                list = Array.isArray(plans) ? plans : [];
-                if (list.length) break;
-            }
-            if (plan) {
-                plan.innerHTML = '<option value="">--Select--</option>';
-                list.forEach(x => plan.insertAdjacentHTML('beforeend', `<option value="${esc(x.value)}" data-rate="${Number(x.amount || 0)}" data-category-id="${esc(x.meta || categoryId)}">${esc(x.text || x.value)}</option>`));
-                if (list.length === 1) {
-                    plan.selectedIndex = 1;
-                    await quoteRate();
-                }
-            }
-        } catch (e) {
-            if (plan) plan.innerHTML = '<option value="">Unable to load rate plans</option>';
-            // Room selection remains usable even when rate-plan configuration is incomplete.
-        }
-
-        if (app.dataset.monthWise === '1') await quoteRate();
     }
 
-    async function quoteRate() {
+    function cacheRatePlanList(items) {
+        const list = Array.isArray(items) ? items : [];
+        for (const item of list) {
+            const categoryId = String(item?.meta || '').trim();
+            const categoryName = String(item?.meta2 || '').trim();
+
+            if (categoryId) {
+                const key = categoryId.toLowerCase();
+                const bucket = ratePlanCache.get(key) || [];
+                if (!bucket.some(x => String(x?.value || '') === String(item?.value || ''))) bucket.push(item);
+                ratePlanCache.set(key, bucket);
+            }
+
+            if (categoryName) {
+                const key = categoryName.toLowerCase();
+                const bucket = ratePlanCache.get(key) || [];
+                if (!bucket.some(x => String(x?.value || '') === String(item?.value || ''))) bucket.push(item);
+                ratePlanCache.set(key, bucket);
+            }
+        }
+        return list;
+    }
+
+    function preloadRatePlans() {
+        if (app.dataset.monthWise === '1') return Promise.resolve([]);
+        if (allRatePlansPromise) return allRatePlansPromise;
+
+        allRatePlansPromise = api(`${urls.ratePlans}?category=${encodeURIComponent('*')}`)
+            .then(items => cacheRatePlanList(items))
+            .catch(() => []);
+
+        return allRatePlansPromise;
+    }
+
+    async function loadRatePlans({ preserveSelection = false } = {}) {
+        if (!isRoomChargeMode() || app.dataset.monthWise === '1') return;
+
+        const category = byId('chargeCategory')?.value || '';
+        const categoryId = selectedRoomCategoryId();
+        const plan = byId('ratePlan');
+        if (!category || !plan) return;
+
+        const previousPlan = preserveSelection ? String(plan.value || '') : '';
+        const lookupKeys = [...new Set([categoryId, category].filter(Boolean).map(x => String(x).trim()))];
+        if (!preserveSelection) plan.innerHTML = '<option value="">Loading rate plans…</option>';
+
+        try {
+            // The page starts this request in the background. If it is still running,
+            // wait for the same promise instead of starting another API/SQL call.
+            await preloadRatePlans();
+
+            let list = [];
+            for (const key of lookupKeys) {
+                list = ratePlanCache.get(key.toLowerCase()) || [];
+                if (list.length) break;
+            }
+
+            // Compatibility fallback for older data where category/category_id metadata
+            // differs from the category dropdown.
+            if (!list.length) {
+                for (const key of lookupKeys) {
+                    const plans = await api(`${urls.ratePlans}?category=${encodeURIComponent(key)}`);
+                    list = Array.isArray(plans) ? plans : [];
+                    cacheRatePlanList(list);
+                    if (list.length) break;
+                }
+            }
+
+            plan.innerHTML = '<option value="">--Select--</option>';
+            list.forEach(x => plan.insertAdjacentHTML('beforeend', `<option value="${esc(x.value)}" data-rate="${Number(x.amount || 0)}" data-category-id="${esc(x.meta || categoryId)}">${esc(x.text || x.value)}</option>`));
+
+            if (previousPlan && list.some(x => String(x.value || '') === previousPlan)) {
+                plan.value = previousPlan;
+            } else if (list.length === 1) {
+                plan.selectedIndex = 1;
+            }
+        } catch (e) {
+            if (!preserveSelection) plan.innerHTML = '<option value="">Unable to load rate plans</option>';
+        }
+    }
+
+    async function loadRoomsAndPlans() {
+        if (!isRoomChargeMode()) { clearRoomPlan(); return; }
+        await Promise.all([
+            loadAvailableRooms({ preserveSelection: false }),
+            loadRatePlans({ preserveSelection: false })
+        ]);
+        if (app.dataset.monthWise === '1' || byId('ratePlan')?.value) await quoteRate();
+    }
+
+    function scheduleRoomDateRefresh() {
+        updateChargeStayCount();
+        clearTimeout(roomDateRefreshTimer);
+        roomDateRefreshTimer = window.setTimeout(async () => {
+            if (!isRoomChargeMode()) return;
+
+            const arrival = byId('chargeArrival')?.value || byId('checkIn')?.value || '';
+            const departure = byId('chargeDeparture')?.value || byId('checkOut')?.value || '';
+            const a = parseIso(arrival);
+            const d = parseIso(departure);
+
+            // While the user is still choosing the second date, keep all current selections
+            // untouched. Refresh only after there is a complete, valid date range.
+            if (!a || !d || d <= a) return;
+
+            const selectedPlan = String(byId('ratePlan')?.value || '');
+            await Promise.all([
+                loadAvailableRooms({ preserveSelection: true, quietUnavailable: true }),
+                selectedPlan || app.dataset.monthWise === '1' ? quoteRate().catch(() => { }) : Promise.resolve()
+            ]);
+        }, 160);
+    }
+
+    async function quoteRate({ usePlanFallback = false } = {}) {
         if (!isRoomChargeMode()) return;
         const plan = byId('ratePlan');
-        const categoryId = selectedRoomCategoryId();
+        const selectedPlanOption = plan?.selectedOptions?.[0];
+
+        // category_plan.category_id belongs to the selected rate plan and is the most
+        // accurate key for rate lookup. Fall back to the room category id when older
+        // data does not provide it.
+        const categoryId = selectedPlanOption?.dataset.categoryId || selectedRoomCategoryId();
         const planId = app.dataset.monthWise === '1' ? 'Monthly' : (plan?.value || '');
         if (!categoryId || (app.dataset.monthWise !== '1' && !planId)) return;
+
         const arrival = byId('chargeArrival')?.value || byId('checkIn')?.value || '';
         const departure = byId('chargeDeparture')?.value || byId('checkOut')?.value || '';
         if (!arrival || !departure) return;
+
+        // Give immediate feedback when a rate plan is selected. The server quote below
+        // then replaces this fallback with the exact date-wise rate (datesrates / snapshot).
+        if (usePlanFallback && app.dataset.monthWise !== '1') {
+            const fallbackRate = toNumber(selectedPlanOption?.dataset.rate);
+            const stayCount = updateChargeStayCount();
+            if (fallbackRate > 0 && stayCount > 0 && byId('chargeTotal')) {
+                byId('chargeTotal').value = (fallbackRate * stayCount).toFixed(2);
+            }
+        }
+
         const result = await api(urls.rateQuote, {
             method: 'POST',
             body: {
@@ -1094,6 +1576,7 @@
         if (isService && !detail) return message('Enter service / charge details.', 'error');
         if (isRoom && !byId('chargeRoom')?.value) return message('Select a room number.', 'error');
         if (isRoom && app.dataset.monthWise !== '1' && !byId('ratePlan')?.value) return message('Select a rate plan.', 'error');
+        if (isRoom && !validateRoomOccupancy()) return;
 
         const amount = toNumber(byId('chargeTotal')?.value);
         if (amount === 0 && !['Complementary'].includes(byId('paymentMethod')?.value || '')) {
@@ -1101,9 +1584,15 @@
             if (!proceed) return;
         }
 
-        showBusy(isRoom ? 'Adding room…' : 'Adding service…');
+        const addButton = byId('addCharge');
+        const addButtonHtml = addButton?.innerHTML || '';
+        if (addButton) {
+            addButton.disabled = true;
+            addButton.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i>${isRoom ? 'Adding…' : 'Adding…'}`;
+        }
         try {
             const plan = byId('ratePlan');
+            const occupancy = roomOccupancyPayload();
             const arrival = byId('chargeArrival')?.value || byId('checkIn')?.value;
             const departure = byId('chargeDeparture')?.value || byId('checkOut')?.value;
             const result = await api(urls.addCharge, {
@@ -1113,9 +1602,13 @@
                     visitId,
                     description,
                     category,
+                    categoryId: isRoom ? selectedRoomCategoryId() : '',
                     typeValue: category,
                     deductionInfo: detail,
                     roomNo: isRoom ? (byId('chargeRoom')?.value || '') : '',
+                    roomAdults: isRoom ? occupancy.adults : 0,
+                    roomChildren: isRoom ? occupancy.children : 0,
+                    roomInfants: isRoom ? occupancy.infants : 0,
                     ratePlanId: isRoom && app.dataset.monthWise !== '1' ? (plan?.value || '') : (isRoom ? 'Monthly' : ''),
                     ratePlanName: isRoom && app.dataset.monthWise !== '1' ? (plan?.selectedOptions?.[0]?.text || '') : (isRoom ? 'Monthly' : ''),
                     promoCode: '',
@@ -1131,23 +1624,145 @@
                 }
             });
             if (!result.ok) return message(result.message, 'error');
+            const addedCharge = result.data?.charge || null;
+            const added = addedCharge ? appendChargeRow(addedCharge) : null;
+            if (result.data?.totals) applyTotalsSnapshot(result.data.totals);
+            if (addedCharge) {
+                state.charges = [...(Array.isArray(state.charges) ? state.charges : []), addedCharge];
+            }
             message(result.message, 'success');
-            await refreshReservationUi(regId);
-            if (result.id) {
-                const added = document.querySelector(`tr[data-charge-id="${Number(result.id)}"]`);
-                if (added) {
-                    added.classList.add('row-attention');
-                    added.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                    const pending = added.querySelector('.room-check');
-                    if (pending) {
-                        pending.checked = true;
-                        setTimeout(() => pending.focus({ preventScroll: true }), 250);
-                    }
-                    setTimeout(() => added.classList.remove('row-attention'), 1800);
+
+            // Keep the entry controls ready for the next room/service without reloading the page.
+            if (isRoom) {
+                const roomSelect = byId('chargeRoom');
+                const usedRoom = String(addedCharge?.roomNo || roomSelect?.value || '');
+                if (roomSelect && usedRoom) {
+                    const usedOption = [...roomSelect.options].find(o => o.value === usedRoom);
+                    usedOption?.remove();
+                    roomSelect.value = '';
                 }
+                applyRoomOccupancyLimits({ preserveValues: false });
+            } else if (byId('chargeDetail')) {
+                byId('chargeDetail').value = '';
+            }
+            if (byId('discount')) byId('discount').value = '0';
+            if (byId('chargeTotal')) byId('chargeTotal').value = '';
+
+            if (added) {
+                added.classList.add('row-attention');
+                added.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                const pending = added.querySelector('.room-check');
+                if (pending) {
+                    pending.checked = true;
+                    setTimeout(() => pending.focus({ preventScroll: true }), 80);
+                }
+                setTimeout(() => added.classList.remove('row-attention'), 1400);
             }
         } catch (e) { message(e.message, 'error'); }
-        finally { hideBusy(); }
+        finally {
+            if (addButton) { addButton.disabled = false; addButton.innerHTML = addButtonHtml; }
+        }
+    }
+
+    function chargeDateValue(value) {
+        return String(value || '').slice(0, 10);
+    }
+
+    function syncCheckInActionFromRows() {
+        const status = String(state.reservationStatus || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+        const hasPendingRoom = !!byId('chargeRows')?.querySelector('.room-check');
+        setVisible('complete', !status || status === 'reservation' || hasPendingRoom);
+    }
+
+    function renumberChargeRows() {
+        // The visual sequence-number column was intentionally removed. Keep this
+        // helper for existing callers; it now only restores the empty-row state.
+        const rows = $$('#chargeRows tr[data-charge-id]');
+        if (!rows.length && byId('chargeRows')) {
+            byId('chargeRows').innerHTML = '<tr class="table-empty"><td colspan="16">No charges added yet. Save the guest, then add a room or service.</td></tr>';
+        }
+    }
+
+    function appendChargeRow(charge) {
+        if (!charge || !byId('chargeRows')) return null;
+        const tbody = byId('chargeRows');
+        tbody.querySelector('.table-empty')?.remove();
+
+        const id = Number(charge.id || 0);
+        if (!id) return null;
+        const description = String(charge.description || '');
+        const category = String(charge.category || charge.typeValue || '');
+        const roomNo = String(charge.roomNo || '');
+        const status = String(charge.reservationStatus || '');
+        const arrival = chargeDateValue(charge.arrivalDate);
+        const departure = chargeDateValue(charge.departureDate);
+        const nights = toNumber(charge.nights);
+        const rate = toNumber(charge.rate);
+        const baseCharge = toNumber(charge.charge);
+        const isRoom = description.toLowerCase() === 'room rent';
+        const ratePerNight = isRoom && nights > 1 && Math.abs(rate - baseCharge) < 0.01 ? rate / nights : rate;
+        const detailText = isRoom ? description : (String(charge.deductionInfo || '').trim() || description);
+        const guestName = String(charge.guestName || '').trim();
+        const planName = String(charge.ratePlanName || charge.ratePlanId || '');
+        const canSelect = charge.canSelectForCheckIn === true;
+        const selected = charge.selectedForCheckIn !== false;
+        const canChangeRoom = charge.canChangeRoom === true;
+        const canDelete = charge.canDelete === true;
+        const deleteLockTitle = String(charge.deleteLockTitle || '');
+        const canEditRate = charge.canEditRate === true && isRoom;
+
+        const row = document.createElement('tr');
+        row.dataset.chargeId = String(id);
+        row.dataset.room = roomNo;
+        row.dataset.category = category;
+        row.dataset.status = status;
+        row.dataset.arrival = arrival;
+        row.dataset.departure = departure;
+        const statusKey = status.toLowerCase().replace(/[\s_-]+/g, '');
+        if (isRoom && (statusKey === 'checkout' || statusKey === 'checkedout')) {
+            row.classList.add('charge-row-checkedout');
+        }
+
+        // Only Room Rent rows carry room-specific context in the visible grid.
+        // Services/other charges keep their financial columns but Type, Room, Guest
+        // and Stay remain intentionally blank.
+        const visibleType = isRoom ? esc(category) : '';
+        const visibleRoom = isRoom
+            ? `<span class="room-number-text">${esc(roomNo || '—')}</span>${canChangeRoom ? `<button type="button" class="reservation-room-edit-btn" data-room-change="${id}" title="Change this room" aria-label="Change room ${esc(roomNo)}"><i class="fa-solid fa-pen"></i></button>` : ''}`
+            : '';
+        const visibleGuest = isRoom ? esc(guestName || '—') : '';
+        const visibleStay = isRoom
+            ? `${esc(formatDate(arrival) || '—')} → ${esc(formatDate(departure) || '—')}<br /><small>${nights.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${app.dataset.monthWise === '1' ? 'month(s)' : 'night(s)'}</small>`
+            : '';
+
+        row.innerHTML = `
+            <td>${canSelect
+                ? `<input class="room-check" type="checkbox" value="${id}" data-room="${esc(roomNo)}" ${selected ? 'checked' : ''} title="Select this pending room for check-in" />`
+                : '<i class="fa-solid fa-lock table-lock" title="This row is not available for check-in selection."></i>'}</td>
+            <td>${esc(detailText)}</td>
+            <td>${visibleType}</td>
+            <td class="room-cell reservation-room-number-cell">${visibleRoom}</td>
+            <td class="num occupancy-cell">${isRoom ? esc(charge.roomAdults ?? 0) : ''}</td>
+            <td class="num occupancy-cell">${isRoom ? esc(charge.roomChildren ?? 0) : ''}</td>
+            <td class="num occupancy-cell">${isRoom ? esc(charge.roomInfants ?? 0) : ''}</td>
+            <td class="guest-cell inline-editable-cell" data-value="${isRoom ? esc(guestName) : ''}" data-can-edit-guest="${isRoom ? '1' : '0'}" title="${isRoom ? 'Double-click to edit guest name' : ''}">${visibleGuest}</td>
+            <td>${visibleStay}</td>
+            <td>${esc(planName)}</td>
+            <td class="num rate-cell inline-editable-cell" data-value="${ratePerNight}" data-can-edit-rate="${canEditRate ? '1' : '0'}" title="${canEditRate ? 'Double-click to edit rate per night' : 'Rate update not permitted'}">${money(ratePerNight)}</td>
+            <td data-charge-col="discount" data-value="${toNumber(charge.discount)}" class="num">${money(charge.discount)}</td>
+            <td data-charge-col="gst" data-value="${toNumber(charge.gst)}" class="num">${money(charge.gst)}</td>
+            <td data-charge-col="bedtax" data-value="${toNumber(charge.bedTax)}" class="num">${money(charge.bedTax)}</td>
+            <td class="num charge-total-cell" data-value="${toNumber(charge.totalAmount)}"><b>${money(charge.totalAmount)}</b></td>
+            <td class="row-actions">
+                ${canDelete
+                    ? '<button type="button" class="icon-action danger" data-action="delete" title="Delete"><i class="fa-solid fa-trash"></i></button>'
+                    : (deleteLockTitle ? `<span class="icon-action is-disabled" title="${esc(deleteLockTitle)}"><i class="fa-solid fa-lock"></i></span>` : '')}
+            </td>`;
+        tbody.appendChild(row);
+        renumberChargeRows();
+        syncChargeOptionalColumns();
+        syncCheckInActionFromRows();
+        return row;
     }
 
     function startInlineChargeEdit(row, mode) {
@@ -1186,7 +1801,7 @@
                     cell.dataset.value = value;
                     cell.textContent = value || '—';
                 }
-                await refreshReservationUi(regId, result.message || 'Updated successfully.', 'success');
+                message(result.message || 'Updated successfully.', 'success');
             } catch (e) { message(e.message, 'error'); }
             finally { hideBusy(); }
         };
@@ -1259,14 +1874,46 @@
         const action = button.dataset.action;
         if (!id || !action) return;
         if (action === 'delete') {
-            showBusy('Deleting charge…');
+            const description = row.children?.[1]?.textContent?.trim() || 'this room / charge';
+            const room = row.dataset.room ? ` (Room ${row.dataset.room})` : '';
+            const confirmed = await askConfirm('Delete Room / Charge', `Are you sure you want to delete ${description}${room}?`, 'Yes, Delete');
+            if (!confirmed) return;
+
+            button.disabled = true;
+            const oldDeleteHtml = button.innerHTML;
+            button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+            row.classList.add('row-is-busy');
             try {
                 const r = await api(urls.deleteCharge, { method: 'POST', body: { regId, paymentId: id } });
                 if (!r.ok) return message(r.message, 'error');
                 row.remove();
+                if (r.data?.totals) applyTotalsSnapshot(r.data.totals);
+                if (Array.isArray(state.charges)) state.charges = state.charges.filter(x => Number(x?.id || 0) !== id);
+
+                // If the user is still working in the same room category, make the just-freed
+                // room immediately selectable again without another server round-trip.
+                const freedRoom = String(r.data?.roomNo || '').trim();
+                const freedCategory = String(r.data?.category || '').trim();
+                const roomSelect = byId('chargeRoom');
+                const currentCategory = String(byId('chargeCategory')?.value || '').trim();
+                if (freedRoom && roomSelect && currentCategory === freedCategory && ![...roomSelect.options].some(o => o.value === freedRoom)) {
+                    const option = document.createElement('option');
+                    option.value = freedRoom;
+                    option.textContent = freedRoom;
+                    roomSelect.appendChild(option);
+                }
+
+                renumberChargeRows();
+                syncChargeOptionalColumns();
+                syncCheckInActionFromRows();
                 message(r.message || 'Charge deleted.', 'success');
-                await refreshReservationUi(regId);
-            } catch (e) { message(e.message, 'error'); } finally { hideBusy(); }
+            } catch (e) {
+                row.classList.remove('row-is-busy');
+                button.disabled = false;
+                message(e.message, 'error');
+            } finally {
+                if (button.isConnected) { button.innerHTML = oldDeleteHtml; button.disabled = false; }
+            }
             return;
         }
         if (action === 'rate') {
@@ -1358,6 +2005,58 @@
         } catch (e) { message(e.message, 'error'); } finally { hideBusy(); }
     }
 
+    function renumberPaymentLogRows() {
+        const tbody = byId('paymentLogRows');
+        if (!tbody) return;
+        const rows = [...tbody.querySelectorAll('tr[data-payment-log-id]')];
+        rows.forEach((row, index) => {
+            const cell = row.cells?.[0];
+            if (cell) cell.textContent = String(index + 1);
+        });
+        if (!rows.length) tbody.innerHTML = '<tr><td colspan="6" class="payment-log-empty">No payment recorded yet.</td></tr>';
+    }
+
+    function appendPaymentLogRow(payment) {
+        const tbody = byId('paymentLogRows');
+        if (!tbody || !payment) return null;
+
+        const id = Number(payment.id || 0);
+        if (!id) return null;
+
+        tbody.querySelector('.payment-log-empty')?.closest('tr')?.remove();
+
+        const amount = toNumber(payment.amount);
+        const refundable = toNumber(payment.remainingRefundable ?? payment.refundableAmount ?? (payment.canRefund ? Math.abs(amount) : 0));
+        const method = String(payment.method || '');
+        const receipt = String(payment.receipt || '');
+        const dateText = payment.date ? formatDateTime(payment.date) : '—';
+        const canRefund = payment.canRefund === true && refundable > 0.005;
+
+        const row = document.createElement('tr');
+        row.dataset.paymentLogId = String(id);
+        row.dataset.amount = String(amount);
+        row.dataset.refundable = String(refundable);
+        row.innerHTML = `
+          <td></td>
+          <td>${esc(dateText)}</td>
+          <td class="num">${money(amount)}</td>
+          <td>${esc(method || '—')}</td>
+          <td>${receipt ? `<a href="${esc(receipt)}" target="_blank" rel="noopener">Receipt</a>` : '<span>—</span>'}</td>
+          <td class="payment-option-cell">
+            ${canRefund ? `<button type="button" class="btn btn-ghost" data-payment-refund="${id}"><i class="fa-solid fa-rotate-left"></i> Refund</button>` : ''}
+            <button type="button" class="btn btn-ghost btn-icon payment-log-audit-btn" data-payment-audit="${id}" title="View audit log" aria-label="View audit log"><svg class="payment-audit-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4.5" y="3.5" width="15" height="17" rx="2"></rect><circle cx="8" cy="8" r="0.9"></circle><path d="M11 8h5"></path><circle cx="8" cy="12" r="0.9"></circle><path d="M11 12h5"></path><circle cx="8" cy="16" r="0.9"></circle><path d="M11 16h5"></path></svg></button>
+          </td>`;
+        tbody.prepend(row);
+        renumberPaymentLogRows();
+        return row;
+    }
+
+    function applyPaymentMutationResult(result) {
+        const data = result?.data || {};
+        if (data.totals) applyTotalsSnapshot(data.totals);
+        if (data.payment) appendPaymentLogRow(data.payment);
+    }
+
     async function recordPayment() {
         if (!regId) return message('Save or load a guest first.', 'error');
 
@@ -1390,8 +2089,8 @@
             if (!r?.ok) return message(r?.message || 'Unable to record payment.', 'error');
 
             if (amountInput) amountInput.value = '0';
+            applyPaymentMutationResult(r);
             message(r.message || 'Payment recorded successfully.', 'success');
-            await refreshReservationUi(regId);
         } catch (e) {
             message(e.message || 'Unable to record payment.', 'error');
         } finally {
@@ -1449,12 +2148,48 @@
     }
 
     async function showPaymentAudit(id) {
-        showBusy('Loading payment audit…');
+        const content = byId('auditContent');
+        if (!content || !id) return;
+
+        content.className = 'payment-audit-loading';
+        content.textContent = 'Loading...';
+        openModal('auditModal');
+
         try {
             const data = await api(`${urls.paymentAudit}?id=${id}`);
-            byId('auditContent').textContent = JSON.stringify(data, null, 2);
-            openModal('auditModal');
-        } catch (e) { message(e.message, 'error'); } finally { hideBusy(); }
+            if (!data || !data.ok) {
+                content.className = 'payment-audit-loading';
+                content.textContent = data && data.message ? data.message : 'Payment log not found.';
+                return;
+            }
+
+            const row = (label, value) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'payment-audit-row';
+
+                const key = document.createElement('div');
+                key.className = 'payment-audit-label';
+                key.textContent = label;
+
+                const val = document.createElement('div');
+                val.className = 'payment-audit-value';
+                val.textContent = value || '—';
+
+                wrapper.append(key, val);
+                return wrapper;
+            };
+
+            content.className = 'payment-audit-box';
+            content.replaceChildren(
+                row('Created Date', data.createdDateTime),
+                row('Username', data.username),
+                row('IP Address', data.ipAddress)
+            );
+        } catch (e) {
+            content.className = 'payment-audit-loading';
+            content.textContent = 'Unable to load payment log.';
+            message(e.message, 'error');
+        }
     }
 
     async function undoCheckIn() {
@@ -1690,6 +2425,9 @@
             currentCardMode = 'terminal';
             cardSecurityMode = true;
             currentPaymentIntentId = '';
+            setSimulationHandoffReady(false);
+            if (byId('cardSimulate')) byId('cardSimulate').checked = false;
+            if (byId('cardSimulationResult')) byId('cardSimulationResult').value = 'success';
             closeModal('securityModal');
             openModal('cardModal');
             return;
@@ -1759,9 +2497,56 @@
         if (s) s.textContent = detail;
     }
 
+    function setSimulationHandoffReady(ready) {
+        terminalHandoffReady = !!ready;
+        const button = byId('simulateCardNow');
+        if (!button) return;
+        const enabledByUser = !!byId('cardSimulate')?.checked;
+        button.disabled = !(terminalHandoffReady && enabledByUser && currentCardProvider === 'stripe' && currentCardMode === 'terminal' && !!currentPaymentIntentId);
+    }
+
+    async function simulateCardPresent() {
+        if (!terminalHandoffReady || !currentPaymentIntentId)
+            return message('Press Charge Now first and wait until the payment is handed off to the reader.', 'info');
+
+        const readerId = byId('cardReader')?.value || '';
+        if (!readerId) return message('Select a Stripe reader.', 'error');
+        if (byId('cardSimulate') && !byId('cardSimulate').checked)
+            return message('Enable Use simulated card first.', 'info');
+
+        const button = byId('simulateCardNow');
+        if (button) button.disabled = true;
+        setTerminalStatus('Simulating card', 'Presenting the selected test card to the Stripe test reader…');
+
+        try {
+            const result = await api(urls.stripeProcess, {
+                method: 'POST',
+                body: {
+                    regId,
+                    visitId,
+                    readerId,
+                    amount: toNumber(byId('cardAmount')?.value),
+                    currency: currencyCode,
+                    note: byId('cardNote')?.value.trim() || '',
+                    paymentIntentId: currentPaymentIntentId,
+                    securityHold: cardSecurityMode,
+                    simulate: true,
+                    simulationResult: byId('cardSimulationResult')?.value || 'success'
+                }
+            });
+            if (!result.success) return message(result.message || 'Unable to simulate the card presentation.', 'error');
+            setTerminalStatus('Simulated card presented', 'Waiting for Stripe to complete the reader action…');
+        } catch (e) {
+            message(e.message || 'Unable to simulate the card presentation.', 'error');
+        } finally {
+            if (button) button.disabled = !terminalHandoffReady || !byId('cardSimulate')?.checked;
+        }
+    }
+
 
     function setCardMode(mode) {
         currentCardMode = mode === 'manual' ? 'manual' : 'terminal';
+        setSimulationHandoffReady(false);
         $$('[data-card-mode]').forEach(x => x.classList.toggle('active', x.dataset.cardMode === currentCardMode));
         byId('terminalCardArea')?.classList.toggle('hidden', currentCardMode !== 'terminal');
         byId('manualCardArea')?.classList.toggle('hidden', currentCardMode !== 'manual');
@@ -1845,10 +2630,10 @@
             return message(save.message || 'Stripe payment succeeded but could not be recorded in PMS.', 'error');
         }
 
+        applyPaymentMutationResult(save);
         setTerminalStatus('Approved', 'Stripe Checkout payment completed and recorded.');
         message('Card payment recorded successfully.', 'success');
         closeModal('cardModal');
-        await refreshReservationUi(regId);
     }
 
     async function startManualStripeCheckout(amount, note, securityHold = false) {
@@ -1989,8 +2774,8 @@
             note,
             paymentIntentId: currentPaymentIntentId,
             securityHold: cardSecurityMode,
-            simulate: !!byId('cardSimulate')?.checked,
-            simulationResult: byId('cardSimulationResult')?.value || 'success'
+            simulate: false,
+            simulationResult: ''
         };
         showBusy('Processing card payment…');
         try {
@@ -2004,7 +2789,7 @@
                 return;
             }
 
-            if (!request.readerId && !request.simulate) return message('Select a Stripe reader.', 'error');
+            if (!request.readerId) return message('Select a Stripe reader.', 'error');
             setTerminalStatus('Creating', 'Creating Stripe PaymentIntent…');
             const created = await api(urls.stripeCreate, { method: 'POST', body: request });
             if (!created.success) return message(created.message || 'Unable to create Stripe payment.', 'error');
@@ -2014,28 +2799,78 @@
             const processed = await api(urls.stripeProcess, { method: 'POST', body: request });
             if (!processed.success) return message(processed.message || 'Unable to start reader payment.', 'error');
 
-            let final = processed;
-            for (let i = 0; i < 25 && ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing'].includes((final.status || '').toLowerCase()); i++) {
-                await new Promise(resolve => setTimeout(resolve, 1200));
+            // Match WebForms: Charge Now only hands the PaymentIntent to the reader.
+            // Test card presentation is a separate action/button and can be used after handoff.
+            setSimulationHandoffReady(true);
+            hideBusy();
+            setTerminalStatus('Waiting for reader', 'Present the card on the terminal. For a Stripe test reader, use the separate Simulate button below.');
+
+            // process_payment_intent returns the READER action state (normally in_progress),
+            // not the final PaymentIntent state. Always poll the PaymentIntent before saving
+            // a payment/security row. A security hold is complete only at requires_capture;
+            // a normal terminal payment is complete only at succeeded.
+            let final = null;
+            let completed = false;
+            const expectedFinalStatus = cardSecurityMode ? 'requires_capture' : 'succeeded';
+
+            for (let i = 0; i < 30; i++) {
+                await new Promise(resolve => setTimeout(resolve, i === 0 ? 500 : 1000));
                 final = await api(`${urls.stripeStatus}?paymentIntentId=${encodeURIComponent(currentPaymentIntentId)}`);
+
+                const piStatus = String(final?.status || '').toLowerCase();
+                if (piStatus === expectedFinalStatus) {
+                    completed = true;
+                    break;
+                }
+
+                if (['canceled', 'cancelled'].includes(piStatus)) {
+                    break;
+                }
+
+                setTerminalStatus(
+                    cardSecurityMode ? 'Authorizing' : 'Processing',
+                    cardSecurityMode ? 'Waiting for the card authorization from the terminal…' : 'Waiting for the terminal payment to complete…'
+                );
             }
-            if (!final.success) return message(final.message || 'Card payment was not completed.', 'error');
-            setTerminalStatus(cardSecurityMode ? 'Authorized' : 'Approved', final.message || (cardSecurityMode ? 'Security hold authorized.' : 'Payment approved.'));
+
+            if (!completed) {
+                setSimulationHandoffReady(false);
+                const status = String(final?.status || '').trim();
+                const detail = final?.message || (status ? `Stripe status: ${status}.` : 'The terminal did not complete the payment in time.');
+                setTerminalStatus('Not completed', detail);
+                return message(detail, 'error');
+            }
+
+            setSimulationHandoffReady(false);
+            setTerminalStatus(
+                cardSecurityMode ? 'Authorized' : 'Approved',
+                final?.message || (cardSecurityMode ? 'Security hold authorized.' : 'Payment approved.')
+            );
 
             if (cardSecurityMode) {
+                // WebForms production holds are persisted by Stripe webhook. MVC keeps
+                // an idempotent page-side fallback after authorization so simulated readers
+                // and local/test environments do not depend on a publicly reachable webhook.
                 const hold = await api(urls.securityMovement, {
                     method: 'POST',
                     body: {
                         regId, visitId, amount,
                         note: request.note || 'Card security pre-authorization',
-                        method: 'Card Pre-Authorization', movement: 'deposit', securityId: 0,
-                        paymentIntentId: currentPaymentIntentId
+                        method: 'Card Pre-Authorization',
+                        movement: 'deposit', securityId: 0,
+                        paymentIntentId: currentPaymentIntentId,
+                        chargeId: final?.chargeId || ''
                     }
                 });
                 if (!hold.ok) return message(hold.message || 'The card was authorized but the security hold could not be saved.', 'error');
                 cardSecurityMode = false;
                 currentPaymentIntentId = '';
                 message('Security deposit authorized and saved.', 'success');
+                // Successful room-security deposits should return the user to the
+                // Check-In screen immediately. Close both dialogs defensively because
+                // Card Terminal uses cardModal while Cash/Pre-Auth starts from securityModal.
+                closeModal('cardModal');
+                closeModal('securityModal');
                 await refreshReservationUi(regId);
                 return;
             }
@@ -2053,8 +2888,8 @@
                 }
             });
             if (!save.ok) return message(save.message, 'error');
+            applyPaymentMutationResult(save);
             message('Card payment recorded successfully.', 'success');
-            await refreshReservationUi(regId);
         } catch (e) { message(e.message, 'error'); }
         finally { hideBusy(); }
     }
@@ -2069,7 +2904,8 @@
             closeModal('cardModal');
             return;
         }
-        if (!currentPaymentIntentId) { closeModal('cardModal'); return; }
+        if (!currentPaymentIntentId) { setSimulationHandoffReady(false); closeModal('cardModal'); return; }
+        setSimulationHandoffReady(false);
         showBusy('Cancelling terminal request…');
         try {
             const r = await api(urls.stripeCancel, { method: 'POST', body: { regId, visitId, readerId: byId('cardReader')?.value || '', amount: toNumber(byId('cardAmount')?.value), currency: currencyCode, paymentIntentId: currentPaymentIntentId } });
@@ -2111,9 +2947,23 @@
         if (!value) return message('Enter a source.', 'error');
         showBusy(add ? 'Adding source…' : 'Deleting source…');
         try {
-            const r = await api(add ? urls.addSource : urls.deleteSource, { method: 'POST', body: add ? { value } : { value } });
+            const r = await api(add ? urls.addSource : urls.deleteSource, { method: 'POST', body: { value } });
             if (!r.ok) return message(r.message, 'error');
-            message(r.message, 'success'); await refreshReservationUi(regId);
+            const select = byId('source');
+            if (select) {
+                const existing = [...select.options].find(o => o.value.toLowerCase() === value.toLowerCase());
+                if (add) {
+                    const option = existing || new Option(value, value);
+                    if (!existing) select.add(option);
+                    select.value = option.value;
+                } else if (existing) {
+                    const wasSelected = select.value === existing.value;
+                    existing.remove();
+                    if (wasSelected) select.value = '';
+                }
+            }
+            closeModal('sourceModal');
+            message(r.message, 'success');
         } catch (e) { message(e.message, 'error'); } finally { hideBusy(); }
     }
 
@@ -2134,7 +2984,21 @@
                 } : { value }
             });
             if (!r.ok) return message(r.message, 'error');
-            message(r.message, 'success'); await refreshReservationUi(regId);
+            const select = byId('company');
+            if (select) {
+                const existing = [...select.options].find(o => o.value.toLowerCase() === value.toLowerCase());
+                if (add) {
+                    const option = existing || new Option(value, value);
+                    if (!existing) select.add(option);
+                    select.value = option.value;
+                } else if (existing) {
+                    const wasSelected = select.value === existing.value;
+                    existing.remove();
+                    if (wasSelected) select.value = '';
+                }
+            }
+            closeModal('companyModal');
+            message(r.message, 'success');
         } catch (e) { message(e.message, 'error'); } finally { hideBusy(); }
     }
 
@@ -2193,10 +3057,11 @@
         }
         applyReservationMode();
         updateStayCount();
-        syncCounter(byId('adults'));
-        syncCounter(byId('children'));
         updateChargeMode();
         syncChargeOptionalColumns();
+
+        // Load the full rate-plan list in the background as the page opens.
+        void preloadRatePlans();
     }
 
     function syncFixedActionBar() {
@@ -2216,12 +3081,31 @@
     bindGuestKeyboardSaves();
     byId('guestSearchButton')?.addEventListener('click', () => searchGuests().catch(e => message(e.message, 'error')));
     byId('guestSearch')?.addEventListener('input', () => {
+        // Restore type-ahead suggestions without returning to the old "query on every
+        // keystroke" behaviour. Wait until typing pauses, cancel stale requests, and
+        // reuse the in-memory search cache. Search button / Enter still work instantly.
         clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => searchGuests().catch(e => message(e.message, 'error')), 250);
+        searchAbortController?.abort();
+        const term = byId('guestSearch')?.value.trim() || '';
+        if (term.length < 2) {
+            byId('searchResults')?.classList.add('hidden');
+            byId('searchResults').innerHTML = '';
+            return;
+        }
+        searchTimer = window.setTimeout(() => {
+            searchGuests().catch(err => {
+                if (err?.name !== 'AbortError') message(err.message, 'error');
+            });
+        }, 350);
+    });
+    byId('guestSearch')?.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        searchGuests().catch(err => { if (err?.name !== 'AbortError') message(err.message, 'error'); });
     });
     byId('searchResults')?.addEventListener('click', e => {
         const hit = e.target.closest('[data-reg]');
-        if (hit) reloadReservation(hit.dataset.reg || '');
+        if (hit) reloadReservation(hit.dataset.reg || '').catch(e => { if (e?.name !== 'AbortError') message(e.message, 'error'); });
     });
     document.addEventListener('click', e => {
         const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
@@ -2273,18 +3157,29 @@
 
     byId('reservationType')?.addEventListener('change', applyReservationMode);
     byId('reservationDateMode')?.addEventListener('change', applyReservationMode);
-    byId('chargeArrival')?.addEventListener('change', () => { updateChargeStayCount(); loadRoomsAndPlans().catch(() => { }); quoteRate().catch(() => { }); });
-    byId('chargeDeparture')?.addEventListener('change', () => { updateChargeStayCount(); loadRoomsAndPlans().catch(() => { }); quoteRate().catch(() => { }); });
+    byId('chargeArrival')?.addEventListener('change', scheduleRoomDateRefresh);
+    byId('chargeDeparture')?.addEventListener('change', scheduleRoomDateRefresh);
 
     byId('saveGuest')?.addEventListener('click', () => saveGuest());
     bindGuestActionButtons();
 
     byId('chargeCategory')?.addEventListener('change', () => {
         updateChargeMode();
-        if (isRoomChargeMode()) loadRoomsAndPlans().catch(e => message(e.message, 'error'));
+        if (isRoomChargeMode()) {
+            applyRoomOccupancyLimits({ preserveValues: false });
+            loadRoomsAndPlans().catch(e => message(e.message, 'error'));
+        }
     });
-    byId('ratePlan')?.addEventListener('change', () => quoteRate().catch(e => message(e.message, 'error')));
+    byId('ratePlan')?.addEventListener('change', () => {
+        const plan = byId('ratePlan');
+        if (!plan?.value) {
+            if (byId('chargeTotal')) byId('chargeTotal').value = '';
+            return;
+        }
+        quoteRate({ usePlanFallback: true }).catch(e => message(e.message, 'error'));
+    });
     byId('monthlyRate')?.addEventListener('input', () => quoteRate().catch(() => { }));
+    ['roomAdults', 'roomChildren', 'roomInfants'].forEach(id => byId(id)?.addEventListener('input', e => clampRoomOccupancyInput(e.target)));
     byId('addCharge')?.addEventListener('click', addCharge);
     byId('chargeRows')?.addEventListener('click', e => {
         const roomChange = e.target.closest('[data-room-change]');
@@ -2394,6 +3289,8 @@
         }
     }));
     byId('chargeCardNow')?.addEventListener('click', chargeCard);
+    byId('simulateCardNow')?.addEventListener('click', simulateCardPresent);
+    byId('cardSimulate')?.addEventListener('change', () => setSimulationHandoffReady(terminalHandoffReady));
     byId('cancelTerminal')?.addEventListener('click', cancelTerminal);
 
     byId('manageSource')?.addEventListener('click', () => openModal('sourceModal'));
