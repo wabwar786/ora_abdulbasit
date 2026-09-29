@@ -1,0 +1,368 @@
+@model CreateReservationPageViewModel
+@{
+    ViewData["Title"] = "New Reservation";
+    var arrival = (Model.PrefillArrival ?? Model.HotelToday).Date;
+    var count = Math.Max(1, Model.PrefillNights ?? 1);
+    var departure = Model.IsMonthWise ? arrival.AddMonths(count) : arrival.AddDays(count);
+    var unit = Model.IsMonthWise ? "months" : "nights";
+    // Room-level tax controls: show a configured tax when the current user/property
+    // has permission. The checkbox decides whether that tax is added to this room.
+    var showGstTax = Model.HasGstPermission && Model.HasPrimaryTaxConfigured;
+    var showBedTax = Model.HasBedTaxPermission && Model.HasBedTaxConfigured;
+    var roomTableColumns = 10 + (showGstTax ? 1 : 0) + (showBedTax ? 1 : 0);
+}
+
+@section Styles {
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/create-reservation.css" asp-append-version="true" />
+}
+
+<div id="createReservationPage"
+     data-monthwise="@(Model.IsMonthWise ? "1" : "0")"
+     data-council="@(Model.IsCouncil ? "1" : "0")"
+     data-discount="@(Model.HasDiscountPermission ? "1" : "0")"
+     data-gst="@(showGstTax ? "1" : "0")"
+     data-bedtax="@(showBedTax ? "1" : "0")"
+     data-provisional="@(Model.HasProvisionalPermission ? "1" : "0")"
+     data-room-shuffle="@(Model.HasRoomShufflePermission ? "1" : "0")"
+     data-reservation-type="@(Model.HasReservationTypePermission ? "1" : "0")"
+     data-gst-percent="@Model.GstPercent.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+     data-bed-percent="@Model.BedTaxPercent.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+     data-tax-label="@Model.TaxLabel"
+     data-currency="@Model.Currency"
+     data-currency-code="@Model.CurrencyCode"
+     data-hotel-today="@Model.HotelToday.ToString("yyyy-MM-dd")"
+     data-prefill-category="@Model.PrefillCategory"
+     data-prefill-room="@Model.PrefillRoom"
+     data-prefill-plan="@Model.PrefillPlan">
+
+    <form id="reservationForm" class="page" novalidate autocomplete="off">
+        @Html.AntiForgeryToken()
+
+        @if (ViewBag.LoadError != null)
+        {
+            <div class="warn"><span>@ViewBag.LoadError</span></div>
+        }
+
+        <div class="success-banner hidden" id="reservationSuccess" role="status" aria-live="polite">
+            <span class="success-icon" aria-hidden="true">✓</span>
+            <span id="reservationSuccessText"></span>
+        </div>
+
+        <div class="head">
+            <div>
+                <h1>New Reservation</h1>
+                <p class="sub">Set the stay dates, capture guest details, assign rooms, then send the guest a payment link.</p>
+            </div>
+            <div class="find" role="search">
+                <label for="findGuest">Find existing guest</label>
+                <input id="findGuest" class="inp" type="search" maxlength="120" placeholder="Search name, phone or guest ID" autocomplete="off" />
+                <button type="button" class="btn btn-orange" id="btnSearch">Search</button>
+                <div id="findGuestSuggestions" class="suggestions"></div>
+            </div>
+        </div>
+
+        <div class="steps" aria-hidden="true">
+            <div class="step"><b>1</b>Stay dates</div><div class="bar"></div>
+            <div class="step"><b>2</b>Booking details</div><div class="bar"></div>
+            <div class="step"><b>3</b>Room assignment</div><div class="bar"></div>
+            <div class="step todo"><b>4</b>Payment link</div>
+        </div>
+
+        <div class="layout">
+            <div class="main">
+                <section class="card" aria-labelledby="h-dates">
+                    <div class="card-title"><div class="t"><span class="badge">STEP 1</span><h2 id="h-dates">Arrival &amp; Departure</h2></div></div>
+                    <div class="grid g3">
+                        <div>
+                            <label class="lbl" for="ArrivalDate">Arrival date<span class="req">*</span></label>
+                            <input id="ArrivalDate" type="date" class="inp" required min="@Model.HotelToday.ToString("yyyy-MM-dd")" value="@arrival.ToString("yyyy-MM-dd")" />
+                        </div>
+                        <div>
+                            <label class="lbl" for="DepartureDate">Departure date<span class="req">*</span></label>
+                            <input id="DepartureDate" type="date" class="inp" required value="@departure.ToString("yyyy-MM-dd")" />
+                        </div>
+                        <div>
+                            <span class="lbl">Total @unit</span>
+                            <div class="nights">
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                                <input id="nightsOut" type="number" min="1" step="1" value="@count" inputmode="numeric" aria-label="Total @unit" />
+                                <span id="nightsWord">@unit</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="err hidden" id="dateError"></p>
+                </section>
+
+                <section class="card" aria-labelledby="h-booking">
+                    <div class="card-title">
+                        <div class="t"><span class="badge">STEP 2</span><h2 id="h-booking">Booking Details</h2></div>
+                        <div class="source-picker">
+                            <label class="cap" for="BookingSource">Source<span class="req">*</span></label>
+                            <select id="BookingSource" class="inp" required>
+                                <option value="">Select source</option>
+                                @foreach (var item in Model.Sources)
+                                {
+                                    <option value="@item.Value">@item.Text</option>
+                                }
+                                <option value="__add_new__">+ Add New Source</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid booking-grid">
+                        <div><label class="lbl" for="FirstName">First name<span class="req">*</span></label><input id="FirstName" class="inp" maxlength="60" required /></div>
+                        <div><label class="lbl" for="LastName">Last name<span class="req">*</span></label><input id="LastName" class="inp" maxlength="60" required /></div>
+                        <div><label class="lbl" for="Phone">Phone number<span class="req">*</span></label><input id="Phone" type="tel" class="inp" maxlength="20" inputmode="tel" placeholder="+44 7700 900123" required /></div>
+                        <div><label class="lbl" for="Email">Email<span class="req">*</span></label><input id="Email" type="email" class="inp" maxlength="120" placeholder="guest@example.com" required /></div>
+
+                        <div>
+                            <label class="lbl" for="Country">Country</label>
+                            <select id="Country" class="inp">
+                                <option value="">Select country</option>
+                                @foreach (var item in Model.Countries)
+                                {
+                                    <option value="@item.Value">@item.Text</option>
+                                }
+                            </select>
+                        </div>
+                        <div><label class="lbl" for="City">City</label><select id="City" class="inp"><option value="">Select city</option></select></div>
+                        <div>
+                            <label class="lbl" for="IdType">ID type</label>
+                            <select id="IdType" class="inp"><option value="">Select ID type</option><option>Passport</option><option>Driving licence</option><option>National ID card</option></select>
+                        </div>
+                        <div><label class="lbl" for="IdNumber">ID number</label><input id="IdNumber" class="inp" maxlength="40" /></div>
+
+                        <div class="booking-address"><label class="lbl" for="Address">Address</label><input id="Address" class="inp" maxlength="200" /></div>
+                        <div class="booking-upload" style="display:none;">
+                            <span class="lbl">ID attachment</span>
+                            <div class="upload">
+                                <input type="file" id="IdAttachment" accept=".jpg,.jpeg,.png,.pdf" class="hidden" />
+                                <button type="button" class="btn-upload" id="btnUpload">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    Upload ID
+                                </button>
+                                <div class="file-chip hidden" id="fileChip"><span class="name" id="fileName"></span><button type="button" class="icon-btn" id="btnRemoveFile" aria-label="Remove attachment">×</button></div>
+                            </div>
+                            <p class="hint">JPG, PNG, PDF · Max 10 MB</p>
+                        </div>
+                    </div>
+                    <p class="err hidden" id="guestError"></p>
+                </section>
+
+                <section class="card" aria-labelledby="h-rooms">
+                    <div class="card-title room-card-title">
+                        <div class="room-title-left">
+                            <div class="t"><span class="badge">STEP 3</span><h2 id="h-rooms">Room Assignment</h2></div>
+                        </div>
+                        <div class="room-title-right">
+                            @if (Model.HasReservationTypePermission || Model.HasRoomShufflePermission)
+                            {
+                                <div class="room-header-modes">
+                                    @if (Model.HasReservationTypePermission)
+                                    {
+                                        <div class="segmented" aria-label="Reservation type">
+                                            <label><input type="radio" name="reservationMode" value="Individual" checked /><span>Individual</span></label>
+                                            <label><input type="radio" name="reservationMode" value="Group" /><span>Group</span></label>
+                                        </div>
+                                    }
+                                    @if (Model.HasRoomShufflePermission)
+                                    {
+                                        <div class="segmented" aria-label="Room assignment mode">
+                                            <label><input type="radio" name="shuffleType" value="Manual" checked /><span>Manual</span></label>
+                                            <label><input type="radio" name="shuffleType" value="Auto" /><span>Auto</span></label>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <span class="meta room-date-meta" style="display:none">Dates applied from Step 1 · <strong style="color:var(--navy)" id="nightsLabel">@count @unit</strong></span>
+                        </div>
+                    </div>
+
+                    @if (Model.HasReservationTypePermission)
+                    {
+                        <label id="sameDatesWrap" class="check room-same-dates hidden"><input id="sameDates" type="checkbox" checked /> Same arrival/departure</label>
+                    }
+                    <div id="roomDates" class="room-dates hidden">
+                        <div><label class="lbl" for="RoomArrival">Room arrival<span class="req">*</span></label><input id="RoomArrival" type="date" class="inp" /></div>
+                        <div><label class="lbl" for="RoomDeparture">Room departure<span class="req">*</span></label><input id="RoomDeparture" type="date" class="inp" /></div>
+                    </div>
+
+                    <div class="addbox">
+                        <div class="grid room-fields-grid">
+                            <div class="room-category-field">
+                                <label class="lbl" for="rCategory">Room category<span class="req">*</span></label>
+                                <select id="rCategory" class="inp">
+                                    <option value="">Select category</option>
+                                    @foreach (var item in Model.Categories)
+                                    {
+                                        <option value="@item.Value">@item.Text</option>
+                                    }
+                                </select>
+                            </div>
+                            <div id="roomNumberWrap" class="room-number-field"><label class="lbl" for="rNumber">Room number<span class="req">*</span></label><select id="rNumber" class="inp"><option value="">Select room</option></select></div>
+                            <div id="roomCountWrap" class="room-number-field hidden"><label class="lbl" for="rCount">Room count<span class="req">*</span></label><input id="rCount" type="number" min="1" max="20" value="1" class="inp" /><p class="hint auto-room-hint">Rooms to assign automatically</p></div>
+                            @if (!Model.IsMonthWise)
+                            {
+                                <div class="room-plan-field"><label class="lbl" for="rPlan">Rate plan<span class="req">*</span></label><select id="rPlan" class="inp"><option value="">Select rate plan</option></select></div>
+                            }
+                            else
+                            {
+                                <div class="room-plan-field"><label class="lbl" for="rMonthlyRate">Monthly rate (@Model.Currency)<span class="req">*</span></label><input id="rMonthlyRate" type="number" min="0.01" max="10000000" step="0.01" class="inp" placeholder="0.00" /></div>
+                            }
+                            <div class="room-total-field"><label class="lbl" for="rTotal">Total (@Model.Currency)<span class="req">*</span></label><input id="rTotal" class="inp" value="0.00" readonly /></div>
+                            @if (Model.HasDiscountPermission)
+                            {
+                                <div class="room-discount-field"><label class="lbl" for="rDiscount">Discount (@Model.Currency)</label><input id="rDiscount" type="number" min="0" max="10000000" step="0.01" value="0" class="inp" /></div>
+                            }
+                            @if (showGstTax || showBedTax)
+                            {
+                                <div class="room-tax-field" aria-label="Room taxes">
+                                    <span class="lbl tax-field-label">Taxes</span>
+                                    <div class="tax-options">
+                                        @if (showGstTax)
+                                        {
+                                            <label class="check"><input type="checkbox" id="rVat" /> @Model.TaxLabel <small>(@Model.GstPercent.ToString("0.##")%)</small></label>
+                                        }
+                                        @if (showBedTax)
+                                        {
+                                            <label class="check"><input type="checkbox" id="rBed" /> Bed Tax <small>(@Model.BedTaxPercent.ToString("0.##")%)</small></label>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="addrow room-secondary-row">
+                            <div class="room-guest-field"><label class="lbl" for="rGuest">Guest name <span class="optional">(optional)</span></label><input id="rGuest" class="inp" maxlength="120" placeholder="Optional" /></div>
+                            <div><span class="lbl">Adults</span><div class="stepper" data-key="adults"><button type="button" data-d="-1">−</button><output id="adultOut">1</output><button type="button" data-d="1">+</button></div></div>
+                            <div><span class="lbl">Children</span><div class="stepper" data-key="children"><button type="button" data-d="-1">−</button><output id="childOut">0</output><button type="button" data-d="1">+</button></div></div>
+                            <div><span class="lbl">Infants</span><div class="stepper" data-key="infants"><button type="button" data-d="-1">−</button><output id="infantOut">0</output><button type="button" data-d="1">+</button></div></div>
+                            <button type="button" class="btn btn-primary ml-auto" id="btnAddRoom"><span class="btn-icon" aria-hidden="true">+</span><span>Add room</span></button>
+                        </div>
+                        <p class="hint" id="occupancyHint"></p>
+                        <p class="err hidden" id="roomError"></p>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th><th>Category</th><th>Room</th><th>Rate plan</th><th>Guest name</th><th>A / C / I</th><th class="num">Room total</th>
+                                    @if (showGstTax) { <th class="num">@Model.TaxLabel</th> }
+                                    @if (showBedTax) { <th class="num">Bed Tax</th> }
+                                    <th class="num">Discount</th><th class="num">Line total</th><th style="text-align:center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="roomRows"><tr id="emptyRoomRow"><td colspan="@roomTableColumns" class="empty-cell">No rooms added yet. Add a room above to continue.</td></tr></tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="6" style="color:var(--navy)" id="ftRooms">0 rooms</td><td class="num" id="ftSub">@(Model.Currency + "0.00")</td>
+                                    @if (showGstTax) { <td class="num" id="ftVat">@(Model.Currency + "0.00")</td> }
+                                    @if (showBedTax) { <td class="num" id="ftBed">@(Model.Currency + "0.00")</td> }
+                                    <td class="num" id="ftDisc">- @(Model.Currency + "0.00")</td><td class="num" style="font-weight:700;color:var(--navy)" id="ftGrand">@(Model.Currency + "0.00")</td><td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <aside class="side">
+                <section class="card summary" aria-labelledby="h-sum">
+                    <div class="bar" id="h-sum">Reservation Summary</div>
+                    <div class="body">
+                        <div><div class="guest-name" id="sName">New guest</div><div class="meta" id="sMeta">0 rooms · @count @unit</div></div>
+                        <div class="pill" id="sPill">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                            <span>Provisional · Awaiting payment</span>
+                        </div>
+                        <div class="kv"><div><small>Arrival</small><strong id="sArr">—</strong></div><div><small>Departure</small><strong id="sDep">—</strong></div><div><small>Guests</small><strong id="sGuests">0 guests</strong></div><div><small>Rooms</small><strong id="sRooms">—</strong></div></div>
+                    </div>
+                </section>
+
+                <section class="card" aria-labelledby="h-pay">
+                    <h3 id="h-pay" style="margin-bottom:4px">Payment Details</h3>
+                    <div class="line"><span class="k">Room subtotal</span><span id="pSub">@(Model.Currency + "0.00")</span></div>
+                    @if (showGstTax || showBedTax)
+                    {
+                        <div class="taxbox">
+                            <div class="cap">TAXES</div>
+                            @if (showGstTax) { <div class="line"><span class="k">@Model.TaxLabel</span><span id="pVat">@(Model.Currency + "0.00")</span></div> }
+                            @if (showBedTax) { <div class="line"><span class="k">Bed Tax</span><span id="pBed">@(Model.Currency + "0.00")</span></div> }
+                            <div class="line sum"><span>Total tax</span><span id="pTax">@(Model.Currency + "0.00")</span></div>
+                        </div>
+                    }
+                    <div class="line grand"><span>Grand total</span><span id="pGrand">@(Model.Currency + "0.00")</span></div>
+                    <div class="line"><span class="k">Paid</span><span>@(Model.Currency + "0.00")</span></div>
+                    <div class="line balance"><span>Balance due</span><span id="pBal">@(Model.Currency + "0.00")</span></div>
+                </section>
+
+                <section class="card" aria-labelledby="h-method">
+                    <h3 id="h-method">Payment Method</h3>
+                    <div class="note">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B3B8C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <span>Payments are not taken on this screen. The guest pays securely through an emailed payment link.</span>
+                    </div>
+                    <div><label class="lbl" for="PaymentLinkEmail">Send payment link to</label><input id="PaymentLinkEmail" type="email" class="inp" maxlength="120" /></div>
+                    <button type="button" class="btn btn-primary" id="btnSendLink" style="height:44px;font-size:15px">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>
+                        <span id="sendLbl">Send payment link via email</span>
+                    </button>
+                    <div class="sent hidden" id="sentMsg">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span id="sentText"></span>
+                    </div>
+                    <div class="status" id="notSent">Status: not sent yet</div>
+                    <p class="err hidden" id="linkError"></p>
+                </section>
+
+                <section class="card" aria-labelledby="h-dl">
+                    <div class="card-title">
+                        <h3 id="h-dl">Payment Deadline</h3>
+                        @if (Model.HasProvisionalPermission)
+                        {
+                            <label class="check" style="border:0;padding:0;height:auto;background:transparent"><input type="checkbox" id="IsProvisional" /> Provisional booking</label>
+                        }
+                        else
+                        {
+                            <input type="hidden" id="IsProvisional" value="false" />
+                        }
+                    </div>
+                    <div><label class="lbl" for="PaymentDeadline">Pay by<span class="req">*</span></label><input id="PaymentDeadline" type="datetime-local" class="inp" required /></div>
+                    <div class="warn" id="autoCancel">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span>Automatically cancelled if payment is not received by the deadline.</span>
+                    </div>
+                    <p class="err hidden" id="deadlineError"></p>
+                    <div class="deadline-total"><span class="k" style="font-size:14px;color:var(--muted)">Required by deadline</span><span id="dTotal">@(Model.Currency + "0.00")</span></div>
+                </section>
+            </aside>
+        </div>
+
+        <div class="foot">
+            <div class="foot-note"><strong>Ready to save?</strong><span>Review stay dates, guest details and room assignment.</span></div>
+            <div class="foot-actions">
+                <button type="button" class="btn btn-outline" id="btnCancel">Cancel</button>
+                <button type="submit" class="btn btn-navy" id="btnSave"><span>Save Reservation</span></button>
+            </div>
+        </div>
+    </form>
+
+    <div class="modal-backdrop hidden" id="sourceModal" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle">
+        <div class="modal-card">
+            <div class="modal-head"><h3 id="sourceModalTitle">Add New Source</h3><button type="button" class="icon-btn" id="closeSourceModal">×</button></div>
+            <div><label class="lbl" for="NewSourceName">Source name<span class="req">*</span></label><input id="NewSourceName" class="inp" maxlength="80" placeholder="e.g. Walk-in, Agoda, Corporate website" /></div>
+            <p class="err hidden" id="sourceError"></p>
+            <div class="modal-actions"><button type="button" class="btn btn-outline" id="cancelSource">Cancel</button><button type="button" class="btn btn-primary" id="saveSource">Add Source</button></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+@section Scripts {
+    <script src="~/js/create-reservation.js" asp-append-version="true"></script>
+}
