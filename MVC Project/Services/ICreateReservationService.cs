@@ -4,7 +4,7 @@ namespace Orapmshms.Services;
 
 public interface ICreateReservationService
 {
-    Task<CreateReservationPageViewModel> GetPageAsync(string hotelId, string hotelName, string userId, string userName, string role, string hotelRole, CancellationToken ct = default);
+    Task<CreateReservationPageViewModel>  GetPageAsync(string hotelId, string hotelName, string userId, string userName, string role, string hotelRole, CancellationToken ct = default);
     Task<IReadOnlyList<LookupOption>> GetCitiesAsync(string country, CancellationToken ct = default);
     Task<IReadOnlyList<LookupOption>> GetRatePlansAsync(string hotelId, string categoryId, string userId, string role, CancellationToken ct = default);
     Task<IReadOnlyList<LookupOption>> GetRoomsAsync(string hotelId, string userId, string categoryId, DateTime arrival, DateTime departure, CancellationToken ct = default);
