@@ -343,14 +343,12 @@
     gap: 20px;
     padding: 0 24px
 }
-
 .ora-checkin .stack {
     position: relative;
     display: grid;
     gap: 16px;
     align-content: start
 }
-
 .ora-checkin .card {
     background: var(--white);
     border: 1px solid var(--line-card);
@@ -358,7 +356,6 @@
     box-shadow: var(--shadow-card);
     overflow: hidden
 }
-
 .ora-checkin .card-head {
     display: flex;
     align-items: center;

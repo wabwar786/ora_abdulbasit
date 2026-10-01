@@ -17,6 +17,13 @@
 
     var showBedTaxColumn = Model.Charges.Any(x => x.BedTax != 0m);
 
+    var reservationStatusKey = (Model.ReservationStatus ?? string.Empty)
+        .Replace("-", string.Empty)
+        .Replace("_", string.Empty)
+        .Replace(" ", string.Empty)
+        .ToLowerInvariant();
+    var isCheckedOutBooking = reservationStatusKey == "checkout" || reservationStatusKey == "checkedout";
+
     string Money(decimal value) => $"{Model.Currency}{value:N2}";
 
     string DateValue(DateTime value) => value == default ? "" : value.ToString("yyyy-MM-dd");
@@ -372,7 +379,8 @@
      data-clover="@(Model.IsCloverConfigured ? "1" : "0")"
      data-card-permission="@(Model.CanCardPayment ? "1" : "0")"
      data-terminal-url="@Url.Content("~/TerminalCardPayment.aspx")"
-     data-fbr="@(Model.FbrEnabled ? "1" : "0")">
+     data-fbr="@(Model.FbrEnabled ? "1" : "0")"
+     data-checked-out-readonly="@(isCheckedOutBooking ? "1" : "0")">
 
     <form id="antiForgeryForm" class="hidden">@Html.AntiForgeryToken()</form>
     <script id="checkinInitialState" type="application/json">@Html.Raw(stateJson)</script>
@@ -458,7 +466,7 @@
 
                             <div id="guestActionRow" class="guest-inline-actions" aria-label="Guest actions">
                                 <button id="guestProceedCheckIn" type="button" class="btn btn-primary @((Model.IsExistingBooking) ? "hidden" : "")"><i class="fa-solid fa-arrow-right-to-bracket"></i>Proceed Check-In</button>
-                                <button id="updateGuest" type="button" class="btn btn-primary @((!Model.IsExistingBooking || !Model.CanUpdateGuest) ? "hidden" : "")"><i class="fa-solid fa-user-pen"></i>Update Guest Info</button>
+                                <button id="updateGuest" type="button" class="btn btn-primary @((!Model.IsExistingBooking || !Model.CanUpdateGuest || isCheckedOutBooking) ? "hidden" : "")"><i class="fa-solid fa-user-pen"></i>Update Guest Info</button>
                             </div>
                         </div>
 
@@ -489,7 +497,7 @@
                             <input id="chargeNights" type="hidden" value="@Math.Max(0, (g.DepartureDate.Date - g.ArrivalDate.Date).Days)" />
                         </div>
 
-                        <div id="chargeEntry" class="charge-row charge-row-mvc">
+                        <div id="chargeEntry" class="charge-row charge-row-mvc @(isCheckedOutBooking ? "hidden" : "")">
                             <div class="field charge-category-field">
                                 <label for="chargeCategory">Categories</label>
                                 <select id="chargeCategory">
@@ -616,7 +624,7 @@
                                                 <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomAdults.ToString() : string.Empty)</td>
                                                 <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomChildren.ToString() : string.Empty)</td>
                                                 <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomInfants.ToString() : string.Empty)</td>
-                                                <td class="guest-cell inline-editable-cell" data-value="@(isRoomRentRow ? row.GuestName : string.Empty)" data-can-edit-guest="@(isRoomRentRow ? "1" : "0")" title="@(isRoomRentRow ? "Double-click to edit guest name" : "")">@(isRoomRentRow ? (string.IsNullOrWhiteSpace(row.GuestName) ? "—" : row.GuestName) : string.Empty)</td>
+                                                <td class="guest-cell inline-editable-cell" data-value="@(isRoomRentRow ? row.GuestName : string.Empty)" data-can-edit-guest="@(isRoomRentRow && !isCheckedOutRoomRow ? "1" : "0")" title="@(isRoomRentRow && !isCheckedOutRoomRow ? "Double-click to edit guest name" : (isCheckedOutRoomRow ? "Checked-out stay is read-only" : ""))">@(isRoomRentRow ? (string.IsNullOrWhiteSpace(row.GuestName) ? "—" : row.GuestName) : string.Empty)</td>
                                                 <td>@if (isRoomRentRow)
                                                     {
                                                         @DateText(row.ArrivalDate) <text> → </text> @DateText(row.DepartureDate)<br /><small>@row.Nights.ToString("0.##") @(Model.IsMonthWise ? "month(s)" : "night(s)")</small>

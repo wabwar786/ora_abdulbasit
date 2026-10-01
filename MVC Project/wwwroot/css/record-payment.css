@@ -1,0 +1,61 @@
+/* ORA PMS reusable Record Payment component */
+:root{
+  --orp-navy:#0c2238;
+  --orp-blue:#2867e8;
+  --orp-green:#168b63;
+  --orp-slate:#324a63;
+  --orp-red:#dc3545;
+  --orp-line:#d8e2ec;
+  --orp-soft:#f4f8fc;
+  --orp-text:#10263e;
+  --orp-muted:#6f8093;
+}
+.orp-payment-hidden{display:none!important}
+.orp-payment-overlay{
+  position:fixed;inset:0;z-index:5000;display:none;align-items:center;justify-content:center;
+  padding:20px;background:rgba(12,34,56,.48);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)
+}
+.orp-payment-overlay.open{display:flex}
+.orp-payment-modal{
+  width:min(660px,calc(100vw - 28px));max-height:calc(100vh - 40px);overflow:auto;
+  background:#fff;border:1px solid rgba(12,34,56,.10);border-radius:16px;
+  box-shadow:0 24px 70px rgba(12,34,56,.28);font-family:inherit;color:var(--orp-text)
+}
+.orp-payment-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border-bottom:1px solid var(--orp-line)}
+.orp-payment-title-wrap{display:flex;align-items:center;gap:12px;min-width:0}
+.orp-payment-title-icon{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:10px;background:var(--orp-navy);color:#fff;font-size:18px;font-weight:800}
+.orp-payment-title-wrap h2{margin:0;font-size:18px;font-weight:800;color:var(--orp-navy)}
+.orp-payment-title-wrap p{margin:3px 0 0;font-size:11px;color:var(--orp-muted)}
+.orp-payment-close{width:34px;height:34px;border:1px solid var(--orp-red);border-radius:9px;background:var(--orp-red);color:#fff;font-size:18px;line-height:1;cursor:pointer;transition:.14s ease}
+.orp-payment-close:hover{background:#b92534;border-color:#b92534;transform:translateY(-1px)}
+.orp-payment-body{padding:16px 18px 14px}
+.orp-payment-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 14px;margin-bottom:14px;border:1px solid var(--orp-line);border-radius:12px;background:var(--orp-soft)}
+.orp-payment-summary>div{min-width:0}.orp-payment-summary span{display:block;font-size:11px;font-weight:800;color:#61758a}.orp-payment-summary small{display:block;margin-top:4px;font-size:10px;color:var(--orp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.orp-payment-summary strong{font-size:20px;color:var(--orp-navy);white-space:nowrap}
+.orp-payment-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.orp-payment-option{min-height:82px;position:relative;display:flex;align-items:center;gap:11px;padding:13px 14px;border:0;border-radius:12px;color:#fff;text-align:left;cursor:pointer;box-shadow:0 10px 22px rgba(12,34,56,.13);transition:transform .14s ease,box-shadow .14s ease,filter .14s ease}
+.orp-payment-option[hidden]{display:none!important}
+.orp-payment-option.online{background:linear-gradient(135deg,var(--orp-blue),#194da9)}
+.orp-payment-option.pdq{background:linear-gradient(135deg,var(--orp-green),#0f694a)}
+.orp-payment-option.auto{background:linear-gradient(135deg,var(--orp-slate),#203247)}
+.orp-payment-option:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(12,34,56,.20);filter:saturate(1.08)}
+.orp-payment-option:disabled{cursor:wait;opacity:.8;transform:none}
+.orp-payment-option-icon{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.22);border-radius:10px;background:rgba(255,255,255,.16);font-size:16px;font-weight:900}
+.orp-payment-option-copy{min-width:0;flex:1}.orp-payment-option-copy b{display:block;font-size:12px;color:#fff}.orp-payment-option-copy small{display:block;margin-top:4px;font-size:9.5px;line-height:1.35;color:rgba(255,255,255,.83)}
+.orp-payment-option-arrow{font-size:18px;font-weight:900;opacity:.92}
+.orp-payment-divider{display:flex;align-items:center;gap:10px;margin:16px 0 12px;color:#8190a2;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.055em}
+.orp-payment-divider:before,.orp-payment-divider:after{content:"";height:1px;flex:1;background:#e1e8ef}
+.orp-payment-form{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.orp-payment-field{display:flex;flex-direction:column;gap:6px}.orp-payment-field.full{grid-column:1/-1}.orp-payment-field>span{font-size:10px;font-weight:800;color:#435970;text-transform:uppercase;letter-spacing:.03em}
+.orp-payment-field input,.orp-payment-field select{width:100%;height:40px;padding:0 11px;border:1px solid #cbd8e5;border-radius:9px;background:#fff;color:#172b40;font:inherit;font-size:12px;outline:none;transition:border-color .14s ease,box-shadow .14s ease}
+.orp-payment-field input:focus,.orp-payment-field select:focus{border-color:var(--orp-blue);box-shadow:0 0 0 3px rgba(40,103,232,.11)}
+.orp-payment-footer{display:flex;justify-content:flex-end;gap:9px;padding:12px 18px 15px;border-top:1px solid var(--orp-line);background:#fbfcfe;border-radius:0 0 16px 16px}
+.orp-payment-btn{min-height:38px;padding:0 16px;border:1px solid var(--orp-line);border-radius:9px;background:#fff;color:var(--orp-text);font:inherit;font-size:11px;font-weight:800;cursor:pointer;transition:.14s ease}
+.orp-payment-btn.primary{background:var(--orp-navy);border-color:var(--orp-navy);color:#fff}.orp-payment-btn.primary:hover{background:#061a2d}.orp-payment-btn.cancel{background:var(--orp-red);border-color:var(--orp-red);color:#fff}.orp-payment-btn.cancel:hover{background:#b92534;border-color:#b92534}
+.orp-payment-btn:disabled{opacity:.78;cursor:wait}
+.orp-payment-spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.42);border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:7px;animation:orp-spin .65s linear infinite}
+.orp-payment-option .orp-payment-spinner{width:16px;height:16px;margin:0;border-width:2px}
+@keyframes orp-spin{to{transform:rotate(360deg)}}
+.orp-payment-toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,18px);opacity:0;pointer-events:none;padding:10px 14px;border-radius:9px;background:var(--orp-navy);color:#fff;font-size:11px;font-weight:700;box-shadow:0 10px 28px rgba(12,34,56,.24);transition:.18s ease;z-index:5010}
+.orp-payment-toast.show{opacity:1;transform:translate(-50%,0)}.orp-payment-toast.error{background:#b8333f}
+@media(max-width:620px){.orp-payment-overlay{padding:10px}.orp-payment-options,.orp-payment-form{grid-template-columns:1fr}.orp-payment-field.full{grid-column:auto}.orp-payment-modal{max-height:calc(100vh - 20px)}.orp-payment-title-wrap p{display:none}}

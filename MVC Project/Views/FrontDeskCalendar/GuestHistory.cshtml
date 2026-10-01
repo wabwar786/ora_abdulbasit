@@ -1,0 +1,24 @@
+@model Orapmshms.Models.FrontDeskGuestHistoryDto
+@{
+    ViewData["Title"] = "Guest History";
+    Layout = "_PmsLayout";
+}
+<div style="padding:18px;max-width:1100px;margin:0 auto">
+    <div style="background:#fff;border:1px solid #d8e2ec;border-radius:10px;padding:16px">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
+            <div><h2 style="margin:0 0 4px;font-size:18px">Guest History</h2><strong>@Model.GuestName</strong></div>
+            <div style="text-align:right;color:#718097;font-size:12px">@Model.Phone<br/>@Model.Email</div>
+        </div>
+        <div style="overflow:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead><tr style="background:#f4f7fb;text-align:left"><th style="padding:9px">Reference</th><th style="padding:9px">Room</th><th style="padding:9px">Arrival</th><th style="padding:9px">Departure</th><th style="padding:9px">Status</th></tr></thead>
+                <tbody>
+                @foreach (var stay in Model.Stays)
+                {
+                    <tr style="border-top:1px solid #e3e9ef"><td style="padding:9px">@stay.RegId</td><td style="padding:9px">@(string.IsNullOrWhiteSpace(stay.RoomNo) ? "Unassigned" : stay.RoomNo)</td><td style="padding:9px">@stay.Arrival?.ToString("dd MMM yyyy")</td><td style="padding:9px">@stay.Departure?.ToString("dd MMM yyyy")</td><td style="padding:9px">@stay.Status</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

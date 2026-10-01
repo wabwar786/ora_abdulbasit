@@ -1,0 +1,99 @@
+@* Shared reusable Record Payment modal.
+   Open from any page with window.RecordPayment.open({...}). *@
+<div id="orpRecordPayment"
+     class="orp-payment-overlay"
+     aria-hidden="true"
+     data-record-payment-url="@Url.Action("RecordPayment", "CheckIn")"
+     data-prepare-email-url="@Url.Action("PrepareEmail", "FrontDeskCalendar")"
+     data-pdq-url="/TerminalCardPayment.aspx"
+     data-auto-payment-url="/Autopayment.aspx">
+
+    <form id="orpRecordPaymentAntiForgery" class="orp-payment-hidden">
+        @Html.AntiForgeryToken()
+    </form>
+
+    <section class="orp-payment-modal" role="dialog" aria-modal="true" aria-labelledby="orpPaymentTitle">
+        <header class="orp-payment-header">
+            <div class="orp-payment-title-wrap">
+                <span class="orp-payment-title-icon" aria-hidden="true">£</span>
+                <div>
+                    <h2 id="orpPaymentTitle">Record Payment</h2>
+                    <p>Choose how you want to take or record this payment.</p>
+                </div>
+            </div>
+            <button type="button" class="orp-payment-close" data-orp-close aria-label="Close">×</button>
+        </header>
+
+        <div class="orp-payment-body">
+            <div class="orp-payment-summary">
+                <div>
+                    <span>Outstanding balance</span>
+                    <small id="orpPaymentGuest"></small>
+                </div>
+                <strong id="orpPaymentBalance">£0.00</strong>
+            </div>
+
+            <div class="orp-payment-options" id="orpPaymentOptions">
+                <button type="button" class="orp-payment-option online" id="orpOnlineCard" hidden style="display:none;">
+                    <span class="orp-payment-option-icon" aria-hidden="true">▣</span>
+                    <span class="orp-payment-option-copy">
+                        <b>Online Card</b>
+                        <small>Open the existing secure online card checkout.</small>
+                    </span>
+                    <span class="orp-payment-option-arrow" aria-hidden="true">→</span>
+                </button>
+
+                <button type="button" class="orp-payment-option pdq" id="orpPdqTerminal" hidden style="display:none;">
+                    <span class="orp-payment-option-icon" aria-hidden="true">▤</span>
+                    <span class="orp-payment-option-copy">
+                        <b>PDQ Terminal</b>
+                        <small>Take payment on the connected card terminal.</small>
+                    </span>
+                    <span class="orp-payment-option-arrow" aria-hidden="true">→</span>
+                </button>
+
+                <button type="button" class="orp-payment-option auto" id="orpAutoPayment" hidden style="display:none;">
+                    <span class="orp-payment-option-icon" aria-hidden="true">⚡</span>
+                    <span class="orp-payment-option-copy">
+                        <b>Auto Payment</b>
+                        <small>Use the existing OTA virtual-card payment flow.</small>
+                    </span>
+                    <span class="orp-payment-option-arrow" aria-hidden="true">→</span>
+                </button>
+            </div>
+
+            <div class="orp-payment-divider"><span>or record a manual payment</span></div>
+
+            <div class="orp-payment-form">
+                <label class="orp-payment-field">
+                    <span>Amount</span>
+                    <input type="number" id="orpPaymentAmount" min="0.01" step="0.01" inputmode="decimal" />
+                </label>
+
+                <label class="orp-payment-field">
+                    <span>Payment method</span>
+                    <select id="orpPaymentMethod">
+                        <option value="Cash">Cash</option>
+                        <option value="Card">Card</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                        <option value="Online">Online</option>
+                        <option value="Cheque">Cheque</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </label>
+
+                <label class="orp-payment-field full">
+                    <span>Note</span>
+                    <input type="text" id="orpPaymentNote" maxlength="500" placeholder="Optional payment reference or note" />
+                </label>
+            </div>
+        </div>
+
+        <footer class="orp-payment-footer">
+            <button type="button" class="orp-payment-btn cancel" data-orp-close>Cancel</button>
+            <button type="button" class="orp-payment-btn primary" id="orpRecordManualPayment">Record Payment</button>
+        </footer>
+    </section>
+
+    <div class="orp-payment-toast" id="orpPaymentToast" role="status" aria-live="polite"></div>
+</div>

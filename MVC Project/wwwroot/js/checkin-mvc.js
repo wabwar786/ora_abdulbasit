@@ -207,6 +207,60 @@
     let loadedStayArrival = byId('checkIn')?.value || '';
     let loadedStayDeparture = byId('checkOut')?.value || '';
 
+    function statusKey(value) {
+        return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
+
+    function isCheckedOutReadOnly(value = state.reservationStatus) {
+        const key = statusKey(value);
+        return key === 'checkout' || key === 'checkedout';
+    }
+
+    function applyCheckedOutReadOnlyUi(statusValue = state.reservationStatus) {
+        const readOnly = isCheckedOutReadOnly(statusValue);
+        app.dataset.checkedOutReadonly = readOnly ? '1' : '0';
+
+        const guestGrid = byId('guestRegistrationGrid');
+        guestGrid?.querySelectorAll('input,select,textarea,button').forEach(el => {
+            if (el.id === 'guestSearch' || el.id === 'guestSearchButton') return;
+            if (readOnly) {
+                if (!el.dataset.checkedOutPrevDisabled) el.dataset.checkedOutPrevDisabled = el.disabled ? '1' : '0';
+                el.disabled = true;
+            } else if (el.dataset.checkedOutPrevDisabled !== undefined) {
+                el.disabled = el.dataset.checkedOutPrevDisabled === '1';
+                delete el.dataset.checkedOutPrevDisabled;
+            }
+        });
+
+        byId('updateGuest')?.classList.toggle('hidden', readOnly || state.canUpdateGuest === false);
+        byId('chargeEntry')?.classList.toggle('hidden', readOnly);
+        byId('addCharge')?.toggleAttribute('disabled', readOnly);
+
+        byId('chargeRows')?.querySelectorAll('tr[data-charge-id]').forEach(row => {
+            const rowKey = statusKey(row.dataset.status || statusValue);
+            const rowCheckedOut = rowKey === 'checkout' || rowKey === 'checkedout';
+            if (!rowCheckedOut) return;
+            row.querySelectorAll('[data-room-change], [data-action="delete"]').forEach(el => el.remove());
+            const guestCell = row.querySelector('.guest-cell');
+            const rateCell = row.querySelector('.rate-cell');
+            if (guestCell) {
+                guestCell.dataset.canEditGuest = '0';
+                guestCell.title = 'Checked-out stay is read-only';
+            }
+            if (rateCell) {
+                rateCell.dataset.canEditRate = '0';
+                rateCell.title = 'Checked-out stay is read-only';
+            }
+        });
+
+        if (readOnly) {
+            canEditDates = false;
+            const stayDisplay = byId('stayDateDisplay');
+            stayDisplay?.classList.add('is-disabled');
+            stayDisplay?.setAttribute('aria-disabled', 'true');
+        }
+    }
+
     async function api(url, options = {}) {
         const opts = { credentials: 'same-origin', ...options };
         opts.headers = { Accept: 'application/json', ...(opts.headers || {}) };
@@ -971,6 +1025,7 @@
         setVisible('undoCheckIn', !!fresh.showUndoCheckInAction);
         setVisible('checkOutAction', !!fresh.showCheckOutAction);
         setVisible('printInvoice', !!regId);
+        applyCheckedOutReadOnlyUi(fresh.reservationStatus);
 
         if (byId('guestSearch')) byId('guestSearch').value = regId;
         applyReservationMode();
@@ -1149,6 +1204,7 @@
     }
 
     async function updateGuest() {
+        if (isCheckedOutReadOnly()) return message('Checked-out guest details are read-only.', 'error');
         if (!regId || !validateGuest()) return;
 
         const guest = guestPayload();
@@ -1564,6 +1620,7 @@
     }
 
     async function addCharge() {
+        if (isCheckedOutReadOnly()) return message('Checked-out stays are read-only. Rooms/services cannot be added.', 'error');
         if (!(await ensureGuestSaved())) return;
 
         const isRoom = isRoomChargeMode();
@@ -1745,7 +1802,7 @@
             <td class="num occupancy-cell">${isRoom ? esc(charge.roomAdults ?? 0) : ''}</td>
             <td class="num occupancy-cell">${isRoom ? esc(charge.roomChildren ?? 0) : ''}</td>
             <td class="num occupancy-cell">${isRoom ? esc(charge.roomInfants ?? 0) : ''}</td>
-            <td class="guest-cell inline-editable-cell" data-value="${isRoom ? esc(guestName) : ''}" data-can-edit-guest="${isRoom ? '1' : '0'}" title="${isRoom ? 'Double-click to edit guest name' : ''}">${visibleGuest}</td>
+            <td class="guest-cell inline-editable-cell" data-value="${isRoom ? esc(guestName) : ''}" data-can-edit-guest="${isRoom && statusKey !== 'checkout' && statusKey !== 'checkedout' ? '1' : '0'}" title="${isRoom && statusKey !== 'checkout' && statusKey !== 'checkedout' ? 'Double-click to edit guest name' : (isRoom ? 'Checked-out stay is read-only' : '')}">${visibleGuest}</td>
             <td>${visibleStay}</td>
             <td>${esc(planName)}</td>
             <td class="num rate-cell inline-editable-cell" data-value="${ratePerNight}" data-can-edit-rate="${canEditRate ? '1' : '0'}" title="${canEditRate ? 'Double-click to edit rate per night' : 'Rate update not permitted'}">${money(ratePerNight)}</td>
@@ -1873,6 +1930,8 @@
         const id = Number(row.dataset.chargeId || 0);
         const action = button.dataset.action;
         if (!id || !action) return;
+        if (isCheckedOutReadOnly(row.dataset.status || state.reservationStatus))
+            return message('Checked-out stays are read-only.', 'error');
         if (action === 'delete') {
             const description = row.children?.[1]?.textContent?.trim() || 'this room / charge';
             const room = row.dataset.room ? ` (Room ${row.dataset.room})` : '';
@@ -3197,6 +3256,7 @@
     byId('chargeRows')?.addEventListener('dblclick', e => {
         const row = e.target.closest('tr[data-charge-id]');
         if (!row) return;
+        if (isCheckedOutReadOnly(row.dataset.status || state.reservationStatus)) return;
         const guestCell = e.target.closest('.guest-cell');
         if (guestCell && guestCell.dataset.canEditGuest === '1') { startInlineChargeEdit(row, 'guest-name'); return; }
         const rateCell = e.target.closest('.rate-cell');
@@ -3327,6 +3387,7 @@
     });
 
     initializeFromState();
+    applyCheckedOutReadOnlyUi(state.reservationStatus);
     lastQuickNameSnapshot = currentNameSnapshot();
     showQueuedReloadToast();
 })();
