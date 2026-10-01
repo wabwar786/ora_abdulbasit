@@ -16,7 +16,7 @@ namespace Orapmshms.Services;
 /// The UI is intentionally separate from the business logic; every amount and room
 /// assignment is revalidated server-side before the transaction is committed.
 /// </summary>
-public sealed class CreateReservationService : ICreateReservationService
+public sealed class CreateReservationService :  ICreateReservationService
 {
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;

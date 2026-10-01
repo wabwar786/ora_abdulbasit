@@ -10,7 +10,7 @@ namespace Orapmshms.Controllers;
 public sealed class CreateReservationController : Controller
 {
     private readonly ICreateReservationService _service;
-    private readonly ILogger<CreateReservationController> _logger;
+    private readonly ILogger<CreateReservationController>  _logger;
 
     public CreateReservationController(IConfiguration configuration, IHotelClock hotelClock, IHttpClientFactory httpClientFactory,
         IAvailabilityAutoUpdateQueue availabilityQueue, ILoggerFactory loggerFactory)

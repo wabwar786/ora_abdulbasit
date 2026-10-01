@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const page = document.getElementById('createReservationPage');
+  const page = document.getElementById('createReservationPage' );
   if (!page) return;
   const $ = id => document.getElementById(id);
   const $$ = selector => [...page.querySelectorAll(selector)];

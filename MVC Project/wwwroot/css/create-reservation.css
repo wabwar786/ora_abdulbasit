@@ -9,7 +9,7 @@
 #createReservationPage .page{width:100%;margin:0;padding:16px 18px 20px;display:flex;flex-direction:column;gap:12px}
 #createReservationPage h1{margin:0;font-size:28px;font-weight:700;color:var(--navy);letter-spacing:-.01em}
 #createReservationPage h2{margin:0;font-size:18px;font-weight:700;color:var(--navy)}
-#createReservationPage h3{margin:0;font-size:16px;font-weight:700;color:var(--navy)}
+#createReservationPage h3{margin:0;font-size:16px;font-weight:700;color:var(--navy) }
 #createReservationPage p{margin:0}
 #createReservationPage .head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
 #createReservationPage .head .sub{font-size:13px;color:var(--muted);margin-top:2px}

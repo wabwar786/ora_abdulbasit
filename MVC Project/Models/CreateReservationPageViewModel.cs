@@ -45,7 +45,7 @@ public sealed class CreateReservationQuoteRequest
     [Required] public DateTime ArrivalDate { get; set; }
     [Required] public DateTime DepartureDate { get; set; }
     [Range(0,10000000)] public decimal MonthlyRate { get; set; }
-    [Range(0,10000000)] public decimal Discount { get; set; }
+    [Range(0,10000000)] public decimal Discount { get; set;   }
     public bool ApplyGst { get; set; }
     public bool ApplyBedTax { get; set; }
 }
