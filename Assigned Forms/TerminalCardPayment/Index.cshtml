@@ -1,0 +1,199 @@
+@model Orapmshms.Models.TerminalCardPaymentPageViewModel
+@{
+    // A standalone popup: Manual Payments opens it with window.open, so it carries no sidebar and
+    // no top bar. Layout = null keeps _ViewStart's layout off this one page without editing any
+    // shared file.
+    Layout = null;
+    var canCharge = Model.Warning.Length == 0;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Card Payment</title>
+    <link rel="stylesheet" href="~/css/terminal-card-payment.css" asp-append-version="true" />
+</head>
+<body>
+<div class="tcp-root"
+     data-create-url="@Url.Action("Create", "TerminalCardPayment")"
+     data-process-url="@Url.Action("Process", "TerminalCardPayment")"
+     data-status-url="@Url.Action("Status", "TerminalCardPayment")"
+     data-cancel-action-url="@Url.Action("CancelAction", "TerminalCardPayment")"
+     data-cancel-intent-url="@Url.Action("CancelIntent", "TerminalCardPayment")"
+     data-simulate-url="@Url.Action("Simulate", "TerminalCardPayment")"
+     data-faillog-url="@Url.Action("FailLog", "TerminalCardPayment")"
+     data-return-url="@Model.ReturnUrl">
+    @Html.AntiForgeryToken()
+
+    <div class="tcp-card">
+
+        <!-- the band: who we are + what is being charged -->
+        <header class="tcp-band">
+            <div class="tcp-band-top">
+                <span class="tcp-band-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /><path d="M6 15h4" /></svg></span>
+                <div>
+                    <h1>PDQ card payment</h1>
+                    <p>Server-driven flow &middot; secure receipts &amp; logs</p>
+                </div>
+                <span class="tcp-dot" title="Ready" aria-hidden="true"></span>
+            </div>
+            <div class="tcp-band-pay">
+                <div>
+                    <span>Bill amount</span>
+                    <div class="tcp-amount-r"><b id="billAmount">@Model.AmountText</b><i id="billCcy">@Model.Currency</i></div>
+                </div>
+                <span class="tcp-pill" id="readyText">Ready to charge</span>
+            </div>
+            @if (Model.Payload.RegId.Length > 0 || Model.Payload.FullName.Length > 0)
+            {
+                <div class="tcp-band-who">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>
+                    <b id="tcpGuest">@(Model.Payload.FullName.Length > 0 ? Model.Payload.FullName : "Guest")</b>
+                    @if (Model.Payload.RegId.Length > 0)
+                    {
+                        <em>&middot;</em><span>Reg <b id="tcpRegId">@Model.Payload.RegId</b></span>
+                    }
+                </div>
+            }
+        </header>
+
+        <!-- where the flow is -->
+        <div class="tcp-steps" id="tcpSteps">
+            <div class="tcp-step" id="step1"><i>1</i><span>Device</span></div>
+            <div class="tcp-step" id="step2"><i>2</i><span>Description</span></div>
+            <div class="tcp-step" id="step3"><i>3</i><span>Charge</span></div>
+        </div>
+
+        <div class="tcp-body">
+
+            @if (!canCharge)
+            {
+                <p class="tcp-warn" role="alert">@Model.Warning</p>
+            }
+
+            <!-- Terminal device -->
+            <div class="tcp-field">
+                <label for="ddlReaders">Terminal device</label>
+                <div class="tcp-device">
+                    <span class="tcp-device-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M10 18h4" /><path d="M15.5 7.5a3 3 0 0 1 0 4" /></svg></span>
+                    <select id="ddlReaders" class="tcp-select">
+                        @foreach (var reader in Model.Readers)
+                        {
+                            @* the hotel's own dbo.StripeReaders rows; the tooltip carries what else the row knows *@
+                            <option value="@reader.ReaderId" selected="@(reader.ReaderId == Model.SelectedReaderId)"
+                                    title="@reader.ReaderId@(reader.DeviceType.Length > 0 ? " · " + reader.DeviceType : "")@(reader.Status.Length > 0 ? " · " + reader.Status : "")">@reader.DisplayName</option>
+                        }
+                    </select>
+                    <button type="button" class="tcp-icon-btn" id="tcpRefresh" aria-label="Refresh device" title="Refresh device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 5v6h-6" /></svg></button>
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div class="tcp-field">
+                <label for="paymentNote">Description <sup>*</sup><span class="tcp-count" id="tcpCount">0 / 450</span></label>
+                <textarea id="paymentNote" class="tcp-textarea" rows="2" maxlength="450"
+                          placeholder="Write payment description, e.g. room 204 &middot; mini-bar charges &middot; late check-out&hellip;">@Model.Description</textarea>
+                <p class="tcp-help">Required before charge. Reg_id will be added automatically in backend description.</p>
+            </div>
+
+            <!-- Charge / Cancel -->
+            <div class="tcp-actions">
+                <button type="button" class="tcp-btn" id="btnCharge" @(canCharge ? null : "disabled")>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z" /></svg>
+                    Charge now
+                </button>
+                <button type="button" class="tcp-btn is-stop" id="btnCancel" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    Cancel
+                </button>
+            </div>
+
+            <!-- Status -->
+            <div class="tcp-status" id="tcpStatus">
+                <div class="tcp-status-in">
+                    <div class="tcp-state is-on" id="animIdle">
+                        <span class="tcp-tile" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M9 6h6M9 13h.01M12 13h.01M15 13h.01M9 17h.01M12 17h.01M15 17h.01" /></svg></span>
+                        <div><b>Ready</b><small>Select device and press <b>Charge now</b>.</small></div>
+                    </div>
+                    <div class="tcp-state" id="animWorking">
+                        <span class="tcp-tile is-busy" aria-hidden="true"><span class="tcp-spin"></span></span>
+                        <div><b>Waiting on device&hellip;</b><small>Timeout in <b id="timeoutTimer">&mdash;</b>s</small></div>
+                    </div>
+                    <div class="tcp-state is-okstate" id="animSuccess">
+                        <span class="tcp-tile is-ok" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>
+                        <div><b>Payment completed</b><small>Webhook will save this payment&hellip;</small></div>
+                    </div>
+                    <div class="tcp-state is-badstate" id="animFail">
+                        <span class="tcp-tile is-bad" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m15 9-6 6M9 9l6 6" /></svg></span>
+                        <div><b>Payment failed</b><small>See activity log for details.</small></div>
+                    </div>
+                </div>
+                <div class="tcp-bar" id="tcpBar" hidden><i id="tcpBarFill"></i></div>
+            </div>
+
+            @if (Model.ShowSimulation)
+            {
+                <div class="tcp-rule"></div>
+
+                <!-- Simulation (Stripe test accounts only, as before) -->
+                <div class="tcp-field" id="simulationdiv">
+                    <div class="tcp-sim-head">
+                        <label for="selSimCard">Simulation <span class="tcp-tag">TEST</span></label>
+                        <label class="tcp-sim-toggle"><input type="checkbox" id="chkSim" /> Use simulated card</label>
+                    </div>
+                    <div class="tcp-sim-grid">
+                        <select id="selSimCard" class="tcp-select">
+                            <option value="success_4242">Success &mdash; Visa 4242&hellip;4242</option>
+                            <option value="decline">Decline (test)</option>
+                            <option value="insufficient_funds">Insufficient funds (test)</option>
+                        </select>
+                        <button type="button" class="tcp-btn is-ghost" id="btnSimulate">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 4 13 8-13 8z" /></svg>
+                            Simulate
+                        </button>
+                    </div>
+                    <p class="tcp-help">Test card &middot; use after &ldquo;Handing off to reader&hellip;&rdquo;</p>
+                </div>
+            }
+
+            <!-- Activity log -->
+            <div class="tcp-field">
+                <div class="tcp-log-head">
+                    <span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 4 4-4 4M12 16h7" /></svg>
+                        Activity log <em class="tcp-count-pill" id="logCount">0</em>
+                    </span>
+                    <small>PaymentIntent + reader timeline</small>
+                    <span class="tcp-log-tools">
+                        <button type="button" class="tcp-log-tool" id="logCopy" title="Copy the log" aria-label="Copy the log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg></button>
+                        <button type="button" class="tcp-log-tool" id="logExpand" title="Expand the log" aria-label="Expand the log" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg></button>
+                    </span>
+                </div>
+                <div class="tcp-log-wrap" id="logWrap">
+                    <div class="tcp-log" id="log"><div class="tcp-log-empty">Waiting for the first action&hellip;</div></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    @* the payload the old page kept in hidden fields; the server re-reads the hotel and user from the session *@
+    <input type="hidden" id="hdnAmount" value="@Model.AmountMinor" />
+    <input type="hidden" id="hdnCurrency" value="@Model.Currency" />
+    <input type="hidden" id="hdnReaderId" value="@Model.SelectedReaderId" />
+    <input type="hidden" id="q_regId" value="@Model.Payload.RegId" />
+    <input type="hidden" id="q_visitId" value="@Model.Payload.VisitId" />
+    <input type="hidden" id="q_fullName" value="@Model.Payload.FullName" />
+    <input type="hidden" id="q_arrival" value="@Model.Payload.ArrivalDate" />
+    <input type="hidden" id="q_departure" value="@Model.Payload.DepartureDate" />
+    <input type="hidden" id="q_grandTotal" value="@Model.Payload.GrandTotal" />
+    <input type="hidden" id="q_payable" value="@Model.Payload.Payable" />
+    <input type="hidden" id="q_advancePaid" value="@Model.Payload.AdvancePaid" />
+    <input type="hidden" id="q_status" value="@Model.Payload.Status" />
+</div>
+
+<script src="~/js/terminal-card-payment.js" asp-append-version="true"></script>
+</body>
+</html>
