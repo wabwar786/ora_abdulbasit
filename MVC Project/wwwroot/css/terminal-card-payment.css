@@ -1,0 +1,346 @@
+/* =========================================================
+   PDQ card payment (TerminalCardPayment) - page styles.
+   Approved design C. Everything is scoped under .tcp-root, so nothing
+   reaches the layout or another page. No :root, no pms- names, no icon
+   font and no library - every icon is inline SVG in the view.
+   ========================================================= */
+body { margin: 0; background: #f8fafc; }
+
+.tcp-root {
+    --tcp-nav: #12233a;
+    --tcp-nav-2: #1b3557;
+    --tcp-line: #e4e9f0;
+    --tcp-line-2: #eef1f5;
+    --tcp-soft: #f8fafc;
+    --tcp-text: #18202f;
+    --tcp-ink-2: #3c4a5e;
+    --tcp-muted: #6b778c;
+    --tcp-faint: #9aa5b4;
+    --tcp-blue: #2f5c8f;
+    --tcp-blue-soft: #eaf2fb;
+    --tcp-blue-line: #d8e6f5;
+    --tcp-green: #127a63;
+    --tcp-green-soft: #e8f6f1;
+    --tcp-green-line: #cfe9e0;
+    --tcp-amber: #8f5c0f;
+    --tcp-amber-soft: #fdf5e6;
+    --tcp-amber-line: #f0e0bd;
+    --tcp-red: #b43f3f;
+    --tcp-red-soft: #fdf0f0;
+    --tcp-red-line: #f2d8d8;
+
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, system-ui, Arial, sans-serif;
+    font-size: 12.5px;
+    color: var(--tcp-text);
+    -webkit-font-smoothing: antialiased;
+    padding: 12px;
+    background: var(--tcp-soft);
+    min-height: 100vh;
+}
+.tcp-root *, .tcp-root *::before, .tcp-root *::after { box-sizing: border-box; }
+.tcp-root :where(input, select, button, textarea, label) { font-family: inherit; }
+.tcp-root :where(button) { cursor: pointer; }
+.tcp-root :focus-visible { outline: 2px solid var(--tcp-blue); outline-offset: 2px; }
+.tcp-root [hidden] { display: none !important; }
+
+/* ---------- the card ---------- */
+.tcp-card {
+    width: 100%; max-width: 520px; margin: 0 auto;
+    background: #fff; border: 1px solid var(--tcp-line); border-radius: 12px;
+    box-shadow: 0 10px 30px -18px rgba(16, 27, 46, .45), 0 1px 3px rgba(24, 32, 47, .04);
+    overflow: hidden;
+}
+
+/* ---------- the navy band: who we are + what is being charged ---------- */
+.tcp-band {
+    position: relative; overflow: hidden; color: #fff;
+    padding: 13px 15px 14px;
+    background: linear-gradient(135deg, var(--tcp-nav) 0%, var(--tcp-nav-2) 100%);
+}
+.tcp-band::after {                     /* the soft light the other headers use */
+    content: ""; position: absolute; right: -40px; top: -60px; width: 190px; height: 190px;
+    border-radius: 50%; background: rgba(255, 255, 255, .06);
+}
+.tcp-band-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; }
+.tcp-band-icon {
+    width: 30px; height: 30px; flex: 0 0 auto; border-radius: 9px;
+    background: rgba(255, 255, 255, .12); color: #fff;
+    display: inline-grid; place-items: center;
+}
+.tcp-band-icon svg { width: 16px; height: 16px; }
+.tcp-band-top h1 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -.2px; }
+.tcp-band-top p { margin: 1px 0 0; font-size: 11px; color: rgba(255, 255, 255, .62); }
+.tcp-dot {
+    width: 7px; height: 7px; flex: 0 0 auto; margin-left: auto; border-radius: 50%;
+    background: #3ecf9a; box-shadow: 0 0 0 3px rgba(62, 207, 154, .22);
+}
+
+.tcp-band-pay {
+    position: relative; z-index: 1;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+    margin-top: 12px; padding-top: 11px; border-top: 1px solid rgba(255, 255, 255, .12);
+}
+.tcp-band-pay > div > span {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; color: rgba(255, 255, 255, .55);
+}
+.tcp-amount-r { display: flex; align-items: baseline; gap: 6px; margin-top: 3px; }
+.tcp-amount-r b { font-size: 30px; font-weight: 800; line-height: 1; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.tcp-amount-r i { font-style: normal; font-size: 11.5px; font-weight: 600; color: rgba(255, 255, 255, .6); }
+.tcp-pill {
+    display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 10px;
+    border-radius: 999px; background: rgba(255, 255, 255, .12);
+    font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, .92); white-space: nowrap;
+}
+.tcp-pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* the booking this charge belongs to (values the page already receives) */
+.tcp-band-who {
+    position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    margin-top: 9px; font-size: 11.5px; color: rgba(255, 255, 255, .8);
+}
+.tcp-band-who b { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+.tcp-band-who svg { width: 13px; height: 13px; color: rgba(255, 255, 255, .55); }
+.tcp-band-who em { font-style: normal; color: rgba(255, 255, 255, .35); }
+
+/* ---------- the three steps of the flow ---------- */
+.tcp-steps {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+    padding: 9px 15px; border-bottom: 1px solid var(--tcp-line-2); background: #fcfdfe;
+}
+.tcp-step { display: flex; align-items: center; gap: 7px; min-width: 0; position: relative; }
+.tcp-step + .tcp-step { padding-left: 12px; }
+.tcp-step + .tcp-step::before {
+    content: ""; position: absolute; left: 0; top: 50%; width: 8px; height: 1px;
+    background: var(--tcp-line); transform: translateY(-50%);
+}
+.tcp-step i {
+    width: 18px; height: 18px; flex: 0 0 auto; border-radius: 50%;
+    display: inline-grid; place-items: center; font-style: normal;
+    font-size: 9.5px; font-weight: 800; line-height: 1;
+    background: #fff; color: var(--tcp-faint); border: 1px solid var(--tcp-line);
+    transition: background-color .2s, color .2s, border-color .2s;
+}
+.tcp-step span { font-size: 11px; font-weight: 600; color: var(--tcp-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcp-step.is-done i { background: var(--tcp-green-soft); border-color: var(--tcp-green-line); color: var(--tcp-green); }
+.tcp-step.is-done span { color: var(--tcp-ink-2); }
+.tcp-step.is-now i { background: #102f5c; border-color: #102f5c; color: #fff; }
+.tcp-step.is-now span { color: var(--tcp-text); font-weight: 700; }
+.tcp-step.is-bad i { background: var(--tcp-red-soft); border-color: var(--tcp-red-line); color: var(--tcp-red); }
+.tcp-step.is-bad span { color: var(--tcp-red); }
+.tcp-step i svg { width: 11px; height: 11px; }
+
+/* ---------- body ---------- */
+.tcp-body { padding: 12px 15px 14px; display: flex; flex-direction: column; gap: 10px; }
+.tcp-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.tcp-field > label {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11.5px; font-weight: 600; color: var(--tcp-ink-2);
+}
+.tcp-field > label sup { top: 0; font-size: 11.5px; color: var(--tcp-red); }
+.tcp-help { margin: 0; font-size: 11px; line-height: 1.4; color: var(--tcp-faint); }
+.tcp-rule { height: 1px; background: var(--tcp-line-2); margin: 1px 0; }
+
+/* the one line the page shows when it cannot take a card at all */
+.tcp-warn {
+    margin: 0; padding: 9px 11px; border-radius: 8px;
+    background: var(--tcp-amber-soft); border: 1px solid var(--tcp-amber-line);
+    border-left-width: 3px; color: #7a4f0c; font-size: 12px; line-height: 1.45;
+}
+
+/* ---------- inputs ---------- */
+.tcp-select, .tcp-textarea {
+    width: 100%; padding: 0 10px; border: 1px solid #dde3eb; border-radius: 8px;
+    background: #fff; font-size: 12.5px; color: var(--tcp-text); outline: 0;
+    transition: border-color .15s, box-shadow .15s;
+}
+.tcp-select { height: 34px; -webkit-appearance: none; appearance: none; padding-right: 28px; cursor: pointer;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378849a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center/13px;
+}
+.tcp-textarea { height: auto; padding: 8px 10px; line-height: 1.5; resize: vertical; min-height: 56px; }
+.tcp-select:hover, .tcp-textarea:hover { border-color: #cfd7e2; }
+/* one line only when a field is focused: its own border (the browser's extra outline is off) */
+.tcp-root .tcp-select:focus, .tcp-root .tcp-select:focus-visible,
+.tcp-root .tcp-textarea:focus, .tcp-root .tcp-textarea:focus-visible { outline: 0; }
+.tcp-select:focus, .tcp-textarea:focus { border-color: var(--tcp-blue); box-shadow: 0 0 0 3px rgba(47, 92, 143, .13); }
+.tcp-textarea::placeholder { color: var(--tcp-faint); }
+.tcp-textarea.is-error { border-color: var(--tcp-red); box-shadow: 0 0 0 3px rgba(180, 63, 63, .12); }
+.tcp-count { font-size: 10.5px; color: var(--tcp-faint); font-variant-numeric: tabular-nums; margin-left: auto; }
+
+/* the device line: ONE outline, a reader mark in front, refresh inside at the end */
+.tcp-device {
+    display: flex; align-items: center; overflow: hidden;
+    border: 1px solid #dde3eb; border-radius: 8px; background: #fff;
+    transition: border-color .15s, box-shadow .15s;
+}
+.tcp-device:hover { border-color: #cfd7e2; }
+.tcp-device:focus-within { border-color: var(--tcp-blue); box-shadow: 0 0 0 3px rgba(47, 92, 143, .13); }
+.tcp-device-mark { width: 30px; flex: 0 0 auto; display: grid; place-items: center; color: var(--tcp-blue); }
+.tcp-device-mark svg { width: 15px; height: 15px; }
+.tcp-device .tcp-select { flex: 1 1 auto; min-width: 0; border: 0; border-radius: 0; padding-left: 2px; padding-right: 26px; background-position: right 8px center; }
+.tcp-device .tcp-select:focus, .tcp-device .tcp-select:hover { border: 0; box-shadow: none; }
+.tcp-icon-btn {
+    width: 36px; height: 34px; flex: 0 0 auto; padding: 0;
+    border: 0; border-left: 1px solid var(--tcp-line-2); border-radius: 0;
+    background: #fff; color: var(--tcp-muted); display: inline-grid; place-items: center;
+    transition: background-color .15s, color .15s;
+}
+.tcp-icon-btn:hover { background: var(--tcp-soft); color: var(--tcp-text); }
+.tcp-icon-btn svg { width: 15px; height: 15px; }
+.tcp-icon-btn.is-spin svg { animation: tcp-rot .6s linear; }
+
+/* ---------- buttons ---------- */
+.tcp-actions { display: grid; grid-template-columns: 1.6fr 1fr; gap: 8px; }
+.tcp-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    height: 36px; padding: 0 14px; border: 1px solid transparent; border-radius: 8px;
+    font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    background: #102f5c; color: #fff;
+    transition: background-color .15s, box-shadow .15s, border-color .15s, color .15s;
+}
+.tcp-btn:hover:not(:disabled) { background: #0d2649; box-shadow: 0 8px 18px -6px rgba(16, 47, 92, .45); }
+.tcp-btn:active:not(:disabled) { transform: translateY(1px); }
+.tcp-btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.tcp-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
+/* Cancel is quiet while there is nothing to cancel and turns solid the moment there is.
+   It stops a reader action, it does not undo money, so it wears the theme's slate
+   rather than red - red stays for real failures (the Failed state). */
+.tcp-btn.is-stop:disabled { background: #fff; border-color: var(--tcp-line); color: var(--tcp-faint); opacity: 1; }
+.tcp-btn.is-stop:not(:disabled) { background: var(--tcp-ink-2); border-color: var(--tcp-ink-2); color: #fff; }
+.tcp-btn.is-stop:not(:disabled):hover { background: #303c4c; border-color: #303c4c; box-shadow: 0 8px 18px -6px rgba(60, 74, 94, .5); }
+.tcp-btn.is-ghost { background: #fff; border-color: #dde3eb; color: var(--tcp-ink-2); height: 34px; padding: 0 12px; }
+.tcp-btn.is-ghost:hover:not(:disabled) { background: var(--tcp-soft); border-color: #cfd7e2; box-shadow: none; }
+
+/* ---------- the status banner: colour follows the state ---------- */
+.tcp-status {
+    border: 1px solid var(--tcp-line-2); border-radius: 10px;
+    background: var(--tcp-soft); overflow: hidden;
+    transition: background-color .2s, border-color .2s;
+}
+.tcp-status.is-working { background: var(--tcp-blue-soft); border-color: var(--tcp-blue-line); }
+.tcp-status.is-success { background: var(--tcp-green-soft); border-color: var(--tcp-green-line); }
+.tcp-status.is-fail    { background: var(--tcp-red-soft);   border-color: var(--tcp-red-line); }
+.tcp-status-in { display: flex; align-items: center; gap: 11px; padding: 11px 12px; }
+.tcp-state { display: none; align-items: center; gap: 11px; width: 100%; }
+.tcp-state.is-on { display: flex; }
+.tcp-tile {
+    width: 36px; height: 36px; flex: 0 0 auto; border-radius: 12px;
+    display: grid; place-items: center;
+    background: #fff; color: var(--tcp-faint); border: 1px solid var(--tcp-line);
+}
+.tcp-tile svg { width: 18px; height: 18px; }
+.tcp-tile.is-ok { color: var(--tcp-green); border-color: var(--tcp-green-line); }
+.tcp-tile.is-bad { color: var(--tcp-red); border-color: var(--tcp-red-line); }
+.tcp-tile.is-busy { border-color: var(--tcp-blue-line); }
+/* while the card is being presented, the tile breathes so the desk sees it is live */
+.tcp-state.is-on .tcp-tile.is-busy::after {
+    content: ""; position: absolute; inset: -1px; border-radius: 12px;
+    border: 1px solid var(--tcp-blue); opacity: .55; animation: tcp-pulse 1.6s ease-out infinite;
+}
+.tcp-tile { position: relative; }
+@keyframes tcp-pulse {
+    0%   { transform: scale(1);    opacity: .55; }
+    70%  { transform: scale(1.22); opacity: 0; }
+    100% { transform: scale(1.22); opacity: 0; }
+}
+/* the tick draws itself once, when the payment lands */
+.tcp-state.is-on .tcp-tile.is-ok svg path { stroke-dasharray: 26; stroke-dashoffset: 26; animation: tcp-draw .45s ease-out .05s forwards; }
+@keyframes tcp-draw { to { stroke-dashoffset: 0; } }
+.tcp-state > div { min-width: 0; }
+.tcp-state > div > b { display: block; font-size: 12.5px; font-weight: 700; }
+.tcp-state small { display: block; margin-top: 1px; font-size: 11.5px; color: var(--tcp-muted); }
+.tcp-state small b { display: inline; font-size: inherit; font-weight: 700; color: var(--tcp-ink-2); }
+.tcp-state.is-okstate > div > b { color: var(--tcp-green); }
+.tcp-state.is-badstate > div > b { color: var(--tcp-red); }
+.tcp-spin {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--tcp-blue-line); border-top-color: var(--tcp-blue);
+    animation: tcp-rot .7s linear infinite;
+}
+@keyframes tcp-rot { to { transform: rotate(360deg); } }
+/* the 90-second limit, drawn as it runs out */
+.tcp-bar { height: 3px; background: rgba(47, 92, 143, .15); }
+.tcp-bar i { display: block; height: 100%; width: 100%; background: var(--tcp-blue); transition: width 1s linear; }
+
+/* ---------- simulation: no box of its own, only the controls are outlined ---------- */
+.tcp-sim-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tcp-sim-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tcp-ink-2); white-space: nowrap; cursor: pointer; }
+.tcp-sim-toggle input { accent-color: #102f5c; width: 14px; height: 14px; cursor: pointer; }
+.tcp-sim-grid { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+.tcp-tag {
+    display: inline-flex; align-items: center; height: 19px; padding: 0 8px; border-radius: 999px;
+    border: 1px solid var(--tcp-amber-line); background: var(--tcp-amber-soft); color: var(--tcp-amber);
+    font-size: 10px; font-weight: 700; letter-spacing: .2px;
+}
+
+/* ---------- activity log: a timeline of what the reader did ---------- */
+.tcp-log-head { display: flex; align-items: center; gap: 8px; }
+.tcp-log-head > span { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--tcp-ink-2); }
+.tcp-log-head > span svg { width: 13px; height: 13px; color: var(--tcp-faint); }
+.tcp-log-head small { font-size: 10.5px; color: var(--tcp-faint); margin-left: auto; }
+.tcp-count-pill {
+    display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px;
+    border-radius: 999px; background: var(--tcp-line-2); color: var(--tcp-muted);
+    font-size: 9.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.tcp-count-pill.is-live { background: var(--tcp-blue-soft); color: var(--tcp-blue); }
+.tcp-log-tools { display: inline-flex; gap: 4px; flex: 0 0 auto; }
+.tcp-log-tool {
+    width: 24px; height: 22px; padding: 0; border: 1px solid var(--tcp-line); border-radius: 6px;
+    background: #fff; color: var(--tcp-muted); display: inline-grid; place-items: center;
+    transition: background-color .15s, color .15s, border-color .15s;
+}
+.tcp-log-tool:hover { background: var(--tcp-soft); color: var(--tcp-text); border-color: #cfd7e2; }
+.tcp-log-tool svg { width: 12px; height: 12px; }
+.tcp-log-tool.is-open svg { transform: rotate(180deg); }
+.tcp-log-tool.is-said { border-color: var(--tcp-green-line); background: var(--tcp-green-soft); color: var(--tcp-green); }
+
+.tcp-log-wrap { position: relative; }
+.tcp-log-wrap::before {                 /* the top edge fades, so a scrolled log looks continuous */
+    content: ""; position: absolute; left: 1px; right: 9px; top: 1px; height: 14px; z-index: 1;
+    border-radius: 9px 9px 0 0; pointer-events: none;
+    background: linear-gradient(180deg, var(--tcp-nav), rgba(18, 35, 58, 0));
+    opacity: 0; transition: opacity .2s;
+}
+.tcp-log-wrap.is-scrolled::before { opacity: 1; }
+.tcp-log {
+    height: 108px; overflow-y: auto; padding: 9px 11px 9px 10px;
+    background: var(--tcp-nav); border-radius: 9px;
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 11px; line-height: 1.65; color: #c3ccd9;
+    transition: height .18s ease;
+}
+.tcp-log.is-tall { height: 250px; }
+.tcp-log div { position: relative; overflow-wrap: anywhere; padding: 1px 0 1px 17px; }
+.tcp-log div::before {                  /* the dot on the rail */
+    content: ""; position: absolute; left: 3px; top: 7px; width: 5px; height: 5px;
+    border-radius: 50%; background: #55688a; box-shadow: 0 0 0 2px rgba(18, 35, 58, 1);
+}
+.tcp-log div::after {                   /* the rail itself, between one dot and the next */
+    content: ""; position: absolute; left: 5px; top: 11px; bottom: -3px; width: 1px; background: #2b3c55;
+}
+.tcp-log div:last-child::after { display: none; }
+.tcp-log time { color: #7c8da6; font-style: normal; margin-right: 3px; }
+.tcp-log div.is-ok { color: #6fd3b6; }   .tcp-log div.is-ok::before { background: #6fd3b6; }
+.tcp-log div.is-bad { color: #f0a0a0; }  .tcp-log div.is-bad::before { background: #f0a0a0; }
+.tcp-log div.is-warn { color: #e8c07d; } .tcp-log div.is-warn::before { background: #e8c07d; }
+.tcp-log div.is-new { animation: tcp-slide .25s ease-out; }
+@keyframes tcp-slide { from { opacity: 0; transform: translateY(-3px); } }
+.tcp-log-empty { color: #7c8899; font-style: italic; padding-left: 0 !important; }
+.tcp-log-empty::before, .tcp-log-empty::after { display: none !important; }
+.tcp-log::-webkit-scrollbar { width: 8px; }
+.tcp-log::-webkit-scrollbar-thumb { background: #2b3c55; border-radius: 8px; }
+.tcp-log::-webkit-scrollbar-thumb:hover { background: #3a4d69; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 430px) {
+    .tcp-root { padding: 8px; }
+    .tcp-body { padding: 12px 11px 13px; gap: 11px; }
+    .tcp-band { padding: 12px 12px 13px; }
+    .tcp-band-pay { flex-direction: column; align-items: flex-start; gap: 7px; }
+    .tcp-amount-r b { font-size: 26px; }
+    .tcp-actions { grid-template-columns: 1fr; }
+    .tcp-sim-grid { grid-template-columns: 1fr; }
+    .tcp-log { height: 100px; }
+}
+@media (prefers-reduced-motion: reduce) { .tcp-root * { transition: none !important; animation: none !important; } }

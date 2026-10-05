@@ -5,7 +5,11 @@
      aria-hidden="true"
      data-record-payment-url="@Url.Action("RecordPayment", "CheckIn")"
      data-prepare-email-url="@Url.Action("PrepareEmail", "FrontDeskCalendar")"
+     data-paynow-link-url="@Url.Action("GenerateLink", "PayNow")"
      data-pdq-url="/TerminalCardPayment.aspx"
+     data-holds-url="@Url.Action("Holds", "TerminalCardPayment")"
+     data-capture-hold-url="@Url.Action("CaptureHold", "TerminalCardPayment")"
+     data-release-hold-url="@Url.Action("ReleaseHold", "TerminalCardPayment")"
      data-auto-payment-url="/Autopayment.aspx">
 
     <form id="orpRecordPaymentAntiForgery" class="orp-payment-hidden">
@@ -60,6 +64,66 @@
                     </span>
                     <span class="orp-payment-option-arrow" aria-hidden="true">→</span>
                 </button>
+            </div>
+
+            <div class="orp-online-action" id="orpOnlineAction" hidden>
+                <div class="orp-online-action-head">
+                    <div>
+                        <b>Online Card / PayNow action</b>
+                        <small>Hotel staff chooses Charge or Hold before the customer payment link is generated.</small>
+                    </div>
+                    <button type="button" class="orp-online-back" id="orpOnlineBack">Back</button>
+                </div>
+                <div class="orp-online-choice-grid">
+                    <button type="button" class="orp-online-choice charge" id="orpOnlineCharge">
+                        <span class="orp-online-choice-icon">⚡</span>
+                        <span><b>Charge now</b><small>Generate a normal PayNow link. The customer is charged immediately after successful Checkout.</small></span>
+                    </button>
+                    <button type="button" class="orp-online-choice hold" id="orpOnlineHold">
+                        <span class="orp-online-choice-icon">◷</span>
+                        <span><b>Hold card</b><small>Generate a manual-capture PayNow link. The authorization is stored separately and can be captured later.</small></span>
+                    </button>
+                </div>
+                <div class="orp-online-link" id="orpOnlineLink" hidden>
+                    <label for="orpOnlineLinkValue">Customer PayNow link</label>
+                    <div class="orp-online-link-row">
+                        <input type="text" id="orpOnlineLinkValue" readonly />
+                        <button type="button" class="orp-online-link-btn" id="orpOnlineCopy">Copy</button>
+                        <button type="button" class="orp-online-link-btn primary" id="orpOnlineOpen">Open</button>
+                    </div>
+                    <small id="orpOnlineLinkHint"></small>
+                </div>
+            </div>
+
+            <div class="orp-pdq-action" id="orpPdqAction" hidden>
+                <div class="orp-pdq-action-head">
+                    <div>
+                        <b>PDQ card action</b>
+                        <small>Choose whether to collect the money now or only authorize it for later capture.</small>
+                    </div>
+                    <button type="button" class="orp-pdq-back" id="orpPdqBack">Back</button>
+                </div>
+                <div class="orp-pdq-choice-grid">
+                    <button type="button" class="orp-pdq-choice charge" id="orpPdqCharge">
+                        <span class="orp-pdq-choice-icon">⚡</span>
+                        <span><b>Charge now</b><small>Authorize and capture immediately. This posts to the payment report after the webhook confirms success.</small></span>
+                    </button>
+                    <button type="button" class="orp-pdq-choice hold" id="orpPdqHold">
+                        <span class="orp-pdq-choice-icon">◷</span>
+                        <span><b>Hold card</b><small>Authorize only. Nothing is added to paid amount until you capture the hold.</small></span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="orp-holds" id="orpHolds" hidden>
+                <div class="orp-holds-head">
+                    <div>
+                        <b>Authorized payment holds</b>
+                        <small>These are reservation payment authorizations, separate from refundable room security. Capture posts to the payment report; eligible PDQ holds can be released immediately.</small>
+                    </div>
+                    <button type="button" class="orp-holds-refresh" id="orpHoldsRefresh" title="Refresh holds">↻</button>
+                </div>
+                <div class="orp-holds-list" id="orpHoldsList"></div>
             </div>
 
             <div class="orp-payment-divider"><span>or record a manual payment</span></div>

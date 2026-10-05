@@ -1,0 +1,82 @@
+@model Orapmshms.Models.PayNowChoiceViewModel
+@{
+    Layout = null;
+    var amount = Model.Amount.ToString("N2");
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Secure Card Payment</title>
+    <style>
+        *{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#10213b;font-family:Inter,Segoe UI,Arial,sans-serif}
+        .page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 16px}
+        .card{width:min(680px,100%);background:#fff;border:1px solid #e5eaf1;border-radius:18px;box-shadow:0 18px 55px rgba(16,33,59,.10);overflow:hidden}
+        .head{padding:26px 30px 22px;border-bottom:1px solid #edf0f5}.eyebrow{font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#58708f}
+        h1{font-size:25px;margin:8px 0 5px}.sub{margin:0;color:#6a7b91;font-size:14px}
+        .summary{margin:22px 30px;padding:18px;border-radius:14px;background:#f7f9fc;border:1px solid #e8edf4;display:grid;grid-template-columns:1fr auto;gap:12px 24px}
+        .label{font-size:12px;color:#74859b;margin-bottom:3px}.value{font-size:14px;font-weight:700}.amount{text-align:right;grid-row:1/3;grid-column:2;align-self:center}.amount .value{font-size:28px;color:#0b2a55}
+        .choices{padding:0 30px 30px;display:grid;grid-template-columns:1fr 1fr;gap:14px}.choice{display:flex;flex-direction:column;gap:9px;padding:20px;border:1px solid #dce4ee;border-radius:14px;text-decoration:none;color:inherit;transition:.15s ease;background:#fff}
+        .choice:hover{transform:translateY(-1px);border-color:#8da4bf;box-shadow:0 10px 28px rgba(16,33,59,.08)}.choice strong{font-size:17px}.choice p{margin:0;font-size:13px;line-height:1.5;color:#6a7b91;min-height:40px}
+        .btn{margin-top:5px;text-align:center;border-radius:10px;padding:12px 14px;font-size:14px;font-weight:800}.charge .btn{background:#0b2a55;color:#fff}.hold .btn{background:#eef4fb;color:#0b2a55;border:1px solid #cbd8e8}
+        .tag{display:inline-flex;width:max-content;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:800;background:#eef4fb;color:#315b8b}.hold .tag{background:#fff7e8;color:#8a5a00}
+        .note{padding:0 30px 28px;color:#79889b;font-size:12px;line-height:1.5}.secure{font-weight:700;color:#50657f}
+        @@media(max-width:620px){.choices{grid-template-columns:1fr}.summary{grid-template-columns:1fr}.amount{text-align:left;grid-row:auto;grid-column:auto}.head,.choices,.note{padding-left:20px;padding-right:20px}.summary{margin-left:20px;margin-right:20px}}
+    </style>
+</head>
+<body>
+<div class="page">
+    <main class="card">
+        <div class="head">
+            <div class="eyebrow">Secure card payment</div>
+            <h1>Choose how to process the card</h1>
+            <p class="sub">You will continue to Stripe to enter the card securely.</p>
+        </div>
+
+        <section class="summary">
+            <div>
+                <div class="label">Guest</div>
+                <div class="value">@Model.GuestName</div>
+            </div>
+            <div class="amount">
+                <div class="label">Amount</div>
+                <div class="value">@Model.Currency @amount</div>
+            </div>
+            <div>
+                <div class="label">Reservation</div>
+                <div class="value">@Model.ReservationId</div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Model.Arrival) || !string.IsNullOrWhiteSpace(Model.Departure))
+            {
+                <div>
+                    <div class="label">Stay</div>
+                    <div class="value">@Model.Arrival → @Model.Departure</div>
+                </div>
+            }
+        </section>
+
+        <section class="choices">
+            <a class="choice charge" href="@Model.ChargeUrl">
+                <span class="tag">PAYMENT</span>
+                <strong>Charge Now</strong>
+                <p>Take the payment immediately and post the successful payment to ORA PMS.</p>
+                <span class="btn">Continue to Stripe</span>
+            </a>
+
+            <a class="choice hold" href="@Model.HoldUrl">
+                <span class="tag">PRE-AUTHORIZATION</span>
+                <strong>Hold Card</strong>
+                <p>Authorize the amount only. Capture it later from ORA PMS before the authorization expires.</p>
+                <span class="btn">Authorize with Stripe</span>
+            </a>
+        </section>
+
+        <div class="note">
+            <span class="secure">Card details are handled by Stripe.</span>
+            A hold is not added to the paid amount until it is captured in ORA PMS.
+        </div>
+    </main>
+</div>
+</body>
+</html>

@@ -259,6 +259,22 @@ public sealed class FrontDeskEmailPrepareRequest
 {
     [Required, StringLength(100)] public string RegId { get; set; } = string.Empty;
     public int PaymentId { get; set; }
+
+    /// <summary>
+    /// Staff-selected PayNow action. "charge" captures immediately; "hold" creates
+    /// a manual-capture authorization that can be captured later from ORA PMS.
+    /// </summary>
+    [StringLength(20)]
+    public string PaymentMode { get; set; } = "charge";
+
+    /// <summary>Reservation source used by the legacy PayNow/webhook contract (NR or GI).</summary>
+    [StringLength(10)]
+    public string Source { get; set; } = "NR";
+
+    /// <summary>
+    /// Optional amount chosen in Record Payment. When omitted, the full outstanding balance is used.
+    /// </summary>
+    public decimal? Amount { get; set; }
 }
 
 public sealed class FrontDeskEmailSendRequest

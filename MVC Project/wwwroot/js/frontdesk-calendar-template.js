@@ -5,6 +5,34 @@
   if (!page) return;
 
   const $ = (id) => document.getElementById(id);
+
+  function ensureDrawerHoldStyles(){
+    if(document.getElementById('fdcHoldRuntimeStyles')) return;
+    const style=document.createElement('style');
+    style.id='fdcHoldRuntimeStyles';
+    style.textContent=`
+      .fdc-holds-panel{border-color:#c9d9ea!important;background:#fbfdff!important}
+      .fdc-holds-help{margin:-1px 0 8px;color:#6b7d90;font-size:9px;line-height:1.35}
+      .fdc-holds-list{display:grid;gap:7px}
+      .fdc-hold-card{padding:8px;border:1px solid #d5e0eb;border-radius:8px;background:#fff}
+      .fdc-hold-summary{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+      .fdc-hold-summary>div{min-width:0}.fdc-hold-summary b{display:block;color:#102a43;font-size:11px}
+      .fdc-hold-summary small{display:block;margin-top:2px;color:#73859a;font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .fdc-hold-status{flex:0 0 auto;padding:2px 6px;border-radius:999px;background:#fff4da;color:#8a5a00;font-size:7.5px;font-weight:900;letter-spacing:.06em}
+      .fdc-hold-note{margin-top:6px;padding-top:5px;border-top:1px dashed #e0e7ef;color:#667a8f;font-size:8.5px;line-height:1.3;overflow-wrap:anywhere}
+      .fdc-hold-capture{display:grid;grid-template-columns:auto minmax(95px,1fr);gap:7px;align-items:center;margin-top:7px}
+      .fdc-hold-capture label{font-size:8.5px;font-weight:800;color:#536a80}
+      .fdc-hold-capture-input{width:100%;height:30px;padding:0 8px;border:1px solid #cbd8e5;border-radius:7px;background:#fff;color:#172b40;font:inherit;font-size:9.5px;font-weight:750;outline:none}
+      .fdc-hold-capture-input:focus{border-color:#2867e8;box-shadow:0 0 0 2px rgba(40,103,232,.10)}
+      .fdc-hold-buttons{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}
+      .fdc-hold-btn{min-height:30px;border:1px solid #d6e0ea;border-radius:7px;background:#fff;color:#102a43;font:inherit;font-size:9px;font-weight:850;cursor:pointer}
+      .fdc-hold-btn.capture{background:#117653;border-color:#117653;color:#fff}.fdc-hold-btn.release{background:#fff6f7;border-color:#e7b7bd;color:#b8333f}
+      .fdc-hold-btn:disabled{opacity:.48;cursor:not-allowed}.fdc-hold-btn.fdc-button-loading{cursor:wait!important}
+      @media(max-width:520px){.fdc-hold-capture{grid-template-columns:1fr}.fdc-hold-buttons{grid-template-columns:1fr 1fr}}
+    `;
+    document.head.appendChild(style);
+  }
+  ensureDrawerHoldStyles();
   const calendar = $('fdcCalendar');
   const scroll = $('fdcScroll');
   const drawer = $('fdcDrawer');
@@ -36,6 +64,7 @@
     collapsed: new Set(),
     selectedCell: null,
     currentDetails: null,
+    currentHolds: [],
     drag: null,
     resize: null
   };
@@ -55,6 +84,10 @@
   function fmt(d, long = false) { const x = dateOnly(d); return x ? x.toLocaleDateString('en-GB', long ? {day:'2-digit',month:'short',year:'numeric'} : {day:'2-digit',month:'short'}) : ''; }
   function esc(v) { return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
   function money(v) { const n = Number(v || 0); return `${state.currency}${n.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+  const zeroDecimalCurrencies=new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
+  function holdMinorFactor(currency){return zeroDecimalCurrencies.has(String(currency||'').toUpperCase())?1:100;}
+  function holdMajor(minor,currency){return Number(minor||0)/holdMinorFactor(currency);}
+  function holdMinor(major,currency){return Math.round(Number(major||0)*holdMinorFactor(currency));}
   function initials(name) { return String(name || 'G').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase() || 'G'; }
   function sameDate(a,b) { return iso(a) === iso(b); }
   function isWeekend(d) { const x=dateOnly(d).getDay(); return x===5 || x===6; }
@@ -387,6 +420,25 @@
   }
 
 
+  function paymentHoldUrls(){
+    const rp=document.getElementById('orpRecordPayment');
+    return {
+      holds:rp?.dataset.holdsUrl||'/terminalcardpayment/Holds',
+      capture:rp?.dataset.captureHoldUrl||'/terminalcardpayment/CaptureHold',
+      release:rp?.dataset.releaseHoldUrl||'/terminalcardpayment/ReleaseHold'
+    };
+  }
+
+  async function fetchReservationHolds(regId){
+    if(!regId) return [];
+    const urls=paymentHoldUrls();
+    const u=new URL(urls.holds,location.origin);
+    u.searchParams.set('regId',regId);
+    const json=await api(u.toString());
+    if(json?.ok===false) throw new Error(json.message||'Unable to load payment holds.');
+    return Array.isArray(json?.holds)?json.holds:[];
+  }
+
   async function fetchBookingDetails(item){
     if(!item?.regId) return null;
     const u=new URL(cfg.detailsUrl,location.origin);
@@ -411,13 +463,20 @@
       const d=await fetchBookingDetails(item);
       if(!d) return;
       state.currentDetails=d;
+
+      // A hold lookup must never stop reservation details from opening.
+      // If it fails, keep the normal drawer working and show no hold panel.
+      let holds=[];
+      try{holds=await fetchReservationHolds(d.regId||item.regId);}catch(_){holds=[];}
+      state.currentHolds=holds;
+
       $('fdcAvatar').textContent=initials(d.guestName);
       $('fdcDrawerTitle').textContent=d.guestName||'Guest';
       const rawStatus=normalizeStatus(d.status);
       const checked=isCheckedInStatus(rawStatus);
       const closed=isCheckedOutStatus(rawStatus);
       $('fdcDrawerSub').textContent=`Room ${d.roomNo||'Unassigned'} · ${checked?'CHECK IN':closed?'CHECKED OUT':'RESERVATION'}`;
-      drawerBody.innerHTML=detailsHtml(d);
+      drawerBody.innerHTML=detailsHtml(d,holds);
       if(drawerPay){
         drawerPay.innerHTML=Number(d.balance||0)>0.005
           ? `<button type="button" class="fdc-pay-now" data-drawer-action="payment">Pay Now · ${money(d.balance)}</button>`
@@ -430,7 +489,7 @@
     }
   }
 
-  function detailsHtml(d){
+  function detailsHtml(d,holds=[]){
     const s=normalizeStatus(d.status);
     const checked=isCheckedInStatus(s);
     const closed=isCheckedOutStatus(s);
@@ -439,6 +498,7 @@
     const stateText=checked?'Checked In':closed?'Checked Out':(d.status||'Reservation');
     const row=(label,value)=>`<div class="fdc-kv"><span>${label}</span><b>${value}</b></div>`;
     const logs=(d.payments||[]).map(p=>`<div class="fdc-payment-log-entry"><span>${fmt(p.date,true)} · ${esc(p.method||'Payment')}${p.reference?` · ${esc(p.reference)}`:''}</span><strong>${money(p.amount)}</strong></div>`).join('');
+    const holdPanel=paymentHoldsHtml(holds);
 
     return `<div class="fdc-panel"><h4>Booking information</h4>
         ${row('Reference #',esc(d.regId||'—'))}
@@ -465,8 +525,87 @@
         ${balance>0.005?`<div class="fdc-payment-due-note">${money(balance)} remains to be collected.</div>`:'<div class="fdc-payment-settled-note">Payment received in full.</div>'}
         ${logs?`<div class="fdc-payment-log"><strong>Payment history</strong>${logs}</div>`:''}
       </div>
+      ${holdPanel}
       ${d.frontDeskNotes?`<div class="fdc-panel"><h4>Notebook</h4><p class="fdc-drawer-notes">${esc(d.frontDeskNotes)}</p></div>`:''}
       ${d.notes?`<div class="fdc-panel"><h4>Notes</h4><p class="fdc-drawer-notes">${esc(d.notes)}</p></div>`:''}`;
+  }
+
+  function paymentHoldsHtml(holds){
+    if(!Array.isArray(holds)||!holds.length) return '';
+
+    const rows=holds.map(h=>{
+      const currency=String(h.currency||cfg.currencyCode||'GBP').toUpperCase();
+      const factor=holdMinorFactor(currency);
+      const amountMajor=holdMajor(h.amountMinor,currency);
+      const card=[h.cardBrand,String(h.last4||'').trim()?`•••• ${h.last4}`:''].filter(Boolean).join(' · ');
+      const source=String(h.source||'').toLowerCase();
+      const sourceLabel=source==='checkout_hold'?'Online Card':(source==='pdq_terminal'?'PDQ Terminal':'Card Hold');
+      const releaseAllowed=h.canRelease!==false;
+      const releaseTitle=releaseAllowed?'Release this authorization':'Stripe Checkout authorization cannot be canceled after Checkout completes; capture it or allow it to expire.';
+
+      return `<div class="fdc-hold-card" data-hold-pi="${esc(h.paymentIntentId||'')}" data-hold-minor="${Number(h.amountMinor||0)}" data-hold-currency="${esc(currency)}">
+        <div class="fdc-hold-summary">
+          <div><b>${money(amountMajor)} authorized</b><small>${esc(sourceLabel)}${card?` · ${esc(card)}`:''}</small></div>
+          <span class="fdc-hold-status">HOLD</span>
+        </div>
+        ${h.description?`<div class="fdc-hold-note">${esc(h.description)}</div>`:''}
+        <div class="fdc-hold-capture">
+          <label>Capture amount</label>
+          <input type="number" class="fdc-hold-capture-input" min="${factor===1?'1':'0.01'}" step="${factor===1?'1':'0.01'}" max="${amountMajor}" value="${amountMajor.toFixed(factor===1?0:2)}" inputmode="decimal" />
+        </div>
+        <div class="fdc-hold-buttons">
+          <button type="button" class="fdc-hold-btn capture" data-drawer-hold-action="capture">Capture</button>
+          <button type="button" class="fdc-hold-btn release" data-drawer-hold-action="release" ${releaseAllowed?'':`disabled title="${esc(releaseTitle)}"`}>Release</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="fdc-panel fdc-holds-panel"><h4>Authorized Payment Holds</h4>
+      <div class="fdc-holds-help">Capture the full amount or enter a smaller amount for partial capture. A final partial capture releases the unused authorization.</div>
+      <div class="fdc-holds-list">${rows}</div>
+    </div>`;
+  }
+
+  async function drawerHoldAction(button){
+    const d=state.currentDetails;
+    const row=button?.closest('.fdc-hold-card');
+    if(!d||!row||button.disabled) return;
+
+    const action=button.dataset.drawerHoldAction;
+    const paymentIntentId=String(row.dataset.holdPi||'').trim();
+    const currency=String(row.dataset.holdCurrency||cfg.currencyCode||'GBP').toUpperCase();
+    const authorizedMinor=Number(row.dataset.holdMinor||0);
+    if(!paymentIntentId||!action) return;
+
+    let amountMinor=null;
+    if(action==='capture'){
+      const input=row.querySelector('.fdc-hold-capture-input');
+      const major=Number(input?.value||0);
+      amountMinor=holdMinor(major,currency);
+      if(!(amountMinor>0)){showToast('Enter a valid capture amount.',true);input?.focus();return;}
+      if(authorizedMinor>0&&amountMinor>authorizedMinor){showToast('Capture amount cannot exceed the authorized hold.',true);input?.focus();return;}
+      if(authorizedMinor>0&&amountMinor<authorizedMinor){
+        if(!confirm(`Capture ${money(major)} from this hold? The remaining authorization will be released by Stripe.`)) return;
+      }
+    }else if(action==='release'){
+      if(!confirm('Release this card authorization without taking payment?')) return;
+    }
+
+    const urls=paymentHoldUrls();
+    const endpoint=action==='capture'?urls.capture:urls.release;
+    setButtonBusy(button,true,action==='capture'?'Capturing…':'Releasing…');
+    try{
+      const body={regId:d.regId,paymentIntentId};
+      if(action==='capture') body.amountMinor=amountMinor;
+      const j=await api(endpoint,{method:'POST',body:JSON.stringify(body)});
+      if(j?.ok===false) throw new Error(j.message||`Unable to ${action} hold.`);
+      showToast(j?.message||`Hold ${action==='capture'?'captured':'released'}.`);
+      await openDetails({regId:d.regId,paymentId:d.paymentId,guestName:d.guestName,roomNo:d.roomNo});
+      await loadCalendar(state.start,true);
+    }catch(e){
+      showToast(e.message||`Unable to ${action} hold.`,true);
+      setButtonBusy(button,false);
+    }
   }
 
   function detailsActions(d){
@@ -500,7 +639,6 @@
     }
     if(Number(d.balance||0)>0.005){
       actions.push(action('£','Record Payment','payment','payment-action'));
-      if(d.showAutoPay) actions.push(action('⚡','Auto Payment','autopay','payment-action'));
     }
     actions.push(action('✉','Send Email','sendpaylink','payment-action'));
 
@@ -535,7 +673,6 @@
     if(action==='payment'){openPayment(d,button);return;}
     if(action==='cardpayment' || action==='pdqpayment'){openPayment(d);return;}
     if(action==='sendpaylink'){openSendPaymentLink(d,button);return;}
-    if(action==='autopay'){openAutoPayment(d,button);return;}
     if(action==='unassign'){await moveToUnassigned(d,button);return;}
     if(action==='invoice'){openInvoice(d);return;}
     if(action==='confirm'){
@@ -640,25 +777,6 @@
 
     const w=window.open(u.toString(),'_blank','noopener');
     if(!w) showToast('Please allow pop-ups for this website.',true);
-  }
-
-  function openAutoPayment(d,button=null){
-    if(!d?.showAutoPay){showToast('Auto Payment is not available for this reservation.',true);return;}
-    if(!d.channexBookingId){showToast('Booking ID is missing for Auto Payment.',true);return;}
-    setButtonBusy(button,true,'Opening…');
-    try{
-      const u=legacyPageUrl('Autopayment.aspx');
-      u.searchParams.set('autorun','1');
-      u.searchParams.set('hotelId',cfg.hotelId||'');
-      u.searchParams.set('bookingId',d.channexBookingId);
-      u.searchParams.set('regId',d.regId||'');
-      u.searchParams.set('src',d.source||'NR');
-      if(Number(d.balance||0)>0) u.searchParams.set('amount',Number(d.balance).toFixed(2));
-      const w=window.open(u.toString(),'_blank','noopener,noreferrer');
-      if(!w) location.href=u.toString();
-    }finally{
-      setTimeout(()=>setButtonBusy(button,false),250);
-    }
   }
 
   async function openSendPaymentLink(d,button=null){
@@ -783,7 +901,7 @@ ${tag}`:tag;
     busy(true,'Loading guest history…');
     try{const u=new URL(cfg.historyUrl,location.origin);u.searchParams.set('regId',d.regId);const j=await api(u);const h=j.data;const rows=(h.stays||[]).map(x=>`<div class="fdc-kv"><span>${fmt(x.arrival,true)} – ${fmt(x.departure,true)} · ${esc(x.status)}</span><b>${esc(x.roomNo||'—')}</b></div>`).join('')||'<p>No previous stays found.</p>';openModal('Guest Stay History',`<div class="fdc-panel"><h4>${esc(h.guestName||d.guestName)}</h4>${rows}</div>`,'<button class="fdc-btn" data-close-modal>Close</button>');}catch(e){showToast(e.message,true);}finally{busy(false);}
   }
-  function openPayment(d){
+  function openPayment(d,button=null,options={}){
     if(!window.RecordPayment || typeof window.RecordPayment.open!=='function'){
       showToast('Record Payment component is not loaded.',true);
       return;
@@ -804,18 +922,16 @@ ${tag}`:tag;
       departure:d.departure||'',
       source:d.source||'NR',
       status:d.status||'',
-      // Auto Payment stays reservation-specific (virtual card + booking id + unpaid).
       showAutoPay:d.showAutoPay===true,
       isVirtualCard:d.isVirtualCard===true,
       // Online Card / PDQ are property + permission specific, resolved server-side.
       showOnlineCard:cfg.canOnlineCard==='1',
       showPdqPayment:cfg.canPdqPayment==='1',
       channexBookingId:d.channexBookingId||'',
+      focusHolds:options?.focusHolds===true,
       urls:{
         recordPaymentUrl:cfg.paymentUrl||'/CheckIn/RecordPayment',
-        prepareEmailUrl:calendarActionUrl('PrepareEmail'),
         pdqUrl:cfg.pdqUrl||'/TerminalCardPayment.aspx',
-        autoPaymentUrl:legacyPageUrl('Autopayment.aspx').toString()
       },
       onCompleted:async()=>{
         await openDetails({regId:d.regId,paymentId:d.paymentId});
@@ -933,7 +1049,6 @@ ${tag}`:tag;
 
     if(Number(item.balance||0)>0.005){
       actions.push(bookingMenuItem('£','Record Payment','payment','payment-action'));
-      if(item.showAutoPay) actions.push(bookingMenuItem('⚡','Auto Payment','autopay','payment-action'));
     }
     actions.push(bookingMenuItem('✉','Send Email','sendpaylink','payment-action'));
 
@@ -967,7 +1082,7 @@ ${tag}`:tag;
 
     const labels={
       checkin:'Checking in…', edit:'Opening…', cancel:'Opening…', undo:'Undoing…',
-      note:'Loading…', history:'Loading…', payment:'Loading…', sendpaylink:'Preparing…',
+      note:'Loading…', history:'Loading…', payment:'Loading…', holds:'Loading holds…', sendpaylink:'Preparing…',
       autopay:'Opening…', invoice:'Opening…', confirm:'Opening…', checkout:'Loading…',
       unassign:'Moving…'
     };
@@ -1037,7 +1152,6 @@ ${tag}`:tag;
         else if(action==='history'){closeAfter=true;deferredAction=()=>openHistoryPage(d);}
         else if(action==='payment'){closeAfter=true;deferredAction=()=>openPayment(d);}
         else if(action==='sendpaylink'){closeAfter=true;deferredAction=()=>openSendPaymentLink(d,null);}
-        else if(action==='autopay'){closeAfter=true;deferredAction=()=>openAutoPayment(d,null);}
         else if(action==='invoice'){closeAfter=true;deferredAction=()=>openInvoice(d);}
         else if(action==='confirm'){
           samePageNavigation=true;
@@ -1518,6 +1632,14 @@ ${tag}`:tag;
   calendar.addEventListener('pointerdown',e=>{const h=e.target.closest('[data-resize]');if(h)resizeStart(e,h);});
   document.addEventListener('pointermove',resizeMove);
   document.addEventListener('pointerup',resizeEnd);
+
+  drawerBody.addEventListener('click',e=>{
+    const b=e.target.closest('[data-drawer-hold-action]');
+    if(b){
+      e.preventDefault();
+      void drawerHoldAction(b);
+    }
+  });
 
   drawerFoot.addEventListener('click',e=>{
     const toggle=e.target.closest('[data-drawer-actions-toggle]');

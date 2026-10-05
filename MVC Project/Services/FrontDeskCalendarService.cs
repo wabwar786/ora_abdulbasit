@@ -1389,6 +1389,13 @@ WHERE hotel_id=@hotel
             return FrontDeskOperationResult.Fail("Reservation reference is missing.");
 
         var regId = NormalizeRegId(request.RegId);
+        var paymentMode = string.Equals(request.PaymentMode, "hold", StringComparison.OrdinalIgnoreCase)
+            ? "hold"
+            : "charge";
+        var reservationSource = string.Equals(request.Source, "GI", StringComparison.OrdinalIgnoreCase)
+            ? "GI"
+            : "NR";
+
         try
         {
             decimal due = 0m;
@@ -1451,17 +1458,26 @@ ORDER BY priority;", cn))
             // checkout session only when the guest opens the payment page.
             var root = (baseUrl ?? string.Empty).TrimEnd('/');
             var paymentUrl = string.Empty;
-            if (due > 0m)
+
+            var linkAmount = request.Amount.GetValueOrDefault() > 0m
+                ? Math.Round(request.Amount.GetValueOrDefault(), 2)
+                : Math.Round(due, 2);
+
+            if (due > 0m && linkAmount > due + 0.005m)
+                return FrontDeskOperationResult.Fail("Payment amount cannot exceed the outstanding balance.");
+
+            if (linkAmount > 0m)
             {
                 paymentUrl = $"{root}/PayNow.aspx?" +
                     $"reg_id={B64UrlEncode(regId)}&" +
                     $"hotel_id={B64UrlEncode(hotelId)}&" +
                     $"name={B64UrlEncode(guestName)}&" +
-                    $"amount={B64UrlEncode(due.ToString(CultureInfo.InvariantCulture))}&" +
+                    $"amount={B64UrlEncode(linkAmount.ToString(CultureInfo.InvariantCulture))}&" +
                     $"arrival={B64UrlEncode(string.Empty)}&" +
                     $"depart={B64UrlEncode(string.Empty)}&" +
-                    $"src={B64UrlEncode("NR")}&" +
-                    $"userid={B64UrlEncode(userId ?? string.Empty)}";
+                    $"src={B64UrlEncode(reservationSource)}&" +
+                    $"userid={B64UrlEncode(userId ?? string.Empty)}&" +
+                    $"payment_mode={Uri.EscapeDataString(paymentMode)}";
             }
 
             var invoiceUrl = $"{root}/InvoiceRecieving.aspx?hotel_id={B64UrlEncode(hotelId)}&reg_id={B64UrlEncode(regId)}";
@@ -1474,14 +1490,22 @@ $@"Hello {guestName},
 
 ";
 
-            var paymentMessage = due > 0m
-                ? $@"Hello {guestName},
+            var paymentMessage = linkAmount > 0m
+                ? (paymentMode == "hold"
+                    ? $@"Hello {guestName},
+
+Please use the secure link below to authorize {linkAmount:0.00} on your card. This is an authorization hold only; the hotel may capture it later:
+
+{paymentUrl}
+
+Thank you."
+                    : $@"Hello {guestName},
 
 Please use the secure payment link below to complete your payment:
 
 {paymentUrl}
 
-Thank you."
+Thank you.")
                 : genericMessage;
 
             var invoiceMessage = due > 0m

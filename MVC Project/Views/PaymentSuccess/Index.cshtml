@@ -1,0 +1,74 @@
+@model Orapmshms.Models.PaymentSuccessPageViewModel
+@{
+    Layout = null;
+    var state = (Model.State ?? "failed").ToLowerInvariant();
+    var icon = state == "success" ? "✓" : state == "authorized" ? "✓" : state == "canceled" ? "!" : "×";
+    var cls = state == "success" ? "ok" : state == "authorized" ? "auth" : state == "canceled" ? "warn" : "err";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@Model.Title</title>
+    <style>
+        :root { --ok:#12a66a; --auth:#2563eb; --warn:#f59e0b; --err:#ef4444; --ink:#111827; --muted:#667085; --bg:#f8fafc; --line:#e5e7eb; }
+        * { box-sizing:border-box; }
+        body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink); font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+        .wrap { width:min(470px,92vw); padding:18px; }
+        .card { background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 50px rgba(17,24,39,.10); padding:30px 26px; text-align:center; }
+        .icon { margin:0 auto 16px; width:66px; height:66px; border-radius:50%; display:grid; place-items:center; color:#fff; font-size:32px; font-weight:800; }
+        .icon.ok { background:var(--ok); } .icon.auth { background:var(--auth); } .icon.warn { background:var(--warn); } .icon.err { background:var(--err); }
+        h1 { margin:0 0 8px; font-size:26px; } .message { margin:0 auto; max-width:370px; color:var(--muted); line-height:1.55; font-size:14px; }
+        .details { margin:22px 0 0; padding-top:15px; border-top:1px solid var(--line); text-align:left; }
+        .row { display:flex; justify-content:space-between; gap:18px; padding:8px 0; font-size:13px; }
+        .row span { color:var(--muted); } .row strong { text-align:right; overflow-wrap:anywhere; }
+        .actions { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:22px; }
+        .btn { display:inline-block; border-radius:10px; padding:11px 16px; text-decoration:none; font-weight:700; font-size:14px; background:#0b1b33; color:#fff; }
+        .notice { margin-top:16px; padding:11px 12px; border-radius:10px; background:#eff6ff; color:#1d4ed8; font-size:12px; line-height:1.45; text-align:left; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="card">
+        <div class="icon @cls">@icon</div>
+        <h1>@Model.Title</h1>
+        <p class="message">@Model.Message</p>
+
+        @if (Model.IsSuccess || Model.IsAuthorized)
+        {
+            <div class="details">
+                @if (Model.Amount > 0)
+                {
+                    <div class="row"><span>@(Model.IsAuthorized ? "Authorized amount" : "Amount")</span><strong>@Model.Currency @Model.Amount.ToString("0.00")</strong></div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.RegId))
+                {
+                    <div class="row"><span>Reservation</span><strong>@Model.RegId</strong></div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.PaymentIntentId))
+                {
+                    <div class="row"><span>Payment ID</span><strong>@Model.PaymentIntentId</strong></div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.CardDisplay))
+                {
+                    <div class="row"><span>Card</span><strong>@Model.CardDisplay</strong></div>
+                }
+            </div>
+
+            @if (Model.IsAuthorized)
+            {
+                <div class="notice">This is an authorization hold only. The hotel can capture or release it from ORA PMS. It is not posted as a paid reservation amount until captured.</div>
+            }
+        }
+
+        <div class="actions">
+            @if (!string.IsNullOrWhiteSpace(Model.ReceiptUrl) && Model.IsSuccess)
+            {
+                <a class="btn" href="@Model.ReceiptUrl" target="_blank" rel="noopener noreferrer">View Receipt</a>
+            }
+        </div>
+    </div>
+</div>
+</body>
+</html>
