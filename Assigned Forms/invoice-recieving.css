@@ -1,0 +1,321 @@
+/* the page content only - the shared layout owns the body */
+.inv-page { padding: 24px 16px 40px; }
+
+.inv-root {
+    font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+    --inv-ink: #16233A;
+    --inv-ink-2: #33425C;
+    --inv-muted: #6B7A93;
+    --inv-soft: #93A1B5;
+    --inv-line: #E7ECF4;
+    --inv-line-2: #F1F5FA;
+    --inv-navy: #102F5C;
+    --inv-navy-soft: rgba(16, 47, 92, .08);
+    --inv-blue-soft: #EBF1F8;
+    --inv-band: #F8FAFC;
+    --inv-red: #D63B3B;
+    --inv-green: #15803D;
+
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid var(--inv-line);
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(22,35,58,.04), 0 12px 32px -20px rgba(22,35,58,.3);
+    overflow: hidden;
+
+    color: var(--inv-ink);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.inv-root *, .inv-root *::before, .inv-root *::after { box-sizing: border-box; }
+
+/* rows the page keeps in the markup but does not show */
+.inv-hidden { display: none !important; }
+
+.inv-label {
+    font-size: 10px; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; color: var(--inv-muted);
+}
+
+/* ---------- empty state ---------- */
+.inv-empty { padding: 44px 28px; text-align: center; }
+.inv-empty-title { font-size: 15px; font-weight: 700; color: var(--inv-ink); }
+.inv-empty-text {
+    margin: 8px auto 0; max-width: 56ch;
+    font-size: 12.5px; line-height: 1.6; color: var(--inv-muted);
+    overflow-wrap: anywhere;
+}
+
+/* ---------- header ---------- */
+
+/* a thin navy rule across the top gives the document its anchor */
+.inv-accent {
+    height: 4px; background: var(--inv-navy);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+
+/* a light wash lifts the header off the page without adding weight */
+.inv-head {
+    padding: 24px 28px 22px;
+    border-bottom: 1px solid var(--inv-line);
+    background: linear-gradient(180deg, var(--inv-blue-soft) 0%, #F4F8FC 55%, #fff 100%);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+
+/* logo in the left corner · hotel block centred · INVOICE on the right */
+.inv-head-grid {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 24px; align-items: center;
+}
+.inv-brand-block {
+    display: flex; align-items: center; gap: 18px; min-width: 0;
+}
+.inv-brand { min-width: 0; }
+
+.inv-brand-name {
+    font-size: 19px; font-weight: 700; letter-spacing: -.2px;
+    color: var(--inv-ink); line-height: 1.2;
+}
+.inv-brand-rule { width: 1px; align-self: stretch; background: var(--inv-line); }
+.inv-brand-sub {
+    margin: 6px 0 0;
+    font-size: 11.5px; line-height: 1.75; color: var(--inv-muted);
+    overflow-wrap: anywhere;
+}
+.inv-brand-sub a { color: inherit; text-decoration: none; }
+.inv-brand-sub a:hover { color: var(--inv-navy); }
+
+.inv-logo { display: flex; align-items: center; justify-content: flex-start; min-width: 0; }
+/* hotel.Logo, whatever its pixel size: never wider than 120px and never
+   taller than 56px, so a big or square logo cannot dominate the header */
+.inv-logo img {
+    max-width: 120px; max-height: 56px; width: auto; height: auto;
+    object-fit: contain; object-position: left center; display: block;
+}
+
+.inv-title-wrap { text-align: right; }
+.inv-title {
+    margin: 0;
+    font-size: 26px; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--inv-ink);
+}
+
+/* ---------- bill to + meta ---------- */
+.inv-meta {
+    padding: 20px 28px; border-bottom: 1px solid var(--inv-line);
+    background: var(--inv-band);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+/* one panel, two halves: the guest on the left, the invoice facts on the right */
+.inv-card {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    border: 1px solid var(--inv-line); border-radius: 10px; background: #fff;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.inv-card-guest {
+    display: flex; align-items: center; min-width: 0;
+    padding: 18px 26px;
+}
+.inv-card-meta { padding: 10px 26px; border-left: 1px solid var(--inv-line); min-width: 0; }
+.inv-billto-head:empty { display: none; }
+.inv-billto-name { margin: 0; font-size: 17px; font-weight: 700; color: var(--inv-ink); }
+
+.inv-meta-list { margin: 0; list-style: none; }
+.inv-meta-row {
+    display: grid; grid-template-columns: 150px minmax(0, 1fr);
+    align-items: baseline; gap: 14px;
+    padding: 9px 0; min-height: 34px;
+}
+.inv-meta-row:first-child { padding-top: 2px; }
+.inv-meta-row:last-child { padding-bottom: 2px; }
+.inv-meta-row + .inv-meta-row { border-top: 1px solid var(--inv-line); }
+.inv-meta-row .inv-leader { display: none; }
+.inv-meta-row b { text-align: right; font-size: 13px; font-weight: 700; color: var(--inv-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+
+/* ---------- lines ---------- */
+.inv-lines { padding: 22px 28px 0; }
+.inv-table-wrap { overflow-x: auto; }
+
+.inv-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+
+.inv-table thead th {
+    padding: 10px 10px; background: #fff;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    border-top: 1px solid var(--inv-line); border-bottom: 1px solid var(--inv-line);
+    font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    color: var(--inv-ink-2); text-align: left; white-space: nowrap;
+}
+.inv-table thead th:first-child { border-radius: 8px 0 0 0; }
+.inv-table thead th:last-child { border-radius: 0 8px 0 0; }
+
+.inv-table tbody td {
+    padding: 10px; border-bottom: 1px solid var(--inv-line-2);
+    color: var(--inv-ink-2); vertical-align: top;
+}
+
+.inv-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inv-table thead th.inv-num { text-align: right; }
+.inv-date { white-space: nowrap; }
+
+.inv-table tr.inv-group td {
+    padding: 10px; background: var(--inv-blue-soft);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    border-bottom: 1px solid #DCE6F1;
+    font-size: 12px; font-weight: 700; letter-spacing: .1px; color: var(--inv-navy);
+}
+.inv-group-title { display: inline-flex; align-items: center; gap: 8px; }
+
+.inv-descr { display: block; color: var(--inv-ink); font-weight: 600; }
+.inv-descr-sub { display: block; margin-top: 2px; font-size: 11.5px; color: var(--inv-muted); }
+.inv-sn { text-align: left; color: var(--inv-muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- totals ---------- */
+.inv-totals { display: flex; justify-content: flex-end; padding: 16px 28px 0; }
+.inv-totals-box { width: min(320px, 100%); }
+
+.inv-total-line {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 20px;
+    padding: 5px 0; font-size: 12.5px; color: var(--inv-ink-2);
+}
+.inv-total-line b { font-weight: 700; color: var(--inv-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.inv-total-line.inv-gross { padding-top: 9px; border-top: 1px solid var(--inv-line); }
+.inv-total-line.inv-due {
+    margin-top: 10px; padding: 11px 14px; border-radius: 8px;
+    background: var(--inv-navy); font-size: 13.5px; font-weight: 700; color: #fff;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.inv-total-line.inv-due b { font-size: 16px; font-weight: 700; color: #fff; }
+
+.inv-thanks {
+    margin: 24px 28px 0; padding-top: 20px; border-top: 1px solid var(--inv-line);
+    text-align: center; font-size: 13.5px; font-weight: 700; color: var(--inv-ink-2);
+}
+
+/* ---------- pay panel ---------- */
+.inv-pay {
+    display: flex; align-items: center; gap: 16px;
+    width: min(560px, 100%);
+    margin: 20px 28px 0; padding: 14px;
+    border: 1px solid var(--inv-line); border-radius: 10px; background: var(--inv-band);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.inv-pay-qr { flex: none; }
+.inv-pay-qr a { display: block; line-height: 0; }
+.inv-pay-qr img,
+.inv-pay-qr svg {
+    width: 82px; height: 82px; display: block;
+    border: 1px solid var(--inv-line); border-radius: 8px; background: #fff; padding: 5px;
+}
+.inv-pay-body { min-width: 0; flex: 1; }
+.inv-pay-caption { margin: 6px 0 0; font-size: 12px; color: var(--inv-ink-2); }
+
+/* the link, with a small copy icon sitting at the end of it */
+.inv-paylink { margin-top: 8px; min-width: 0; font-size: 11.5px; line-height: 1.7; }
+.inv-paylink-url { color: var(--inv-muted); overflow-wrap: anywhere; }
+.inv-copy {
+    vertical-align: -6px; margin-left: 7px;
+    width: 24px; height: 24px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--inv-line); border-radius: 6px; background: #fff;
+    color: var(--inv-muted); cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+}
+.inv-copy svg { width: 13px; height: 13px; }
+.inv-copy:hover { color: var(--inv-navy); border-color: #C9D6E6; background: var(--inv-line-2); }
+.inv-copy:focus-visible { outline: 2px solid var(--inv-navy); outline-offset: 2px; }
+
+/* the field only exists so the copy fallback has something to select */
+.inv-paylink input {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* kept for any secondary action the live page adds */
+.inv-btn {
+    height: 34px; padding: 0 15px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    border: 1px solid var(--inv-line); border-radius: 8px; background: #fff; color: var(--inv-ink-2);
+    font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+}
+.inv-btn:hover { background: var(--inv-line-2); }
+.inv-btn:focus-visible { outline: 2px solid var(--inv-navy); outline-offset: 2px; }
+
+.inv-copied { flex: none; font-size: 11.5px; font-weight: 600; color: #15803D; opacity: 0; transition: opacity .2s; }
+.inv-copied.inv-on { opacity: 1; }
+
+/* ---------- footer ---------- */
+.inv-contact { margin: 14px 28px 0; text-align: center; font-size: 12px; color: var(--inv-muted); }
+.inv-contact a { color: var(--inv-navy); }
+
+.inv-vat {
+    margin: 22px 0 0; padding: 14px 28px;
+    border-top: 1px solid var(--inv-line); background: var(--inv-band);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    text-align: center; font-size: 12px; font-weight: 700; color: var(--inv-ink-2); line-height: 1.5;
+}
+
+/* ---------- responsive (screen only: paper is always the wide layout) ---------- */
+@media screen and (max-width: 720px) {
+    .inv-page { padding: 12px 10px 24px; }
+    .inv-root { border-radius: 12px; }
+
+    .inv-head { padding: 18px 16px 14px; }
+    .inv-head-grid { grid-template-columns: 1fr; gap: 14px; }
+    .inv-brand-block { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .inv-brand-rule { display: none; }
+    .inv-logo { justify-content: flex-start; }
+    .inv-logo img { max-width: 120px; max-height: 48px; }
+    .inv-title-wrap { text-align: left; }
+
+    .inv-meta { padding: 16px; }
+    .inv-card { grid-template-columns: 1fr; }
+    .inv-card-guest { padding: 14px 16px; }
+    .inv-card-meta { padding: 6px 16px 10px; border-left: 0; border-top: 1px solid var(--inv-line); }
+    .inv-meta-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+
+    .inv-lines { padding: 18px 16px 0; }
+    .inv-table { min-width: 560px; }
+
+    .inv-totals { padding: 14px 16px 0; }
+    .inv-totals-box { width: 100%; }
+
+    .inv-thanks, .inv-pay, .inv-contact { margin-left: 16px; margin-right: 16px; }
+    .inv-pay { width: 100%; flex-direction: column; align-items: flex-start; }
+    .inv-paylink { flex-wrap: wrap; }
+    .inv-vat { padding: 12px 16px 18px; }
+}
+
+/* ---------- print ---------- */
+@media print {
+    @page { size: A4 portrait; margin: 12mm 10mm; }
+
+    /* only the invoice reaches the paper */
+    body > *:not(.inv-page) { display: none !important; }
+
+    .inv-page { padding: 0; }
+
+    .inv-root {
+        max-width: none; width: 100%;
+        border: 0; border-radius: 0; box-shadow: none;
+    }
+
+    .inv-noprint { display: none !important; }
+
+    .inv-head, .inv-meta, .inv-lines, .inv-totals,
+    .inv-thanks, .inv-pay, .inv-contact, .inv-vat {
+        padding-left: 0; padding-right: 0; margin-left: 0; margin-right: 0;
+    }
+
+    .inv-pay { background: #fff; }
+    .inv-pay-qr img, .inv-pay-qr svg { width: 84px; height: 84px; }
+
+    .inv-table tr, .inv-table thead { page-break-inside: avoid; }
+    .inv-table thead { display: table-header-group; }
+
+    .inv-totals, .inv-pay, .inv-thanks { page-break-inside: avoid; }
+}
