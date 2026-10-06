@@ -305,6 +305,8 @@
         `style="left:${left};width:${width}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}">`+
         `<span class="name">${esc(item.guestName||item.regId)}</span>`+
         `<span class="pay-dot ${payClass}" title="${esc(item.paymentStatus||'')}"></span>`+
+        `${item.hasNote?'<span class="fdc-note-indicator" title="Notebook note" aria-label="Notebook note">★</span>':''}`+
+        `${item.hasRoomChange?'<span class="fdc-room-change-indicator" title="Room changed" aria-label="Room changed">★</span>':''}`+
         `${item.canResize?'<span class="fdc-handle right" data-resize="right"></span>':''}</div>`);
     };
 
@@ -895,7 +897,7 @@
 ${tag}`:tag;
       ta.focus();
     }));
-    $('saveNote').onclick=async e=>{const btn=e.currentTarget;await mutate(cfg.noteUrl,{regId:d.regId,notes:$('fdcNote').value},'Saving…',btn);d.frontDeskNotes=$('fdcNote').value;closeModal();await openDetails({regId:d.regId,paymentId:d.paymentId});};
+    $('saveNote').onclick=async e=>{const btn=e.currentTarget;await mutate(cfg.noteUrl,{regId:d.regId,notes:$('fdcNote').value},'Saving…',btn);d.frontDeskNotes=$('fdcNote').value;closeModal();await loadCalendar(state.start,true);await openDetails({regId:d.regId,paymentId:d.paymentId});};
   }
   async function openHistory(d){
     busy(true,'Loading guest history…');

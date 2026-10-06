@@ -413,6 +413,30 @@ ORDER BY BlockStartDate, BlockID;";
             }
         }
 
+        // Match the legacy WebForms calendar indicators without putting either
+        // lookup into the main calendar SQL. Keeping them isolated means an old
+        // or optional indicator table can never stop the calendar itself loading.
+        // Both lookups are reservation-level, so every room bar for the same
+        // reservation receives the same marker.
+        var visibleRegIds = bookings
+            .Select(x => NormalizeRegId(x.RegId))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (visibleRegIds.Count > 0)
+        {
+            var noteRegIds = await LoadNotebookIndicatorRegIdsAsync(hotelId, visibleRegIds, ct);
+            var roomChangedRegIds = await LoadRoomChangedIndicatorRegIdsAsync(hotelId, visibleRegIds, ct);
+
+            foreach (var booking in bookings)
+            {
+                var normalizedRegId = NormalizeRegId(booking.RegId);
+                booking.HasNote = noteRegIds.Contains(normalizedRegId);
+                booking.HasRoomChange = roomChangedRegIds.Contains(normalizedRegId);
+            }
+        }
+
         // UNASSIGNED is a virtual lane per category. It is intentionally not returned as a physical room.
         return new FrontDeskCalendarPayload
         {
@@ -2642,6 +2666,129 @@ GROUP BY pa.action_id,pa.action_name;", cn);
     {
         var s = (status ?? string.Empty).Trim().ToLowerInvariant();
         return s is "check out" or "checked out" or "checkout" or "cancelled" or "canceled";
+    }
+
+    private async Task<HashSet<string>> LoadNotebookIndicatorRegIdsAsync(
+        string hotelId,
+        IReadOnlyCollection<string> visibleRegIds,
+        CancellationToken ct)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ids = (visibleRegIds ?? Array.Empty<string>())
+            .Select(NormalizeRegId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (ids.Count == 0) return result;
+
+        try
+        {
+            await using var cn = new SqlConnection(_connectionString);
+            await cn.OpenAsync(ct);
+
+            // Same idea as the WebForms notebook cache: load the visible
+            // reservation IDs in bounded batches and never query per bar/cell.
+            const int batchSize = 400;
+            for (var offset = 0; offset < ids.Count; offset += batchSize)
+            {
+                var batch = ids.Skip(offset).Take(batchSize).ToList();
+                await using var cmd = cn.CreateCommand();
+                cmd.CommandTimeout = 15;
+                cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+
+                var parameterNames = new List<string>(batch.Count);
+                for (var i = 0; i < batch.Count; i++)
+                {
+                    var parameterName = "@reg" + i.ToString(CultureInfo.InvariantCulture);
+                    parameterNames.Add(parameterName);
+                    cmd.Parameters.Add(parameterName, SqlDbType.VarChar, 100).Value = batch[i];
+                }
+
+                cmd.CommandText = @"
+SELECT CONVERT(varchar(100),reg_id) AS reg_id
+FROM dbo.GuestNoteBook WITH (READPAST)
+WHERE hotel_id=@hotel
+  AND reg_id IN (" + string.Join(",", parameterNames) + @")
+  AND ISNULL(CONVERT(varchar(max),description),'') <> '';";
+
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                while (await rd.ReadAsync(ct))
+                {
+                    var regId = NormalizeRegId(S(rd, "reg_id"));
+                    if (!string.IsNullOrWhiteSpace(regId)) result.Add(regId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Indicator lookup is deliberately non-fatal, matching WebForms.
+            _logger.Debug(ex, "Calendar notebook indicator lookup skipped.");
+        }
+
+        return result;
+    }
+
+    private async Task<HashSet<string>> LoadRoomChangedIndicatorRegIdsAsync(
+        string hotelId,
+        IReadOnlyCollection<string> visibleRegIds,
+        CancellationToken ct)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var visible = new HashSet<string>(
+            (visibleRegIds ?? Array.Empty<string>())
+                .Select(NormalizeRegId)
+                .Where(x => !string.IsNullOrWhiteSpace(x)),
+            StringComparer.OrdinalIgnoreCase);
+
+        if (visible.Count == 0) return result;
+
+        try
+        {
+            await using var cn = new SqlConnection(_connectionString);
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(@"
+SELECT DISTINCT
+       LTRIM(RTRIM(CONVERT(varchar(100),RegID))) AS RegID
+FROM dbo.RoomChangeLogTB WITH (READPAST)
+WHERE HotelID=@hotel
+  AND RegID IS NOT NULL
+  AND LTRIM(RTRIM(CONVERT(varchar(100),RegID)))<>'';", cn)
+            {
+                CommandTimeout = 15
+            };
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct))
+            {
+                var regId = NormalizeRoomChangeIndicatorRegId(S(rd, "RegID"));
+                if (regId.Length > 0 && visible.Contains(regId)) result.Add(regId);
+            }
+        }
+        catch (Exception ex)
+        {
+            // The old page also allowed the calendar to load when this optional
+            // lookup failed. Preserve that behaviour in MVC.
+            _logger.Debug(ex, "Calendar room-change indicator lookup skipped.");
+        }
+
+        return result;
+    }
+
+    private static string NormalizeRoomChangeIndicatorRegId(string? value)
+    {
+        var v = NormalizeRegId(value);
+        if (v.Length == 0) return string.Empty;
+
+        return v.ToUpperInvariant() switch
+        {
+            "A" or "B" or "D" or "O" or "CO" or "R" or "P" or
+            "AVAILABLE" or "DIRTY" or "BLOCKED" or
+            "CHECK IN" or "CHECK OUT" or "CHECKIN" or "CHECKOUT" or
+            "PROVISIONAL" or "RESERVATION" or "⛔" => string.Empty,
+            _ => v
+        };
     }
 
     private static string NormalizeRegId(string? value)

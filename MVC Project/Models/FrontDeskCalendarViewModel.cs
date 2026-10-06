@@ -114,6 +114,11 @@ public sealed class FrontDeskBookingDto
     public int Infants { get; set; }
     public bool CanDrag { get; set; }
     public bool CanResize { get; set; }
+    // Calendar-only indicators copied from the legacy WebForms behaviour.
+    // These flags do not change booking/payment state; they only control the
+    // small markers rendered on the booking bar.
+    public bool HasNote { get; set; }
+    public bool HasRoomChange { get; set; }
 }
 
 public sealed class FrontDeskBlockDto

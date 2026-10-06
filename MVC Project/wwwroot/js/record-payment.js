@@ -200,23 +200,13 @@
     const urls=optionsFor(current);
     const button=cleanMode==='hold'?els.onlineHold:els.onlineCharge;
 
-    // Open a same-origin tab synchronously from the user's click so Chrome does not
-    // block it. Do not detach opener before navigation: some Chrome builds can leave
-    // the newly-created tab sitting on about:blank when the later async redirect runs.
-    let payWindow=null;
-    try{
-      payWindow=window.open('', 'oraPayNowCheckout');
-      if(payWindow && !payWindow.closed){
-        try{
-          payWindow.document.open();
-          payWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>ORA PMS - Secure Payment</title></head><body style="font-family:Arial,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#f6f8fb;color:#0b1b33"><div style="text-align:center"><div style="font-size:18px;font-weight:700;margin-bottom:8px">Preparing secure payment…</div><div style="font-size:13px;color:#667085">Please wait while ORA PMS opens PayNow.</div></div></body></html>');
-          payWindow.document.close();
-        }catch(_){}
-        try{payWindow.focus();}catch(_){}
-      }
-    }catch(_){payWindow=null;}
+    // Generate the PayNow link only. Do not open or redirect automatically.
+    // Staff can copy the generated link for the guest or explicitly press Open.
+    if(els.onlineLink) els.onlineLink.hidden=true;
+    if(els.onlineLinkValue) els.onlineLinkValue.value='';
+    if(els.onlineLinkHint) els.onlineLinkHint.textContent='';
 
-    setBusy(button,true,cleanMode==='hold'?'Opening hold checkout…':'Opening card checkout…');
+    setBusy(button,true,cleanMode==='hold'?'Generating hold link…':'Generating charge link…');
     await waitForPaint();
 
     try{
@@ -239,29 +229,16 @@
       if(els.onlineLinkValue) els.onlineLinkValue.value=paymentUrl;
       if(els.onlineLinkHint){
         els.onlineLinkHint.textContent=cleanMode==='hold'
-          ? 'Hold checkout is ready. The card is authorized only until you capture it.'
-          : 'Charge checkout is ready for immediate card payment.';
+          ? 'Hold PayNow link generated. Copy it for the guest or press Open to test it.'
+          : 'Charge PayNow link generated. Copy it for the guest or press Open to test it.';
+      }
+      if(els.onlineLink){
+        els.onlineLink.hidden=false;
+        els.onlineLink.scrollIntoView({behavior:'smooth',block:'nearest'});
       }
 
-      let opened=false;
-      if(payWindow && !payWindow.closed){
-        try{
-          payWindow.location.href=paymentUrl;
-          payWindow.focus();
-          opened=true;
-        }catch(_){}
-      }
-
-      // Fallback only. Normally the PayNow page opens directly and this block stays hidden.
-      if(els.onlineLink) els.onlineLink.hidden=opened;
-
-      if(opened){
-        showToast(cleanMode==='hold'?'Hold checkout opened.':'Charge checkout opened.');
-      }else{
-        showToast('The browser blocked PayNow. Use Open below.',true);
-      }
+      showToast(cleanMode==='hold'?'Hold PayNow link generated.':'Charge PayNow link generated.');
     }catch(e){
-      try{if(payWindow && !payWindow.closed) payWindow.close();}catch(_){}
       if(els.onlineLink) els.onlineLink.hidden=true;
       showToast(e.message||'Unable to prepare the PayNow link.',true);
     }finally{

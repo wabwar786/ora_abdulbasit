@@ -1129,3 +1129,20 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
   color:#fff!important;
   box-shadow:inset 3px 0 0 #5da5e8!important;
 }
+/* 2026-10-06 WebForms parity: notebook + room-change indicators on booking bars. */
+.fdc-bar .fdc-note-indicator,
+.fdc-bar .fdc-room-change-indicator{
+  flex:0 0 12px;
+  width:12px;
+  height:12px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:400;
+  line-height:1;
+  pointer-events:none;
+}
+.fdc-bar .fdc-note-indicator{color:#fff}
+.fdc-bar .fdc-room-change-indicator{color:#000}
+
