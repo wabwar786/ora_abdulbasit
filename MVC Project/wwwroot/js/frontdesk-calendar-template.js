@@ -812,7 +812,7 @@
     modalBody.innerHTML=`<div class="fdc-email-composer">
       <div class="fdc-email-subtitle">Write any guest message, or choose an invoice/payment template.</div>
       <div class="fdc-email-tabs">
-        ${tabs.map((t,i)=>`<button type="button" class="fdc-email-tab ${i===0?'active':''}" data-email-tab="${t.key}" ${t.disabled?'disabled aria-disabled="true"':''}>${esc(t.label)} <span>${esc(t.badge)}</span></button>`).join('')}
+        ${tabs.map((t,i)=>`<button type="button" class="fdc-email-tab ${i===0?'fdc-is-active':''}" data-email-tab="${t.key}" ${t.disabled?'disabled aria-disabled="true"':''}>${esc(t.label)} <span>${esc(t.badge)}</span></button>`).join('')}
       </div>
       <div class="fdc-email-field">
         <label>To (Email)</label>
@@ -833,7 +833,7 @@
       const t=getTab();
       $('fdcEmailMessage').value=t.message||'';
       $('fdcSendEmailText').textContent='Send Email';
-      modalBody.querySelectorAll('[data-email-tab]').forEach(btn=>btn.classList.toggle('active',btn.dataset.emailTab===active));
+      modalBody.querySelectorAll('[data-email-tab]').forEach(btn=>btn.classList.toggle('fdc-is-active',btn.dataset.emailTab===active));
     };
 
     modalBody.querySelectorAll('[data-email-tab]').forEach(btn=>{
@@ -1212,7 +1212,7 @@ ${tag}`:tag;
     calendar.querySelectorAll('.fdc-dnd-date-active').forEach(x=>x.classList.remove('fdc-dnd-date-active'));
     const preview=document.querySelector('#fdcDragFocusLayer .fdc-destination-preview');
     if(preview){
-      preview.classList.remove('active','invalid');
+      preview.classList.remove('fdc-is-active','invalid');
       preview.style.transform='translate3d(-10000px,-10000px,0)';
       preview.style.width='1px';
       preview.style.height='1px';
@@ -1233,7 +1233,7 @@ ${tag}`:tag;
     preview.style.transform='translate3d(-10000px,-10000px,0)';
     preview.style.width='1px';
     preview.style.height='1px';
-    layer.classList.add('active');
+    layer.classList.add('fdc-is-active');
     document.body.classList.add('fdc-dnd-focus-active');
     page.classList.add('is-dragging');
     closeTip();
@@ -1242,7 +1242,7 @@ ${tag}`:tag;
   function endDragFocus(){
     clearDestinationHighlights();
     const layer=document.getElementById('fdcDragFocusLayer');
-    layer?.classList.remove('active');
+    layer?.classList.remove('fdc-is-active');
     document.body.classList.remove('fdc-dnd-focus-active');
     page.classList.remove('is-dragging');
     state.dragFocus=null;
@@ -1310,7 +1310,7 @@ ${tag}`:tag;
       preview.style.width=`${Math.max(1,Math.round(right-left))}px`;
       preview.style.height=`${Math.max(1,Math.round(bottom-top))}px`;
       preview.classList.toggle('invalid',!valid);
-      preview.classList.add('active');
+      preview.classList.add('fdc-is-active');
     }
 
     if(state.dragFocus){
@@ -1370,7 +1370,7 @@ ${tag}`:tag;
     document.body.classList.toggle('fdc-move-drop-pending',!!show);
     if(preview){
       preview.classList.toggle('loading',!!show);
-      if(show) preview.classList.add('active');
+      if(show) preview.classList.add('fdc-is-active');
     }
     if(show){
       closeTip();

@@ -180,8 +180,8 @@
 .fdc-email-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:#eef2f7;border-radius:12px;padding:6px}
 .fdc-email-tab{height:42px;border:0;border-radius:10px;background:transparent;color:#172b45;font-size:12px;font-weight:800;cursor:pointer}
 .fdc-email-tab span{display:inline-grid;place-items:center;margin-left:5px;min-width:28px;height:20px;padding:0 6px;border-radius:10px;background:#dfe6ef;color:#263b55;font-size:9px}
-.fdc-email-tab.active{background:#fff;box-shadow:0 4px 12px rgba(15,35,57,.08)}
-.fdc-email-tab.active span{background:#d7e8ff;color:#0c2238}
+.fdc-email-tab.fdc-is-active{background:#fff;box-shadow:0 4px 12px rgba(15,35,57,.08)}
+.fdc-email-tab.fdc-is-active span{background:#d7e8ff;color:#0c2238}
 .fdc-email-field{display:flex;flex-direction:column;gap:6px}
 .fdc-email-field label{font-size:11px;font-weight:800;color:#1f3046}
 .fdc-email-field input,.fdc-email-field textarea{width:100%;border:1px solid #d3dce6;border-radius:12px;background:#fff;color:#26384e;padding:11px 13px;font:inherit;outline:0}
@@ -566,7 +566,7 @@
    mute unrelated booking bars, keep the dragged reservation sharp, highlight the
    destination room + date headers, and show one exact half-arrival/half-departure preview. */
 #fdcDragFocusLayer{display:none;pointer-events:none}
-#fdcDragFocusLayer.active{display:contents}
+#fdcDragFocusLayer.fdc-is-active{display:contents}
 .fdc-drag-focus-backdrop{
   position:fixed;
   inset:0;
@@ -636,7 +636,7 @@ body.fdc-dnd-focus-active{cursor:grabbing!important}
   transition:none;
   will-change:transform,width,height;
 }
-.fdc-destination-preview.active{display:block}
+.fdc-destination-preview.fdc-is-active{display:block}
 .fdc-destination-preview.invalid{
   outline:2px solid #d95a5a;
   outline-offset:-2px;
@@ -987,12 +987,12 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
   box-shadow:none!important;
 }
 .fdc-email-tab{box-shadow:none!important}
-.fdc-email-tab.active{
+.fdc-email-tab.fdc-is-active{
   background:#0c2238!important;
   color:#fff!important;
   box-shadow:none!important;
 }
-.fdc-email-tab.active span{background:rgba(255,255,255,.16)!important;color:#fff!important}
+.fdc-email-tab.fdc-is-active span{background:rgba(255,255,255,.16)!important;color:#fff!important}
 .fdc-email-tab:disabled{opacity:.42;cursor:not-allowed;background:transparent!important;color:#718097!important}
 .fdc-email-tab:disabled span{background:#dfe6ef!important;color:#718097!important}
 @media(max-width:720px){
