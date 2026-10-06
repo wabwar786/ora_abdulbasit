@@ -751,7 +751,7 @@
   function openHistoryPage(d){
     if(!d?.regId){showToast('Reservation reference is missing.',true);return;}
     const regB64=base64(d.regId);
-    const u=legacyPageUrl('Reservation_History.aspx');
+    const u=legacyPageUrl('Reservation_History');
 
     // Exact WebForms calendar navigation contract.
     u.searchParams.set('UD',queryOrB64('UD',cfg.userId));
@@ -771,14 +771,31 @@
 
   function openInvoice(d){
     if(!d?.regId){showToast('Reservation reference is missing.',true);return;}
-    const u=legacyPageUrl('InvoiceRecieving.aspx');
 
-    // WebForms btnViewInvoice uses URL-safe base64 for these two values.
-    u.searchParams.set('reg_id',base64Url(d.regId));
-    u.searchParams.set('hotel_id',base64Url(cfg.hotelId||''));
+    // POST the reservation reference so it never appears in the browser URL.
+    // The server creates a stateless protected token and redirects the new tab
+    // to /InvoiceRecieving/i/{token}, which is safe to copy/send to a customer.
+    const u=legacyPageUrl('InvoiceRecieving/OpenShare');
+    const form=document.createElement('form');
+    form.method='POST';
+    form.action=u.toString();
+    form.target='_blank';
+    form.style.display='none';
 
-    const w=window.open(u.toString(),'_blank','noopener');
-    if(!w) showToast('Please allow pop-ups for this website.',true);
+    const addField=(name,value)=>{
+      const input=document.createElement('input');
+      input.type='hidden';
+      input.name=name;
+      input.value=String(value??'');
+      form.appendChild(input);
+    };
+
+    addField('regId',d.regId);
+    if(token) addField('__RequestVerificationToken',token);
+
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
   }
 
   async function openSendPaymentLink(d,button=null){

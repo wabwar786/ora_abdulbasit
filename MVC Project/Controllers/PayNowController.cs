@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Models;
@@ -21,12 +23,19 @@ public sealed class PayNowController : Controller
     private readonly string _connectionString;
     private readonly ILogger<PayNowController> _logger;
     private readonly TerminalCardPaymentStripeClient _stripe = new();
+    private readonly IDataProtector _payNowProtector;
 
-    public PayNowController(IConfiguration configuration, ILogger<PayNowController> logger)
+    private const string PayNowSharePurpose = "ORAPMS.PayNowShare.v1";
+
+    public PayNowController(
+        IConfiguration configuration,
+        ILogger<PayNowController> logger,
+        IDataProtectionProvider dataProtectionProvider)
     {
         _connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is not configured.");
         _logger = logger;
+        _payNowProtector = dataProtectionProvider.CreateProtector(PayNowSharePurpose);
     }
 
 
@@ -134,17 +143,23 @@ ORDER BY
                 });
 
             var root = $"{Request.Scheme}://{Request.Host}{Request.PathBase}".TrimEnd('/');
-            var paymentUrl =
-                $"{root}/PayNow.aspx?" +
-                $"reg_id={B64UrlEncode(regId)}&" +
-                $"hotel_id={B64UrlEncode(hotelId)}&" +
-                $"name={B64UrlEncode(guestName)}&" +
-                $"amount={B64UrlEncode(Math.Round(amount, 2).ToString(CultureInfo.InvariantCulture))}&" +
-                $"arrival={B64UrlEncode(arrival)}&" +
-                $"depart={B64UrlEncode(depart)}&" +
-                $"src={B64UrlEncode(source)}&" +
-                $"userid={B64UrlEncode(userId)}&" +
+
+            // Keep exactly the same PayNow values, but protect the complete payload
+            // with ASP.NET Core Data Protection instead of exposing them in the URL.
+            // No database token row is required.
+            var protectedPayload =
+                $"reg_id={Uri.EscapeDataString(B64UrlEncode(regId))}&" +
+                $"hotel_id={Uri.EscapeDataString(B64UrlEncode(hotelId))}&" +
+                $"name={Uri.EscapeDataString(B64UrlEncode(guestName))}&" +
+                $"amount={Uri.EscapeDataString(B64UrlEncode(Math.Round(amount, 2).ToString(CultureInfo.InvariantCulture)))}&" +
+                $"arrival={Uri.EscapeDataString(B64UrlEncode(arrival))}&" +
+                $"depart={Uri.EscapeDataString(B64UrlEncode(depart))}&" +
+                $"src={Uri.EscapeDataString(B64UrlEncode(source))}&" +
+                $"userid={Uri.EscapeDataString(B64UrlEncode(userId))}&" +
                 $"payment_mode={Uri.EscapeDataString(mode)}";
+
+            var token = _payNowProtector.Protect(protectedPayload);
+            var paymentUrl = $"{root}/PayNow/p/{Uri.EscapeDataString(token)}";
 
             return Json(new
             {
@@ -178,34 +193,93 @@ ORDER BY
     [HttpGet("/PayNow")]
     [HttpGet("/PayNow.aspx")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+    public Task<IActionResult> Index(CancellationToken cancellationToken)
+    {
+        // Backward compatibility for old PayNow links already sent to guests.
+        var values = new PayNowValues
+        {
+            HotelId = B64(Request.Query["hotel_id"].ToString()),
+            RegId = B64(Request.Query["reg_id"].ToString()),
+            FullName = B64(Request.Query["name"].ToString()),
+            Arrival = B64(Request.Query["arrival"].ToString()),
+            Depart = B64(Request.Query["depart"].ToString()),
+            Source = B64(Request.Query["src"].ToString()),
+            UserId = B64(Request.Query["userid"].ToString()),
+            AmountText = B64(Request.Query["amount"].ToString()),
+            PaymentMode = (Request.Query["payment_mode"].ToString() ?? string.Empty).Trim().ToLowerInvariant()
+        };
+
+        return CreateCheckoutAsync(values, cancellationToken);
+    }
+
+    /// <summary>
+    /// New customer-facing PayNow URL. The path contains one protected token only.
+    /// reg_id, hotel_id, guest, amount, source and payment mode are recovered
+    /// server-side and are never exposed in the browser URL.
+    /// </summary>
+    [HttpGet("/PayNow/p/{token}")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public Task<IActionResult> Secure(string token, CancellationToken cancellationToken)
+    {
+        if (!TryReadProtectedPayNow(token, out var values))
+            return Task.FromResult<IActionResult>(NotFound("Payment link is invalid or has been changed."));
+
+        return CreateCheckoutAsync(values, cancellationToken);
+    }
+
+    private bool TryReadProtectedPayNow(string? token, out PayNowValues values)
+    {
+        values = new PayNowValues();
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        try
+        {
+            var payload = _payNowProtector.Unprotect(Uri.UnescapeDataString(token.Trim()));
+            var query = QueryHelpers.ParseQuery("?" + payload.TrimStart('?'));
+
+            string Get(string key) => query.TryGetValue(key, out var v) ? v.ToString() : string.Empty;
+
+            values = new PayNowValues
+            {
+                HotelId = B64(Get("hotel_id")),
+                RegId = B64(Get("reg_id")),
+                FullName = B64(Get("name")),
+                Arrival = B64(Get("arrival")),
+                Depart = B64(Get("depart")),
+                Source = B64(Get("src")),
+                UserId = B64(Get("userid")),
+                AmountText = B64(Get("amount")),
+                PaymentMode = Get("payment_mode").Trim().ToLowerInvariant()
+            };
+
+            return !string.IsNullOrWhiteSpace(values.HotelId) &&
+                   !string.IsNullOrWhiteSpace(values.RegId);
+        }
+        catch
+        {
+            // Invalid, truncated or tampered token.
+            return false;
+        }
+    }
+
+    private async Task<IActionResult> CreateCheckoutAsync(
+        PayNowValues values,
+        CancellationToken cancellationToken)
     {
         try
         {
-            // Keep the original encoded values so existing QR/email links remain compatible.
-            var hotelToken = Request.Query["hotel_id"].ToString();
-            var regToken = Request.Query["reg_id"].ToString();
-            var nameToken = Request.Query["name"].ToString();
-            var arrivalToken = Request.Query["arrival"].ToString();
-            var departToken = Request.Query["depart"].ToString();
-            var srcToken = Request.Query["src"].ToString();
-            var userToken = Request.Query["userid"].ToString();
-            var amountToken = Request.Query["amount"].ToString();
+            var hotelId = (values.HotelId ?? string.Empty).Trim();
+            var regId = (values.RegId ?? string.Empty).Trim();
+            var fullName = (values.FullName ?? string.Empty).Trim();
+            var arrival = (values.Arrival ?? string.Empty).Trim();
+            var depart = (values.Depart ?? string.Empty).Trim();
+            var src = (values.Source ?? string.Empty).Trim();
+            var userId = (values.UserId ?? string.Empty).Trim();
+            var amountText = (values.AmountText ?? string.Empty).Trim();
+            var paymentMode = (values.PaymentMode ?? string.Empty).Trim().ToLowerInvariant();
 
-            var hotelId = B64(hotelToken);
-            var regId = B64(regToken);
-            var fullName = B64(nameToken);
-            var arrival = B64(arrivalToken);
-            var depart = B64(departToken);
-            var src = B64(srcToken);
-            var userId = B64(userToken);
-            var amountText = B64(amountToken);
-            var paymentMode = (Request.Query["payment_mode"].ToString() ?? string.Empty)
-                .Trim()
-                .ToLowerInvariant();
-
-            // Backward compatibility: every old PayNow link without an explicit mode remains
-            // an ordinary immediate charge. Only staff-generated hold links carry payment_mode=hold.
+            // Backward compatibility: old links without an explicit mode remain
+            // ordinary immediate charges.
             if (paymentMode.Length == 0) paymentMode = "charge";
 
             if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(regId))
@@ -295,18 +369,16 @@ ORDER BY
 
             if (isHold)
             {
-                // IMPORTANT: this is what creates an authorization only instead of an immediate charge.
+                // IMPORTANT: this still creates authorization-only Checkout exactly as before.
                 form.Add(new("payment_intent_data[capture_method]", "manual"));
 
-                // Keep the same metadata contract already used by the Phase 2 hold webhook.
+                // Keep the same metadata contract already used by the hold webhook/capture flow.
                 form.Add(new("metadata[payment_for]", "reservation_hold"));
                 form.Add(new("metadata[source]", "checkout_hold"));
                 form.Add(new("payment_intent_data[metadata][payment_for]", "reservation_hold"));
                 form.Add(new("payment_intent_data[metadata][source]", "checkout_hold"));
                 form.Add(new("payment_intent_data[metadata][description]", "Online card authorization hold - capture from ORA PMS before the authorization expires."));
                 form.Add(new("payment_intent_data[metadata][note]", "Online card authorization hold - capture from ORA PMS before the authorization expires."));
-
-                // Makes the hosted Checkout page explain that this is only an authorization.
                 form.Add(new("custom_text[submit][message]", "Your card will be authorized only. The hotel can capture the authorized amount later."));
             }
 
@@ -317,7 +389,6 @@ ORDER BY
                     platformFeeMinor.Value.ToString(CultureInfo.InvariantCulture)));
             }
 
-            // AccessToken is the hotel's connected-account OAuth key, matching the WebForms flow.
             var account = new TerminalCardPaymentStripeClient.TerminalCardPaymentStripeAccount(
                 settings.AccessToken,
                 string.Empty);
@@ -341,6 +412,19 @@ ORDER BY
             _logger.LogError(ex, "PayNow MVC checkout creation failed.");
             return PaymentError("Payment link unavailable.");
         }
+    }
+
+    private sealed class PayNowValues
+    {
+        public string HotelId { get; init; } = string.Empty;
+        public string RegId { get; init; } = string.Empty;
+        public string FullName { get; init; } = string.Empty;
+        public string Arrival { get; init; } = string.Empty;
+        public string Depart { get; init; } = string.Empty;
+        public string Source { get; init; } = string.Empty;
+        public string UserId { get; init; } = string.Empty;
+        public string AmountText { get; init; } = string.Empty;
+        public string PaymentMode { get; init; } = string.Empty;
     }
 
     private ContentResult PaymentError(string message)

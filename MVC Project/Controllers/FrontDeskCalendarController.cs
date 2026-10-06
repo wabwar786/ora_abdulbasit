@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Orapmshms.Models;
@@ -13,6 +14,11 @@ public sealed class FrontDeskCalendarController : Controller
     private readonly IFrontDeskCalendarService _calendar;
     private readonly IAppLogger _logger;
     private readonly FrontDeskCalendarDbLogger _dbLogger;
+    private readonly IDataProtector _invoiceShareProtector;
+    private readonly IDataProtector _payNowShareProtector;
+
+    private const string InvoiceSharePurpose = "ORAPMS.InvoiceShare.v1";
+    private const string PayNowSharePurpose = "ORAPMS.PayNowShare.v1";
 
     // Program.cs stays unchanged.
     // Build the calendar service here using dependencies that the existing PMS
@@ -24,9 +30,12 @@ public sealed class FrontDeskCalendarController : Controller
         IHttpClientFactory httpClientFactory,
         IAvailabilityAutoUpdateQueue availabilityQueue,
         IMemoryCache cache,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IDataProtectionProvider dataProtectionProvider)
     {
         _logger = new AppLogger(loggerFactory.CreateLogger<AppLogger>());
+        _invoiceShareProtector = dataProtectionProvider.CreateProtector(InvoiceSharePurpose);
+        _payNowShareProtector = dataProtectionProvider.CreateProtector(PayNowSharePurpose);
         var connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is missing.");
         _dbLogger = new FrontDeskCalendarDbLogger(connectionString, hotelClock, _logger);
@@ -190,8 +199,90 @@ public sealed class FrontDeskCalendarController : Controller
         () => _calendar.DirectCheckInAsync(SessionValue("hotel"), SessionValue("HotelName"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
 
     [HttpPost("PrepareEmail"), ValidateAntiForgeryToken]
-    public Task<IActionResult> PrepareEmail([FromBody] FrontDeskEmailPrepareRequest request, CancellationToken ct) => Mutate(
-        () => _calendar.PrepareEmailComposerAsync(SessionValue("hotel"), SessionValue("UserId"), BaseUrl(), request, ct));
+    public async Task<IActionResult> PrepareEmail(
+        [FromBody] FrontDeskEmailPrepareRequest request,
+        CancellationToken ct)
+    {
+        if (!HasSession())
+            return Unauthorized(new { ok = false, message = "Your login session has expired." });
+
+        if (!ModelState.IsValid)
+            return BadRequest(new { ok = false, message = "Please check the entered values." });
+
+        try
+        {
+            FrontDeskOperationResult result = await _calendar.PrepareEmailComposerAsync(
+                SessionValue("hotel"),
+                SessionValue("UserId"),
+                BaseUrl(),
+                request,
+                ct);
+
+            if (result.Success && result.Data is FrontDeskEmailComposerDto data)
+            {
+                string shareUrl = BuildInvoiceShareUrl(
+                    SessionValue("hotel"),
+                    data.RegId);
+
+                string oldInvoiceUrl = data.InvoiceUrl ?? string.Empty;
+                string oldInvoicePdfUrl = data.InvoicePdfUrl ?? string.Empty;
+                string oldPaymentUrl = data.PaymentUrl ?? string.Empty;
+
+                data.InvoiceUrl = shareUrl;
+                data.InvoicePdfUrl = shareUrl;
+
+                if (oldInvoiceUrl.Length > 0)
+                    data.InvoiceMessage = (data.InvoiceMessage ?? string.Empty)
+                        .Replace(oldInvoiceUrl, shareUrl, StringComparison.Ordinal);
+
+                if (oldInvoicePdfUrl.Length > 0)
+                    data.InvoicePdfMessage = (data.InvoicePdfMessage ?? string.Empty)
+                        .Replace(oldInvoicePdfUrl, shareUrl, StringComparison.Ordinal);
+
+                // The calendar service keeps producing the established PayNow values.
+                // Protect only the customer-facing URL before it leaves the controller.
+                if (oldPaymentUrl.Length > 0)
+                {
+                    string securePaymentUrl = BuildPayNowShareUrl(oldPaymentUrl);
+                    data.PaymentUrl = securePaymentUrl;
+
+                    // The PayNow URL is used in more than the Payment Link tab.
+                    // In particular, Invoice Link also includes a payment link when
+                    // an outstanding balance exists. Replace it everywhere before
+                    // the composer DTO is returned to the browser.
+                    data.PaymentMessage = (data.PaymentMessage ?? string.Empty)
+                        .Replace(oldPaymentUrl, securePaymentUrl, StringComparison.Ordinal);
+                    data.InvoiceMessage = (data.InvoiceMessage ?? string.Empty)
+                        .Replace(oldPaymentUrl, securePaymentUrl, StringComparison.Ordinal);
+                    data.InvoicePdfMessage = (data.InvoicePdfMessage ?? string.Empty)
+                        .Replace(oldPaymentUrl, securePaymentUrl, StringComparison.Ordinal);
+                    data.GenericMessage = (data.GenericMessage ?? string.Empty)
+                        .Replace(oldPaymentUrl, securePaymentUrl, StringComparison.Ordinal);
+                }
+            }
+
+            return Json(new { ok = result.Success, message = result.Message, data = result.Data });
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Front desk calendar email preparation failed.");
+            var errorRef = await _dbLogger.LogExceptionAsync(
+                ex,
+                "Front Desk Calendar",
+                "Prepare Email",
+                SessionValue("hotel"),
+                SessionValue("UserId"),
+                SessionValue("UserName"),
+                Ip(),
+                ct);
+
+            return StatusCode(500, new
+            {
+                ok = false,
+                message = $"The email could not be prepared. Ref: {errorRef}"
+            });
+        }
+    }
 
     [HttpPost("SendEmail"), ValidateAntiForgeryToken]
     public Task<IActionResult> SendEmail([FromBody] FrontDeskEmailSendRequest request, CancellationToken ct) => Mutate(
@@ -215,6 +306,43 @@ public sealed class FrontDeskCalendarController : Controller
             _logger.Error(ex, "Front desk calendar action failed.");
             var errorRef = await _dbLogger.LogExceptionAsync(ex, "Front Desk Calendar", "Calendar Action", SessionValue("hotel"), SessionValue("UserId"), SessionValue("UserName"), Ip());
             return StatusCode(500, new { ok = false, message = $"The calendar action could not be completed. Ref: {errorRef}" });
+        }
+    }
+
+    private string BuildInvoiceShareUrl(string hotelId, string regId)
+    {
+        string token = _invoiceShareProtector.Protect(
+            (hotelId ?? string.Empty).Trim() + "\n" +
+            (regId ?? string.Empty).Trim());
+
+        return BaseUrl().TrimEnd('/') +
+               "/InvoiceRecieving/i/" +
+               Uri.EscapeDataString(token);
+    }
+
+    private string BuildPayNowShareUrl(string existingUrl)
+    {
+        if (string.IsNullOrWhiteSpace(existingUrl))
+            return string.Empty;
+
+        try
+        {
+            var uri = new Uri(existingUrl, UriKind.Absolute);
+            string payload = uri.Query.TrimStart('?');
+            if (payload.Length == 0)
+                return existingUrl;
+
+            string token = _payNowShareProtector.Protect(payload);
+
+            return BaseUrl().TrimEnd('/') +
+                   "/PayNow/p/" +
+                   Uri.EscapeDataString(token);
+        }
+        catch
+        {
+            // Never break email preparation because URL protection failed.
+            // Existing behavior remains available as a safe fallback.
+            return existingUrl;
         }
     }
 
