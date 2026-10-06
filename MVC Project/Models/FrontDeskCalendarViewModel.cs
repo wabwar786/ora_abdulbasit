@@ -32,6 +32,7 @@ public sealed class FrontDeskCalendarPermissions
     // properties can enable one without exposing the other.
     public bool CanOnlineCardPayment { get; set; } = true;
     public bool CanPdqPayment { get; set; } = true;
+    public bool CanRefund { get; set; } = true;
     public bool CanDeleteReservation { get; set; }
     public bool CanDeleteAfterCheckIn { get; set; }
     public bool CanDeleteAfterCheckOut { get; set; }
@@ -102,6 +103,7 @@ public sealed class FrontDeskBookingDto
     public decimal Total { get; set; }
     public decimal Paid { get; set; }
     public decimal Balance { get; set; }
+    public decimal RoomSecurity { get; set; }
     public decimal Discount { get; set; }
     public string PaymentStatus { get; set; } = string.Empty;
     public string ChannexBookingId { get; set; } = string.Empty;
@@ -160,6 +162,7 @@ public sealed class FrontDeskBookingDetailsDto
     public decimal Discount { get; set; }
     public decimal Paid { get; set; }
     public decimal Balance { get; set; }
+    public decimal RoomSecurity { get; set; }
     public string Notes { get; set; } = string.Empty;
     public string FrontDeskNotes { get; set; } = string.Empty;
     public string ChannexBookingId { get; set; } = string.Empty;
@@ -176,6 +179,19 @@ public sealed class FrontDeskPaymentLogDto
     public decimal Amount { get; set; }
     public string Method { get; set; } = string.Empty;
     public string Reference { get; set; } = string.Empty;
+    public string ReceiptUrl { get; set; } = string.Empty;
+    public decimal RemainingRefundable { get; set; }
+    public bool CanRefund { get; set; }
+
+    // Used only server-side to match previous refunds to their original payment.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string PaymentId { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ChargeId { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string RefundId { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ExternalRefundId { get; set; } = string.Empty;
 }
 
 public sealed class FrontDeskGuestHistoryDto

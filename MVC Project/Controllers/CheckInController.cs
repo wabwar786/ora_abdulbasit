@@ -83,6 +83,38 @@ public sealed class CheckInController : Controller
         }
     }
 
+    [HttpGet("RoomSecurityState")]
+    public async Task<IActionResult> RoomSecurityState(string regId, CancellationToken ct)
+    {
+        if (!HasSession()) return UnauthorizedJson();
+        if (string.IsNullOrWhiteSpace(regId))
+            return BadRequest(new { ok = false, message = "Reservation ID is required." });
+
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            var data = await _service.GetRoomSecurityStateAsync(
+                HotelId,
+                UserId,
+                regId.Trim(),
+                ct);
+            sw.Stop();
+
+            Response.Headers["Server-Timing"] = $"roomsecurity;dur={sw.Elapsed.TotalMilliseconds:0}";
+            _logger.LogInformation(
+                "Room Security state {RegId} loaded in {ElapsedMs} ms.",
+                regId.Trim(),
+                sw.ElapsedMilliseconds);
+
+            return Json(new { ok = true, data });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Room Security state load failed for {RegId}.", regId);
+            return StatusCode(500, new { ok = false, message = "Unable to load room security. " + ex.Message });
+        }
+    }
+
     [HttpGet("Search")]
     public async Task<IActionResult> Search(string term, CancellationToken ct)
         => HasSession() ? Json(await _service.SearchAsync(HotelId, term, ct)) : UnauthorizedJson();

@@ -2161,49 +2161,19 @@
     function openRefundPaymentModal(logId, refundableAmount) {
         const amount = Math.max(0, toNumber(refundableAmount));
         if (!logId || amount <= 0) return message('This payment has no refundable balance.', 'error');
-        byId('refundPaymentLogId').value = String(logId);
-        byId('refundPaymentAmount').value = amount.toFixed(2);
-        byId('refundPaymentAmount').max = amount.toFixed(2);
-        byId('refundPaymentAmount').dataset.maxRefund = amount.toFixed(2);
-        byId('refundPaymentReason').value = '';
-        byId('refundPaymentMax').textContent = `Maximum refundable amount: ${money(amount)}`;
-        openModal('refundPaymentModal');
-        setTimeout(() => byId('refundPaymentAmount')?.focus(), 80);
-    }
+        if (!window.RefundPayment || typeof window.RefundPayment.open !== 'function')
+            return message('Refund component is not loaded.', 'error');
 
-    async function submitRefundPayment() {
-        const logId = Number(byId('refundPaymentLogId')?.value || 0);
-        const amountEl = byId('refundPaymentAmount');
-        const reasonEl = byId('refundPaymentReason');
-        const amount = toNumber(amountEl?.value);
-        const max = toNumber(amountEl?.dataset.maxRefund);
-        const reason = reasonEl?.value.trim() || '';
-        if (!logId) return message('Payment record is missing.', 'error');
-        if (amount <= 0 || amount > max + 0.00001) {
-            message(`Enter a refund amount between ${money(0.01)} and ${money(max)}.`, 'error');
-            amountEl?.focus();
-            return;
-        }
-        if (!reason) {
-            message('Refund reason is required.', 'error');
-            reasonEl?.focus();
-            return;
-        }
-
-        const submit = byId('refundPaymentSubmit');
-        if (submit) submit.disabled = true;
-        showBusy('Processing refund…');
-        try {
-            const r = await api(urls.refundPayment, { method: 'POST', body: { regId, logId, amount, reason } });
-            if (!r.ok) return message(r.message, 'error');
-            closeModal('refundPaymentModal');
-            message(r.message, 'success');
-            await refreshReservationUi(regId);
-        } catch (e) { message(e.message, 'error'); }
-        finally {
-            hideBusy();
-            if (submit) submit.disabled = false;
-        }
+        window.RefundPayment.open({
+            regId,
+            logId,
+            refundableAmount: amount,
+            currencySymbol: currency || '£',
+            notify: (text, isError) => message(text, isError ? 'error' : 'success'),
+            onCompleted: async () => {
+                await refreshReservationUi(regId);
+            }
+        });
     }
 
     async function showPaymentAudit(id) {
@@ -3323,20 +3293,41 @@
         }
     });
 
-    byId('openRoomSecurity')?.addEventListener('click', openSecurityDeposit);
-    byId('saveSecurity')?.addEventListener('click', saveSecurity);
-    byId('securityDepositTab')?.addEventListener('click', () => { pendingSecurityId = 0; setSecurityMode('deposit'); });
-    byId('securitySettleTab')?.addEventListener('click', () => setSecurityMode('settle'));
-    byId('securityRefundAmount')?.addEventListener('input', updateSecurityDeductionPreview);
-    $$('[data-security-method]').forEach(btn => btn.addEventListener('click', () => setSecurityPaymentMethod(btn.dataset.securityMethod || 'cash')));
-    $('.security-table')?.addEventListener('click', e => {
+    async function openSharedRoomSecurity(securityId = 0) {
+        if (!regId) return message('Save or load a guest first.', 'error');
+        if (!window.RoomSecurity || typeof window.RoomSecurity.open !== 'function')
+            return message('Room Security component is not loaded.', 'error');
+
+        const guestName = [byId('firstName')?.value, byId('lastName')?.value]
+            .filter(Boolean).join(' ').trim();
+
+        try {
+            await window.RoomSecurity.open({
+                regId,
+                visitId,
+                guestName,
+                securityId,
+                securityBalance: toNumber(byId('roomSecurity')?.value),
+                currencySymbol: currency || '£',
+                onChanged: async () => {
+                    await refreshReservationUi(regId);
+                }
+            });
+        } catch (e) {
+            message(e.message || 'Unable to open Room Security.', 'error');
+        }
+    }
+
+    byId('openRoomSecurity')?.addEventListener('click', () => openSharedRoomSecurity());
+    document.addEventListener('click', e => {
         const b = e.target.closest('[data-security-settle]');
-        if (b) settleSecurity(Number(b.dataset.securitySettle || 0));
+        if (!b) return;
+        e.preventDefault();
+        openSharedRoomSecurity(Number(b.dataset.securitySettle || 0));
     });
 
     byId('openPdqPayment')?.addEventListener('click', () => openPdqPaymentLikeWebForms());
     byId('openStripeCardPayment')?.addEventListener('click', openStripeCheckoutPayment);
-    byId('refundPaymentSubmit')?.addEventListener('click', submitRefundPayment);
     $$('[data-card-mode]').forEach(tab => tab.addEventListener('click', () => setCardMode(tab.dataset.cardMode || 'terminal')));
     $$('[data-card-provider]').forEach(tab => tab.addEventListener('click', () => {
         currentCardProvider = tab.dataset.cardProvider || 'stripe';

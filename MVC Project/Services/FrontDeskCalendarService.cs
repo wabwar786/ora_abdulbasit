@@ -495,6 +495,7 @@ SELECT TOP (1)
     ISNULL(TRY_CONVERT(decimal(18,2),U.discount),0) AS discount,
     ISNULL(TRY_CONVERT(decimal(18,2),U.paid_amount),0) AS paid,
     ISNULL(TRY_CONVERT(decimal(18,2),U.remaining_amount),0) AS balance,
+    ISNULL(Sec.security_balance,0) AS room_security,
     ISNULL(G.notes,N.notes) AS notes,
     ISNULL(G.booking_id,N.booking_id) AS booking_id,
     ISNULL(G.is_virtual,N.is_virtual) AS is_virtual,
@@ -511,14 +512,18 @@ OUTER APPLY
     FROM dbo.PaymentsUpdateTB pu WITH (READPAST)
     WHERE pu.hotel_id=p.hotel_id AND pu.reg_id=p.reg_id ORDER BY pu.id DESC
 ) U
+OUTER APPLY
+(
+    SELECT CAST(ISNULL(SUM(ISNULL(TRY_CONVERT(decimal(18,2),rs.security),0)),0) AS decimal(18,2)) AS security_balance
+    FROM dbo.RoomSecurityTB rs WITH (READPAST)
+    WHERE rs.hotel_id=p.hotel_id AND rs.reg_id=p.reg_id
+) Sec
 LEFT JOIN dbo.GuestNoteBook GN WITH (READPAST) ON GN.hotel_id=p.hotel_id AND GN.reg_id=p.reg_id
 WHERE p.hotel_id=@hotel AND p.reg_id=@reg AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
   AND (@paymentId<=0 OR p.ID=@paymentId)
 ORDER BY CASE WHEN p.ID=@paymentId THEN 0 ELSE 1 END,p.ID DESC;
 
-SELECT TOP (30)
-    id,currentdate,paid_amount,payment_method,
-    ISNULL(NULLIF(LTRIM(RTRIM(PaymentId)),''),ISNULL(NULLIF(LTRIM(RTRIM(chargeid)),''),'')) AS payment_reference
+SELECT *
 FROM dbo.PaymentsLogTB WITH (READPAST)
 WHERE hotel_id=@hotel AND reg_id=@reg
 ORDER BY id DESC;";
@@ -560,6 +565,7 @@ ORDER BY id DESC;";
             Discount = M(rd, "discount"),
             Paid = M(rd, "paid"),
             Balance = M(rd, "balance"),
+            RoomSecurity = Math.Max(0m, M(rd, "room_security")),
             Notes = S(rd, "notes"),
             FrontDeskNotes = S(rd, "fdo_notes"),
             ChannexBookingId = S(rd, "booking_id"),
@@ -571,22 +577,96 @@ ORDER BY id DESC;";
         // MVC detail query can: a real booking id, a virtual card, and money due.
         details.ShowAutoPay = details.ShowChannexChat && details.IsVirtualCard && details.Balance > 0.005m;
 
-        var logs = new List<FrontDeskPaymentLogDto>();
+        var allLogs = new List<FrontDeskPaymentLogDto>();
         if (await rd.NextResultAsync(ct))
         {
             while (await rd.ReadAsync(ct))
             {
-                logs.Add(new FrontDeskPaymentLogDto
+                var paymentIdText = S(rd, "PaymentId");
+                var chargeIdText = S(rd, "chargeid");
+                allLogs.Add(new FrontDeskPaymentLogDto
                 {
                     Id = I(rd, "id"),
                     Date = DTime(rd, "currentdate"),
                     Amount = M(rd, "paid_amount"),
                     Method = S(rd, "payment_method"),
-                    Reference = S(rd, "payment_reference")
+                    Reference = !string.IsNullOrWhiteSpace(paymentIdText) ? paymentIdText : chargeIdText,
+                    ReceiptUrl = S(rd, "receipturl"),
+                    PaymentId = paymentIdText,
+                    ChargeId = chargeIdText,
+                    RefundId = S(rd, "RefundId"),
+                    ExternalRefundId = S(rd, "externalrefundid")
                 });
             }
         }
-        details.Payments = logs;
+
+        // Match the Check-In payment log rules: refund rows are negative and are
+        // linked to the original payment by externalrefundid whenever available.
+        var refundRows = allLogs.Where(x => x.Amount < 0m).ToArray();
+        foreach (var row in allLogs)
+        {
+            if (row.Amount <= 0m)
+            {
+                row.CanRefund = false;
+                row.RemainingRefundable = 0m;
+                continue;
+            }
+
+            var isCash = (row.Method ?? string.Empty).Trim()
+                .Equals("cash", StringComparison.OrdinalIgnoreCase);
+            var isCard = !string.IsNullOrWhiteSpace(row.PaymentId) &&
+                         !string.IsNullOrWhiteSpace(row.ChargeId);
+            if (!isCash && !isCard)
+            {
+                row.CanRefund = false;
+                row.RemainingRefundable = 0m;
+                continue;
+            }
+
+            var targetId = row.Id.ToString(CultureInfo.InvariantCulture);
+            var hasExplicitLink = false;
+            decimal alreadyRefunded = 0m;
+
+            foreach (var refund in refundRows)
+            {
+                if (refund.Id == row.Id) continue;
+                if (!string.Equals(
+                        (refund.ExternalRefundId ?? string.Empty).Trim(),
+                        targetId,
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                hasExplicitLink = true;
+                alreadyRefunded += Math.Abs(refund.Amount);
+            }
+
+            if (!hasExplicitLink)
+            {
+                alreadyRefunded = 0m;
+                foreach (var refund in refundRows)
+                {
+                    if (refund.Id == row.Id) continue;
+                    var matches =
+                        (!string.IsNullOrWhiteSpace(row.PaymentId) &&
+                         string.Equals(refund.PaymentId, row.PaymentId, StringComparison.OrdinalIgnoreCase)) ||
+                        (!string.IsNullOrWhiteSpace(row.ChargeId) &&
+                         string.Equals(refund.ChargeId, row.ChargeId, StringComparison.OrdinalIgnoreCase)) ||
+                        (string.IsNullOrWhiteSpace(row.PaymentId) &&
+                         string.IsNullOrWhiteSpace(row.ChargeId) &&
+                         !string.IsNullOrWhiteSpace(refund.RefundId));
+
+                    if (matches) alreadyRefunded += Math.Abs(refund.Amount);
+                }
+            }
+
+            row.RemainingRefundable =
+                Math.Max(0m, Math.Abs(row.Amount) - alreadyRefunded);
+            row.CanRefund = row.RemainingRefundable > 0.005m;
+        }
+
+        // Keep the drawer compact while refund calculations still consider the
+        // complete reservation payment history.
+        details.Payments = allLogs.Take(30).ToList();
         return details;
     }
 
@@ -2439,6 +2519,7 @@ VALUES(@hotel,@reg,@action,@detail,@now,@user,@username,@system,@ip);", cn, tx);
             permissions.CanDeleteReservation = true;
             permissions.CanDeleteAfterCheckIn = true;
             permissions.CanDeleteAfterCheckOut = true;
+            permissions.CanRefund = true;
             _cache.Set(cacheKey, permissions, TimeSpan.FromMinutes(2));
             return permissions;
         }
@@ -2481,6 +2562,7 @@ GROUP BY pa.action_id,pa.action_name;", cn);
             // Match the legacy action aliases used by the WebForms calendar.
             permissions.CanOnlineCardPayment = HasAny(true, "vcPayment", "ChargeVC", "VirtualCard", "VC_PAYMENT", "CardPayment", "card_payment");
             permissions.CanPdqPayment = HasAny(true, "pdqPayment", "PDQ_PAYMENT", "PDQPayment", "pdq_payment");
+            permissions.CanRefund = Has("Refund", true);
             permissions.CanDeleteReservation = Has("DeleteReservation", false);
             permissions.CanDeleteAfterCheckIn = Has("DeleteAfterCheckIn", false);
             permissions.CanDeleteAfterCheckOut = Has("DeleteAfterCheckOut", false);

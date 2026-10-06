@@ -1,0 +1,79 @@
+@* Shared received-payment refund dialog used by Check-In and Front Desk Calendar. *@
+<div id="orfRefundPayment"
+     class="orf-overlay"
+     hidden
+     aria-hidden="true"
+     data-refund-url="@Url.Action("RefundPayment", "CheckIn")">
+    <section class="orf-dialog" role="dialog" aria-modal="true" aria-labelledby="orfTitle">
+        <header class="orf-head">
+            <div class="orf-head-copy">
+                <div class="orf-title-row">
+                    <span class="orf-title-dot" aria-hidden="true"></span>
+                    <h2 id="orfTitle">Refund Payment</h2>
+                </div>
+                <p>Refund all or part of a received payment.</p>
+            </div>
+            <button type="button" class="orf-close" data-orf-close aria-label="Close">×</button>
+        </header>
+
+        <div class="orf-body">
+            <div id="orfMessage" class="orf-message" hidden></div>
+
+            <input id="orfLogId" type="hidden" />
+
+            <div class="orf-summary">
+                <div class="orf-summary-item">
+                    <span>Reservation</span>
+                    <b id="orfRegId">—</b>
+                </div>
+                <div class="orf-summary-item orf-summary-highlight">
+                    <span>Maximum refundable</span>
+                    <b id="orfMaximum">—</b>
+                </div>
+            </div>
+
+            <section class="orf-form-card">
+                <div class="orf-section-head">
+                    <div>
+                        <strong>Refund Details</strong>
+                        <small>Enter the amount to return and the reason for the refund.</small>
+                    </div>
+                </div>
+
+                <div class="orf-form-grid">
+                    <div class="orf-field">
+                        <label for="orfAmount">Refund Amount</label>
+                        <div class="orf-money">
+                            <span id="orfCurrency" class="orf-money-prefix">£</span>
+                            <input id="orfAmount" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" />
+                        </div>
+                        <small class="orf-field-help">You can refund the full amount or a smaller partial amount.</small>
+                    </div>
+
+                    <div class="orf-field orf-field-reason">
+                        <label for="orfReason">Refund Reason <em>*</em></label>
+                        <textarea id="orfReason" rows="3" maxlength="500" placeholder="Enter a clear refund reason..."></textarea>
+                    </div>
+                </div>
+            </section>
+
+            <div class="orf-refund-note">
+                <span class="orf-note-icon" aria-hidden="true">↶</span>
+                <span>The refund will be recorded against this payment and the reservation balance will refresh automatically.</span>
+            </div>
+
+            <div class="orf-actions">
+                <button type="button" class="orf-secondary" data-orf-close>Cancel</button>
+                <button type="button" class="orf-primary" id="orfSubmit">
+                    <span class="orf-button-spinner" aria-hidden="true"></span>
+                    <span class="orf-button-text">Refund Now</span>
+                </button>
+            </div>
+
+            <div id="orfBusy" class="orf-busy" hidden>
+                <span class="orf-spinner" aria-hidden="true"></span>
+                <b>Processing refund…</b>
+            </div>
+        </div>
+    </section>
+</div>

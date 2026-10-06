@@ -28,7 +28,10 @@
       .fdc-hold-btn{min-height:30px;border:1px solid #d6e0ea;border-radius:7px;background:#fff;color:#102a43;font:inherit;font-size:9px;font-weight:850;cursor:pointer}
       .fdc-hold-btn.capture{background:#117653;border-color:#117653;color:#fff}.fdc-hold-btn.release{background:#fff6f7;border-color:#e7b7bd;color:#b8333f}
       .fdc-hold-btn:disabled{opacity:.48;cursor:not-allowed}.fdc-hold-btn.fdc-button-loading{cursor:wait!important}
-      @media(max-width:520px){.fdc-hold-capture{grid-template-columns:1fr}.fdc-hold-buttons{grid-template-columns:1fr 1fr}}
+      .fdc-security-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 9px;padding:10px 11px;border:1px solid #bcd7cb;border-radius:8px;background:#f0faf5}
+      .fdc-security-summary-copy{min-width:0}.fdc-security-summary-copy span{display:block;color:#547365;font-size:8px;font-weight:850;letter-spacing:.06em;text-transform:uppercase}.fdc-security-summary-copy strong{display:block;margin-top:1px;color:#0f6c4c;font-size:18px;line-height:1.1}.fdc-security-summary-copy small{display:block;margin-top:3px;color:#6d8178;font-size:8px;line-height:1.25}
+      .fdc-security-summary button{flex:0 0 auto;min-height:30px;padding:5px 9px;border:1px solid #176d50;border-radius:6px;background:#176d50;color:#fff;font:inherit;font-size:8.5px;font-weight:850;cursor:pointer}
+      @media(max-width:520px){.fdc-hold-capture{grid-template-columns:1fr}.fdc-hold-buttons{grid-template-columns:1fr 1fr}.fdc-security-summary{align-items:flex-start;flex-direction:column}.fdc-security-summary button{width:100%}}
     `;
     document.head.appendChild(style);
   }
@@ -496,11 +499,30 @@
     const checked=isCheckedInStatus(s);
     const closed=isCheckedOutStatus(s);
     const balance=Number(d.balance||0);
+    const roomSecurity=Math.max(0,Number(d.roomSecurity||0));
     const stateClass=checked?'green':closed?'amber':balance>0.005?'red':'blue';
     const stateText=checked?'Checked In':closed?'Checked Out':(d.status||'Reservation');
     const row=(label,value)=>`<div class="fdc-kv"><span>${label}</span><b>${value}</b></div>`;
-    const logs=(d.payments||[]).map(p=>`<div class="fdc-payment-log-entry"><span>${fmt(p.date,true)} · ${esc(p.method||'Payment')}${p.reference?` · ${esc(p.reference)}`:''}</span><strong>${money(p.amount)}</strong></div>`).join('');
+    const logs=(d.payments||[]).map(p=>{
+      const refundable=Math.max(0,Number(p.remainingRefundable||0));
+      const canRefund=cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
+      const receipt=String(p.receiptUrl||'').trim();
+      return `<div class="fdc-payment-log-entry" data-payment-log-id="${Number(p.id||0)}">
+        <div class="fdc-payment-log-meta">
+          <span>${fmt(p.date,true)} · ${esc(p.method||'Payment')}${p.reference?` · ${esc(p.reference)}`:''}</span>
+          <strong class="${Number(p.amount||0)<0?'fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
+        </div>
+        ${(receipt||canRefund)?`<div class="fdc-payment-log-tools">
+          ${receipt?`<a class="fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener">Receipt ↗</a>`:''}
+          ${canRefund?`<button type="button" class="fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}">Refund</button>`:''}
+        </div>`:''}
+      </div>`;
+    }).join('');
     const holdPanel=paymentHoldsHtml(holds);
+    const securityPanel=roomSecurity>0.005?`<div class="fdc-security-summary">
+      <div class="fdc-security-summary-copy"><span>Refundable Security</span><strong>${money(roomSecurity)}</strong><small>Room security is held separately from the stay balance.</small></div>
+      <button type="button" data-drawer-action="security">Manage Security</button>
+    </div>`:'';
 
     return `<div class="fdc-panel"><h4>Booking information</h4>
         ${row('Reference #',esc(d.regId||'—'))}
@@ -527,6 +549,7 @@
         ${balance>0.005?`<div class="fdc-payment-due-note">${money(balance)} remains to be collected.</div>`:'<div class="fdc-payment-settled-note">Payment received in full.</div>'}
         ${logs?`<div class="fdc-payment-log"><strong>Payment history</strong>${logs}</div>`:''}
       </div>
+      ${securityPanel}
       ${holdPanel}
       ${d.frontDeskNotes?`<div class="fdc-panel"><h4>Notebook</h4><p class="fdc-drawer-notes">${esc(d.frontDeskNotes)}</p></div>`:''}
       ${d.notes?`<div class="fdc-panel"><h4>Notes</h4><p class="fdc-drawer-notes">${esc(d.notes)}</p></div>`:''}`;
@@ -610,6 +633,35 @@
     }
   }
 
+  function openReceivedPaymentRefund(button){
+    const d=state.currentDetails;
+    if(!d?.regId) return showToast('Reservation reference is missing.',true);
+    if(!window.RefundPayment || typeof window.RefundPayment.open!=='function')
+      return showToast('Refund component is not loaded.',true);
+
+    const logId=Number(button?.dataset.paymentRefund||0);
+    const refundable=Math.max(0,Number(button?.dataset.refundable||0));
+    if(!logId || refundable<=0.005)
+      return showToast('This payment has no refundable balance.',true);
+
+    window.RefundPayment.open({
+      regId:d.regId,
+      logId,
+      refundableAmount:refundable,
+      currencySymbol:state.currency||'£',
+      notify:(text,isError)=>showToast(text,isError),
+      onCompleted:async()=>{
+        await openDetails({
+          regId:d.regId,
+          paymentId:d.paymentId,
+          guestName:d.guestName,
+          roomNo:d.roomNo
+        });
+        await loadCalendar(state.start,true);
+      }
+    });
+  }
+
   function detailsActions(d){
     const s=normalizeStatus(d.status);
     const checked=isCheckedInStatus(s);
@@ -622,6 +674,7 @@
       actions.push(action('✎','Edit','edit'));
       actions.push(action('↶','Undo Check-in','undo'));
       actions.push(action('▤','Note Book','note'));
+      actions.push(action('◆','Room Security','security'));
       actions.push(action('◷','Guest History','history'));
       actions.push(action('▧','Invoice','invoice'));
     }else if(closed){
@@ -629,12 +682,14 @@
       actions.push(action('▧','Invoice','invoice'));
     }else if(provisional){
       actions.push(action('✓','Confirm Reservation','confirm'));
+      actions.push(action('◆','Room Security','security'));
       actions.push(action('◷','Guest History','history'));
       actions.push(action('×','Cancel Reservation','cancel','danger-action'));
     }else{
       actions.push(action('➜','Check-In Now','checkin-now','primary-action'));
       actions.push(action('▣','Edit','edit'));
       actions.push(action('▤','Note Book','note'));
+      actions.push(action('◆','Room Security','security'));
       actions.push(action('◷','Guest History','history'));
       actions.push(action('▧','Invoice','invoice'));
       actions.push(action('×','Cancel Reservation','cancel','danger-action'));
@@ -682,6 +737,7 @@
       return;
     }
     if(action==='note'){openNote(d);return;}
+    if(action==='security'){openRoomSecurity(d);return;}
     if(action==='cancel'){ openCancelReservation(d); return; }
     if(action==='undo'){
       if(!confirm(`Undo check-in for ${d.guestName}?`))return;
@@ -920,6 +976,26 @@ ${tag}`:tag;
     busy(true,'Loading guest history…');
     try{const u=new URL(cfg.historyUrl,location.origin);u.searchParams.set('regId',d.regId);const j=await api(u);const h=j.data;const rows=(h.stays||[]).map(x=>`<div class="fdc-kv"><span>${fmt(x.arrival,true)} – ${fmt(x.departure,true)} · ${esc(x.status)}</span><b>${esc(x.roomNo||'—')}</b></div>`).join('')||'<p>No previous stays found.</p>';openModal('Guest Stay History',`<div class="fdc-panel"><h4>${esc(h.guestName||d.guestName)}</h4>${rows}</div>`,'<button class="fdc-btn" data-close-modal>Close</button>');}catch(e){showToast(e.message,true);}finally{busy(false);}
   }
+  function openRoomSecurity(d){
+    if(!d?.regId){showToast('Reservation reference is missing.',true);return;}
+    if(!window.RoomSecurity || typeof window.RoomSecurity.open!=='function'){
+      showToast('Room Security component is not loaded.',true);
+      return;
+    }
+
+    window.RoomSecurity.open({
+      regId:d.regId,
+      visitId:d.visitId||'',
+      guestName:d.guestName||'Guest',
+      securityBalance:Number(d.roomSecurity||0),
+      currencySymbol:state.currency||'£',
+      onChanged:async()=>{
+        await openDetails({regId:d.regId,paymentId:d.paymentId,guestName:d.guestName,roomNo:d.roomNo});
+        await loadCalendar(state.start,true);
+      }
+    }).catch(e=>showToast(e.message||'Unable to open Room Security.',true));
+  }
+
   function openPayment(d,button=null,options={}){
     if(!window.RecordPayment || typeof window.RecordPayment.open!=='function'){
       showToast('Record Payment component is not loaded.',true);
@@ -1048,6 +1124,7 @@ ${tag}`:tag;
       actions.push(bookingMenuItem('✎','Edit','edit'));
       actions.push(bookingMenuItem('↶','Undo Check-in','undo'));
       actions.push(bookingMenuItem('▤','Note Book','note'));
+      actions.push(bookingMenuItem('◆','Room Security','security'));
       actions.push(bookingMenuItem('◷','Guest History','history'));
       actions.push(bookingMenuItem('▧','Invoice','invoice'));
     }else if(closed){
@@ -1055,12 +1132,14 @@ ${tag}`:tag;
       actions.push(bookingMenuItem('▧','Invoice','invoice'));
     }else if(provisional){
       actions.push(bookingMenuItem('✓','Confirm Reservation','confirm'));
+      actions.push(bookingMenuItem('◆','Room Security','security'));
       actions.push(bookingMenuItem('◷','Guest History','history'));
       actions.push(bookingMenuItem('×','Cancel Reservation','cancel','danger-action'));
     }else{
       actions.push(bookingMenuItem('➜','Check-In Now','checkin','primary-action'));
       actions.push(bookingMenuItem('▣','Edit','edit'));
       actions.push(bookingMenuItem('▤','Note Book','note'));
+      actions.push(bookingMenuItem('◆','Room Security','security'));
       actions.push(bookingMenuItem('◷','Guest History','history'));
       actions.push(bookingMenuItem('▧','Invoice','invoice'));
       actions.push(bookingMenuItem('×','Cancel Reservation','cancel','danger-action'));
@@ -1101,7 +1180,7 @@ ${tag}`:tag;
 
     const labels={
       checkin:'Checking in…', edit:'Opening…', cancel:'Opening…', undo:'Undoing…',
-      note:'Loading…', history:'Loading…', payment:'Loading…', holds:'Loading holds…', sendpaylink:'Preparing…',
+      note:'Loading…', history:'Loading…', payment:'Loading…', security:'Loading security…', holds:'Loading holds…', sendpaylink:'Preparing…',
       autopay:'Opening…', invoice:'Opening…', confirm:'Opening…', checkout:'Loading…',
       unassign:'Moving…'
     };
@@ -1168,6 +1247,7 @@ ${tag}`:tag;
         state.currentDetails=d;
 
         if(action==='note'){closeAfter=true;deferredAction=()=>openNote(d);}
+        else if(action==='security'){closeAfter=true;deferredAction=()=>openRoomSecurity(d);}
         else if(action==='history'){closeAfter=true;deferredAction=()=>openHistoryPage(d);}
         else if(action==='payment'){closeAfter=true;deferredAction=()=>openPayment(d);}
         else if(action==='sendpaylink'){closeAfter=true;deferredAction=()=>openSendPaymentLink(d,null);}
@@ -1653,10 +1733,22 @@ ${tag}`:tag;
   document.addEventListener('pointerup',resizeEnd);
 
   drawerBody.addEventListener('click',e=>{
-    const b=e.target.closest('[data-drawer-hold-action]');
-    if(b){
+    const refundButton=e.target.closest('[data-payment-refund]');
+    if(refundButton){
       e.preventDefault();
-      void drawerHoldAction(b);
+      openReceivedPaymentRefund(refundButton);
+      return;
+    }
+    const holdButton=e.target.closest('[data-drawer-hold-action]');
+    if(holdButton){
+      e.preventDefault();
+      void drawerHoldAction(holdButton);
+      return;
+    }
+    const actionButton=e.target.closest('[data-drawer-action]');
+    if(actionButton){
+      e.preventDefault();
+      drawerAction(actionButton.dataset.drawerAction,actionButton);
     }
   });
 

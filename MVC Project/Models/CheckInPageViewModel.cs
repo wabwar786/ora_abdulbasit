@@ -140,6 +140,20 @@ public sealed class LookupOption
     public bool HasOccupancySettings { get; set; }
 }
 
+public sealed class CheckInRoomSecurityState
+{
+    public string RegId { get; set; } = string.Empty;
+    public string VisitId { get; set; } = string.Empty;
+    public string Currency { get; set; } = "£";
+    public string CurrencyCode { get; set; } = "GBP";
+    public decimal SecurityBalance { get; set; }
+    public bool CanCardPayment { get; set; } = true;
+    public bool IsStripeConfigured { get; set; }
+    public bool ShowSimulation { get; set; }
+    public List<LookupOption> StripeReaders { get; set; } = new();
+    public List<CheckInSecurityRow> SecurityLog { get; set; } = new();
+}
+
 public sealed class CheckInChargeRow
 {
     public int Id { get; set; }

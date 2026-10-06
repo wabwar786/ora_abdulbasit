@@ -150,7 +150,7 @@
                     <td>@SecurityMode(row)</td>
                     <td class="num">@Money(movementAmount)</td>
                     <td><span class="security-status-badge">@SecurityStatus(row.Status)</span></td>
-                    <td>@if (row.CanSettle) { <button type="button" class="security-row-action" data-security-settle="@row.Id"><i class="fa-solid fa-rotate-left"></i> Refund / Deduct</button> }</td>
+                    <td>@if (row.CanSettle) { <button type="button" class="security-row-action" data-security-settle="@row.Id"><i class="fa-solid fa-rotate-left"></i> Settle</button> }</td>
                     <td class="security-receipt-cell">@if (!string.IsNullOrWhiteSpace(row.ReceiptUrl)) { <a class="security-info-btn" href="@row.ReceiptUrl" target="_blank" rel="noopener" title="View Receipt"><i class="fa-solid fa-receipt"></i></a> } else { <span class="security-receipt-empty">—</span> }</td>
                 </tr>
             }

@@ -227,6 +227,85 @@ public sealed class CheckInService : ICheckInService
         return model;
     }
 
+    /// <summary>
+    /// Fast state loader for the shared Room Security popup. It intentionally
+    /// avoids the full Check-In page graph and loads only the data the popup needs.
+    /// Independent reservation-specific reads run in parallel on pooled SQL
+    /// connections so Calendar and Check-In open the popup quickly.
+    /// </summary>
+    public async Task<CheckInRoomSecurityState> GetRoomSecurityStateAsync(
+        string hotelId,
+        string userId,
+        string regId,
+        CancellationToken ct = default)
+    {
+        EnsureSession(hotelId, userId);
+        regId = (regId ?? string.Empty).Trim();
+        if (regId.Length == 0)
+            throw new ArgumentException("Reservation ID is required.", nameof(regId));
+
+        var settingsModel = new CheckInPageViewModel
+        {
+            HotelId = hotelId,
+            UserId = userId
+        };
+
+        await using (var cn = new SqlConnection(_connectionString))
+        {
+            await cn.OpenAsync(ct);
+            await LoadHotelSettingsAsync(cn, settingsModel, ct);
+            var permission = await LoadPermissionsAsync(cn, hotelId, userId, ct);
+            ApplyPermissions(settingsModel, permission);
+        }
+
+        var visitTask = WithOpenConnectionAsync(
+            c => LoadRoomSecurityVisitIdAsync(c, hotelId, regId, ct), ct);
+        var readersTask = WithOpenConnectionAsync(
+            c => LoadStripeReadersAsync(c, hotelId, ct), ct);
+        var securityTask = WithOpenConnectionAsync(
+            c => LoadSecurityLogAsync(c, hotelId, regId, ct), ct);
+        var balanceTask = WithOpenConnectionAsync(
+            c => GetRoomSecurityBalanceAsync(c, null, hotelId, regId, ct), ct);
+
+        await Task.WhenAll(visitTask, readersTask, securityTask, balanceTask);
+
+        return new CheckInRoomSecurityState
+        {
+            RegId = regId,
+            VisitId = await visitTask,
+            Currency = settingsModel.Currency,
+            CurrencyCode = settingsModel.CurrencyCode,
+            SecurityBalance = Math.Max(0m, await balanceTask),
+            CanCardPayment = settingsModel.CanCardPayment,
+            IsStripeConfigured = settingsModel.IsStripeConfigured,
+            ShowSimulation = settingsModel.ShowSimulation,
+            StripeReaders = (await readersTask).ToList(),
+            SecurityLog = (await securityTask).ToList()
+        };
+    }
+
+    private static async Task<string> LoadRoomSecurityVisitIdAsync(
+        SqlConnection cn,
+        string hotelId,
+        string regId,
+        CancellationToken ct)
+    {
+        const string sql = @"
+SELECT TOP (1)
+       ISNULL(CONVERT(varchar(100), visit_id), '') AS visit_id
+FROM dbo.GuestInformationLogTB WITH (READPAST)
+WHERE hotel_id=@hotel AND reg_id=@reg
+ORDER BY id DESC;";
+
+        await using var cmd = new SqlCommand(sql, cn) { CommandTimeout = 10 };
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+        var value = await cmd.ExecuteScalarAsync(ct);
+        return value == null || value == DBNull.Value
+            ? string.Empty
+            : Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+    }
+
     public async Task<IReadOnlyList<CheckInSearchResult>> SearchAsync(string hotelId, string term, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(term))
@@ -2635,6 +2714,7 @@ VALUES(@current,@qty,@amount,'1',@reg,@category,@sub,@item,@description,@rate,@v
             string chargeId = string.Empty;
             string originalMethod = string.Empty;
             string originalStatus = string.Empty;
+            string originalTerminalStatus = string.Empty;
 
             await using (var selected = new SqlCommand(@"
 SELECT TOP 1
@@ -2642,7 +2722,8 @@ SELECT TOP 1
        ISNULL(payment_intent_id,'') payment_intent_id,
        ISNULL(charge_id,'') charge_id,
        ISNULL(payment_method,'') payment_method,
-       ISNULL(status,'') status
+       ISNULL(status,'') status,
+       ISNULL(terminal_status,'') terminal_status
 FROM dbo.RoomSecurityTB
 WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn))
             {
@@ -2658,6 +2739,7 @@ WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn))
                     chargeId = S(rd, "charge_id");
                     originalMethod = S(rd, "payment_method");
                     originalStatus = S(rd, "status");
+                    originalTerminalStatus = S(rd, "terminal_status");
                 }
                 catch (SqlException)
                 {
@@ -2677,6 +2759,10 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
 
             if (!originalStatus.Equals("Deposit", StringComparison.OrdinalIgnoreCase) || originalAmount <= 0m)
                 return CheckInOperationResult.Fail("Only an active security deposit can be settled.");
+
+            if (IsClosedRoomSecurityStatus(originalTerminalStatus))
+                return CheckInOperationResult.Fail("This security deposit has already been settled.");
+
             if (request.Amount > originalAmount + 0.005m)
                 return CheckInOperationResult.Fail("Settlement amount cannot exceed the selected security deposit.");
 
@@ -2808,14 +2894,26 @@ FROM dbo.RoomSecurityTB WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn);
                 try
                 {
                     await using var update = new SqlCommand(@"
-UPDATE dbo.RoomSecurityTB SET terminal_status='settled'
-WHERE id=@id AND hotel_id=@hotel AND reg_id=@reg;", cn, settleTx);
+UPDATE dbo.RoomSecurityTB
+SET terminal_status='settled'
+WHERE id=@id
+  AND hotel_id=@hotel
+  AND reg_id=@reg
+  AND LOWER(LTRIM(RTRIM(ISNULL(terminal_status,''))))
+      NOT IN ('settled','canceled','cancelled','captured','released','refunded');", cn, settleTx);
                     update.Parameters.Add("@id", SqlDbType.Int).Value = request.SecurityId;
                     update.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                     update.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
-                    await update.ExecuteNonQueryAsync(ct);
+
+                    var marked = await update.ExecuteNonQueryAsync(ct);
+                    if (marked == 0)
+                        throw new InvalidOperationException("This security deposit has already been settled.");
                 }
-                catch (SqlException) { }
+                catch (SqlException)
+                {
+                    // Legacy RoomSecurityTB installations may not have terminal_status.
+                    // Those databases continue to use the compatibility matching below.
+                }
 
                 if (deductionAmount > 0.005m)
                 {
@@ -4446,45 +4544,92 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
     private async Task<IReadOnlyList<CheckInSecurityRow>> LoadSecurityLogAsync(SqlConnection cn, string hotelId, string regId, CancellationToken ct)
     {
         var list = new List<CheckInSecurityRow>();
+        var terminalStatusById = new Dictionary<int, string>();
+
         try
         {
-            await using var cmd = new SqlCommand("SELECT * FROM dbo.RoomSecurityTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id ASC", cn);
+            await using var cmd = new SqlCommand(
+                "SELECT * FROM dbo.RoomSecurityTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id ASC", cn);
             cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
             cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+
             await using var rd = await cmd.ExecuteReaderAsync(ct);
             decimal running = 0m;
+
             while (await rd.ReadAsync(ct))
             {
+                var id = I(rd, "id");
                 var raw = M(rd, "security");
                 var status = S(rd, "status");
+                var terminalStatus = S(rd, "terminal_status");
+
                 // Legacy rows store refund/deduct as negative security values.
-                if ((status.Equals("refund", StringComparison.OrdinalIgnoreCase) || status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase)) && raw > 0) raw = -raw;
+                if ((status.Equals("refund", StringComparison.OrdinalIgnoreCase) ||
+                     status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase)) && raw > 0)
+                    raw = -raw;
+
                 running += raw;
+
                 var method = S(rd, "payment_method");
                 var pi = S(rd, "payment_intent_id");
                 var chargeId = S(rd, "charge_id");
+
+                terminalStatusById[id] = terminalStatus;
+
                 list.Add(new CheckInSecurityRow
                 {
-                    Id = I(rd, "id"), Date = DateAny(rd, "currentdate"), Description = S(rd, "note"), Method = method,
-                    Last4 = S(rd, "last4"), ReceiptUrl = S(rd, "receipt_url"),
-                    Amount = status.Equals("Deposit", StringComparison.OrdinalIgnoreCase) || raw > 0 ? Math.Abs(raw) : 0m,
-                    Deducted = status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase) ? Math.Abs(raw) : 0m,
-                    Refunded = status.Equals("refund", StringComparison.OrdinalIgnoreCase) ? Math.Abs(raw) : 0m,
-                    Balance = running, PaymentIntentId = pi, ChargeId = chargeId, Status = status,
-                    CanSettle = raw > 0m && status.Equals("Deposit", StringComparison.OrdinalIgnoreCase)
+                    Id = id,
+                    Date = DateAny(rd, "currentdate"),
+                    Description = S(rd, "note"),
+                    Method = method,
+                    Last4 = S(rd, "last4"),
+                    ReceiptUrl = S(rd, "receipt_url"),
+                    Amount = status.Equals("Deposit", StringComparison.OrdinalIgnoreCase) || raw > 0
+                        ? Math.Abs(raw)
+                        : 0m,
+                    Deducted = status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase)
+                        ? Math.Abs(raw)
+                        : 0m,
+                    Refunded = status.Equals("refund", StringComparison.OrdinalIgnoreCase)
+                        ? Math.Abs(raw)
+                        : 0m,
+                    Balance = running,
+                    PaymentIntentId = pi,
+                    ChargeId = chargeId,
+                    Status = status,
+
+                    // IMPORTANT:
+                    // The selected deposit row itself is marked terminal_status='settled'
+                    // by SecurityMovementAsync. Use that exact row state first instead of
+                    // guessing which cash deposit a later refund row belongs to.
+                    CanSettle =
+                        raw > 0m &&
+                        status.Equals("Deposit", StringComparison.OrdinalIgnoreCase) &&
+                        !IsClosedRoomSecurityStatus(terminalStatus)
                 });
             }
         }
-        catch (SqlException ex) { _logger.LogDebug(ex, "Room security log could not be loaded."); }
+        catch (SqlException ex)
+        {
+            _logger.LogDebug(ex, "Room security log could not be loaded.");
+        }
 
-        // A deposit is settleable only while some of that specific deposit remains open.
-        // WebForms pairs card settlements by either PaymentIntentId or ChargeId and also
-        // recognises card/PDQ/Stripe methods. Legacy cash rows have no provider identifiers,
-        // so consume later refund/deduction movements from the newest deposits backwards.
+        // Card/PDQ compatibility fallback:
+        // Older records may not have terminal_status populated. Pair their later
+        // movements by PaymentIntentId/ChargeId as before.
         for (var i = 0; i < list.Count; i++)
         {
             var deposit = list[i];
             if (!deposit.CanSettle) continue;
+
+            var terminalStatus = terminalStatusById.TryGetValue(deposit.Id, out var ts)
+                ? ts
+                : string.Empty;
+
+            // If terminal_status is populated, it is the authoritative state for
+            // this exact deposit. Only blank legacy records need inference.
+            if (!string.IsNullOrWhiteSpace(terminalStatus))
+                continue;
 
             var isCardDeposit =
                 !string.IsNullOrWhiteSpace(deposit.PaymentIntentId) ||
@@ -4503,39 +4648,74 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
                      string.Equals(x.ChargeId, deposit.ChargeId, StringComparison.OrdinalIgnoreCase)))
                 .Sum(x => x.Refunded + x.Deducted);
 
-            if (settled + 0.005m >= deposit.Amount) deposit.CanSettle = false;
+            if (settled + 0.005m >= deposit.Amount)
+                deposit.CanSettle = false;
         }
 
-        decimal legacySettlementPool = 0m;
-        for (var i = list.Count - 1; i >= 0; i--)
+        // Cash compatibility fallback:
+        // For current schemas, terminal_status identifies the exact cash deposit that
+        // was settled, so do NOT let its refund row accidentally consume another cash
+        // deposit. Only any unmatched legacy settlement amount is applied by LIFO.
+        decimal cashSettlementPool = list
+            .Where(x => !IsProviderSecurityRow(x))
+            .Sum(x => x.Refunded + x.Deducted);
+
+        var explicitlyClosedCashAmount = list
+            .Where(x =>
+                x.Amount > 0m &&
+                !IsProviderSecurityRow(x) &&
+                terminalStatusById.TryGetValue(x.Id, out var ts) &&
+                IsClosedRoomSecurityStatus(ts))
+            .Sum(x => x.Amount);
+
+        cashSettlementPool = Math.Max(0m, cashSettlementPool - explicitlyClosedCashAmount);
+
+        if (cashSettlementPool > 0.005m)
         {
-            var row = list[i];
-            var isProviderRow =
-                !string.IsNullOrWhiteSpace(row.PaymentIntentId) ||
-                !string.IsNullOrWhiteSpace(row.ChargeId) ||
-                row.Method.Contains("card", StringComparison.OrdinalIgnoreCase) ||
-                row.Method.Contains("pdq", StringComparison.OrdinalIgnoreCase) ||
-                row.Method.Contains("stripe", StringComparison.OrdinalIgnoreCase);
-            if (isProviderRow) continue;
-            var settlement = row.Refunded + row.Deducted;
-            if (settlement > 0m)
+            for (var i = list.Count - 1; i >= 0 && cashSettlementPool > 0.005m; i--)
             {
-                legacySettlementPool += settlement;
-                continue;
-            }
-            if (!row.CanSettle || row.Amount <= 0m) continue;
-            if (legacySettlementPool + 0.005m >= row.Amount)
-            {
-                row.CanSettle = false;
-                legacySettlementPool -= row.Amount;
-            }
-            else if (legacySettlementPool > 0m)
-            {
-                legacySettlementPool = 0m;
+                var row = list[i];
+                if (IsProviderSecurityRow(row)) continue;
+                if (!row.CanSettle || row.Amount <= 0m) continue;
+
+                var terminalStatus = terminalStatusById.TryGetValue(row.Id, out var ts)
+                    ? ts
+                    : string.Empty;
+
+                // A populated exact-row status belongs to the newer flow and must
+                // never be reassigned by the legacy cash matching heuristic.
+                if (!string.IsNullOrWhiteSpace(terminalStatus))
+                    continue;
+
+                if (cashSettlementPool + 0.005m >= row.Amount)
+                {
+                    row.CanSettle = false;
+                    cashSettlementPool = Math.Max(0m, cashSettlementPool - row.Amount);
+                }
+                else
+                {
+                    // Partial legacy settlement. The old UI settles a deposit in one
+                    // operation, so leave it available rather than hiding the wrong row.
+                    cashSettlementPool = 0m;
+                }
             }
         }
 
         return list;
+    }
+
+    private static bool IsProviderSecurityRow(CheckInSecurityRow row)
+        => row != null &&
+           (!string.IsNullOrWhiteSpace(row.PaymentIntentId) ||
+            !string.IsNullOrWhiteSpace(row.ChargeId) ||
+            (row.Method ?? string.Empty).Contains("card", StringComparison.OrdinalIgnoreCase) ||
+            (row.Method ?? string.Empty).Contains("pdq", StringComparison.OrdinalIgnoreCase) ||
+            (row.Method ?? string.Empty).Contains("stripe", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsClosedRoomSecurityStatus(string? status)
+    {
+        var value = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return value is "settled" or "canceled" or "cancelled" or "captured" or "released" or "refunded";
     }
 
     private async Task<IReadOnlyList<CheckInLaundryRow>> LoadLaundryAsync(SqlConnection cn, string hotelId, string regId, CancellationToken ct)

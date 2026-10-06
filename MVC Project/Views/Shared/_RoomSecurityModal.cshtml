@@ -1,0 +1,162 @@
+@* Shared Room Security component used by Check-In and Front Desk Calendar. *@
+<div id="oraRoomSecurity"
+     class="ors-root"
+     data-state-url="@Url.Action("RoomSecurityState", "CheckIn")"
+     data-movement-url="@Url.Action("SecurityMovement", "CheckIn")"
+     data-stripe-create-url="@Url.Action("StripeCreate", "CheckIn")"
+     data-stripe-process-url="@Url.Action("StripeProcess", "CheckIn")"
+     data-stripe-status-url="@Url.Action("StripeStatus", "CheckIn")"
+     data-stripe-cancel-url="@Url.Action("StripeCancel", "CheckIn")"
+     data-stripe-checkout-url="@Url.Action("StripeCheckout", "CheckIn")"
+     data-stripe-checkout-status-url="@Url.Action("StripeCheckoutStatus", "CheckIn")">
+
+    <form id="orsAntiForgery" class="ors-hidden" aria-hidden="true">@Html.AntiForgeryToken()</form>
+
+    <div id="orsOverlay" class="ors-overlay ors-hidden" aria-hidden="true">
+        <section class="ors-dialog" role="dialog" aria-modal="true" aria-labelledby="orsTitle">
+            <header class="ors-head">
+                <div class="ors-head-copy">
+                    <div class="ors-title-row"><span class="ors-title-dot"></span><h2 id="orsTitle">Room Security</h2></div>
+                    <p id="orsGuestLine">Secure deposits, refunds, releases and deductions</p>
+                </div>
+                <button id="orsClose" type="button" class="ors-close" aria-label="Close">×</button>
+            </header>
+
+            <div class="ors-body">
+                <div id="orsLoader" class="ors-loader ors-hidden" aria-live="polite">
+                    <span class="ors-spinner" aria-hidden="true"></span>
+                    <b id="orsLoaderText">Loading room security…</b>
+                </div>
+
+                <div class="ors-summary">
+                    <div class="ors-summary-item">
+                        <span>Reservation</span>
+                        <b id="orsRegId">—</b>
+                    </div>
+                    <div class="ors-summary-item ors-summary-security">
+                        <span>Refundable Security</span>
+                        <b id="orsBalance">—</b>
+                    </div>
+                    <button id="orsRefresh" type="button" class="ors-link-button"><span class="ors-refresh-icon">↻</span> Refresh</button>
+                </div>
+
+                <div id="orsMessage" class="ors-message ors-hidden" role="status" aria-live="polite"></div>
+
+                <section class="ors-history-card">
+                    <div class="ors-section-head">
+                        <div>
+                            <strong>Security Activity</strong>
+                            <small>Cash deposits and card holds stay separate from the room bill.</small>
+                        </div>
+                        <button id="orsNewDeposit" type="button" class="ors-primary-small">+ New Security</button>
+                    </div>
+                    <div class="ors-table-wrap">
+                        <table class="ors-table">
+                            <thead>
+                                <tr><th>Date</th><th>Mode</th><th>Description</th><th>Amount</th><th>Status</th><th></th></tr>
+                            </thead>
+                            <tbody id="orsRows">
+                                <tr><td colspan="6" class="ors-empty"><span class="ors-inline-spinner"></span> Loading room security…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="orsDepositPanel" class="ors-action-card">
+                    <div class="ors-section-head ors-action-heading">
+                        <div>
+                            <strong>Add Room Security</strong>
+                            <small>Select a method, enter the amount and save the security.</small>
+                        </div>
+                    </div>
+
+                    <div class="ors-methods" role="group" aria-label="Security method">
+                        <button type="button" class="ors-method ors-is-selected" data-ors-method="cash">
+                            <span class="ors-method-icon">£</span>
+                            <span><b>Cash</b><small>Refundable deposit</small></span>
+                        </button>
+                        <button type="button" class="ors-method" data-ors-method="pdq">
+                            <span class="ors-method-icon">▣</span>
+                            <span><b>PDQ Hold</b><small>Stripe Terminal hold</small></span>
+                        </button>
+                        <button type="button" class="ors-method" data-ors-method="card">
+                            <span class="ors-method-icon">▤</span>
+                            <span><b>Card Hold</b><small>Secure online hold</small></span>
+                        </button>
+                    </div>
+
+                    <div class="ors-form-grid">
+                        <label class="ors-field">
+                            <span>Amount</span>
+                            <div class="ors-money"><span class="ors-money-prefix" id="orsCurrency">£</span><input id="orsAmount" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" /></div>
+                        </label>
+                        <label id="orsReaderField" class="ors-field ors-hidden">
+                            <span>Reader</span>
+                            <select id="orsReader"><option value="">-- Select reader --</option></select>
+                        </label>
+                        <label class="ors-field ors-span-2">
+                            <span>Additional Info <em>*</em></span>
+                            <input id="orsNote" maxlength="500" placeholder="Additional Info required..." autocomplete="off" />
+                        </label>
+                    </div>
+
+                    <div id="orsSimulation" class="ors-simulation ors-hidden">
+                        <label><input id="orsSimulateEnabled" type="checkbox" /> Use simulated card</label>
+                        <select id="orsSimulationResult">
+                            <option value="success">Success</option>
+                            <option value="decline">Decline</option>
+                            <option value="insufficient_funds">Insufficient funds</option>
+                        </select>
+                        <button id="orsSimulate" type="button" disabled>Simulate</button>
+                    </div>
+
+                    <div class="ors-status-box" id="orsStatusBox">
+                        <span class="ors-status-spinner ors-hidden" id="orsStatusSpinner" aria-hidden="true"></span>
+                        <div><b id="orsStatusTitle">Ready</b><span id="orsStatusText">Choose a security method and enter the amount.</span></div>
+                    </div>
+
+                    <div class="ors-actions">
+                        <button id="orsCancelTerminal" type="button" class="ors-secondary ors-hidden">Cancel PDQ Request</button>
+                        <button id="orsDepositSubmit" type="button" class="ors-primary">Save Security</button>
+                    </div>
+                </section>
+
+                <section id="orsSettlePanel" class="ors-action-card ors-hidden">
+                    <div class="ors-section-head ors-action-heading">
+                        <div>
+                            <strong id="orsSettleHeading">Settle Room Security</strong>
+                            <small id="orsSettleHelp">Refund the guest or retain part/all of the deposit.</small>
+                        </div>
+                    </div>
+
+                    <div class="ors-selected-hold">
+                        <span id="orsSelectedMode">Security deposit</span>
+                        <b id="orsSelectedAmount">—</b>
+                    </div>
+
+                    <div class="ors-form-grid">
+                        <label class="ors-field">
+                            <span id="orsRefundLabel">Refund Amount</span>
+                            <div class="ors-money"><span class="ors-money-prefix" id="orsSettleCurrency">£</span><input id="orsRefundAmount" type="number" min="0" step="0.01" inputmode="decimal" /></div>
+                        </label>
+                        <label class="ors-field">
+                            <span id="orsCaptureLabel">Deduct Amount</span>
+                            <div class="ors-money"><span class="ors-money-prefix" id="orsCaptureCurrency">£</span><input id="orsCaptureAmount" type="number" readonly /></div>
+                        </label>
+                        <label class="ors-field ors-span-2">
+                            <span>Additional Info <em>*</em></span>
+                            <input id="orsSettleNote" maxlength="500" placeholder="Reason for refund / capture / deduction" autocomplete="off" />
+                        </label>
+                    </div>
+
+                    <div id="orsSettlePreview" class="ors-settle-preview"></div>
+
+                    <div class="ors-actions">
+                        <button id="orsBackToDeposit" type="button" class="ors-secondary">Back</button>
+                        <button id="orsSettleSubmit" type="button" class="ors-primary">Settle Security</button>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </div>
+</div>
