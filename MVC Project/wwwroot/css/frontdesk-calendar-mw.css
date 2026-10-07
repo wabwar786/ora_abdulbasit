@@ -1157,3 +1157,238 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
 .fdc-bar .fdc-note-indicator{color:#fff}
 .fdc-bar .fdc-room-change-indicator{color:#000}
 
+
+/* =========================================================
+   Front Desk Calendar MW (month-wise) isolation layer
+   ========================================================= */
+.fdc-mw-page{
+  /* JS recalculates --month-col from the visible calendar viewport. */
+  --month-col:80px;
+  --view-months:14;
+}
+.fdc-mw-page .fdc-card{min-width:0}
+.fdc-mw-page .fdc-mw-timeline{
+  min-height:48px;
+  height:auto;
+  flex:0 0 auto;
+  padding:6px 10px;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.fdc-mw-page .fdc-title small{
+  margin-left:3px;
+  padding:2px 6px;
+  border-radius:999px;
+  background:#eef3f8;
+  color:#60728a;
+  font-size:8px;
+  font-weight:800;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.fdc-mw-presets{display:flex;align-items:center;border:1px solid #ccd8e6;border-radius:7px;overflow:hidden;background:#fff}
+.fdc-mw-presets button{height:28px;border:0;border-right:1px solid #dce4ec;background:#fff;padding:0 10px;font-size:9px;font-weight:800;color:#35516e}
+.fdc-mw-presets button:last-child{border-right:0}.fdc-mw-presets button:hover{background:#f3f7fb}.fdc-mw-presets button.active{background:#0c2238;color:#fff}
+.fdc-mw-date-fields{display:flex;align-items:flex-end;gap:6px}
+.fdc-mw-date-fields label{display:grid;gap:2px;color:#6a7b8d;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.fdc-mw-date-fields input{height:28px;min-width:126px;border:1px solid #ccd8e6;border-radius:6px;background:#fff;padding:0 7px;color:#1a314a;font-size:9px;font-weight:700;outline:none}
+.fdc-mw-date-fields input:focus{border-color:#7ea7d6;box-shadow:0 0 0 2px rgba(50,113,181,.09)}
+.fdc-mw-show{height:28px;border:1px solid #0c2238;border-radius:6px;background:#0c2238;color:#fff;padding:0 11px;font-size:9px;font-weight:850}
+.fdc-mw-show:hover{background:#173d60}
+.fdc-mw-page .fdc-mw-nav .fdc-range{min-width:185px;max-width:230px;font-size:9px}
+.fdc-mw-page .fdc-mw-daily-link{text-decoration:none}
+
+.fdc-mw-page .fdc-calendar{
+  --view-months:14;
+  min-width:calc(var(--room) + (var(--view-months) * var(--month-col)));
+  width:max-content;
+}
+.fdc-mw-page .fdc-date-head,
+.fdc-mw-page .fdc-room-row{
+  grid-template-columns:var(--room) repeat(var(--view-months),var(--month-col));
+  width:max-content;
+  min-width:100%;
+}
+.fdc-mw-page .fdc-date-head{height:42px}
+.fdc-mw-page .fdc-day{
+  width:var(--month-col);
+  min-width:var(--month-col);
+  padding:5px 4px 2px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+}
+.fdc-mw-page .fdc-day span{font-size:9px;font-weight:800;color:#50647b;text-transform:uppercase;letter-spacing:.04em;display:none;}
+.fdc-mw-page .fdc-day b{font-size:12px;line-height:15px}.fdc-mw-page .fdc-day small{font-size:8px;color:#8a98a8}
+.fdc-mw-page .fdc-category{width:max-content;min-width:100%;grid-template-columns:var(--room) calc(var(--view-months) * var(--month-col))}
+.fdc-mw-page .fdc-category-grid{
+  background:repeating-linear-gradient(90deg,transparent 0,transparent calc(var(--month-col) - 1px),#d8e2ec calc(var(--month-col) - 1px),#d8e2ec var(--month-col));
+}
+.fdc-mw-page .fdc-room-row{height:30px;min-height:30px}
+.fdc-mw-page .fdc-cell{width:var(--month-col);min-width:var(--month-col)}
+.fdc-mw-page .fdc-cell.current-month{background:#f8fbff}
+.fdc-mw-page .fdc-cell.council-assigned{background:#fff3cd!important;box-shadow:inset 0 0 0 1px rgba(212,175,55,.13)}
+.fdc-mw-page .fdc-cell.council-assigned:hover{background:#ffefb6!important}
+.fdc-mw-page .fdc-room-label.council-assigned{background:#fff3cd!important}
+.fdc-mw-page .fdc-room-label.council-assigned:hover{background:#ffefb6!important}
+.fdc-mw-page .fdc-cell:hover:after{content:"+";inset:4px}
+.fdc-mw-page .fdc-bar{top:4px;height:22px;min-width:7px}
+.fdc-mw-page .fdc-bar .name{width:100%;text-align:center;pointer-events:none}
+.fdc-mw-page .fdc-mw-pay-dot{
+  position:absolute;
+  top:50%;
+  width:7px;
+  height:7px;
+  margin-left:-3.5px;
+  border-radius:50%;
+  transform:translateY(-50%);
+  border:1px solid rgba(0,0,0,.18);
+  z-index:3;
+  pointer-events:none;
+}
+.fdc-mw-page .fdc-mw-pay-dot.not-paid{background:#f36767}
+.fdc-mw-page .fdc-mw-pay-dot.part-paid{background:#f0d707}
+.fdc-mw-page .fdc-mw-pay-dot.fully-paid{background:#09b753}
+.fdc-mw-page .fdc-bar .pay-dot{display:none!important}
+.fdc-mw-page .fdc-note-indicator,.fdc-mw-page .fdc-room-change-indicator{z-index:4}
+.fdc-mw-page .fdc-dirty-tag{font-size:8px;line-height:15px;padding:1px 4px}
+
+/* Month-wise drag/drop focus: headers represent months rather than individual days. */
+.fdc-mw-page .fdc-dnd-date-active{box-shadow:inset 0 -3px #4b89f8!important;background:#eaf3ff!important}
+
+@media(max-width:1350px){
+  .fdc-mw-page .fdc-mw-timeline{gap:6px}
+  .fdc-mw-page .fdc-mw-nav{order:5}
+}
+@media(max-width:900px){
+  .fdc-mw-date-fields{width:100%;order:4}
+  .fdc-mw-date-fields label{flex:1}.fdc-mw-date-fields input{width:100%;min-width:0}
+  .fdc-mw-page .fdc-mw-nav{width:100%}.fdc-mw-page .fdc-mw-nav .fdc-range{flex:1;max-width:none}
+}
+
+
+/* Screen-fit month columns: JS writes an exact pixel width so all default
+   month columns share the available viewport without changing booking geometry. */
+.fdc-mw-page .fdc-day{overflow:hidden}
+.fdc-mw-page .fdc-day span,
+.fdc-mw-page .fdc-day b,
+.fdc-mw-page .fdc-day small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1100px){
+  .fdc-mw-page .fdc-day{padding-left:2px;padding-right:2px}
+  .fdc-mw-page .fdc-day span{font-size:8px}
+  .fdc-mw-page .fdc-day b{font-size:10px}
+  .fdc-mw-page .fdc-day small{display:none}
+}
+
+/* =========================================================
+   MW parity cleanup (2026-10): keep the existing daily Calendar isolated.
+   The highlighted preset/date controls and daily-link shortcut are intentionally
+   not rendered on the MVC Month View.
+   ========================================================= */
+.fdc-mw-page .fdc-mw-timeline{
+  min-height:42px;
+  height:42px;
+  flex-wrap:nowrap;
+  padding:5px 10px;
+  gap:8px;
+}
+.fdc-mw-page .fdc-mw-nav{margin-left:auto;order:initial!important}
+.fdc-mw-page .fdc-tools{flex:0 0 auto}
+.fdc-mw-page .fdc-title{flex:0 0 auto}
+
+/* WebForms MW payment indicator parity: each monthly payment state fills its
+   part of the reservation bar instead of showing a small isolated dot. */
+.fdc-mw-page .fdc-bar{isolation:isolate}
+.fdc-mw-page .fdc-mw-pay-strip{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  pointer-events:none;
+  z-index:1;
+}
+.fdc-mw-page .fdc-mw-pay-segment{
+  position:absolute;
+  top:0;
+  bottom:0;
+  min-width:1px;
+  pointer-events:none;
+  border:0;
+  box-shadow:none;
+}
+.fdc-mw-page .fdc-mw-pay-segment.not-paid{background:#f36767}
+.fdc-mw-page .fdc-mw-pay-segment.part-paid{background:#f0d707}
+.fdc-mw-page .fdc-mw-pay-segment.fully-paid{background:#09b753}
+.fdc-mw-page .fdc-mw-pay-segment.payment-hidden{display:none}
+.fdc-mw-page .fdc-bar>.name,
+.fdc-mw-page .fdc-bar>.fdc-note-indicator,
+.fdc-mw-page .fdc-bar>.fdc-room-change-indicator,
+.fdc-mw-page .fdc-bar>.fdc-handle{position:relative;z-index:5}
+.fdc-mw-page .fdc-bar>.fdc-handle{position:absolute}
+
+/* Month-wise Extend / Shrink rate-plan table. */
+.fdc-mw-plan-box{
+  margin-top:12px;
+  border:1px solid #d8e2ec;
+  border-radius:9px;
+  overflow:hidden;
+  background:#fff;
+}
+.fdc-mw-plan-head,
+.fdc-mw-plan-row{
+  display:grid;
+  grid-template-columns:minmax(180px,1.5fr) minmax(120px,.75fr) minmax(145px,.85fr);
+  align-items:center;
+  gap:10px;
+}
+.fdc-mw-plan-head{
+  padding:8px 10px;
+  background:#f3f7fb;
+  border-bottom:1px solid #dbe5ee;
+  color:#536a80;
+  font-size:9px;
+  font-weight:850;
+  text-transform:uppercase;
+  letter-spacing:.035em;
+}
+.fdc-mw-plan-row{
+  padding:8px 10px;
+  border-bottom:1px solid #edf1f5;
+}
+.fdc-mw-plan-row:last-child{border-bottom:0}
+.fdc-mw-plan-name{min-width:0}
+.fdc-mw-plan-name b{display:block;color:#142c43;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fdc-mw-plan-name small{display:block;margin-top:2px;color:#8190a1;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fdc-mw-plan-old{font-size:10px;font-weight:800;color:#52687e}
+.fdc-mw-plan-new{
+  display:flex;
+  align-items:center;
+  height:31px;
+  border:1px solid #cbd8e5;
+  border-radius:7px;
+  overflow:hidden;
+  background:#fff;
+}
+.fdc-mw-plan-new span{padding-left:8px;color:#536a80;font-size:9px;font-weight:850}
+.fdc-mw-plan-new input{
+  width:100%;
+  min-width:0;
+  height:29px;
+  border:0;
+  outline:0;
+  padding:0 8px 0 4px;
+  background:transparent;
+  color:#142c43;
+  font:inherit;
+  font-size:10px;
+  font-weight:800;
+}
+.fdc-mw-plan-new:focus-within{border-color:#2867e8;box-shadow:0 0 0 2px rgba(40,103,232,.10)}
+
+@media(max-width:900px){
+  .fdc-mw-page .fdc-mw-timeline{height:auto;min-height:42px;flex-wrap:wrap}
+  .fdc-mw-page .fdc-mw-nav{width:auto;margin-left:auto}
+  .fdc-mw-plan-head,.fdc-mw-plan-row{grid-template-columns:1fr 105px 125px}
+}

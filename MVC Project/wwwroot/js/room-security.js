@@ -173,6 +173,27 @@
     return num(row?.deducted);
   }
 
+  function latestSettleableSecurity(preferCard = false) {
+    const list = (Array.isArray(state.data?.securityLog) ? state.data.securityLog : [])
+      .filter(row => row?.canSettle)
+      .slice()
+      .sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0));
+    if (!list.length) return null;
+    if (preferCard) return list.find(isCardRow) || list[0];
+    return list[0];
+  }
+
+  function openLatestSettleableSecurity(preferCard = false) {
+    const row = latestSettleableSecurity(preferCard);
+    if (!row) {
+      setMode('deposit');
+      showMessage('No active room security hold is available to settle.', true);
+      return false;
+    }
+    setMode('settle', row);
+    return true;
+  }
+
   function renderRows() {
     const list = Array.isArray(state.data?.securityLog) ? state.data.securityLog : [];
     if (!rowsHost) return;
@@ -709,6 +730,7 @@
 
   async function open(options = {}) {
     const regId = String(options.regId || '').trim();
+    const settleLatestCardHold = options.settleLatestCardHold === true;
     if (!regId) throw new Error('Reservation reference is missing.');
     state.ctx = {
       regId,
@@ -740,6 +762,7 @@
     if (cacheFresh) {
       state.data = cached.data;
       renderState();
+      if (settleLatestCardHold) openLatestSettleableSecurity(true);
       setLoader(false);
     } else {
       rowsHost.innerHTML = '<tr><td colspan="5" class="ors-empty"><span class="ors-inline-spinner"></span> Loading room security…</td></tr>';
@@ -750,6 +773,7 @@
         showLoader: !cacheFresh,
         loaderText: 'Loading room security…'
       });
+      if (settleLatestCardHold) openLatestSettleableSecurity(true);
     } catch (e) {
       showMessage(e.message || 'Unable to load room security.', true);
     }

@@ -1,18 +1,18 @@
-@model Orapmshms.Models.FrontDeskCalendarPageViewModel
+@model Orapmshms.Models.FrontDeskCalendarMWPageViewModel
 @{
-    ViewData["Title"] = "Front Desk Calendar";
+    ViewData["Title"] = "Front Desk Calendar - Month View";
     Layout = "_PmsLayout";
 }
 @section Styles {
-    <link rel="stylesheet" href="~/css/frontdesk-calendar-template.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/frontdesk-calendar-mw.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/record-payment.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/room-security.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/refund-payment.css" asp-append-version="true" />
 }
 
-<div class="fdc-page" id="frontDeskCalendarPage"
+<div class="fdc-page fdc-mw-page" id="frontDeskCalendarMWPage"
      data-start="@Model.StartDate.ToString("yyyy-MM-dd")"
-     data-view-days="@Model.ViewDays"
+     data-end="@Model.EndDate.ToString("yyyy-MM-dd")"
      data-hotel-today="@Model.HotelToday.ToString("yyyy-MM-dd")"
      data-currency="@Model.CurrencySymbol"
      data-hotel-id="@Model.HotelId"
@@ -23,7 +23,8 @@
      data-can-online-card="@(Model.CanOnlineCardPayment ? "1" : "0")"
      data-can-pdq-payment="@(Model.CanPdqPayment ? "1" : "0")"
      data-can-refund="@(Model.Permissions.CanRefund ? "1" : "0")"
-     data-data-url="@Url.Action("Data", "FrontDeskCalendar")"
+     data-data-url="@Url.Action("Data", "FrontDeskCalendarMW")"
+     data-actions-base-url="@Url.Content("~/Calendar")"
      data-details-url="@Url.Action("BookingDetails", "FrontDeskCalendar")"
      data-update-room-guest-url="@Url.Action("UpdateChargeGuestName", "CheckIn")"
      data-history-url="@Url.Action("GuestHistory", "FrontDeskCalendar")"
@@ -35,6 +36,10 @@
      data-activate-room-url="@Url.Action("ActivateRoom", "FrontDeskCalendar")"
      data-move-url="@Url.Action("MoveBooking", "FrontDeskCalendar")"
      data-resize-url="@Url.Action("ResizeBooking", "FrontDeskCalendar")"
+     data-mw-resize-check-url="@Url.Action("CheckResizeAvailability", "FrontDeskCalendarMW")"
+     data-mw-resize-plans-url="@Url.Action("ResizePlans", "FrontDeskCalendarMW")"
+     data-mw-resize-url="@Url.Action("ResizeBooking", "FrontDeskCalendarMW")"
+     data-mw-swap-url="@Url.Action("SwapBooking", "FrontDeskCalendarMW")"
      data-no-show-url="@Url.Action("NoShow", "FrontDeskCalendar")"
      data-cancel-url="@Url.Action("CancelReservation", "FrontDeskCalendar")"
      data-undo-url="@Url.Action("UndoCheckIn", "CheckIn")"
@@ -52,14 +57,16 @@
     <form id="fdcAntiForgery" class="fdc-hidden">@Html.AntiForgeryToken()</form>
 
     <section class="fdc-card">
-        <div class="fdc-timeline">
+        <div class="fdc-timeline fdc-mw-timeline">
             <div class="fdc-title"><i class="fa-regular fa-calendar-days"></i><span>Front Desk Calendar</span></div>
-            <div class="fdc-date-nav">
+
+            <div class="fdc-date-nav fdc-mw-nav">
                 <button type="button" id="fdcPrev" title="Previous period">‹</button>
                 <button type="button" id="fdcToday">Today</button>
-                <button type="button" id="fdcRange" class="fdc-range">@Model.StartDate.ToString("dd MMM yyyy")</button>
+                <button type="button" id="fdcRange" class="fdc-range">@Model.StartDate.ToString("dd MMM yyyy") – @Model.EndDate.ToString("dd MMM yyyy")</button>
                 <button type="button" id="fdcNext" title="Next period">›</button>
             </div>
+
             <div class="fdc-tools">
                 <button type="button" class="fdc-tool" id="fdcRefresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
                 <button type="button" class="fdc-tool" id="fdcLegendToggle" title="Legend" aria-expanded="false"><i class="fa-solid fa-circle-info"></i></button>
@@ -69,16 +76,16 @@
                     <div><i class="inhouse"></i>Checked in</div>
                     <div><i class="tentative"></i>Provisional</div>
                     <div><i style="background:#a5a5a5"></i>Checked out</div>
-                    <div><i class="arrival"></i>Overdue</div>
                     <div><i class="blocked"></i>Blocked room</div>
                     <div><i class="dirty"></i>Dirty room</div>
+                    <div><i style="background:#fff3cd;border:1px solid #e4cf8c"></i>Council assigned</div>
                 </div>
             </div>
         </div>
 
         <div class="fdc-scroll" id="fdcScroll">
             <div class="fdc-calendar" id="fdcCalendar">
-                <div class="fdc-loading" id="fdcLoading"><span></span><b>Loading calendar…</b></div>
+                <div class="fdc-loading" id="fdcLoading"><span></span><b>Loading month-wise calendar…</b></div>
             </div>
         </div>
     </section>
@@ -116,5 +123,5 @@
     <script src="~/js/record-payment.js" asp-append-version="true"></script>
     <script src="~/js/room-security.js" asp-append-version="true"></script>
     <script src="~/js/refund-payment.js" asp-append-version="true"></script>
-    <script src="~/js/frontdesk-calendar-template.js" asp-append-version="true"></script>
+    <script src="~/js/frontdesk-calendar-mw.js" asp-append-version="true"></script>
 }

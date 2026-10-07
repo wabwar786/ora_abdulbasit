@@ -28,6 +28,7 @@ public sealed class FrontDeskCalendarService : IFrontDeskCalendarService
     private readonly IHotelClock _hotelClock;
     private readonly IAvailabilityAutoUpdateQueue _availabilityQueue;
     private readonly ICheckInService _checkInService;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMemoryCache _cache;
     private readonly IAppLogger _logger;
     private readonly FrontDeskCalendarDbLogger _dbLogger;
@@ -42,6 +43,7 @@ public sealed class FrontDeskCalendarService : IFrontDeskCalendarService
         IHotelClock hotelClock,
         IAvailabilityAutoUpdateQueue availabilityQueue,
         ICheckInService checkInService,
+        IHttpClientFactory httpClientFactory,
         IMemoryCache cache,
         IAppLogger logger,
         FrontDeskCalendarDbLogger? dbLogger = null)
@@ -51,6 +53,7 @@ public sealed class FrontDeskCalendarService : IFrontDeskCalendarService
         _hotelClock = hotelClock;
         _availabilityQueue = availabilityQueue;
         _checkInService = checkInService;
+        _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _dbLogger = dbLogger ?? new FrontDeskCalendarDbLogger(_connectionString, _hotelClock, _logger);
@@ -141,17 +144,25 @@ SELECT
     ISNULL(r.room_category,'') AS room_category,
     ISNULL(CONVERT(varchar(100),cr.localcategoryid),'') AS localcategoryid,
     ISNULL(r.room_status,'') AS room_status,
-    CASE WHEN EXISTS
-    (
-        SELECT 1
-        FROM dbo.UserRoomAccess ura2 WITH (READPAST)
-        INNER JOIN dbo.Hms_accounts ha WITH (READPAST) ON ha.user_id=ura2.UserId
-        WHERE ura2.HotelId=r.Hotel_id AND ura2.RoomNo=r.room_no AND ha.role='Council'
-    ) THEN 1 ELSE 0 END AS IsAssignedToCouncil
+    CASE WHEN ISNULL(ca.CouncilAssignmentCount,0) > 0 THEN 1 ELSE 0 END AS IsAssignedToCouncil,
+    ca.CouncilAssignmentStartDate,
+    ca.CouncilAssignmentEndDate
 FROM dbo.RoomsTB r WITH (READPAST)
 LEFT JOIN dbo.create_room cr WITH (READPAST)
     ON cr.hotel_id=r.Hotel_id AND cr.description=r.room_category
    AND LTRIM(RTRIM(ISNULL(cr.category,'')))='Room Rent'
+OUTER APPLY
+(
+    SELECT
+        COUNT_BIG(1) AS CouncilAssignmentCount,
+        MIN(TRY_CONVERT(date,ura2.FromDate)) AS CouncilAssignmentStartDate,
+        MAX(TRY_CONVERT(date,ura2.ToDate)) AS CouncilAssignmentEndDate
+    FROM dbo.UserRoomAccess ura2 WITH (READPAST)
+    INNER JOIN dbo.Hms_accounts ha WITH (READPAST) ON ha.user_id=ura2.UserId
+    WHERE ura2.HotelId=r.Hotel_id
+      AND ura2.RoomNo=r.room_no
+      AND LOWER(LTRIM(RTRIM(ISNULL(ha.role,''))))='council'
+) ca
 WHERE r.Hotel_id=@hotel
   AND (@isCouncil=0 OR EXISTS
       (SELECT 1 FROM dbo.UserRoomAccess ura WITH (READPAST)
@@ -221,6 +232,10 @@ PaymentRows AS
         ORDER BY pu.id DESC
     ) u
     WHERE p.hotel_id=@hotel
+      -- A payment row can supply room-level details only while the reservation
+      -- still exists in one of the two master reservation tables.  This keeps
+      -- orphan payment rows from rendering ghost bookings on either calendar.
+      AND (g.reg_id IS NOT NULL OR n.reg_id IS NOT NULL)
       AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
       AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','check out','provisional','tentative')
       AND COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,23),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)) <= @viewEnd
@@ -301,7 +316,9 @@ ORDER BY BlockStartDate, BlockID;";
                     CategoryId = S(rd, "localcategoryid"),
                     Condition = condition,
                     DirtyDate = condition == "Dirty" ? hotelToday : null,
-                    IsAssignedToCouncil = B(rd, "IsAssignedToCouncil")
+                    IsAssignedToCouncil = B(rd, "IsAssignedToCouncil"),
+                    CouncilAssignmentStartDate = D(rd, "CouncilAssignmentStartDate"),
+                    CouncilAssignmentEndDate = D(rd, "CouncilAssignmentEndDate")
                 });
             }
         }
@@ -353,8 +370,9 @@ ORDER BY BlockStartDate, BlockID;";
                     PaymentId = paymentId,
                     VisitId = FirstNonEmpty(S(rd, "visit_id"), S(rd, "master_visit_id")),
                     BookId = S(rd, "Bookid"),
-                    GuestName = string.IsNullOrWhiteSpace(roomGuest) ? masterName :
-                        string.IsNullOrWhiteSpace(masterName) ? roomGuest : masterName + " / " + roomGuest,
+                    // A guest name saved against this specific room/payment row takes priority.
+                    // Only fall back to the reservation/base-table guest when no room guest was set.
+                    GuestName = string.IsNullOrWhiteSpace(roomGuest) ? masterName : roomGuest,
                     Phone = S(rd, "PhoneNo"),
                     RoomNo = roomNo.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase) ? string.Empty : roomNo,
                     CategoryName = S(rd, "room_category"),
@@ -474,7 +492,11 @@ SELECT TOP (1)
     p.ID AS PaymentId,
     p.reg_id,
     ISNULL(CONVERT(varchar(100),G.visit_id),'') AS visit_id,
-    LTRIM(RTRIM(CONCAT(ISNULL(G.GuestName,N.GuestName),' ',ISNULL(G.LastName,N.LastName)))) AS guest_name,
+    CASE
+        WHEN NULLIF(LTRIM(RTRIM(ISNULL(p.guestname,''))), '') IS NOT NULL
+            THEN LTRIM(RTRIM(p.guestname))
+        ELSE LTRIM(RTRIM(CONCAT(ISNULL(G.GuestName,N.GuestName),' ',ISNULL(G.LastName,N.LastName))))
+    END AS guest_name,
     ISNULL(G.PhoneNo,N.PhoneNo) AS PhoneNo,
     ISNULL(G.Email,N.Email) AS Email,
     ISNULL(G.Bookid,N.Bookid) AS Bookid,
@@ -1784,6 +1806,301 @@ ORDER BY CASE WHEN hotel_id=@hotel THEN 0 ELSE 1 END, ID DESC;", cn);
             await _dbLogger.LogExceptionAsync(ex, "Front Desk Calendar", "Send Email", hotelId, userId, userName, ip, ct);
             return FrontDeskOperationResult.Fail("Unable to send the email. " + ex.Message);
         }
+    }
+
+    public async Task<FrontDeskOperationResult> NoShowAsync(
+        string hotelId, string hotelName, string userId, string userName, string ip,
+        FrontDeskNoShowRequest request, CancellationToken ct = default)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId))
+            return FrontDeskOperationResult.Fail("Reservation ID is required.");
+
+        var regId = NormalizeRegId(request.RegId);
+        var today = _hotelClock.GetHotelToday(hotelId);
+        DateTime? availabilityStart = null;
+        DateTime? availabilityEnd = null;
+        string source = string.Empty;
+        int sourceId = 0;
+        string bookingId = string.Empty;
+
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+
+        try
+        {
+            // The WebForms ReservationList only offers No Show after the arrival date.
+            // Validate the same rule on the server so a stale/forged calendar request
+            // cannot mark a current or future reservation as a no-show.
+            await using (var dateCmd = new SqlCommand(@"
+SELECT
+    MIN(COALESCE(
+        TRY_CONVERT(date,ArrivalDate,110),
+        TRY_CONVERT(date,ArrivalDate,23),
+        TRY_CONVERT(date,ArrivalDate,101),
+        TRY_CONVERT(date,ArrivalDate,103),
+        TRY_CONVERT(date,ArrivalDate)
+    )) AS ArrivalDate,
+    MAX(COALESCE(
+        TRY_CONVERT(date,DepartureDate,110),
+        TRY_CONVERT(date,DepartureDate,23),
+        TRY_CONVERT(date,DepartureDate,101),
+        TRY_CONVERT(date,DepartureDate,103),
+        TRY_CONVERT(date,DepartureDate)
+    )) AS DepartureDate
+FROM dbo.payments
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND (@paymentId<=0 OR EXISTS
+      (SELECT 1 FROM dbo.payments p2
+       WHERE p2.hotel_id=@hotel AND p2.reg_id=@reg AND p2.ID=@paymentId
+         AND LTRIM(RTRIM(ISNULL(p2.descr,'')))='Room Rent'
+         AND LOWER(LTRIM(RTRIM(ISNULL(p2.res_status,''))))='reservation'))
+  AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,''))))='reservation';", cn, tx))
+            {
+                dateCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                dateCmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                dateCmd.Parameters.Add("@paymentId", SqlDbType.Int).Value = request.PaymentId;
+                await using var rd = await dateCmd.ExecuteReaderAsync(ct);
+                if (await rd.ReadAsync(ct))
+                {
+                    if (!rd.IsDBNull(0)) availabilityStart = Convert.ToDateTime(rd.GetValue(0), CultureInfo.InvariantCulture).Date;
+                    if (!rd.IsDBNull(1)) availabilityEnd = Convert.ToDateTime(rd.GetValue(1), CultureInfo.InvariantCulture).Date;
+                }
+            }
+
+            if (!availabilityStart.HasValue)
+            {
+                await tx.RollbackAsync(ct);
+                return FrontDeskOperationResult.Fail("This reservation is no longer available for No Show.");
+            }
+
+            if (availabilityStart.Value >= today)
+            {
+                await tx.RollbackAsync(ct);
+                return FrontDeskOperationResult.Fail("No Show is only available after the reservation arrival date.");
+            }
+
+            // Calendar guest display already gives GuestInformationLogTB precedence over
+            // NewReservationsTB. Use the same source preference, then mirror the WebForms
+            // NoShow archive/delete behaviour for that source row.
+            await using (var sourceCmd = new SqlCommand(@"
+SELECT TOP (1) src,id,ISNULL(booking_id,'') AS booking_id
+FROM
+(
+    SELECT 'GI' AS src,id,booking_id,1 AS source_order
+    FROM dbo.GuestInformationLogTB
+    WHERE hotel_id=@hotel AND reg_id=@reg
+      AND LOWER(LTRIM(RTRIM(ISNULL(res_status,''))))='reservation'
+
+    UNION ALL
+
+    SELECT 'NR' AS src,id,booking_id,2 AS source_order
+    FROM dbo.NewReservationsTB
+    WHERE hotel_id=@hotel AND reg_id=@reg
+      AND LOWER(LTRIM(RTRIM(ISNULL(res_status,''))))='reservation'
+) s
+ORDER BY source_order,id DESC;", cn, tx))
+            {
+                sourceCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                sourceCmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                await using var rd = await sourceCmd.ExecuteReaderAsync(ct);
+                if (await rd.ReadAsync(ct))
+                {
+                    source = Convert.ToString(rd["src"], CultureInfo.InvariantCulture) ?? string.Empty;
+                    sourceId = Convert.ToInt32(rd["id"], CultureInfo.InvariantCulture);
+                    bookingId = Convert.ToString(rd["booking_id"], CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+                }
+            }
+
+            if (sourceId <= 0 || (source != "GI" && source != "NR"))
+            {
+                await tx.RollbackAsync(ct);
+                return FrontDeskOperationResult.Fail("The active reservation record could not be found for No Show.");
+            }
+
+            var archiveSql = source == "GI" ? @"
+INSERT INTO dbo.NoShowTB (
+  reg_id, GuestName, LastName, gender, ArrivalDate, dept_date, DOB, Address, Country,
+  City, Email, PhoneNo, Agency, Status, shift, date, cb_status, res_status, cnic, visa,
+  number_of_adult, adult_male, adult_female, number_of_minor, minor_male, minor_female,
+  advance_paid, total_amount, payment_method, hotel_id, user_id, systemUser, systemName,
+  ipAddress, council_id, room_category, room_no, reason, booking_id, isupdateavailibilty,
+  noofrooms, iscouncilreservationaccepted
+)
+SELECT
+  reg_id, GuestName, LastName, gender, ArrivalDate, DepartureDate, DOB, Address, Country,
+  City, Email, PhoneNo, Agency, Status, shift, date, cb_status, res_status, cnic, VisaPassportNo,
+  NumberOfAdults, adult_male, adult_female, NumberOfMinors, minor_male, minor_female,
+  advance_paid, total_amount, payment_method, hotel_id, user_id, systemUser, systemName,
+  ipAddress, council_id, room_category, room_no, reason, booking_id, isupdateavailibilty,
+  noofrooms, iscouncilreservationaccepted
+FROM dbo.GuestInformationLogTB
+WHERE id=@id AND hotel_id=@hotel;" : @"
+INSERT INTO dbo.NoShowTB (
+  reg_id, GuestName, LastName, gender, ArrivalDate, dept_date, DOB, Address, Country,
+  City, Email, PhoneNo, Agency, Status, shift, date, cb_status, res_status, cnic, visa,
+  number_of_adult, adult_male, adult_female, number_of_minor, minor_male, minor_female,
+  advance_paid, total_amount, payment_method, hotel_id, user_id, systemUser, systemName,
+  ipAddress, council_id, room_category, room_no, reason, booking_id, isupdateavailibilty,
+  noofrooms, iscouncilreservationaccepted
+)
+SELECT
+  reg_id, GuestName, LastName, gender, ArrivalDate, dept_date, DOB, Address, Country,
+  City, Email, PhoneNo, Agency, Status, shift, date, cb_status, res_status, cnic, visa,
+  number_of_adult, adult_male, adult_female, number_of_minor, minor_male, minor_female,
+  advance_paid, total_amount, payment_method, hotel_id, user_id, systemUser, systemName,
+  ipAddress, council_id, room_category, room_no, reason, booking_id, isupdateavailibilty,
+  noofrooms, iscouncilreservationaccepted
+FROM dbo.NewReservationsTB
+WHERE id=@id AND hotel_id=@hotel;";
+
+            int archived;
+            await using (var archiveCmd = new SqlCommand(archiveSql, cn, tx))
+            {
+                archiveCmd.Parameters.Add("@id", SqlDbType.Int).Value = sourceId;
+                archiveCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                archived = await archiveCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (archived <= 0)
+            {
+                await tx.RollbackAsync(ct);
+                return FrontDeskOperationResult.Fail("The reservation could not be archived as No Show.");
+            }
+
+            var deleteSql = source == "GI"
+                ? "DELETE FROM dbo.GuestInformationLogTB WHERE id=@id AND hotel_id=@hotel;"
+                : "DELETE FROM dbo.NewReservationsTB WHERE id=@id AND hotel_id=@hotel;";
+            await using (var deleteCmd = new SqlCommand(deleteSql, cn, tx))
+            {
+                deleteCmd.Parameters.Add("@id", SqlDbType.Int).Value = sourceId;
+                deleteCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                await deleteCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // WebForms removes the master reservation row. The MVC calendar is rendered
+            // from payments, so mark its active reservation rows No Show as the equivalent
+            // visibility/status change instead of leaving the booking bar on the calendar.
+            int changedRows;
+            await using (var statusCmd = new SqlCommand(@"
+UPDATE dbo.payments
+SET res_status='no show'
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,''))))='reservation';", cn, tx))
+            {
+                statusCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                statusCmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                changedRows = await statusCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (changedRows <= 0)
+            {
+                await tx.RollbackAsync(ct);
+                return FrontDeskOperationResult.Fail("This reservation is no longer available for No Show.");
+            }
+
+            await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
+                "NO SHOW", $"Reservation marked No Show. Source: {source}.", ct);
+
+            await tx.CommitAsync(ct);
+
+            if (availabilityStart.HasValue && availabilityEnd.HasValue)
+                QueueAvailability(hotelId, hotelName, userId, userName, ip,
+                    availabilityStart.Value, availabilityEnd.Value, "0");
+
+            var channelWarning = await ReportNoShowToChannexAsync(hotelId, bookingId, ct);
+            return FrontDeskOperationResult.Ok(channelWarning.Length == 0
+                ? "Reservation marked as No Show successfully."
+                : "Reservation marked as No Show successfully. " + channelWarning);
+        }
+        catch (Exception ex)
+        {
+            try { await tx.RollbackAsync(ct); } catch { }
+            _logger.Error(ex, "Unable to mark reservation {RegId} as No Show.", regId);
+            await _dbLogger.LogExceptionAsync(ex, "Front Desk Calendar", "No Show", hotelId, userId, userName, ip, ct);
+            return FrontDeskOperationResult.Fail("Unable to mark reservation as No Show. " + ex.Message);
+        }
+    }
+
+    private async Task<string> ReportNoShowToChannexAsync(string hotelId, string bookingId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(bookingId) || bookingId.Equals("N/A", StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
+        try
+        {
+            var context = await LoadNoShowChannelContextAsync(hotelId, ct);
+            if (context == null) return string.Empty;
+
+            var http = _httpClientFactory.CreateClient("ChannelManager");
+            using var message = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"{context.Value.BaseUrl.TrimEnd('/')}/api/v1/bookings/{Uri.EscapeDataString(bookingId.Trim())}/no_show");
+            message.Headers.TryAddWithoutValidation("user-api-key", context.Value.ApiKey);
+            message.Headers.Accept.ParseAdd("application/json");
+            message.Content = new StringContent(
+                "{\"no_show_report\":{\"waived_fees\":false}}",
+                Encoding.UTF8,
+                "application/json");
+
+            using var response = await http.SendAsync(message, ct);
+            if (response.IsSuccessStatusCode) return string.Empty;
+
+            _logger.Warning("Channex No Show report failed for {BookingId}: {StatusCode}.",
+                bookingId, (int)response.StatusCode);
+            return "The local No Show was saved, but the channel manager did not confirm the update.";
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Channex No Show report failed for booking {BookingId}.", bookingId);
+            return "The local No Show was saved, but the channel manager update could not be completed.";
+        }
+    }
+
+    private async Task<(string BaseUrl, string ApiKey)?> LoadNoShowChannelContextAsync(
+        string hotelId, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+
+        bool useApp = false;
+        await using (var modeCmd = new SqlCommand(@"
+SELECT TOP (1) ISNULL(channexstaging,0)
+FROM dbo.HotelsSignUpTB
+WHERE hotel_id=@hotel;", cn))
+        {
+            modeCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            var raw = await modeCmd.ExecuteScalarAsync(ct);
+            if (raw != null && raw != DBNull.Value)
+                useApp = Convert.ToBoolean(raw, CultureInfo.InvariantCulture);
+        }
+
+        var channelName = useApp ? "app" : "staging";
+        string baseUrl;
+        await using (var linkCmd = new SqlCommand(
+            "SELECT TOP (1) link FROM dbo.channexlink WHERE channelname=@channel;", cn))
+        {
+            linkCmd.Parameters.Add("@channel", SqlDbType.VarChar, 50).Value = channelName;
+            baseUrl = Convert.ToString(await linkCmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+        }
+
+        if (baseUrl.Length == 0) return null;
+
+        string apiKey = string.Empty;
+        await using (var keyCmd = new SqlCommand(
+            "SELECT TOP (1) apikey,username FROM dbo.channelmanagerapikey ORDER BY id DESC;", cn))
+        await using (var rd = await keyCmd.ExecuteReaderAsync(ct))
+        {
+            if (await rd.ReadAsync(ct))
+            {
+                apiKey = baseUrl.TrimEnd('/').Equals("https://app.channex.io", StringComparison.OrdinalIgnoreCase)
+                    ? Convert.ToString(rd["apikey"], CultureInfo.InvariantCulture)?.Trim() ?? string.Empty
+                    : Convert.ToString(rd["username"], CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+            }
+        }
+
+        return apiKey.Length == 0 ? null : (baseUrl, apiKey);
     }
 
     public async Task<FrontDeskOperationResult> CancelReservationAsync(

@@ -61,6 +61,10 @@ public interface IFrontDeskCalendarService
         string hotelId, string userId, string userName, string ip,
         FrontDeskEmailSendRequest request, CancellationToken ct = default);
 
+    Task<FrontDeskOperationResult> NoShowAsync(
+        string hotelId, string hotelName, string userId, string userName, string ip,
+        FrontDeskNoShowRequest request, CancellationToken ct = default);
+
     Task<FrontDeskOperationResult> CancelReservationAsync(
         string hotelId, string hotelName, string userId, string userName, string ip,
         FrontDeskCancelReservationRequest request, CancellationToken ct = default);

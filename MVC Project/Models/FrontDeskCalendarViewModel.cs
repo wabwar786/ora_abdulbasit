@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace Orapmshms.Models;
 
@@ -73,6 +73,9 @@ public sealed class FrontDeskRoomDto
     public string Condition { get; set; } = "Clean";
     public DateTime? DirtyDate { get; set; }
     public bool IsAssignedToCouncil { get; set; }
+    // Exact room-assignment window from dbo.UserRoomAccess.
+    public DateTime? CouncilAssignmentStartDate { get; set; }
+    public DateTime? CouncilAssignmentEndDate { get; set; }
 }
 
 public sealed class FrontDeskBookingDto
@@ -319,6 +322,12 @@ public sealed class FrontDeskEmailComposerDto
     public string PaymentMessage { get; set; } = string.Empty;
     public string InvoiceMessage { get; set; } = string.Empty;
     public string InvoicePdfMessage { get; set; } = string.Empty;
+}
+
+public sealed class FrontDeskNoShowRequest
+{
+    [Required, StringLength(100)] public string RegId { get; set; } = string.Empty;
+    public int PaymentId { get; set; }
 }
 
 public sealed class FrontDeskCancelReservationRequest

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Orapmshms.Models;
@@ -16,6 +17,7 @@ public sealed class FrontDeskCalendarController : Controller
     private readonly FrontDeskCalendarDbLogger _dbLogger;
     private readonly IDataProtector _invoiceShareProtector;
     private readonly IDataProtector _payNowShareProtector;
+    private readonly string _connectionString;
 
     private const string InvoiceSharePurpose = "ORAPMS.InvoiceShare.v1";
     private const string PayNowSharePurpose = "ORAPMS.PayNowShare.v1";
@@ -36,8 +38,9 @@ public sealed class FrontDeskCalendarController : Controller
         _logger = new AppLogger(loggerFactory.CreateLogger<AppLogger>());
         _invoiceShareProtector = dataProtectionProvider.CreateProtector(InvoiceSharePurpose);
         _payNowShareProtector = dataProtectionProvider.CreateProtector(PayNowSharePurpose);
-        var connectionString = configuration.GetConnectionString("con")
+        _connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is missing.");
+        var connectionString = _connectionString;
         _dbLogger = new FrontDeskCalendarDbLogger(connectionString, hotelClock, _logger);
 
         ICheckInService checkInService = new CheckInService(
@@ -52,6 +55,7 @@ public sealed class FrontDeskCalendarController : Controller
             hotelClock,
             availabilityQueue,
             checkInService,
+            httpClientFactory,
             cache,
             _logger,
             _dbLogger);
@@ -66,6 +70,13 @@ public sealed class FrontDeskCalendarController : Controller
     public async Task<IActionResult> Index(DateTime? start, CancellationToken cancellationToken)
     {
         if (!HasSession()) return RedirectToAction("Index", "LoginHMS");
+
+        // Property-level calendar mode switch. Keep /Calendar as the single
+        // navigation entry point: properties with Monthwise enabled go straight
+        // to the isolated MVC Month-Wise Calendar, while all other properties
+        // continue to use this existing daily Calendar unchanged.
+        if (await IsMonthWiseCalendarEnabledAsync(SessionValue("hotel"), cancellationToken))
+            return RedirectToAction("Index", "FrontDeskCalendarMW");
 
         try
         {
@@ -94,6 +105,39 @@ public sealed class FrontDeskCalendarController : Controller
                 StartDate = start?.Date ?? DateTime.Today,
                 ViewDays = 20
             });
+        }
+    }
+
+    private async Task<bool> IsMonthWiseCalendarEnabledAsync(
+        string hotelId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(hotelId))
+            return false;
+
+        try
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await using var command = new SqlCommand(@"
+SELECT TOP (1) ISNULL(monthwise, 0)
+FROM dbo.HotelsSignUpTB
+WHERE hotel_id = @hotel_id;", connection);
+
+            command.Parameters.AddWithValue("@hotel_id", hotelId.Trim());
+
+            await connection.OpenAsync(cancellationToken);
+            object? value = await command.ExecuteScalarAsync(cancellationToken);
+
+            return value != null &&
+                   value != DBNull.Value &&
+                   Convert.ToInt32(value) == 1;
+        }
+        catch (Exception ex)
+        {
+            // Do not let a mode-flag lookup disturb the proven daily Calendar.
+            // If this lookup fails, simply continue with the existing Calendar.
+            _logger.Error(ex, "Unable to read the Monthwise Calendar flag for hotel {HotelId}.", hotelId);
+            return false;
         }
     }
 
@@ -287,6 +331,10 @@ public sealed class FrontDeskCalendarController : Controller
     [HttpPost("SendEmail"), ValidateAntiForgeryToken]
     public Task<IActionResult> SendEmail([FromBody] FrontDeskEmailSendRequest request, CancellationToken ct) => Mutate(
         () => _calendar.SendEmailAsync(SessionValue("hotel"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
+
+    [HttpPost("NoShow"), ValidateAntiForgeryToken]
+    public Task<IActionResult> NoShow([FromBody] FrontDeskNoShowRequest request, CancellationToken ct) => Mutate(
+        () => _calendar.NoShowAsync(SessionValue("hotel"), SessionValue("HotelName"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
 
     [HttpPost("CancelReservation"), ValidateAntiForgeryToken]
     public Task<IActionResult> CancelReservation([FromBody] FrontDeskCancelReservationRequest request, CancellationToken ct) => Mutate(

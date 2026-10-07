@@ -1,7 +1,7 @@
-﻿(() => {
+(() => {
   'use strict';
 
-  const page = document.getElementById('frontDeskCalendarPage');
+  const page = document.getElementById('frontDeskCalendarMWPage');
   if (!page) return;
 
   const $ = (id) => document.getElementById(id);
@@ -56,12 +56,16 @@
     .map(a => [a.name.substring(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase()), a.value]));
 
   const token = document.querySelector('#fdcAntiForgery input[name="__RequestVerificationToken"]')?.value || '';
+  const fallbackToday = dateOnly(cfg.hotelToday) || todayLocal();
+  const fallbackStart = new Date(fallbackToday.getFullYear(), fallbackToday.getMonth(), 1);
+  const fallbackEnd = addDays(addMonths(fallbackStart, 14), -1);
   const state = {
-    start: dateOnly(cfg.start) || dateOnly(cfg.hotelToday) || todayLocal(),
-    days: Math.max(7, Math.min(45, Number(cfg.viewDays || 20))),
+    start: dateOnly(cfg.start) || fallbackStart,
+    end: dateOnly(cfg.end) || fallbackEnd,
     hotelToday: dateOnly(cfg.hotelToday) || todayLocal(),
     currency: cfg.currency || '£',
     payload: null,
+    months: [],
     loading: false,
     request: null,
     collapsed: new Set(),
@@ -82,6 +86,13 @@
   }
   function todayLocal() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
   function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function addMonths(d, n) { const x = new Date(d); const day=x.getDate(); x.setDate(1); x.setMonth(x.getMonth()+n); x.setDate(Math.min(day,new Date(x.getFullYear(),x.getMonth()+1,0).getDate())); return x; }
+  function monthDiffCeil(start,end){
+    const a=dateOnly(start),b=dateOnly(end);if(!a||!b||b<=a)return 0;
+    let months=((b.getFullYear()-a.getFullYear())*12)+(b.getMonth()-a.getMonth());
+    if(addMonths(a,months)<b)months++;
+    return Math.max(months,1);
+  }
   function diffDays(a, b) { return Math.round((dateOnly(b) - dateOnly(a)) / 86400000); }
   function iso(d) { const x = dateOnly(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; }
   function fmt(d, long = false) { const x = dateOnly(d); return x ? x.toLocaleDateString('en-GB', long ? {day:'2-digit',month:'short',year:'numeric'} : {day:'2-digit',month:'short'}) : ''; }
@@ -108,6 +119,143 @@
   function base64Url(v) {
     try { return btoa(unescape(encodeURIComponent(String(v ?? '')))).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_'); }
     catch { return String(v ?? ''); }
+  }
+
+  function rangeOverlaps(aStart,aEndExclusive,bStart,bEndExclusive){
+    const as=dateOnly(aStart),ae=dateOnly(aEndExclusive),bs=dateOnly(bStart),be=dateOnly(bEndExclusive);
+    return !!(as&&ae&&bs&&be&&as<be&&bs<ae);
+  }
+  function monthDays(month){return Math.max(1,diffDays(month.startDate,addDays(month.endDate,1)));}
+  function monthIndexForDate(value,allowEnd=false){
+    const d=dateOnly(value); if(!d)return -1;
+    for(let i=0;i<state.months.length;i++){
+      const m=state.months[i],s=dateOnly(m.startDate),e=addDays(m.endDate,1);
+      if(d>=s && (allowEnd?d<=e:d<e)) return i;
+    }
+    return -1;
+  }
+  function dateToMonthUnit(value,asEnd=false){
+    const d=dateOnly(value); if(!d||!state.months.length)return null;
+    const first=dateOnly(state.months[0].startDate),lastEnd=addDays(state.months[state.months.length-1].endDate,1);
+    if(d<=first)return 0;
+    if(d>=lastEnd)return state.months.length;
+    for(let i=0;i<state.months.length;i++){
+      const m=state.months[i],s=dateOnly(m.startDate),e=addDays(m.endDate,1);
+      if(d>=s && d<=e){
+        const total=Math.max(1,diffDays(s,e));
+        const offset=Math.max(0,Math.min(total,diffDays(s,d)));
+        if(d<e || asEnd) return i+(offset/total);
+      }
+    }
+    return null;
+  }
+  function geometryForRange(start,end){
+    const left=dateToMonthUnit(start,false),right=dateToMonthUnit(end,true);
+    if(left==null||right==null||right<=left)return null;
+    return {leftUnits:left,rightUnits:right,widthUnits:right-left};
+  }
+  function inferMonthCellDate(e,cell,allowEndBoundary=false){
+    if(!cell)return null;
+    const idx=Number(cell.dataset.monthIndex||0),m=state.months[idx];
+    if(!m)return dateOnly(cell.dataset.date);
+    const rect=cell.getBoundingClientRect(),days=monthDays(m);
+    const raw=rect.width>0?(e.clientX-rect.left)/rect.width:0;
+    const frac=Math.max(0,Math.min(allowEndBoundary?1:0.999999,raw));
+    const offset=Math.max(0,Math.min(days-(allowEndBoundary?0:1),Math.floor(frac*days)));
+    return addDays(m.startDate,offset);
+  }
+  function dateFromRowX(row,clientX,allowEndBoundary=true){
+    if(!row||!state.months.length)return null;
+    const label=row.querySelector('.fdc-room-label');
+    const firstCell=row.querySelector('.fdc-cell');
+    if(!firstCell)return null;
+    const firstRect=firstCell.getBoundingClientRect();
+    const cellWidth=firstRect.width||112;
+    let unit=(clientX-firstRect.left)/cellWidth;
+    unit=Math.max(0,Math.min(state.months.length,unit));
+    let idx=Math.floor(Math.min(state.months.length-1,unit));
+    let frac=unit-idx;
+    if(unit>=state.months.length){idx=state.months.length-1;frac=1;}
+    const m=state.months[idx],days=monthDays(m);
+    const offset=Math.round(frac*days);
+    const d=addDays(m.startDate,Math.max(0,Math.min(days,offset)));
+    const rangeEnd=addDays(state.months[state.months.length-1].endDate,1);
+    if(d>rangeEnd)return rangeEnd;
+    return d;
+  }
+  function monthlyPaymentStatus(item,month){
+    const stayArrival=dateOnly(item.arrival),stayDeparture=dateOnly(item.departure);
+    const monthStart=dateOnly(month.startDate),monthEnd=dateOnly(month.endDate);
+    const grandTotal=Number(item.total||0),paidAmount=Number(item.paid||0);
+    if(!stayArrival||!stayDeparture||stayDeparture<=stayArrival||grandTotal<=0)return '';
+    if(!rangeOverlaps(stayArrival,stayDeparture,monthStart,addDays(monthEnd,1)))return '';
+    const arrivalMonth=new Date(stayArrival.getFullYear(),stayArrival.getMonth(),1);
+    const thisMonth=new Date(monthStart.getFullYear(),monthStart.getMonth(),1);
+    let totalMonths=((stayDeparture.getFullYear()-stayArrival.getFullYear())*12)+(stayDeparture.getMonth()-stayArrival.getMonth());
+    if(addMonths(stayArrival,totalMonths)<stayDeparture)totalMonths++;
+    totalMonths=Math.max(1,totalMonths);
+    const monthlyDue=Math.round((grandTotal/totalMonths)*100)/100;
+    const monthIndex=((thisMonth.getFullYear()-arrivalMonth.getFullYear())*12)+(thisMonth.getMonth()-arrivalMonth.getMonth());
+    if(monthIndex<0)return '';
+    const available=paidAmount-(monthlyDue*monthIndex);
+    if(available<=0)return 'Not Paid';
+    if(available>=monthlyDue)return 'Fully Paid';
+    return 'Partially Paid';
+  }
+  function buildMonthPaymentStrip(item){
+    const stayArrival=dateOnly(item.arrival),stayDeparture=dateOnly(item.departure);
+    const grandTotal=Number(item.total||0),paidAmount=Number(item.paid||0);
+    if(!stayArrival||!stayDeparture||stayDeparture<=stayArrival||grandTotal<=0||!state.months.length)return '';
+
+    const viewStart=dateOnly(state.months[0].startDate);
+    const viewEndExclusive=addDays(dateOnly(state.months[state.months.length-1].endDate),1);
+    const visibleStart=stayArrival>viewStart?stayArrival:viewStart;
+    const visibleEnd=stayDeparture<viewEndExclusive?stayDeparture:viewEndExclusive;
+    if(visibleEnd<=visibleStart)return '';
+
+    const totalMonths=Math.max(1,monthDiffCeil(stayArrival,stayDeparture));
+    const monthlyDue=Math.round((grandTotal/totalMonths)*100)/100;
+    const visibleDays=Math.max(1,diffDays(visibleStart,visibleEnd));
+    let html='<span class="fdc-mw-pay-strip" aria-hidden="true">';
+
+    for(let n=1;n<=totalMonths;n++){
+      const segmentStart=n===1?stayArrival:addMonths(stayArrival,n-1);
+      let segmentEnd=addMonths(stayArrival,n);
+      if(segmentEnd>stayDeparture)segmentEnd=stayDeparture;
+      if(segmentEnd<=segmentStart)continue;
+
+      const drawStart=segmentStart<visibleStart?visibleStart:segmentStart;
+      const drawEnd=segmentEnd>visibleEnd?visibleEnd:segmentEnd;
+      if(drawEnd<=drawStart)continue;
+
+      const available=paidAmount-(monthlyDue*(n-1));
+      const status=available>=monthlyDue?'Fully Paid':available>0?'Partially Paid':'Not Paid';
+      const left=(diffDays(visibleStart,drawStart)/visibleDays)*100;
+      const width=Math.max(.5,(diffDays(drawStart,drawEnd)/visibleDays)*100);
+      html+=`<span class="fdc-mw-pay-segment ${paymentDotClass(status)}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" title="${esc(status)}"></span>`;
+    }
+    return html+'</span>';
+  }
+
+  function monthCount(){return Math.max(1,state.months.length||1);}
+
+  function fitMonthColumnsToViewport(){
+    const count=Math.max(1,state.months.length||14);
+    const pageStyle=getComputedStyle(page);
+    const roomWidth=Math.max(76,parseFloat(pageStyle.getPropertyValue('--room'))||112);
+    const viewportWidth=Math.max(320,scroll.clientWidth||page.clientWidth||window.innerWidth||1200);
+    // Leave a tiny allowance for the scroll container border/vertical scrollbar.
+    const usable=Math.max(1,viewportWidth-roomWidth-2);
+    // Desktop screens should fit all default months. Very narrow/mobile screens
+    // keep a small readable floor and can scroll horizontally when necessary.
+    const fitted=Math.max(44,Math.min(150,usable/count));
+    calendar.style.setProperty('--view-months',count);
+    calendar.style.setProperty('--month-col',`${fitted.toFixed(2)}px`);
+  }
+
+  function shiftRangeByMonths(delta){
+    const newStart=addMonths(state.start,delta),newEnd=addMonths(state.end,delta);
+    loadCalendar(newStart,newEnd);
   }
 
   function showToast(message, isError=false) {
@@ -161,9 +309,8 @@
   // differences causing a 404 for newer calendar actions.
   function calendarActionUrl(actionName) {
     try {
-      const dataUrl = new URL(cfg.dataUrl || '/Calendar/Data', location.origin);
-      let path = dataUrl.pathname.replace(/\/Data\/?$/i, '');
-      if (!path || path === '/') path = '/Calendar';
+      const base = new URL(cfg.actionsBaseUrl || '/Calendar', location.origin);
+      const path = (base.pathname || '/Calendar').replace(/\/$/, '');
       return `${path}/${actionName}`.replace(/\/{2,}/g, '/');
     } catch {
       return `/Calendar/${actionName}`;
@@ -177,7 +324,9 @@
       const dataUrl = new URL(cfg.dataUrl || '/Calendar/Data', location.origin);
       const path = dataUrl.pathname || '/Calendar/Data';
       const lower = path.toLowerCase();
-      const marker = lower.lastIndexOf('/calendar/');
+      const markerDaily = lower.lastIndexOf('/calendar/');
+      const markerMw = lower.lastIndexOf('/calendarmw/');
+      const marker = Math.max(markerDaily, markerMw);
       const appRoot = marker >= 0 ? path.substring(0, marker + 1) : '/';
       return new URL(`${appRoot}${String(pageName || '').replace(/^\/+/, '')}`, location.origin);
     } catch {
@@ -190,48 +339,62 @@
     return existing || base64(String(fallbackValue ?? ''));
   }
 
-  async function loadCalendar(start=state.start, keepScroll=false) {
-    if (state.request) state.request.abort();
+  async function loadCalendar(start=state.start, endOrKeepScroll=state.end, maybeKeepScroll=false) {
+    let end=state.end,keepScroll=false;
+    if(typeof endOrKeepScroll==='boolean'){
+      keepScroll=endOrKeepScroll;
+    }else{
+      end=dateOnly(endOrKeepScroll)||state.end;
+      keepScroll=!!maybeKeepScroll;
+    }
+    start=dateOnly(start)||state.start;
+    if(!end||end<start){showToast('End date must be on or after start date.',true);return;}
+    if(state.request) state.request.abort();
     state.request = new AbortController();
     state.loading = true;
     const oldLeft=scroll.scrollLeft, oldTop=scroll.scrollTop;
-    calendar.style.setProperty('--view-days', state.days);
-    calendar.innerHTML='<div class="fdc-loading"><span></span><b>Loading calendar…</b></div>';
+    calendar.innerHTML='<div class="fdc-loading"><span></span><b>Loading month-wise calendar…</b></div>';
     try {
       const url = new URL(cfg.dataUrl, location.origin);
       url.searchParams.set('start', iso(start));
-      url.searchParams.set('days', state.days);
+      url.searchParams.set('end', iso(end));
       const json = await api(url.toString(), {signal:state.request.signal});
       state.payload = json.data;
       state.start = dateOnly(json.data.startDate) || start;
+      state.end = dateOnly(json.data.endDate) || end;
       state.hotelToday = dateOnly(json.data.hotelToday) || state.hotelToday;
       state.currency = json.data.currencySymbol || state.currency;
+      state.months = (json.data.months||[]).map(m=>({...m,startDate:dateOnly(m.startDate),endDate:dateOnly(m.endDate)}));
       render();
       if (keepScroll) { scroll.scrollLeft=oldLeft; scroll.scrollTop=oldTop; }
     } catch (e) {
-      if (e.name !== 'AbortError') calendar.innerHTML=`<div class="fdc-empty"><b>Calendar could not be loaded.</b><br>${esc(e.message)}</div>`;
+      if (e.name !== 'AbortError') calendar.innerHTML=`<div class="fdc-empty"><b>Month-wise calendar could not be loaded.</b><br>${esc(e.message)}</div>`;
     } finally { state.loading=false; }
   }
 
   function render() {
     const p = state.payload;
     if (!p) return;
-    calendar.style.setProperty('--view-days', p.viewDays || state.days);
-    const dates = Array.from({length:p.viewDays || state.days}, (_,i)=>addDays(state.start,i));
+    const months=state.months;
+    calendar.style.setProperty('--view-months',Math.max(1,months.length));
+    fitMonthColumnsToViewport();
     const cats = p.categories || [];
     const rooms = p.rooms || [];
     const bookings = p.bookings || [];
     const blocks = p.blocks || [];
+    const assignments=p.councilAssignments||[];
     const roomGroups = new Map();
     for (const c of cats) roomGroups.set(String(c.id), []);
     for (const r of rooms) {
       if (!roomGroups.has(String(r.categoryId))) roomGroups.set(String(r.categoryId), []);
       roomGroups.get(String(r.categoryId)).push(r);
     }
-    const unassignedByCat = new Set(bookings.filter(b => !b.roomNo || String(b.roomNo).toUpperCase()==='UNASSIGNED').map(b=>String(b.categoryId)));
 
     let html = `<div class="fdc-date-head"><div class="fdc-rooms-head">Rooms</div>`;
-    for (const [dayIndex,d] of dates.entries()) html += `<div class="fdc-day ${isWeekend(d)?'weekend':''} ${sameDate(d,state.hotelToday)?'today':''}" data-day="${dayIndex}" data-date="${iso(d)}"><span>${esc(d.toLocaleDateString('en-GB',{weekday:'short'}))}</span><b>${d.getDate()}</b><small>${esc(d.toLocaleDateString('en-GB',{month:'short'}))}</small></div>`;
+    for (const [monthIndex,m] of months.entries()) {
+      const ms=dateOnly(m.startDate),me=dateOnly(m.endDate),todayIn=state.hotelToday>=ms&&state.hotelToday<=me;
+      html += `<div class="fdc-day fdc-month ${todayIn?'today':''}" data-month-index="${monthIndex}" data-date="${iso(ms)}"><span>${esc(m.month||ms.toLocaleDateString('en-GB',{month:'long'}))}</span><b>${esc(m.label||ms.toLocaleDateString('en-GB',{month:'short',year:'numeric'}))}</b><small>${fmt(ms)} – ${fmt(me)}</small></div>`;
+    }
     html += '</div>';
 
     for (const cat of cats) {
@@ -239,73 +402,61 @@
       const cr=roomGroups.get(cid) || [];
       html += `<div class="fdc-category" data-category="${esc(cid)}"><div class="fdc-category-label" data-collapse="${esc(cid)}"><span class="arrow">${collapsed?'▸':'▾'}</span><span title="${esc(cat.name)}">${esc(cat.name)}</span></div><div class="fdc-category-grid"></div></div>`;
       if (collapsed) continue;
-      for (const r of cr) html += roomRow(r, cat, dates, false);
-      // Keep one Unassigned lane per category; this is also a drag/drop destination.
-      html += roomRow({roomNo:'UNASSIGNED',categoryId:cid,categoryName:cat.name,condition:'Unassigned'}, cat, dates, true);
+      for (const r of cr) html += roomRow(r, cat, months, assignments, false);
+      if(normalizeStatus(cfg.role)!=='council')
+        html += roomRow({roomNo:'UNASSIGNED',categoryId:cid,categoryName:cat.name,condition:'Unassigned'}, cat, months, assignments, true);
     }
     calendar.innerHTML=html;
-    placeBars(bookings, blocks, dates);
+    // Recalculate once more after rows are in the DOM because the vertical
+    // scrollbar can slightly change the available viewport width. Bars use the
+    // same CSS variable, so their geometry stays aligned with the month cells.
+    fitMonthColumnsToViewport();
+    placeBars(bookings, blocks, months);
     updateRangeButton();
   }
 
-  function roomRow(room, cat, dates, unassigned) {
+  function roomRow(room, cat, months, assignments, unassigned) {
     const dirty=normalizeStatus(room.condition).includes('dirty');
-    const councilAssigned=!unassigned && (room.isAssignedToCouncil===true || String(room.isAssignedToCouncil).toLowerCase()==='true');
-    const councilStart=dateOnly(room.councilAssignmentStartDate);
-    const councilEnd=dateOnly(room.councilAssignmentEndDate);
-    // Use the real Council room-assignment window from UserRoomAccess.
-    // Both ends are inclusive, matching the Rooms Assignments screen.
-    const isCouncilDate=(d)=>{
-      if(!councilAssigned) return false;
-      const day=dateOnly(d);
-      if(!day) return false;
-      if(councilStart && day<councilStart) return false;
-      if(councilEnd && day>councilEnd) return false;
-      return true;
-    };
-    const councilVisible=councilAssigned && dates.some(isCouncilDate);
-    let html=`<div class="fdc-room-row ${unassigned?'unassigned-row':''}" data-room="${esc(room.roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">`;
-    html += `<div class="fdc-room-label ${dirty?'dirty':''} ${unassigned?'unassigned':''} ${councilVisible?'council-assigned':''}" data-room-label><b>${unassigned?'Unassigned':esc(room.roomNo)}</b></div>`;
-    dates.forEach((d,i)=>{
-      const dirtyToday=dirty && (!room.dirtyDate || sameDate(d,room.dirtyDate));
-      const councilCell=isCouncilDate(d);
-      html += `<div class="fdc-cell ${isWeekend(d)?'weekend':''} ${dirtyToday?'has-dirty':''} ${councilCell?'council-assigned':''}" data-day="${i}" data-date="${iso(d)}" data-room="${esc(room.roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">${dirtyToday?'<span class="fdc-dirty-tag">Dirty</span>':''}</div>`;
+    const roomNo=String(room.roomNo||'');
+    const roomAssignments=unassigned?[]:assignments.filter(a=>String(a.roomNo||'').trim().toUpperCase()===roomNo.trim().toUpperCase());
+    const assignmentInRange=roomAssignments.some(a=>{
+      const af=dateOnly(a.fromDate)||new Date(1900,0,1),at=addDays(dateOnly(a.toDate)||new Date(9998,11,31),1);
+      return rangeOverlaps(af,at,state.start,addDays(state.end,1));
+    });
+    let html=`<div class="fdc-room-row ${unassigned?'unassigned-row':''}" data-room="${esc(roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">`;
+    html += `<div class="fdc-room-label ${dirty?'dirty':''} ${unassigned?'unassigned':''} ${assignmentInRange?'council-assigned':''}" data-room-label><b>${unassigned?'Unassigned':esc(roomNo)}</b></div>`;
+    months.forEach((m,i)=>{
+      const ms=dateOnly(m.startDate),me=dateOnly(m.endDate),meExclusive=addDays(me,1);
+      const dirtyDate=dateOnly(room.dirtyDate);
+      const dirtyInMonth=dirty && (dirtyDate ? (dirtyDate>=ms&&dirtyDate<=me) : (state.hotelToday>=ms&&state.hotelToday<=me));
+      const councilCell=roomAssignments.some(a=>{
+        const af=dateOnly(a.fromDate)||new Date(1900,0,1),at=addDays(dateOnly(a.toDate)||new Date(9998,11,31),1);
+        return rangeOverlaps(af,at,ms,meExclusive);
+      });
+      const currentMonth=state.hotelToday>=ms&&state.hotelToday<=me;
+      html += `<div class="fdc-cell ${dirtyInMonth?'has-dirty':''} ${councilCell?'council-assigned':''} ${currentMonth?'current-month':''}" data-month-index="${i}" data-date="${iso(ms)}" data-month-end="${iso(me)}" data-room="${esc(roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">${dirtyInMonth?'<span class="fdc-dirty-tag">Dirty</span>':''}</div>`;
     });
     return html+'</div>';
   }
 
-  function placeBars(bookings, blocks, dates) {
-    const rangeStart=state.start, rangeEnd=addDays(state.start,state.days);
+  function placeBars(bookings, blocks, months) {
     const rows=[...calendar.querySelectorAll('.fdc-room-row')];
     const index=new Map(rows.map(r=>[`${r.dataset.category}|${String(r.dataset.room).toUpperCase()}`,r]));
-
-    const visualBounds=(a,d)=>{
-      // WebForms draws arrival from the middle of the arrival date and
-      // departure to the middle of the departure date.  When the booking
-      // started/ends outside the current view, the clipped edge is full.
-      if(!a||!d||d<rangeStart||a>=rangeEnd) return null;
-
-      let leftUnits=a>=rangeStart ? diffDays(rangeStart,a)+0.5 : 0;
-      let rightUnits=(d>=rangeStart&&d<rangeEnd) ? diffDays(rangeStart,d)+0.5 : state.days;
-
-      leftUnits=Math.max(0,Math.min(state.days,leftUnits));
-      rightUnits=Math.max(0,Math.min(state.days,rightUnits));
-      if(rightUnits<=leftUnits) return null;
-      return {leftUnits,rightUnits,widthUnits:rightUnits-leftUnits};
-    };
+    const monthWidth='var(--month-col)';
 
     const addBar=(item,isBlock=false)=>{
       const room=(item.roomNo || 'UNASSIGNED').toUpperCase();
       const row=index.get(`${item.categoryId}|${room}`);
       if(!row) return;
-
       const a=dateOnly(isBlock?item.startDate:item.arrival);
       const d=dateOnly(isBlock?item.endDate:item.departure);
-      const bounds=visualBounds(a,d);
-      if(!bounds) return;
-
-      const left=`calc(var(--room) + (${bounds.leftUnits} * ((100% - var(--room)) / var(--view-days))) + 2px)`;
-      const width=`calc(${bounds.widthUnits} * ((100% - var(--room)) / var(--view-days)) - 4px)`;
+      if(!a||!d||d<=state.start||a>state.end)return;
+      const clippedStart=a<state.start?state.start:a;
+      const clippedEnd=d>addDays(state.end,1)?addDays(state.end,1):d;
+      const bounds=geometryForRange(clippedStart,clippedEnd);
+      if(!bounds)return;
+      const left=`calc(var(--room) + (${bounds.leftUnits} * ${monthWidth}) + 2px)`;
+      const width=`calc(${bounds.widthUnits} * ${monthWidth} - 4px)`;
 
       if(isBlock){
         row.insertAdjacentHTML('beforeend',
@@ -316,16 +467,15 @@
       }
 
       const cls=statusClass(item.statusCode||item.status);
-      const payClass=paymentDotClass(item.paymentStatus);
       const roomClass=room==='UNASSIGNED'?' unassigned-booking':'';
+      const paymentStrip=buildMonthPaymentStrip(item);
       row.insertAdjacentHTML('beforeend',
         `<div class="fdc-bar ${cls}${roomClass}" draggable="${item.canDrag?'true':'false'}" `+
         `style="left:${left};width:${width}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}">`+
-        `<span class="name">${esc(item.guestName||item.regId)}</span>`+
-        `<span class="pay-dot ${payClass}" title="${esc(item.paymentStatus||'')}"></span>`+
+        `${paymentStrip}<span class="name">${esc(item.guestName||item.regId)}</span>`+
         `${item.hasNote?'<span class="fdc-note-indicator" title="Notebook note" aria-label="Notebook note">★</span>':''}`+
         `${item.hasRoomChange?'<span class="fdc-room-change-indicator" title="Room changed" aria-label="Room changed">★</span>':''}`+
-        `${item.canResize?'<span class="fdc-handle right" data-resize="right"></span>':''}</div>`);
+        `${item.canResize?'<span class="fdc-handle right" data-resize="right" title="Drag to extend / shrink"></span>':''}</div>`);
     };
 
     bookings.forEach(x=>addBar(x,false));
@@ -351,9 +501,17 @@
   }
 
   function updateRangeButton(){
-    const end=addDays(state.start,state.days-1);
-    $('fdcRange').textContent=`${fmt(state.start,true)} – ${fmt(end,true)}`;
-    $('fdcPrev').title=`Previous ${state.days} days`; $('fdcNext').title=`Next ${state.days} days`;
+    $('fdcRange').textContent=`${fmt(state.start,true)} – ${fmt(state.end,true)}`;
+    $('fdcPrev').title=`Previous ${monthCount()} month${monthCount()===1?'':'s'}`;
+    $('fdcNext').title=`Next ${monthCount()} month${monthCount()===1?'':'s'}`;
+    const startInput=$('fdcMwStart'),endInput=$('fdcMwEnd');
+    if(startInput)startInput.value=iso(state.start);
+    if(endInput)endInput.value=iso(state.end);
+    document.querySelectorAll('[data-mw-months]').forEach(b=>{
+      const count=Math.max(1,Number(b.dataset.mwMonths||0));
+      const expectedEnd=new Date(state.start.getFullYear(),state.start.getMonth()+count,0);
+      b.classList.toggle('active',sameDate(state.start,state.hotelToday)&&sameDate(state.end,expectedEnd));
+    });
   }
 
   function closeContext(force=false){
@@ -1548,70 +1706,38 @@ ${tag}`:tag;
     const item=state.drag.item;
     const row=cell.closest('.fdc-room-row');
     if(!row) return;
-
-    const cells=[...row.querySelectorAll('.fdc-cell')];
-    const checkoutMove=String(item.statusCode||'').toUpperCase()==='CO' || isCheckedOutStatus(item.status);
-    // Checked-out drag/drop is a room-assignment correction only. Preserve the
-    // historical stay dates and preview the original date span in the target row.
-    const startIndex=checkoutMove
-      ? diffDays(state.start,dateOnly(item.arrival))
-      : Number(cell.dataset.day);
-    if(!Number.isFinite(startIndex)||startIndex<0||startIndex>=cells.length) return;
-
-    const nights=dragNightCount(item);
-    const key=`${row.dataset.category}|${row.dataset.room}|${startIndex}|${nights}|${valid?'1':'0'}`;
+    const target=targetRange(item,cell);
+    const bounds=geometryForRange(target.start,target.end);
+    if(!bounds)return;
+    const key=`${row.dataset.category}|${row.dataset.room}|${iso(target.start)}|${iso(target.end)}|${valid?'1':'0'}`;
     const focus=state.dragFocus||{};
     if(focus.lastKey===key) return;
-
     clearDestinationHighlights();
-
     const roomLabel=row.querySelector('.fdc-room-label');
     roomLabel?.classList.add('fdc-dnd-room-active');
-
     const headers=[...calendar.querySelectorAll('.fdc-date-head .fdc-day')];
-    // WebForms highlights arrival through departure, so the departure header is
-    // included even though the stay nights end at that boundary.
-    const endHeader=Math.min(headers.length-1,startIndex+nights);
     const activeHeaders=[];
-    for(let i=startIndex;i<=endHeader;i++){
-      if(headers[i]){headers[i].classList.add('fdc-dnd-date-active');activeHeaders.push(headers[i]);}
-    }
-
-    const startCell=cells[startIndex];
-    const departureCell=cells[startIndex+nights]||null;
-    const lastCell=cells[cells.length-1];
-    const rowRect=row.getBoundingClientRect();
-    const startRect=startCell.getBoundingClientRect();
-    const depRect=departureCell?.getBoundingClientRect();
-    const lastRect=lastCell?.getBoundingClientRect();
-    const scrollRect=scroll.getBoundingClientRect();
-    const roomRect=roomLabel?.getBoundingClientRect();
-
-    // Same half-arrival / half-departure geometry used by the WebForms bar.
-    let left=startRect.left+(startRect.width/2);
-    let right=depRect ? depRect.left+(depRect.width/2) : (lastRect?.right||rowRect.right);
-    const dateAreaLeft=Math.max(scrollRect.left,roomRect?.right||scrollRect.left);
-    const dateAreaRight=scrollRect.right;
-    left=Math.max(left,dateAreaLeft);
-    right=Math.min(right,dateAreaRight);
-    const top=Math.max(rowRect.top+3,scrollRect.top);
-    const bottom=Math.min(rowRect.bottom-3,scrollRect.bottom);
-
+    state.months.forEach((m,i)=>{
+      if(rangeOverlaps(target.start,target.end,m.startDate,addDays(m.endDate,1))&&headers[i]){
+        headers[i].classList.add('fdc-dnd-date-active');activeHeaders.push(headers[i]);
+      }
+    });
+    const firstCell=row.querySelector('.fdc-cell');
+    if(!firstCell)return;
+    const firstRect=firstCell.getBoundingClientRect(),rowRect=row.getBoundingClientRect(),scrollRect=scroll.getBoundingClientRect();
+    let left=firstRect.left+(bounds.leftUnits*firstRect.width);
+    let right=firstRect.left+(bounds.rightUnits*firstRect.width);
+    left=Math.max(left,scrollRect.left);right=Math.min(right,scrollRect.right);
+    const top=Math.max(rowRect.top+3,scrollRect.top),bottom=Math.min(rowRect.bottom-3,scrollRect.bottom);
     const preview=(state.dragFocus?.preview)||ensureDragFocusLayer().querySelector('.fdc-destination-preview');
     if(preview&&right>left&&bottom>top){
       preview.style.backgroundColor=state.dragFocus?.previewColor||window.getComputedStyle(state.drag.bar).backgroundColor||'#2975db';
       preview.style.transform=`translate3d(${Math.round(left)}px,${Math.round(top)}px,0)`;
       preview.style.width=`${Math.max(1,Math.round(right-left))}px`;
       preview.style.height=`${Math.max(1,Math.round(bottom-top))}px`;
-      preview.classList.toggle('invalid',!valid);
-      preview.classList.add('fdc-is-active');
+      preview.classList.toggle('invalid',!valid);preview.classList.add('fdc-is-active');
     }
-
-    if(state.dragFocus){
-      state.dragFocus.roomLabel=roomLabel;
-      state.dragFocus.dateHeaders=activeHeaders;
-      state.dragFocus.lastKey=key;
-    }
+    if(state.dragFocus){state.dragFocus.roomLabel=roomLabel;state.dragFocus.dateHeaders=activeHeaders;state.dragFocus.lastKey=key;}
   }
 
   function dragStart(e,bar){
@@ -1628,33 +1754,101 @@ ${tag}`:tag;
     e.dataTransfer.setData('text/plain',item.id||item.regId);
   }
   function dragNightCount(item){return Math.max(1,diffDays(item.arrival,item.departure));}
+
+  // Month-wise drag/drop must not snap a stay to the first of the month.
+  // The grid cell represents a MONTH, not a specific day. Preserve the
+  // reservation's original arrival day inside the destination month.
+  // Example: 07 Oct -> 07 Jan moved to another October room stays
+  // 07 Oct -> 07 Jan; moved to November starts on 07 Nov.
+  function arrivalInTargetMonth(item,cell){
+    const original=dateOnly(item.arrival);
+    const monthStart=dateOnly(cell?.dataset?.date);
+    if(!original)return monthStart;
+    if(!monthStart)return original;
+
+    const lastDay=new Date(monthStart.getFullYear(),monthStart.getMonth()+1,0).getDate();
+    const day=Math.min(original.getDate(),lastDay);
+    return new Date(monthStart.getFullYear(),monthStart.getMonth(),day);
+  }
+
   function targetRange(item,cell){
     const checkoutMove=String(item.statusCode||'').toUpperCase()==='CO' || isCheckedOutStatus(item.status);
-    const start=checkoutMove?dateOnly(item.arrival):dateOnly(cell.dataset.date);
+    const start=checkoutMove?dateOnly(item.arrival):arrivalInTargetMonth(item,cell);
     const nights=dragNightCount(item);
     return {start,end:addDays(start,nights),nights};
+  }
+  function sameBooking(a,b){
+    if(!a||!b)return false;
+    if(a.paymentId&&b.paymentId&&Number(a.paymentId)===Number(b.paymentId))return true;
+    return String(a.id||'')!=='' && String(a.id||'')===String(b.id||'');
+  }
+  function cellMonthRange(cell){
+    const start=dateOnly(cell?.dataset?.date);
+    if(!start)return null;
+    const end=addDays(dateOnly(cell.dataset.monthEnd)||new Date(start.getFullYear(),start.getMonth()+1,0),1);
+    return {start,end};
+  }
+  function targetBookingAtCell(item,cell,directBar=null){
+    if(directBar){
+      const direct=bookingFrom(directBar);
+      if(direct&&!sameBooking(item,direct))return direct;
+    }
+    const r=cellMonthRange(cell);if(!r)return null;
+    const room=String(cell.dataset.room||'').toUpperCase(),cat=String(cell.dataset.category||'');
+    return (state.payload?.bookings||[]).find(b=>{
+      if(sameBooking(item,b))return false;
+      if(String(b.categoryId)!==cat||String(b.roomNo||'UNASSIGNED').toUpperCase()!==room)return false;
+      return dateOnly(b.arrival)<r.end && r.start<dateOnly(b.departure);
+    })||null;
+  }
+  function targetBlockAtCell(cell,directBar=null){
+    if(directBar){
+      try{return JSON.parse(directBar.dataset.block||'{}');}catch{}
+    }
+    const r=cellMonthRange(cell);if(!r)return null;
+    const room=String(cell.dataset.room||'').toUpperCase(),cat=String(cell.dataset.category||'');
+    return (state.payload?.blocks||[]).find(b=>
+      String(b.categoryId)===cat && String(b.roomNo||'').toUpperCase()===room &&
+      dateOnly(b.startDate)<r.end && r.start<addDays(dateOnly(b.endDate),1)
+    )||null;
+  }
+  function sameStayDates(a,b){
+    return !!a&&!!b&&sameDate(a.arrival,b.arrival)&&sameDate(a.departure,b.departure);
   }
   function targetRangeIsFree(item,cell){
     const {start,end}=targetRange(item,cell); const room=String(cell.dataset.room||'').toUpperCase();
     if(room==='UNASSIGNED') return true; const cat=String(cell.dataset.category||'');
     const overlaps=(a,d)=>dateOnly(a)<end && start<dateOnly(d);
     for(const b of (state.payload?.bookings||[])){
-      if(String(b.id||'')===String(item.id||'') || (b.paymentId&&b.paymentId===item.paymentId)) continue;
+      if(sameBooking(item,b)) continue;
       if(String(b.categoryId)!==cat || String(b.roomNo||'UNASSIGNED').toUpperCase()!==room) continue;
       if(overlaps(b.arrival,b.departure)) return false;
     }
     for(const b of (state.payload?.blocks||[])){
       if(String(b.categoryId)!==cat || String(b.roomNo||'').toUpperCase()!==room) continue;
-      if(overlaps(b.startDate,b.endDate)) return false;
+      if(overlaps(b.startDate,addDays(dateOnly(b.endDate),1))) return false;
     }
     return true;
   }
-  function markDropPreview(cell){
+  function monthCellFromEvent(e){
+    const direct=e.target.closest('.fdc-cell');
+    if(direct)return direct;
+    const row=e.target.closest('.fdc-room-row');
+    if(!row)return null;
+    const cells=[...row.querySelectorAll('.fdc-cell')];
+    if(!cells.length)return null;
+    const x=e.clientX;
+    return cells.find(c=>{const r=c.getBoundingClientRect();return x>=r.left&&x<r.right;})||
+      (x<cells[0].getBoundingClientRect().left?cells[0]:cells[cells.length-1]);
+  }
+  function markDropPreview(cell,directBookingBar=null,directBlockBar=null){
     if(!state.drag)return;
     const item=state.drag.item;
-    // Do not paint visited cells. The WebForms calendar uses one exact landing
-    // preview while separately highlighting the destination room and dates.
-    const valid=targetRangeIsFree(item,cell);
+    const targetBooking=targetBookingAtCell(item,cell,directBookingBar);
+    const targetBlock=targetBlockAtCell(cell,directBlockBar);
+    // Occupied cells are a valid WebForms-style SWAP target only when the two
+    // stays have identical dates. A blocked target is never valid.
+    const valid=targetBlock?false:(targetBooking?sameStayDates(item,targetBooking):targetRangeIsFree(item,cell));
     renderDragFocus(cell,valid);
   }
 
@@ -1685,6 +1879,37 @@ ${tag}`:tag;
     if(!state.drag)return;
     e.preventDefault();
     const item=state.drag.item;
+    const directBookingBar=e.target.closest('.fdc-bar[data-booking]');
+    const directBlockBar=e.target.closest('.fdc-bar[data-block-id]');
+    const targetBlock=targetBlockAtCell(cell,directBlockBar);
+    if(targetBlock){
+      showToast('Cannot change room: the target room is blocked.',true);
+      finishDragUi();
+      return;
+    }
+
+    const targetBooking=targetBookingAtCell(item,cell,directBookingBar);
+    if(targetBooking){
+      if(!sameStayDates(item,targetBooking)){
+        showToast('Cannot swap these rooms because both reservations must have the same check-in and check-out dates.',true);
+        finishDragUi();
+        return;
+      }
+      const swapReq={
+        sourceRegId:item.regId,sourcePaymentId:Number(item.paymentId||0),sourceRoomNo:item.roomNo||'',
+        sourceCategoryId:item.categoryId||'',sourceCategoryName:item.categoryName||'',
+        targetRegId:targetBooking.regId,targetPaymentId:Number(targetBooking.paymentId||0),targetRoomNo:targetBooking.roomNo||'',
+        targetCategoryId:targetBooking.categoryId||'',targetCategoryName:targetBooking.categoryName||''
+      };
+      setMoveDropLoading(true);
+      state.drag?.bar?.classList.remove('dragging');
+      try{
+        await mutate(cfg.mwSwapUrl||'/CalendarMW/SwapBooking',swapReq,`Swapping ${item.guestName||'booking'}…`);
+        await loadCalendar(state.start,true);
+      }finally{finishDragUi();}
+      return;
+    }
+
     if(!targetRangeIsFree(item,cell)){
       showToast('The selected room/date range is not available.',true);
       finishDragUi();
@@ -1697,7 +1922,10 @@ ${tag}`:tag;
       newRoomNo:String(cell.dataset.room).toUpperCase()==='UNASSIGNED'?'':cell.dataset.room,
       targetCategoryId:cell.dataset.category,
       targetCategoryName:cell.dataset.categoryName,
-      newArrival:(String(item.statusCode||'').toUpperCase()==='CO' || isCheckedOutStatus(item.status)) ? iso(item.arrival) : cell.dataset.date,
+      // Use the same date calculation as the availability preview. A month
+      // cell's data-date is always the 1st, so sending it directly would
+      // incorrectly change 07 Oct -> 07 Jan into 01 Oct -> 01 Jan.
+      newArrival:iso(targetRange(item,cell).start),
       nightlyRateOverride:null
     };
 
@@ -1766,74 +1994,136 @@ ${tag}`:tag;
   function clearDropMarks(){calendar.querySelectorAll('.fdc-drag-ghost').forEach(x=>x.remove());calendar.querySelectorAll('.drop-ok,.drop-no,.drag-preview,.first,.last').forEach(x=>x.classList.remove('drop-ok','drop-no','drag-preview','first','last'));}
 
   function resizeStart(e,handle){
-    e.preventDefault();e.stopPropagation(); const bar=handle.closest('.fdc-bar'),item=bookingFrom(bar);if(!item?.canResize)return;
+    e.preventDefault();e.stopPropagation();
+    const bar=handle.closest('.fdc-bar'),item=bookingFrom(bar);if(!item?.canResize)return;
     closeTip();
-    const row=bar.closest('.fdc-room-row'),rect=row.getBoundingClientRect(),dayWidth=(rect.width-112)/state.days;
-    state.resize={item,startX:e.clientX,bar,dayWidth:Math.max(1,dayWidth),delta:0}; bar.classList.add('resizing');bar.setPointerCapture?.(e.pointerId);document.body.style.userSelect='none';
+    const row=bar.closest('.fdc-room-row');
+    const firstCell=row?.querySelector('.fdc-cell');
+    if(!row||!firstCell)return;
+    const monthPx=firstCell.getBoundingClientRect().width||112;
+    const oldMonths=Math.max(1,monthDiffCeil(item.arrival,item.departure));
+    state.resize={item,startX:e.clientX,bar,row,monthPx,monthDelta:0,oldMonths,candidate:dateOnly(item.departure)};
+    bar.classList.add('resizing');bar.setPointerCapture?.(e.pointerId);document.body.style.userSelect='none';
   }
+
   function resizeMove(e){
-    const r=state.resize;if(!r)return; const delta=Math.round((e.clientX-r.startX)/r.dayWidth);r.delta=delta;
-    const oldNights=Math.max(1,diffDays(r.item.arrival,r.item.departure)),newNights=Math.max(1,oldNights+delta); r.bar.style.width=`calc(${newNights} * ((100% - var(--room)) / var(--view-days)))`;
+    const r=state.resize;if(!r)return;
+    let delta=Math.round((e.clientX-r.startX)/Math.max(1,r.monthPx));
+    if(r.oldMonths+delta<1)delta=1-r.oldMonths;
+    const candidate=addMonths(dateOnly(r.item.departure),delta);
+    const arrival=dateOnly(r.item.arrival);
+    if(!candidate||candidate<=arrival)return;
+    r.monthDelta=delta;r.candidate=candidate;
+    const bounds=geometryForRange(arrival,candidate);if(!bounds)return;
+    r.bar.style.width=`calc(${bounds.widthUnits} * var(--month-col) - 4px)`;
   }
-  function openResizeConfirm(item,a,oldD,newD,delta){
-    const isExtend=delta>0;
-    const oldNights=Math.max(1,diffDays(a,oldD));
-    const newNights=Math.max(1,diffDays(a,newD));
-    const changedNights=Math.abs(newNights-oldNights);
-    const currentPerNight=oldNights>0?Number(item.rate||0)/oldNights:0;
+
+  async function checkMwResizeAvailability(item,newDeparture){
+    const url=cfg.mwResizeCheckUrl||'/CalendarMW/CheckResizeAvailability';
+    return api(url,{method:'POST',body:JSON.stringify({
+      regId:item.regId,
+      arrival:iso(item.arrival),
+      newDeparture:iso(newDeparture)
+    })});
+  }
+
+  async function loadMwResizePlans(item){
+    const url=new URL(cfg.mwResizePlansUrl||'/CalendarMW/ResizePlans',location.origin);
+    url.searchParams.set('regId',item.regId||'');
+    url.searchParams.set('arrival',iso(item.arrival));
+    url.searchParams.set('oldDeparture',iso(item.departure));
+    const result=await api(url.toString());
+    return result?.data?.plans||[];
+  }
+
+  function renderMwPlanRows(plans){
+    return plans.map((p,i)=>`<div class="fdc-mw-plan-row">
+      <div class="fdc-mw-plan-name"><b>${esc(p.roomType||p.planName||p.planId||'Room')}</b><small>${esc(p.planName||p.planId||'')}</small></div>
+      <div class="fdc-mw-plan-old">${money(p.oldRate||0)}</div>
+      <div class="fdc-mw-plan-new"><span>${esc(state.currency||'£')}</span><input class="fdc-mw-plan-rate" data-plan-index="${i}" type="number" min="0" step="0.01" value="${Number(p.newRate??p.oldRate??0).toFixed(2)}"></div>
+    </div>`).join('');
+  }
+
+  function openMwResizeConfirm(item,newDeparture,monthDelta,plans){
+    const arrival=dateOnly(item.arrival),oldDeparture=dateOnly(item.departure);
+    const isExtend=monthDelta>0;
+    const oldMonths=Math.max(1,monthDiffCeil(arrival,oldDeparture));
+    const newMonths=Math.max(1,monthDiffCeil(arrival,newDeparture));
+    const changedMonths=Math.abs(monthDelta);
+    const workingPlans=(plans||[]).map(p=>({...p,newRate:Number(p.newRate??p.oldRate??0)}));
     const title=isExtend?'Confirm Extend Reservation':'Confirm Shrink Reservation';
-    const hint=isExtend?'Review the added nights and rate before confirming.':'Review the reduced stay and new rate before confirming.';
-    const rateLabel=isExtend?'New Rate / Night (Extended Nights)':'New Rate / Night';
-    const totalLabel=isExtend?'Total Amount of Extended Days':'New Room Amount';
-    openModal(title,`<div class="fdc-resize-confirm">
-      <div class="fdc-resize-sub">${hint}</div>
+    const subtitle=isExtend?'Review extended months and monthly rates before confirming.':'Review the reduced stay and monthly rates before confirming.';
+
+    const body=`<div class="fdc-resize-confirm fdc-mw-resize-confirm">
+      <div class="fdc-resize-sub">${subtitle}</div>
       <div class="fdc-resize-grid">
         <div><span>Guest Name</span><b>${esc(item.guestName||'—')}</b></div>
         <div><span>Reference</span><b>${esc(item.regId||'—')}</b></div>
-        <div><span>Arrival</span><b>${fmt(a,true)}</b></div>
-        <div><span>Old Departure</span><b>${fmt(oldD,true)}</b></div>
-        <div><span>New Departure</span><b>${fmt(newD,true)}</b></div>
-        <div class="highlight"><span>${isExtend?'Extended Days':'New Nights'}</span><b>${isExtend?changedNights:newNights} night(s)</b></div>
+        <div><span>Arrival</span><b>${fmt(arrival,true)}</b></div>
+        <div><span>Old Departure</span><b>${fmt(oldDeparture,true)}</b></div>
+        <div><span>New Departure</span><b>${fmt(newDeparture,true)}</b></div>
+        <div class="highlight"><span>${isExtend?'Extended Months':'New Total Months'}</span><b>${isExtend?changedMonths:newMonths} month(s)</b></div>
       </div>
-      <div class="fdc-resize-ratebox">
-        <div class="fdc-resize-plan"><strong>${esc(item.planName||'Room Rate')}</strong><small>${esc(item.categoryName||'')}</small></div>
-        <div class="fdc-resize-ratefield">
-          <div class="fdc-resize-rate-label">${rateLabel}</div>
-          <div class="fdc-crm-inputwrap"><span class="fdc-crm-prefix">${esc(state.currency||'£')}</span><input id="resizeRate" type="number" min="0" step="0.01" value="${currentPerNight.toFixed(2)}"></div>
-        </div>
-        ${isExtend?'<label class="fdc-tax-check"><input id="resizeTax" type="checkbox"> Tax applicable on extended nights</label>':''}
+      <div class="fdc-mw-plan-box">
+        <div class="fdc-mw-plan-head"><span>Room Type / Rate Plan</span><span>Old Rate / Month</span><span>New Rate / Month</span></div>
+        <div id="fdcMwPlans">${renderMwPlanRows(workingPlans)}</div>
       </div>
-      <div class="fdc-resize-total"><span>${totalLabel}</span><b id="resizeTotal"></b></div>
-    </div>`,`<button class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button><button class="fdc-btn primary" id="confirmResize">${isExtend?'Confirm Extend':'Confirm Shrink'}</button>`,'fdc-professional-mode fdc-resize-mode');
+      <div class="fdc-resize-total"><span>${isExtend?'Total Amount of Extended Months':'New Room Amount'}</span><b id="resizeTotal"></b></div>
+    </div>`;
 
-    const rateInput=$('resizeRate'),taxInput=$('resizeTax'),totalEl=$('resizeTotal');
-    const updateTotal=()=>{
-      const rate=Math.max(0,Number(rateInput?.value||0));
-      let amount=isExtend?rate*changedNights:rate*newNights;
-      if(isExtend&&taxInput?.checked&&oldNights>0){
-        amount += (Number(item.gst||0)/oldNights)*changedNights;
-        amount += (Number(item.bed||0)/oldNights)*changedNights;
-      }
-      totalEl.textContent=money(amount);
+    openModal(title,body,`<button class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button><button class="fdc-btn primary" id="confirmResize">${isExtend?'Confirm Extend':'Confirm Shrink'}</button>`,'fdc-professional-mode fdc-resize-mode');
+
+    const totalEl=$('resizeTotal');
+    const recalc=()=>{
+      document.querySelectorAll('.fdc-mw-plan-rate').forEach(input=>{
+        const i=Number(input.dataset.planIndex||0);
+        if(workingPlans[i])workingPlans[i].newRate=Math.max(0,Number(input.value||0));
+      });
+      const multiplier=isExtend?changedMonths:newMonths;
+      const total=workingPlans.reduce((sum,p)=>sum+(Math.max(0,Number(p.newRate||0))*multiplier),0);
+      totalEl.textContent=money(total);
     };
-    rateInput?.addEventListener('input',updateTotal);taxInput?.addEventListener('change',updateTotal);updateTotal();
+    document.querySelectorAll('.fdc-mw-plan-rate').forEach(input=>input.addEventListener('input',recalc));
+    recalc();
+
     $('confirmResize').onclick=async e=>{
-      const btn=e.currentTarget;
-      const rate=Math.max(0,Number(rateInput?.value||0));
+      const btn=e.currentTarget;recalc();
+      if(!workingPlans.length){showToast('No monthly rate plans were found for this reservation.',true);return;}
       try{
-        await mutate(cfg.resizeUrl,{regId:item.regId,paymentId:item.paymentId,newArrival:iso(a),newDeparture:iso(newD),nightlyRateOverride:rate,includeTaxOnExtension:!!taxInput?.checked},isExtend?'Extending…':'Shrinking…',btn);
+        await mutate(cfg.mwResizeUrl||'/CalendarMW/ResizeBooking',{
+          regId:item.regId,
+          arrival:iso(arrival),
+          oldDeparture:iso(oldDeparture),
+          newDeparture:iso(newDeparture),
+          plans:workingPlans.map(p=>({
+            planId:p.planId||'',planName:p.planName||'',roomType:p.roomType||'',categoryLocalId:p.categoryLocalId||'',oldRate:Number(p.oldRate||0),newRate:Number(p.newRate||0)
+          }))
+        },isExtend?'Extending…':'Shrinking…',btn);
         closeModal();
         await loadCalendar(state.start,true);
-      }catch{ render(); }
+      }catch{}
     };
   }
 
   async function resizeEnd(){
-    const r=state.resize;if(!r)return;state.resize=null;document.body.style.userSelect='';r.bar.classList.remove('resizing');
-    const delta=r.delta||0;if(!delta){render();return;} const a=dateOnly(r.item.arrival),oldD=dateOnly(r.item.departure),d=addDays(oldD,delta);
-    if(d<=a){showToast('A stay must be at least one night.',true);render();return;}
+    const r=state.resize;if(!r)return;
+    state.resize=null;document.body.style.userSelect='';r.bar.classList.remove('resizing');
+    const delta=r.monthDelta||0;
     render();
-    openResizeConfirm(r.item,a,oldD,d,delta);
+    if(!delta)return;
+
+    const a=dateOnly(r.item.arrival),oldD=dateOnly(r.item.departure),newD=addMonths(oldD,delta);
+    if(!a||!newD||newD<=a){showToast('New departure must be after arrival.',true);return;}
+
+    try{
+      showToast('Checking room availability…');
+      await checkMwResizeAvailability(r.item,newD);
+      const plans=await loadMwResizePlans(r.item);
+      if(!plans.length){showToast('No monthly rate plans were found for this reservation.',true);return;}
+      openMwResizeConfirm(r.item,newD,delta,plans);
+    }catch(e){
+      showToast(e.message||'Room is not available for the selected month range.',true);
+    }
   }
 
   function showBookingTip(bar,e){
@@ -1878,7 +2168,9 @@ ${tag}`:tag;
       if(dateBtn){
         e.preventDefault();e.stopPropagation();
         rangePicker.classList.remove('open');
-        loadCalendar(dateOnly(dateBtn.dataset.rangeDate));
+        const newStart=dateOnly(dateBtn.dataset.rangeDate);
+        const spanDays=Math.max(0,diffDays(state.start,state.end));
+        loadCalendar(newStart,addDays(newStart,spanDays));
         return;
       }
       if(e.target.closest('[data-range-close]')){
@@ -1900,7 +2192,7 @@ ${tag}`:tag;
   });
   calendar.addEventListener('dblclick',e=>{
     const bar=e.target.closest('.fdc-bar[data-booking]');if(bar){openDetails(bookingFrom(bar));return;}
-    const cell=e.target.closest('.fdc-cell');if(cell&&!e.target.closest('.fdc-bar'))openRoomAction(cell);
+    const cell=e.target.closest('.fdc-cell');if(cell&&!e.target.closest('.fdc-bar')){openRoomAction(cell);}
   });
   calendar.addEventListener('contextmenu',e=>{
     const bookingBar=e.target.closest('.fdc-bar[data-booking]');
@@ -1923,8 +2215,14 @@ ${tag}`:tag;
   calendar.addEventListener('mouseout',e=>{if(e.target.closest('.fdc-bar[data-booking]'))closeTip();});
   calendar.addEventListener('dragstart',e=>{const bar=e.target.closest('.fdc-bar[data-booking]');if(bar)dragStart(e,bar);});
   calendar.addEventListener('dragend',()=>{if(!state.dropPending)finishDragUi();});
-  calendar.addEventListener('dragover',e=>{const cell=e.target.closest('.fdc-cell');if(cell&&state.drag){e.preventDefault();markDropPreview(cell);}});
-  calendar.addEventListener('drop',e=>{const cell=e.target.closest('.fdc-cell');if(cell)dropBooking(e,cell);});
+  calendar.addEventListener('dragover',e=>{
+    const cell=monthCellFromEvent(e);
+    if(cell&&state.drag){
+      e.preventDefault();
+      markDropPreview(cell,e.target.closest('.fdc-bar[data-booking]'),e.target.closest('.fdc-bar[data-block-id]'));
+    }
+  });
+  calendar.addEventListener('drop',e=>{const cell=monthCellFromEvent(e);if(cell)dropBooking(e,cell);});
   calendar.addEventListener('pointerdown',e=>{const h=e.target.closest('[data-resize]');if(h)resizeStart(e,h);});
   document.addEventListener('pointermove',resizeMove);
   document.addEventListener('pointerup',resizeEnd);
@@ -1994,17 +2292,29 @@ ${tag}`:tag;
     if(b.dataset.ctx==='clean')markClean(cell.dataset.room);
   });
 
-  $('fdcPrev').onclick=()=>{rangePicker.classList.remove('open');loadCalendar(addDays(state.start,-state.days));};
-  $('fdcNext').onclick=()=>{rangePicker.classList.remove('open');loadCalendar(addDays(state.start,state.days));};
-  $('fdcToday').onclick=()=>loadCalendar(state.hotelToday);
-  $('fdcRefresh').onclick=()=>loadCalendar(state.start,true);
+  $('fdcPrev').onclick=()=>{rangePicker.classList.remove('open');shiftRangeByMonths(-monthCount());};
+  $('fdcNext').onclick=()=>{rangePicker.classList.remove('open');shiftRangeByMonths(monthCount());};
+  $('fdcToday').onclick=()=>{const spanDays=Math.max(0,diffDays(state.start,state.end));loadCalendar(state.hotelToday,addDays(state.hotelToday,spanDays));};
+
+  let monthFitTimer=0;
+  window.addEventListener('resize',()=>{
+    clearTimeout(monthFitTimer);
+    monthFitTimer=setTimeout(fitMonthColumnsToViewport,80);
+  });
+  if(window.ResizeObserver){
+    const monthWidthObserver=new ResizeObserver(()=>fitMonthColumnsToViewport());
+    monthWidthObserver.observe(scroll);
+  }
+  $('fdcRefresh').onclick=()=>loadCalendar(state.start,state.end,true);
   $('fdcRange').onclick=e=>{e.stopPropagation();openRangePicker();};
   $('fdcLegendToggle').onclick=()=>{const x=$('fdcLegend'),hidden=!x.hidden;x.hidden=hidden;$('fdcLegendToggle').setAttribute('aria-expanded',String(!hidden));};
+
+
 
   // Calendar page only: start with the master sidebar collapsed without editing the master layout.
   document.body.classList.add('sidebar-collapsed');
   document.body.classList.remove('mobile-sidebar-open');
   document.getElementById('sidebar')?.classList.remove('open');
 
-  loadCalendar(state.start);
+  loadCalendar(state.start,state.end);
 })();
