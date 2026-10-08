@@ -11,27 +11,27 @@
     const style=document.createElement('style');
     style.id='fdcHoldRuntimeStyles';
     style.textContent=`
-      .fdc-holds-panel{border-color:#c9d9ea!important;background:#fbfdff!important}
-      .fdc-holds-help{margin:-1px 0 8px;color:#6b7d90;font-size:9px;line-height:1.35}
-      .fdc-holds-list{display:grid;gap:7px}
-      .fdc-hold-card{padding:8px;border:1px solid #d5e0eb;border-radius:8px;background:#fff}
-      .fdc-hold-summary{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-      .fdc-hold-summary>div{min-width:0}.fdc-hold-summary b{display:block;color:#102a43;font-size:11px}
-      .fdc-hold-summary small{display:block;margin-top:2px;color:#73859a;font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .fdc-hold-status{flex:0 0 auto;padding:2px 6px;border-radius:999px;background:#fff4da;color:#8a5a00;font-size:7.5px;font-weight:900;letter-spacing:.06em}
-      .fdc-hold-note{margin-top:6px;padding-top:5px;border-top:1px dashed #e0e7ef;color:#667a8f;font-size:8.5px;line-height:1.3;overflow-wrap:anywhere}
-      .fdc-hold-capture{display:grid;grid-template-columns:auto minmax(95px,1fr);gap:7px;align-items:center;margin-top:7px}
-      .fdc-hold-capture label{font-size:8.5px;font-weight:800;color:#536a80}
-      .fdc-hold-capture-input{width:100%;height:30px;padding:0 8px;border:1px solid #cbd8e5;border-radius:7px;background:#fff;color:#172b40;font:inherit;font-size:9.5px;font-weight:750;outline:none}
-      .fdc-hold-capture-input:focus{border-color:#2867e8;box-shadow:0 0 0 2px rgba(40,103,232,.10)}
-      .fdc-hold-buttons{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}
-      .fdc-hold-btn{min-height:30px;border:1px solid #d6e0ea;border-radius:7px;background:#fff;color:#102a43;font:inherit;font-size:9px;font-weight:850;cursor:pointer}
-      .fdc-hold-btn.capture{background:#117653;border-color:#117653;color:#fff}.fdc-hold-btn.release{background:#fff6f7;border-color:#e7b7bd;color:#b8333f}
-      .fdc-hold-btn:disabled{opacity:.48;cursor:not-allowed}.fdc-hold-btn.fdc-button-loading{cursor:wait!important}
-      .fdc-security-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 9px;padding:10px 11px;border:1px solid #bcd7cb;border-radius:8px;background:#f0faf5}
-      .fdc-security-summary-copy{min-width:0}.fdc-security-summary-copy span{display:block;color:#547365;font-size:8px;font-weight:850;letter-spacing:.06em;text-transform:uppercase}.fdc-security-summary-copy strong{display:block;margin-top:1px;color:#0f6c4c;font-size:18px;line-height:1.1}.fdc-security-summary-copy small{display:block;margin-top:3px;color:#6d8178;font-size:8px;line-height:1.25}
-      .fdc-security-summary button{flex:0 0 auto;min-height:30px;padding:5px 9px;border:1px solid #176d50;border-radius:6px;background:#176d50;color:#fff;font:inherit;font-size:8.5px;font-weight:850;cursor:pointer}
-      @media(max-width:520px){.fdc-hold-capture{grid-template-columns:1fr}.fdc-hold-buttons{grid-template-columns:1fr 1fr}.fdc-security-summary{align-items:flex-start;flex-direction:column}.fdc-security-summary button{width:100%}}
+      .fdcmw-fdc-holds-panel{border-color:#c9d9ea!important;background:#fbfdff!important}
+      .fdcmw-fdc-holds-help{margin:-1px 0 8px;color:#6b7d90;font-size:9px;line-height:1.35}
+      .fdcmw-fdc-holds-list{display:grid;gap:7px}
+      .fdcmw-fdc-hold-card{padding:8px;border:1px solid #d5e0eb;border-radius:8px;background:#fff}
+      .fdcmw-fdc-hold-summary{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+      .fdcmw-fdc-hold-summary>div{min-width:0}.fdcmw-fdc-hold-summary b{display:block;color:#102a43;font-size:11px}
+      .fdcmw-fdc-hold-summary small{display:block;margin-top:2px;color:#73859a;font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .fdcmw-fdc-hold-status{flex:0 0 auto;padding:2px 6px;border-radius:999px;background:#fff4da;color:#8a5a00;font-size:7.5px;font-weight:900;letter-spacing:.06em}
+      .fdcmw-fdc-hold-note{margin-top:6px;padding-top:5px;border-top:1px dashed #e0e7ef;color:#667a8f;font-size:8.5px;line-height:1.3;overflow-wrap:anywhere}
+      .fdcmw-fdc-hold-capture{display:grid;grid-template-columns:auto minmax(95px,1fr);gap:7px;align-items:center;margin-top:7px}
+      .fdcmw-fdc-hold-capture label{font-size:8.5px;font-weight:800;color:#536a80}
+      .fdcmw-fdc-hold-capture-input{width:100%;height:30px;padding:0 8px;border:1px solid #cbd8e5;border-radius:7px;background:#fff;color:#172b40;font:inherit;font-size:9.5px;font-weight:750;outline:none}
+      .fdcmw-fdc-hold-capture-input:focus{border-color:#2867e8;box-shadow:0 0 0 2px rgba(40,103,232,.10)}
+      .fdcmw-fdc-hold-buttons{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}
+      .fdcmw-fdc-hold-btn{min-height:30px;border:1px solid #d6e0ea;border-radius:7px;background:#fff;color:#102a43;font:inherit;font-size:9px;font-weight:850;cursor:pointer}
+      .fdcmw-fdc-hold-btn.fdcmw-capture{background:#117653;border-color:#117653;color:#fff}.fdcmw-fdc-hold-btn.fdcmw-release{background:#fff6f7;border-color:#e7b7bd;color:#b8333f}
+      .fdcmw-fdc-hold-btn:disabled{opacity:.48;cursor:not-allowed}.fdcmw-fdc-hold-btn.fdcmw-fdc-button-loading{cursor:wait!important}
+      .fdcmw-fdc-security-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 9px;padding:10px 11px;border:1px solid #bcd7cb;border-radius:8px;background:#f0faf5}
+      .fdcmw-fdc-security-summary-copy{min-width:0}.fdcmw-fdc-security-summary-copy span{display:block;color:#547365;font-size:8px;font-weight:850;letter-spacing:.06em;text-transform:uppercase}.fdcmw-fdc-security-summary-copy strong{display:block;margin-top:1px;color:#0f6c4c;font-size:18px;line-height:1.1}.fdcmw-fdc-security-summary-copy small{display:block;margin-top:3px;color:#6d8178;font-size:8px;line-height:1.25}
+      .fdcmw-fdc-security-summary button{flex:0 0 auto;min-height:30px;padding:5px 9px;border:1px solid #176d50;border-radius:6px;background:#176d50;color:#fff;font:inherit;font-size:8.5px;font-weight:850;cursor:pointer}
+      @media(max-width:520px){.fdcmw-fdc-hold-capture{grid-template-columns:1fr}.fdcmw-fdc-hold-buttons{grid-template-columns:1fr 1fr}.fdcmw-fdc-security-summary{align-items:flex-start;flex-direction:column}.fdcmw-fdc-security-summary button{width:100%}}
     `;
     document.head.appendChild(style);
   }
@@ -166,8 +166,8 @@
   }
   function dateFromRowX(row,clientX,allowEndBoundary=true){
     if(!row||!state.months.length)return null;
-    const label=row.querySelector('.fdc-room-label');
-    const firstCell=row.querySelector('.fdc-cell');
+    const label=row.querySelector('.fdcmw-fdc-room-label');
+    const firstCell=row.querySelector('.fdcmw-fdc-cell');
     if(!firstCell)return null;
     const firstRect=firstCell.getBoundingClientRect();
     const cellWidth=firstRect.width||112;
@@ -216,7 +216,7 @@
     const totalMonths=Math.max(1,monthDiffCeil(stayArrival,stayDeparture));
     const monthlyDue=Math.round((grandTotal/totalMonths)*100)/100;
     const visibleDays=Math.max(1,diffDays(visibleStart,visibleEnd));
-    let html='<span class="fdc-mw-pay-strip" aria-hidden="true">';
+    let html='<span class="fdcmw-fdc-mw-pay-strip" aria-hidden="true">';
 
     for(let n=1;n<=totalMonths;n++){
       const segmentStart=n===1?stayArrival:addMonths(stayArrival,n-1);
@@ -232,7 +232,7 @@
       const status=available>=monthlyDue?'Fully Paid':available>0?'Partially Paid':'Not Paid';
       const left=(diffDays(visibleStart,drawStart)/visibleDays)*100;
       const width=Math.max(.5,(diffDays(drawStart,drawEnd)/visibleDays)*100);
-      html+=`<span class="fdc-mw-pay-segment ${paymentDotClass(status)}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" title="${esc(status)}"></span>`;
+      html+=`<span class="fdcmw-fdc-mw-pay-segment ${paymentDotClass(status)}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" title="${esc(status)}"></span>`;
     }
     return html+'</span>';
   }
@@ -256,7 +256,7 @@
       if(markerUnit<=bounds.leftUnits+epsilon||markerUnit>=bounds.rightUnits-epsilon)continue;
       const pct=((markerUnit-bounds.leftUnits)/bounds.widthUnits)*100;
       if(pct>0.05&&pct<99.95)
-        html+=`<span class="fdc-mw-month-divider" style="left:${pct.toFixed(3)}%" aria-hidden="true"></span>`;
+        html+=`<span class="fdcmw-fdc-mw-month-divider" style="left:${pct.toFixed(3)}%" aria-hidden="true"></span>`;
     }
     return html;
   }
@@ -284,23 +284,23 @@
 
   function showToast(message, isError=false) {
     toast.textContent = message || (isError ? 'Action failed.' : 'Done.');
-    toast.classList.toggle('error', isError);
-    toast.classList.add('show');
-    clearTimeout(showToast.t); showToast.t = setTimeout(()=>toast.classList.remove('show'), 2800);
+    toast.classList.toggle('fdcmw-error', isError);
+    toast.classList.add('fdcmw-show');
+    clearTimeout(showToast.t); showToast.t = setTimeout(()=>toast.classList.remove('fdcmw-show'), 2800);
   }
   function setButtonBusy(button, show, label='Working…') {
     if (!button || !(button instanceof HTMLElement)) return;
     if (show) {
       if (!button.dataset.fdcOriginalHtml) button.dataset.fdcOriginalHtml = button.innerHTML;
       button.disabled = true;
-      button.classList.add('fdc-button-loading');
-      button.innerHTML = `<span class="fdc-button-spinner" aria-hidden="true"></span><span>${esc(label)}</span>`;
+      button.classList.add('fdcmw-fdc-button-loading');
+      button.innerHTML = `<span class="fdcmw-fdc-button-spinner" aria-hidden="true"></span><span>${esc(label)}</span>`;
       button.setAttribute('aria-busy','true');
     } else {
       const original = button.dataset.fdcOriginalHtml;
       if (original !== undefined) button.innerHTML = original;
       button.disabled = false;
-      button.classList.remove('fdc-button-loading');
+      button.classList.remove('fdcmw-fdc-button-loading');
       button.removeAttribute('aria-busy');
       delete button.dataset.fdcOriginalHtml;
     }
@@ -377,7 +377,7 @@
     state.request = new AbortController();
     state.loading = true;
     const oldLeft=scroll.scrollLeft, oldTop=scroll.scrollTop;
-    calendar.innerHTML='<div class="fdc-loading"><span></span><b>Loading month-wise calendar…</b></div>';
+    calendar.innerHTML='<div class="fdcmw-fdc-loading"><span></span><b>Loading month-wise calendar…</b></div>';
     try {
       const url = new URL(cfg.dataUrl, location.origin);
       url.searchParams.set('start', iso(start));
@@ -392,7 +392,7 @@
       render();
       if (keepScroll) { scroll.scrollLeft=oldLeft; scroll.scrollTop=oldTop; }
     } catch (e) {
-      if (e.name !== 'AbortError') calendar.innerHTML=`<div class="fdc-empty"><b>Month-wise calendar could not be loaded.</b><br>${esc(e.message)}</div>`;
+      if (e.name !== 'AbortError') calendar.innerHTML=`<div class="fdcmw-fdc-empty"><b>Month-wise calendar could not be loaded.</b><br>${esc(e.message)}</div>`;
     } finally { state.loading=false; }
   }
 
@@ -414,17 +414,17 @@
       roomGroups.get(String(r.categoryId)).push(r);
     }
 
-    let html = `<div class="fdc-date-head"><div class="fdc-rooms-head">Rooms</div>`;
+    let html = `<div class="fdcmw-fdc-date-head"><div class="fdcmw-fdc-rooms-head">Rooms</div>`;
     for (const [monthIndex,m] of months.entries()) {
       const ms=dateOnly(m.startDate),me=dateOnly(m.endDate),todayIn=state.hotelToday>=ms&&state.hotelToday<=me;
-      html += `<div class="fdc-day fdc-month ${todayIn?'today':''}" data-month-index="${monthIndex}" data-date="${iso(ms)}"><b>${esc(m.label||ms.toLocaleDateString('en-GB',{month:'short',year:'numeric'}))}</b><small>${fmt(ms)} – ${fmt(me)}</small></div>`;
+      html += `<div class="fdcmw-fdc-day fdcmw-fdc-month ${todayIn?'fdcmw-today':''}" data-month-index="${monthIndex}" data-date="${iso(ms)}"><b>${esc(m.label||ms.toLocaleDateString('en-GB',{month:'short',year:'numeric'}))}</b><small>${fmt(ms)} – ${fmt(me)}</small></div>`;
     }
     html += '</div>';
 
     for (const cat of cats) {
       const cid=String(cat.id), collapsed=state.collapsed.has(cid);
       const cr=roomGroups.get(cid) || [];
-      html += `<div class="fdc-category" data-category="${esc(cid)}"><div class="fdc-category-label" data-collapse="${esc(cid)}"><span class="arrow">${collapsed?'▸':'▾'}</span><span title="${esc(cat.name)}">${esc(cat.name)}</span></div><div class="fdc-category-grid"></div></div>`;
+      html += `<div class="fdcmw-fdc-category" data-category="${esc(cid)}"><div class="fdcmw-fdc-category-label" data-collapse="${esc(cid)}"><span class="fdcmw-arrow">${collapsed?'▸':'▾'}</span><span title="${esc(cat.name)}">${esc(cat.name)}</span></div><div class="fdcmw-fdc-category-grid"></div></div>`;
       if (collapsed) continue;
       for (const r of cr) html += roomRow(r, cat, months, assignments, false);
       if(normalizeStatus(cfg.role)!=='council')
@@ -447,8 +447,8 @@
       const af=dateOnly(a.fromDate)||new Date(1900,0,1),at=addDays(dateOnly(a.toDate)||new Date(9998,11,31),1);
       return rangeOverlaps(af,at,state.start,addDays(state.end,1));
     });
-    let html=`<div class="fdc-room-row ${unassigned?'unassigned-row':''}" data-room="${esc(roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">`;
-    html += `<div class="fdc-room-label ${dirty?'dirty':''} ${unassigned?'unassigned':''} ${assignmentInRange?'council-assigned':''}" data-room-label><b>${unassigned?'Unassigned':esc(roomNo)}</b></div>`;
+    let html=`<div class="fdcmw-fdc-room-row ${unassigned?'fdcmw-unassigned-row':''}" data-room="${esc(roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">`;
+    html += `<div class="fdcmw-fdc-room-label ${dirty?'fdcmw-dirty':''} ${unassigned?'fdcmw-unassigned':''} ${assignmentInRange?'fdcmw-council-assigned':''}" data-room-label><b>${unassigned?'Unassigned':esc(roomNo)}</b></div>`;
     months.forEach((m,i)=>{
       const ms=dateOnly(m.startDate),me=dateOnly(m.endDate),meExclusive=addDays(me,1);
       const dirtyDate=dateOnly(room.dirtyDate);
@@ -458,13 +458,13 @@
         return rangeOverlaps(af,at,ms,meExclusive);
       });
       const currentMonth=state.hotelToday>=ms&&state.hotelToday<=me;
-      html += `<div class="fdc-cell ${dirtyInMonth?'has-dirty':''} ${councilCell?'council-assigned':''} ${currentMonth?'current-month':''}" data-month-index="${i}" data-date="${iso(ms)}" data-month-end="${iso(me)}" data-room="${esc(roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">${dirtyInMonth?'<span class="fdc-dirty-tag">Dirty</span>':''}</div>`;
+      html += `<div class="fdcmw-fdc-cell ${dirtyInMonth?'fdcmw-has-dirty':''} ${councilCell?'fdcmw-council-assigned':''} ${currentMonth?'fdcmw-current-month':''}" data-month-index="${i}" data-date="${iso(ms)}" data-month-end="${iso(me)}" data-room="${esc(roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">${dirtyInMonth?'<span class="fdcmw-fdc-dirty-tag">Dirty</span>':''}</div>`;
     });
     return html+'</div>';
   }
 
   function placeBars(bookings, blocks, months) {
-    const rows=[...calendar.querySelectorAll('.fdc-room-row')];
+    const rows=[...calendar.querySelectorAll('.fdcmw-fdc-room-row')];
     const index=new Map(rows.map(r=>[`${r.dataset.category}|${String(r.dataset.room).toUpperCase()}`,r]));
     const monthWidth='var(--month-col)';
 
@@ -484,23 +484,23 @@
 
       if(isBlock){
         row.insertAdjacentHTML('beforeend',
-          `<div class="fdc-bar b ${String(item.kind||'').toLowerCase().includes('maintenance')?'maintenance':''}" `+
+          `<div class="fdcmw-fdc-bar fdcmw-b ${String(item.kind||'').toLowerCase().includes('maintenance')?'fdcmw-maintenance':''}" `+
           `style="left:${left};width:${width}" data-block-id="${item.blockId}" data-block='${esc(JSON.stringify(item))}'>`+
-          `<span class="name">${esc(item.reason||'Blocked')}</span></div>`);
+          `<span class="fdcmw-name">${esc(item.reason||'Blocked')}</span></div>`);
         return;
       }
 
       const cls=statusClass(item.statusCode||item.status);
-      const roomClass=room==='UNASSIGNED'?' unassigned-booking':'';
+      const roomClass=room==='UNASSIGNED'?' fdcmw-unassigned-booking':'';
       const paymentStrip=buildMonthPaymentStrip(item);
       const monthEndDividers=buildReservationMonthDividers(item,bounds);
       row.insertAdjacentHTML('beforeend',
-        `<div class="fdc-bar ${cls}${roomClass}" draggable="${item.canDrag?'true':'false'}" `+
+        `<div class="fdcmw-fdc-bar ${cls}${roomClass}" draggable="${item.canDrag?'true':'false'}" `+
         `style="left:${left};width:${width}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}">`+
-        `${paymentStrip}${monthEndDividers}<span class="name">${esc(item.guestName||item.regId)}</span>`+
-        `${item.hasNote?'<span class="fdc-note-indicator" title="Notebook note" aria-label="Notebook note">★</span>':''}`+
-        `${item.hasRoomChange?'<span class="fdc-room-change-indicator" title="Room changed" aria-label="Room changed">★</span>':''}`+
-        `${item.canResize?'<span class="fdc-handle right" data-resize="right" title="Drag to extend / shrink"></span>':''}</div>`);
+        `${paymentStrip}${monthEndDividers}<span class="fdcmw-name">${esc(item.guestName||item.regId)}</span>`+
+        `${item.hasNote?'<span class="fdcmw-fdc-note-indicator" title="Notebook note" aria-label="Notebook note">★</span>':''}`+
+        `${item.hasRoomChange?'<span class="fdcmw-fdc-room-change-indicator" title="Room changed" aria-label="Room changed">★</span>':''}`+
+        `${item.canResize?'<span class="fdcmw-fdc-handle fdcmw-right" data-resize="right" title="Drag to extend / shrink"></span>':''}</div>`);
     };
 
     bookings.forEach(x=>addBar(x,false));
@@ -509,20 +509,20 @@
 
   function statusClass(status){
     const s=String(status||'').trim().toUpperCase();
-    if(s==='CO'||normalizeStatus(status).includes('check out')) return 'co';
-    if(s==='O'||normalizeStatus(status).includes('check in')||normalizeStatus(status).includes('in house')) return 'o';
-    if(s==='P'||normalizeStatus(status).includes('provisional')) return 'p';
-    if(s==='B'||normalizeStatus(status).includes('block')) return 'b';
-    if(s==='D'||normalizeStatus(status).includes('dirty')) return 'd';
-    return 'r';
+    if(s==='CO'||normalizeStatus(status).includes('check out')) return 'fdcmw-co';
+    if(s==='O'||normalizeStatus(status).includes('check in')||normalizeStatus(status).includes('in house')) return 'fdcmw-o';
+    if(s==='P'||normalizeStatus(status).includes('provisional')) return 'fdcmw-p';
+    if(s==='B'||normalizeStatus(status).includes('block')) return 'fdcmw-b';
+    if(s==='D'||normalizeStatus(status).includes('dirty')) return 'fdcmw-d';
+    return 'fdcmw-r';
   }
 
   function paymentDotClass(status){
     const s=normalizeStatus(status);
-    if(s==='not paid') return 'not-paid';
-    if(s==='partially paid') return 'part-paid';
-    if(s==='fully paid') return 'fully-paid';
-    return 'payment-hidden';
+    if(s==='not paid') return 'fdcmw-not-paid';
+    if(s==='partially paid') return 'fdcmw-part-paid';
+    if(s==='fully paid') return 'fdcmw-fully-paid';
+    return 'fdcmw-payment-hidden';
   }
 
   function updateRangeButton(){
@@ -535,7 +535,7 @@
     document.querySelectorAll('[data-mw-months]').forEach(b=>{
       const count=Math.max(1,Number(b.dataset.mwMonths||0));
       const expectedEnd=new Date(state.start.getFullYear(),state.start.getMonth()+count,0);
-      b.classList.toggle('active',sameDate(state.start,state.hotelToday)&&sameDate(state.end,expectedEnd));
+      b.classList.toggle('fdcmw-active',sameDate(state.start,state.hotelToday)&&sameDate(state.end,expectedEnd));
     });
   }
 
@@ -544,42 +544,42 @@
     // remove the right-click menu while an action is still processing.  The
     // action itself closes the menu with force=true only after it has finished
     // or after the next modal/page has been opened.
-    if(!force && context.classList.contains('fdc-context-processing')) return;
-    context.classList.remove('open','booking-menu','fdc-context-processing');
+    if(!force && context.classList.contains('fdcmw-fdc-context-processing')) return;
+    context.classList.remove('fdcmw-open','fdcmw-booking-menu','fdcmw-fdc-context-processing');
     context.removeAttribute('data-processing');
     context.innerHTML='';
     delete context.dataset.booking;
   }
-  function closeTip(){ tip.classList.remove('open'); }
-  const modalModeClasses=['fdc-cancel-mode','fdc-category-rate-mode','fdc-professional-mode','fdc-room-action-mode','fdc-block-form-mode','fdc-block-details-mode','fdc-resize-mode'];
+  function closeTip(){ tip.classList.remove('fdcmw-open'); }
+  const modalModeClasses=['fdcmw-fdc-cancel-mode','fdcmw-fdc-category-rate-mode','fdcmw-fdc-professional-mode','fdcmw-fdc-room-action-mode','fdcmw-fdc-block-form-mode','fdcmw-fdc-block-details-mode','fdcmw-fdc-resize-mode'];
   function openModal(title, body, foot='', mode='') {
     overlay.classList.remove(...modalModeClasses);
     String(mode||'').split(/\s+/).filter(Boolean).forEach(x=>overlay.classList.add(x));
     modalTitle.textContent=title; modalBody.innerHTML=body; modalFoot.innerHTML=foot;
-    overlay.classList.add('open'); overlay.setAttribute('aria-hidden','false');
-    page.classList.add('fdc-modal-open');
+    overlay.classList.add('fdcmw-open'); overlay.setAttribute('aria-hidden','false');
+    page.classList.add('fdcmw-fdc-modal-open');
   }
   function closeModal(){
-    overlay.classList.remove('open',...modalModeClasses);
+    overlay.classList.remove('fdcmw-open',...modalModeClasses);
     overlay.setAttribute('aria-hidden','true');
-    page.classList.remove('fdc-modal-open');
+    page.classList.remove('fdcmw-fdc-modal-open');
   }
-  function closeDrawer(){ drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); if(drawerPay)drawerPay.innerHTML=''; drawerFoot.innerHTML=''; state.currentDetails=null; }
+  function closeDrawer(){ drawer.classList.remove('fdcmw-open'); drawer.setAttribute('aria-hidden','true'); if(drawerPay)drawerPay.innerHTML=''; drawerFoot.innerHTML=''; state.currentDetails=null; }
 
   function openRoomAction(cell){
     const date=cell.dataset.date, room=cell.dataset.room, cid=cell.dataset.category, cname=cell.dataset.categoryName;
     const isUnassigned=String(room).toUpperCase()==='UNASSIGNED';
-    const body=`<div class="fdc-pro-summary">
-      <div class="fdc-pro-summary-icon">⌂</div>
+    const body=`<div class="fdcmw-fdc-pro-summary">
+      <div class="fdcmw-fdc-pro-summary-icon">⌂</div>
       <div><span>Selected room</span><b>${isUnassigned?'Unassigned lane':`Room ${esc(room)}`}</b><small>${esc(cname)} · ${fmt(date,true)}</small></div>
     </div>
-    <div class="fdc-actions-grid fdc-pro-actions">
-      <button type="button" class="fdc-action-card fdc-room-action-reserve" data-action="new-reservation"><span class="fdc-action-card-icon">＋</span><span><b>New Reservation</b><small>Create a booking for this room and date.</small></span></button>
-      <button type="button" class="fdc-action-card fdc-room-action-checkin" data-action="checkin"><span class="fdc-action-card-icon">→</span><span><b>Check-In</b><small>Open the check-in workspace.</small></span></button>
-      ${!isUnassigned?'<button type="button" class="fdc-action-card fdc-room-action-block" data-action="block"><span class="fdc-action-card-icon">▣</span><span><b>Block Room</b><small>Block this room for a selected date range.</small></span></button>':''}
-      ${cell.classList.contains('has-dirty')?'<button type="button" class="fdc-action-card" data-action="clean"><span class="fdc-action-card-icon">✓</span><span><b>Mark Clean</b><small>Set this room back to available.</small></span></button>':''}
+    <div class="fdcmw-fdc-actions-grid fdcmw-fdc-pro-actions">
+      <button type="button" class="fdcmw-fdc-action-card fdcmw-fdc-room-action-reserve" data-action="new-reservation"><span class="fdcmw-fdc-action-card-icon">＋</span><span><b>New Reservation</b><small>Create a booking for this room and date.</small></span></button>
+      <button type="button" class="fdcmw-fdc-action-card fdcmw-fdc-room-action-checkin" data-action="checkin"><span class="fdcmw-fdc-action-card-icon">→</span><span><b>Check-In</b><small>Open the check-in workspace.</small></span></button>
+      ${!isUnassigned?'<button type="button" class="fdcmw-fdc-action-card fdcmw-fdc-room-action-block" data-action="block"><span class="fdcmw-fdc-action-card-icon">▣</span><span><b>Block Room</b><small>Block this room for a selected date range.</small></span></button>':''}
+      ${cell.classList.contains('fdcmw-has-dirty')?'<button type="button" class="fdcmw-fdc-action-card" data-action="clean"><span class="fdcmw-fdc-action-card-icon">✓</span><span><b>Mark Clean</b><small>Set this room back to available.</small></span></button>':''}
     </div>`;
-    openModal('Room Action',body,'<button type="button" class="fdc-btn fdc-btn-secondary" data-close-modal>Close</button>','fdc-professional-mode fdc-room-action-mode');
+    openModal('Room Action',body,'<button type="button" class="fdcmw-fdc-btn fdcmw-fdc-btn-secondary" data-close-modal>Close</button>','fdcmw-fdc-professional-mode fdcmw-fdc-room-action-mode');
     modalBody.querySelector('[data-action="new-reservation"]')?.addEventListener('click',e=>{
       setButtonBusy(e.currentTarget,true,'Opening…');
       const u=new URL(cfg.reservationUrl,location.origin); if(!isUnassigned)u.searchParams.set('RN',room);u.searchParams.set('BT',cname);u.searchParams.set('FD',date);u.searchParams.set('NT','1');location.href=u;
@@ -590,19 +590,19 @@
   }
 
   function openBlockForm(x, existing=null){
-    const body=`<div class="fdc-pro-summary compact">
-      <div class="fdc-pro-summary-icon">▣</div>
+    const body=`<div class="fdcmw-fdc-pro-summary fdcmw-compact">
+      <div class="fdcmw-fdc-pro-summary-icon">▣</div>
       <div><span>${existing?'Editing room block':'Create room block'}</span><b>Room ${esc(x.roomNo)} · ${esc(x.categoryName)}</b><small>${existing?'Update the blocked dates, type or reason.':'Choose the date range and record why the room is unavailable.'}</small></div>
     </div>
-    <div class="fdc-form fdc-pro-form">
-      <div class="fdc-field"><label>Room</label><input value="${esc(x.roomNo)}" disabled></div>
-      <div class="fdc-field"><label>Category</label><input value="${esc(x.categoryName)}" disabled></div>
-      <div class="fdc-field"><label>Start date</label><input type="date" id="blockStart" value="${iso(x.startDate)}"></div>
-      <div class="fdc-field"><label>End date</label><input type="date" id="blockEnd" value="${iso(existing?addDays(dateOnly(existing.endDate),-1):x.endDate)}"></div>
-      <div class="fdc-field full"><label>Type</label><select id="blockKind"><option>Room Block</option><option>Maintenance</option></select></div>
-      <div class="fdc-field full"><label>Reason <span class="fdc-required">*</span></label><textarea id="blockReason" placeholder="Enter the reason for blocking this room">${esc(existing?.reason||'')}</textarea></div>
+    <div class="fdcmw-fdc-form fdcmw-fdc-pro-form">
+      <div class="fdcmw-fdc-field"><label>Room</label><input value="${esc(x.roomNo)}" disabled></div>
+      <div class="fdcmw-fdc-field"><label>Category</label><input value="${esc(x.categoryName)}" disabled></div>
+      <div class="fdcmw-fdc-field"><label>Start date</label><input type="date" id="blockStart" value="${iso(x.startDate)}"></div>
+      <div class="fdcmw-fdc-field"><label>End date</label><input type="date" id="blockEnd" value="${iso(existing?addDays(dateOnly(existing.endDate),-1):x.endDate)}"></div>
+      <div class="fdcmw-fdc-field fdcmw-full"><label>Type</label><select id="blockKind"><option>Room Block</option><option>Maintenance</option></select></div>
+      <div class="fdcmw-fdc-field fdcmw-full"><label>Reason <span class="fdcmw-fdc-required">*</span></label><textarea id="blockReason" placeholder="Enter the reason for blocking this room">${esc(existing?.reason||'')}</textarea></div>
     </div>`;
-    openModal(existing?'Edit Room Block':'Block Room',body,`<button class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button><button class="fdc-btn primary" id="saveBlock">${existing?'Update block':'Block room'}</button>`,'fdc-professional-mode fdc-block-form-mode');
+    openModal(existing?'Edit Room Block':'Block Room',body,`<button class="fdcmw-fdc-btn fdcmw-fdc-btn-secondary" data-close-modal>Cancel</button><button class="fdcmw-fdc-btn fdcmw-primary" id="saveBlock">${existing?'Update block':'Block room'}</button>`,'fdcmw-fdc-professional-mode fdcmw-fdc-block-form-mode');
     if(existing) $('blockKind').value=existing.kind||'Room Block';
     $('saveBlock').onclick=async e=>{
       const btn=e.currentTarget;
@@ -654,12 +654,12 @@
   async function openDetails(item){
     if(!item?.regId) return;
     closeContext();
-    drawer.classList.add('open');
+    drawer.classList.add('fdcmw-open');
     drawer.setAttribute('aria-hidden','false');
     $('fdcAvatar').textContent=initials(item.guestName||item.regId);
     $('fdcDrawerTitle').textContent=item.guestName||'Guest';
     $('fdcDrawerSub').textContent=`Room ${item.roomNo||'Unassigned'} · Loading…`;
-    drawerBody.innerHTML='<div class="fdc-drawer-loading"><span></span><b>Loading reservation…</b></div>';
+    drawerBody.innerHTML='<div class="fdcmw-fdc-drawer-loading"><span></span><b>Loading reservation…</b></div>';
     if(drawerPay) drawerPay.innerHTML='';
     drawerFoot.innerHTML='';
     try{
@@ -682,12 +682,12 @@
       drawerBody.innerHTML=detailsHtml(d,holds);
       if(drawerPay){
         drawerPay.innerHTML=Number(d.balance||0)>0.005
-          ? `<button type="button" class="fdc-pay-now" data-drawer-action="payment">Pay Now · ${money(d.balance)}</button>`
+          ? `<button type="button" class="fdcmw-fdc-pay-now" data-drawer-action="payment">Pay Now · ${money(d.balance)}</button>`
           : '';
       }
       drawerFoot.innerHTML=detailsActions(d);
     }catch(e){
-      drawerBody.innerHTML=`<div class="fdc-panel"><b>Unable to load reservation.</b><p>${esc(e.message)}</p></div>`;
+      drawerBody.innerHTML=`<div class="fdcmw-fdc-panel"><b>Unable to load reservation.</b><p>${esc(e.message)}</p></div>`;
       showToast(e.message,true);
     }
   }
@@ -698,39 +698,39 @@
     const closed=isCheckedOutStatus(s);
     const balance=Number(d.balance||0);
     const roomSecurity=Math.max(0,Number(d.roomSecurity||0));
-    const stateClass=checked?'green':closed?'amber':balance>0.005?'red':'blue';
+    const stateClass=checked?'fdcmw-green':closed?'fdcmw-amber':balance>0.005?'fdcmw-red':'fdcmw-blue';
     const stateText=checked?'Checked In':closed?'Checked Out':(d.status||'Reservation');
-    const row=(label,value)=>`<div class="fdc-kv"><span>${label}</span><b>${value}</b></div>`;
+    const row=(label,value)=>`<div class="fdcmw-fdc-kv"><span>${label}</span><b>${value}</b></div>`;
     const logs=(d.payments||[]).map(p=>{
       const refundable=Math.max(0,Number(p.remainingRefundable||0));
       const canRefund=cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
       const receipt=String(p.receiptUrl||'').trim();
-      return `<div class="fdc-payment-log-entry" data-payment-log-id="${Number(p.id||0)}">
-        <div class="fdc-payment-log-meta">
+      return `<div class="fdcmw-fdc-payment-log-entry" data-payment-log-id="${Number(p.id||0)}">
+        <div class="fdcmw-fdc-payment-log-meta">
           <span>${fmt(p.date,true)} · ${esc(p.method||'Payment')}${p.reference?` · ${esc(p.reference)}`:''}</span>
-          <strong class="${Number(p.amount||0)<0?'fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
+          <strong class="${Number(p.amount||0)<0?'fdcmw-fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
         </div>
-        ${(receipt||canRefund)?`<div class="fdc-payment-log-tools">
-          ${receipt?`<a class="fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener">Receipt ↗</a>`:''}
-          ${canRefund?`<button type="button" class="fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}">Refund</button>`:''}
+        ${(receipt||canRefund)?`<div class="fdcmw-fdc-payment-log-tools">
+          ${receipt?`<a class="fdcmw-fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener">Receipt ↗</a>`:''}
+          ${canRefund?`<button type="button" class="fdcmw-fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}">Refund</button>`:''}
         </div>`:''}
       </div>`;
     }).join('');
     const holdPanel=paymentHoldsHtml(holds);
-    const securityPanel=roomSecurity>0.005?`<div class="fdc-security-summary">
-      <div class="fdc-security-summary-copy"><span>Refundable Security</span><strong>${money(roomSecurity)}</strong><small>Room security is held separately from the stay balance.</small></div>
+    const securityPanel=roomSecurity>0.005?`<div class="fdcmw-fdc-security-summary">
+      <div class="fdcmw-fdc-security-summary-copy"><span>Refundable Security</span><strong>${money(roomSecurity)}</strong><small>Room security is held separately from the stay balance.</small></div>
       <button type="button" data-drawer-action="security-settle">Manage Security</button>
     </div>`:'';
 
-    return `<div class="fdc-panel"><h4>Booking information</h4>
+    return `<div class="fdcmw-fdc-panel"><h4>Booking information</h4>
         ${row('Reference #',esc(d.regId||'—'))}
         ${row('Booking #',esc(d.bookingNo||'—'))}
         ${row('Contact #',esc(d.phone||'—'))}
         ${row('Email',esc(d.email||'—'))}
         ${d.createdAt?row('Created At',fmt(d.createdAt,true)):''}
       </div>
-      <div class="fdc-panel"><h4>${checked?'Checked-in stay':'Reservation stay'}</h4>
-        ${row('Status',`<i class="fdc-badge ${stateClass}">${esc(stateText)}</i>`)}
+      <div class="fdcmw-fdc-panel"><h4>${checked?'Checked-in stay':'Reservation stay'}</h4>
+        ${row('Status',`<i class="fdcmw-fdc-badge ${stateClass}">${esc(stateText)}</i>`)}
         ${row('Arrival',fmt(d.arrival,true))}
         ${row('Departure',fmt(d.departure,true))}
         ${row('Total Nights',`${d.nights||Math.max(1,diffDays(d.arrival,d.departure))} Nights`)}
@@ -739,18 +739,18 @@
         ${row('Occupancy',`${Number(d.adults||0)} Adults · ${Number(d.children||0)} Children${Number(d.infants||0)?` · ${Number(d.infants)} Infants`:''}`)}
         ${row('Source',esc(d.source||'—'))}
       </div>
-      <div class="fdc-panel"><h4>Charges & Payments</h4>
+      <div class="fdcmw-fdc-panel"><h4>Charges & Payments</h4>
         ${row('Total',money(d.total))}
         ${row('Payable',money(d.total))}
         ${row('Deposits / Paid',money(d.paid))}
-        ${row('Balance',`<span class="${balance>0.005?'fdc-amount-due':'fdc-amount-settled'}">${money(balance)}</span>`)}
-        ${balance>0.005?`<div class="fdc-payment-due-note">${money(balance)} remains to be collected.</div>`:'<div class="fdc-payment-settled-note">Payment received in full.</div>'}
-        ${logs?`<div class="fdc-payment-log"><strong>Payment history</strong>${logs}</div>`:''}
+        ${row('Balance',`<span class="${balance>0.005?'fdcmw-fdc-amount-due':'fdcmw-fdc-amount-settled'}">${money(balance)}</span>`)}
+        ${balance>0.005?`<div class="fdcmw-fdc-payment-due-note">${money(balance)} remains to be collected.</div>`:'<div class="fdcmw-fdc-payment-settled-note">Payment received in full.</div>'}
+        ${logs?`<div class="fdcmw-fdc-payment-log"><strong>Payment history</strong>${logs}</div>`:''}
       </div>
       ${securityPanel}
       ${holdPanel}
-      ${d.frontDeskNotes?`<div class="fdc-panel"><h4>Notebook</h4><p class="fdc-drawer-notes">${esc(d.frontDeskNotes)}</p></div>`:''}
-      ${d.notes?`<div class="fdc-panel"><h4>Notes</h4><p class="fdc-drawer-notes">${esc(d.notes)}</p></div>`:''}`;
+      ${d.frontDeskNotes?`<div class="fdcmw-fdc-panel"><h4>Notebook</h4><p class="fdcmw-fdc-drawer-notes">${esc(d.frontDeskNotes)}</p></div>`:''}
+      ${d.notes?`<div class="fdcmw-fdc-panel"><h4>Notes</h4><p class="fdcmw-fdc-drawer-notes">${esc(d.notes)}</p></div>`:''}`;
   }
 
   function paymentHoldsHtml(holds){
@@ -766,32 +766,32 @@
       const releaseAllowed=h.canRelease!==false;
       const releaseTitle=releaseAllowed?'Release this authorization':'Stripe Checkout authorization cannot be canceled after Checkout completes; capture it or allow it to expire.';
 
-      return `<div class="fdc-hold-card" data-hold-pi="${esc(h.paymentIntentId||'')}" data-hold-minor="${Number(h.amountMinor||0)}" data-hold-currency="${esc(currency)}">
-        <div class="fdc-hold-summary">
+      return `<div class="fdcmw-fdc-hold-card" data-hold-pi="${esc(h.paymentIntentId||'')}" data-hold-minor="${Number(h.amountMinor||0)}" data-hold-currency="${esc(currency)}">
+        <div class="fdcmw-fdc-hold-summary">
           <div><b>${money(amountMajor)} authorized</b><small>${esc(sourceLabel)}${card?` · ${esc(card)}`:''}</small></div>
-          <span class="fdc-hold-status">HOLD</span>
+          <span class="fdcmw-fdc-hold-status">HOLD</span>
         </div>
-        ${h.description?`<div class="fdc-hold-note">${esc(h.description)}</div>`:''}
-        <div class="fdc-hold-capture">
+        ${h.description?`<div class="fdcmw-fdc-hold-note">${esc(h.description)}</div>`:''}
+        <div class="fdcmw-fdc-hold-capture">
           <label>Capture amount</label>
-          <input type="number" class="fdc-hold-capture-input" min="${factor===1?'1':'0.01'}" step="${factor===1?'1':'0.01'}" max="${amountMajor}" value="${amountMajor.toFixed(factor===1?0:2)}" inputmode="decimal" />
+          <input type="number" class="fdcmw-fdc-hold-capture-input" min="${factor===1?'1':'0.01'}" step="${factor===1?'1':'0.01'}" max="${amountMajor}" value="${amountMajor.toFixed(factor===1?0:2)}" inputmode="decimal" />
         </div>
-        <div class="fdc-hold-buttons">
-          <button type="button" class="fdc-hold-btn capture" data-drawer-hold-action="capture">Capture</button>
-          <button type="button" class="fdc-hold-btn release" data-drawer-hold-action="release" ${releaseAllowed?'':`disabled title="${esc(releaseTitle)}"`}>Release</button>
+        <div class="fdcmw-fdc-hold-buttons">
+          <button type="button" class="fdcmw-fdc-hold-btn fdcmw-capture" data-drawer-hold-action="capture">Capture</button>
+          <button type="button" class="fdcmw-fdc-hold-btn fdcmw-release" data-drawer-hold-action="release" ${releaseAllowed?'':`disabled title="${esc(releaseTitle)}"`}>Release</button>
         </div>
       </div>`;
     }).join('');
 
-    return `<div class="fdc-panel fdc-holds-panel"><h4>Authorized Payment Holds</h4>
-      <div class="fdc-holds-help">Capture the full amount or enter a smaller amount for partial capture. A final partial capture releases the unused authorization.</div>
-      <div class="fdc-holds-list">${rows}</div>
+    return `<div class="fdcmw-fdc-panel fdcmw-fdc-holds-panel"><h4>Authorized Payment Holds</h4>
+      <div class="fdcmw-fdc-holds-help">Capture the full amount or enter a smaller amount for partial capture. A final partial capture releases the unused authorization.</div>
+      <div class="fdcmw-fdc-holds-list">${rows}</div>
     </div>`;
   }
 
   async function drawerHoldAction(button){
     const d=state.currentDetails;
-    const row=button?.closest('.fdc-hold-card');
+    const row=button?.closest('.fdcmw-fdc-hold-card');
     if(!d||!row||button.disabled) return;
 
     const action=button.dataset.drawerHoldAction;
@@ -802,7 +802,7 @@
 
     let amountMinor=null;
     if(action==='capture'){
-      const input=row.querySelector('.fdc-hold-capture-input');
+      const input=row.querySelector('.fdcmw-fdc-hold-capture-input');
       const major=Number(input?.value||0);
       amountMinor=holdMinor(major,currency);
       if(!(amountMinor>0)){showToast('Enter a valid capture amount.',true);input?.focus();return;}
@@ -865,19 +865,19 @@
     if(isCheckedOutStatus(d.status)){showToast('Checked-out room guest details are read-only.',true);return;}
 
     const current=String(d.guestName||'').trim();
-    const body=`<div class="fdc-pro-summary compact">
-      <div class="fdc-pro-summary-icon">✎</div>
+    const body=`<div class="fdcmw-fdc-pro-summary fdcmw-compact">
+      <div class="fdcmw-fdc-pro-summary-icon">✎</div>
       <div><span>Room guest</span><b>Room ${esc(d.roomNo||'Unassigned')}</b><small>${esc(d.regId||'')}</small></div>
     </div>
-    <div class="fdc-form">
-      <div class="fdc-field full">
+    <div class="fdcmw-fdc-form">
+      <div class="fdcmw-fdc-field fdcmw-full">
         <label for="fdcRoomGuestName">Guest Name</label>
         <input id="fdcRoomGuestName" type="text" maxlength="100" value="${esc(current)}" autocomplete="off" placeholder="Enter the guest name for this room" />
         <small>This changes only this room. The main reservation guest remains unchanged.</small>
       </div>
     </div>`;
-    const foot=`<button type="button" class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button><button type="button" class="fdc-btn primary" id="fdcSaveRoomGuestName">Save Guest Name</button>`;
-    openModal('Update Room Guest Name',body,foot,'fdc-professional-mode');
+    const foot=`<button type="button" class="fdcmw-fdc-btn fdcmw-fdc-btn-secondary" data-close-modal>Cancel</button><button type="button" class="fdcmw-fdc-btn fdcmw-primary" id="fdcSaveRoomGuestName">Save Guest Name</button>`;
+    openModal('Update Room Guest Name',body,foot,'fdcmw-fdc-professional-mode');
 
     const input=$('fdcRoomGuestName');
     const save=$('fdcSaveRoomGuestName');
@@ -914,7 +914,7 @@
     const canNoShow=!checked && !closed && !provisional && arrival && arrival<state.hotelToday;
     const actions=[];
     const trailing=[];
-    const action=(icon,label,key,tone='')=>`<button class="fdc-drawer-action ${tone}" type="button" data-drawer-action="${key}"><span class="fdc-action-icon">${icon}</span><span class="fdc-action-text">${label}</span></button>`;
+    const action=(icon,label,key,tone='')=>`<button class="fdcmw-fdc-drawer-action ${tone}" type="button" data-drawer-action="${key}"><span class="fdcmw-fdc-action-icon">${icon}</span><span class="fdcmw-fdc-action-text">${label}</span></button>`;
     if(checked){
       actions.push(action('✎','Edit','edit'));
       actions.push(action('Aa','Edit Guest Name','guest-name'));
@@ -934,9 +934,9 @@
       actions.push(action('◆','Room Security','security'));
       actions.push(action('◷','Guest History','history'));
       actions.push(action('▤','Detail Invoice','detail-invoice'));
-      actions.push(action('×','Cancel Reservation','cancel','danger-action'));
+      actions.push(action('×','Cancel Reservation','cancel','fdcmw-danger-action'));
     }else{
-      actions.push(action('➜','Check-In Now','checkin-now','primary-action'));
+      actions.push(action('➜','Check-In Now','checkin-now','fdcmw-primary-action'));
       actions.push(action('▣','Edit','edit'));
       actions.push(action('Aa','Edit Guest Name','guest-name'));
       actions.push(action('▤','Note Book','note'));
@@ -944,22 +944,22 @@
       actions.push(action('◷','Guest History','history'));
       actions.push(action('▧','Invoice','invoice'));
       actions.push(action('▤','Detail Invoice','detail-invoice'));
-      if(canNoShow) actions.push(action('⊘','No Show','no-show','danger-action'));
-      else actions.push(action('×','Cancel Reservation','cancel','danger-action'));
+      if(canNoShow) actions.push(action('⊘','No Show','no-show','fdcmw-danger-action'));
+      else actions.push(action('×','Cancel Reservation','cancel','fdcmw-danger-action'));
     }
     if(Number(d.balance||0)>0.005){
-      actions.push(action('£','Record Payment','payment','payment-action'));
+      actions.push(action('£','Record Payment','payment','fdcmw-payment-action'));
     }
-    actions.push(action('✉','Send Email','sendpaylink','payment-action'));
+    actions.push(action('✉','Send Email','sendpaylink','fdcmw-payment-action'));
 
     // Room assignment and checkout are terminal actions and stay at the bottom.
     if(d.roomNo && String(d.roomNo).toUpperCase()!=='UNASSIGNED'){
-      trailing.push(action('↧','Move to Unassigned','unassign','assignment-action'));
+      trailing.push(action('↧','Move to Unassigned','unassign','fdcmw-assignment-action'));
     }
     if(checked){
-      trailing.push(action('⇥','Check-Out','checkout','checkout-action'));
+      trailing.push(action('⇥','Check-Out','checkout','fdcmw-checkout-action'));
     }
-    return `<button type="button" class="fdc-drawer-actions-toggle" data-drawer-actions-toggle aria-expanded="false"><span>Actions</span><span class="chevron">⌄</span></button><div class="fdc-drawer-actions" data-drawer-actions-list hidden>${actions.join('')}${trailing.length?`<div class="fdc-drawer-actions-terminal">${trailing.join('')}</div>`:''}</div>`;
+    return `<button type="button" class="fdcmw-fdc-drawer-actions-toggle" data-drawer-actions-toggle aria-expanded="false"><span>Actions</span><span class="fdcmw-chevron">⌄</span></button><div class="fdcmw-fdc-drawer-actions" data-drawer-actions-list hidden>${actions.join('')}${trailing.length?`<div class="fdcmw-fdc-drawer-actions-terminal">${trailing.join('')}</div>`:''}</div>`;
   }
 
   function openCheckInEditor(d,button=null){
@@ -1026,16 +1026,16 @@
     if(!d?.regId){ showToast('Reservation reference is missing.',true); return; }
     const guest=d.guestName||'this guest';
     const body=`
-      <div class="fdc-cancel-subtitle">Please provide a reason. This action will remove the reservation from the system.</div>
-      <div class="fdc-cancel-meta"><b>${esc(guest)}</b><span>${esc(d.regId)}</span></div>
-      <div class="fdc-cancel-field">
+      <div class="fdcmw-fdc-cancel-subtitle">Please provide a reason. This action will remove the reservation from the system.</div>
+      <div class="fdcmw-fdc-cancel-meta"><b>${esc(guest)}</b><span>${esc(d.regId)}</span></div>
+      <div class="fdcmw-fdc-cancel-field">
         <label for="fdcCancelReason">Reason <span>(required)</span></label>
         <textarea id="fdcCancelReason" rows="4" maxlength="500" placeholder="e.g., Guest requested cancellation / No payment received / Duplicate booking..."></textarea>
         <small>Keep it short — this reason will be stored in the cancellation record.</small>
-        <div id="fdcCancelReasonError" class="fdc-cancel-error" hidden>Please enter a cancellation reason.</div>
+        <div id="fdcCancelReasonError" class="fdcmw-fdc-cancel-error" hidden>Please enter a cancellation reason.</div>
       </div>`;
-    const foot=`<button type="button" class="fdc-btn" data-close-modal>Close</button><button type="button" class="fdc-btn danger" id="fdcConfirmCancel">Confirm Cancel</button>`;
-    openModal('Cancel Reservation',body,foot,'fdc-cancel-mode');
+    const foot=`<button type="button" class="fdcmw-fdc-btn" data-close-modal>Close</button><button type="button" class="fdcmw-fdc-btn fdcmw-danger" id="fdcConfirmCancel">Confirm Cancel</button>`;
+    openModal('Cancel Reservation',body,foot,'fdcmw-fdc-cancel-mode');
     const ta=$('fdcCancelReason'),err=$('fdcCancelReasonError'),btn=$('fdcConfirmCancel');
     setTimeout(()=>ta?.focus(),40);
     btn.onclick=async()=>{
@@ -1199,7 +1199,7 @@
       const prepareUrl = calendarActionUrl('PrepareEmail');
       const j=await api(prepareUrl,{method:'POST',body:JSON.stringify({regId:d.regId,paymentId:d.paymentId||0})});
       if(j.ok===false) throw new Error(j.message||'Unable to prepare the email.');
-      openModal('Send Email','', '', 'fdc-professional-mode');
+      openModal('Send Email','', '', 'fdcmw-fdc-professional-mode');
       renderEmailComposer(d,j.data||{});
     }catch(e){
       showToast(e.message||'Unable to prepare the email.',true);
@@ -1219,31 +1219,31 @@
     let active='GEN';
 
     modalTitle.textContent='✉ Send Email';
-    modalBody.innerHTML=`<div class="fdc-email-composer">
-      <div class="fdc-email-subtitle">Write any guest message, or choose an invoice/payment template.</div>
-      <div class="fdc-email-tabs">
-        ${tabs.map((t,i)=>`<button type="button" class="fdc-email-tab ${i===0?'fdc-is-active':''}" data-email-tab="${t.key}" ${t.disabled?'disabled aria-disabled="true"':''}>${esc(t.label)} <span>${esc(t.badge)}</span></button>`).join('')}
+    modalBody.innerHTML=`<div class="fdcmw-fdc-email-composer">
+      <div class="fdcmw-fdc-email-subtitle">Write any guest message, or choose an invoice/payment template.</div>
+      <div class="fdcmw-fdc-email-tabs">
+        ${tabs.map((t,i)=>`<button type="button" class="fdcmw-fdc-email-tab ${i===0?'fdcmw-fdc-is-active':''}" data-email-tab="${t.key}" ${t.disabled?'disabled aria-disabled="true"':''}>${esc(t.label)} <span>${esc(t.badge)}</span></button>`).join('')}
       </div>
-      <div class="fdc-email-field">
+      <div class="fdcmw-fdc-email-field">
         <label>To (Email)</label>
         <input id="fdcEmailTo" type="email" value="${esc(data.email||d.email||'')}" placeholder="guest@example.com">
       </div>
-      <div class="fdc-email-field">
+      <div class="fdcmw-fdc-email-field">
         <label>Message</label>
         <textarea id="fdcEmailMessage" rows="10"></textarea>
       </div>
-      <div class="fdc-email-tip">Tip: You can edit the email address and message before sending.</div>
+      <div class="fdcmw-fdc-email-tip">Tip: You can edit the email address and message before sending.</div>
     </div>`;
 
-    modalFoot.innerHTML=`<button class="fdc-btn" data-close-modal>Cancel</button>
-      <button class="fdc-btn primary fdc-email-send" id="fdcSendEmail"><span>✉</span><span id="fdcSendEmailText">Send Email</span> →</button>`;
+    modalFoot.innerHTML=`<button class="fdcmw-fdc-btn" data-close-modal>Cancel</button>
+      <button class="fdcmw-fdc-btn fdcmw-primary fdcmw-fdc-email-send" id="fdcSendEmail"><span>✉</span><span id="fdcSendEmailText">Send Email</span> →</button>`;
 
     const getTab=()=>tabs.find(x=>x.key===active)||tabs[0];
     const refresh=()=>{
       const t=getTab();
       $('fdcEmailMessage').value=t.message||'';
       $('fdcSendEmailText').textContent='Send Email';
-      modalBody.querySelectorAll('[data-email-tab]').forEach(btn=>btn.classList.toggle('fdc-is-active',btn.dataset.emailTab===active));
+      modalBody.querySelectorAll('[data-email-tab]').forEach(btn=>btn.classList.toggle('fdcmw-fdc-is-active',btn.dataset.emailTab===active));
     };
 
     modalBody.querySelectorAll('[data-email-tab]').forEach(btn=>{
@@ -1293,12 +1293,12 @@
 
   function openNote(d){
     const quickTags=['VIP Guest','Payment Required in Advance','Late Arrival','Early Check-In Requested','Late Check-Out Requested','Quiet Room Preferred','Special Assistance','Follow-up Required'];
-    openModal('Note Book',`<div class="fdc-note-shell">
-      <div class="fdc-note-label">Notes for ${esc(d.guestName||'Guest')}</div>
-      <div class="fdc-note-help">Quick tags · click to add to the notes</div>
-      <div class="fdc-note-tags">${quickTags.map(x=>`<button type="button" data-note-tag="${esc(x)}">${esc(x)}</button>`).join('')}</div>
-      <div class="fdc-field"><textarea id="fdcNote" rows="5">${esc(d.frontDeskNotes||'')}</textarea></div>
-    </div>`,`<button class="fdc-btn" data-close-modal>Cancel</button><button class="fdc-btn primary" id="saveNote">Save notes</button>`,'fdc-professional-mode fdc-note-mode');
+    openModal('Note Book',`<div class="fdcmw-fdc-note-shell">
+      <div class="fdcmw-fdc-note-label">Notes for ${esc(d.guestName||'Guest')}</div>
+      <div class="fdcmw-fdc-note-help">Quick tags · click to add to the notes</div>
+      <div class="fdcmw-fdc-note-tags">${quickTags.map(x=>`<button type="button" data-note-tag="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+      <div class="fdcmw-fdc-field"><textarea id="fdcNote" rows="5">${esc(d.frontDeskNotes||'')}</textarea></div>
+    </div>`,`<button class="fdcmw-fdc-btn" data-close-modal>Cancel</button><button class="fdcmw-fdc-btn fdcmw-primary" id="saveNote">Save notes</button>`,'fdcmw-fdc-professional-mode fdcmw-fdc-note-mode');
     modalBody.querySelectorAll('[data-note-tag]').forEach(btn=>btn.addEventListener('click',()=>{
       const ta=$('fdcNote');
       const tag=btn.dataset.noteTag||'';
@@ -1311,7 +1311,7 @@ ${tag}`:tag;
   }
   async function openHistory(d){
     busy(true,'Loading guest history…');
-    try{const u=new URL(cfg.historyUrl,location.origin);u.searchParams.set('regId',d.regId);const j=await api(u);const h=j.data;const rows=(h.stays||[]).map(x=>`<div class="fdc-kv"><span>${fmt(x.arrival,true)} – ${fmt(x.departure,true)} · ${esc(x.status)}</span><b>${esc(x.roomNo||'—')}</b></div>`).join('')||'<p>No previous stays found.</p>';openModal('Guest Stay History',`<div class="fdc-panel"><h4>${esc(h.guestName||d.guestName)}</h4>${rows}</div>`,'<button class="fdc-btn" data-close-modal>Close</button>');}catch(e){showToast(e.message,true);}finally{busy(false);}
+    try{const u=new URL(cfg.historyUrl,location.origin);u.searchParams.set('regId',d.regId);const j=await api(u);const h=j.data;const rows=(h.stays||[]).map(x=>`<div class="fdcmw-fdc-kv"><span>${fmt(x.arrival,true)} – ${fmt(x.departure,true)} · ${esc(x.status)}</span><b>${esc(x.roomNo||'—')}</b></div>`).join('')||'<p>No previous stays found.</p>';openModal('Guest Stay History',`<div class="fdcmw-fdc-panel"><h4>${esc(h.guestName||d.guestName)}</h4>${rows}</div>`,'<button class="fdcmw-fdc-btn" data-close-modal>Close</button>');}catch(e){showToast(e.message,true);}finally{busy(false);}
   }
   function openRoomSecurity(d,options={}){
     if(!d?.regId){showToast('Reservation reference is missing.',true);return;}
@@ -1377,10 +1377,10 @@ ${tag}`:tag;
     const balance=Number(d.balance||0);
     openModal(
       'Check-Out',
-      `<div class="fdc-info">${balance>0.005
+      `<div class="fdcmw-fdc-info">${balance>0.005
         ? `Outstanding balance: <b>${money(balance)}</b>. Please record/settle the payment before checkout.`
         : `Confirm checkout for <b>${esc(d.guestName||'this guest')}</b>${d.roomNo?` · Room ${esc(d.roomNo)}`:''}.`}</div>`,
-      `<button class="fdc-btn" data-close-modal>Cancel</button><button class="fdc-btn danger" id="confirmCheckout">Check-Out</button>`
+      `<button class="fdcmw-fdc-btn" data-close-modal>Cancel</button><button class="fdcmw-fdc-btn fdcmw-danger" id="confirmCheckout">Check-Out</button>`
     );
     $('confirmCheckout').onclick=async e=>{
       const btn=e.currentTarget;
@@ -1406,18 +1406,18 @@ ${tag}`:tag;
 
   function openBlockDetails(item){
     const endInclusive=addDays(dateOnly(item.endDate),-1);
-    const body=`<div class="fdc-pro-summary">
-      <div class="fdc-pro-summary-icon">▣</div>
+    const body=`<div class="fdcmw-fdc-pro-summary">
+      <div class="fdcmw-fdc-pro-summary-icon">▣</div>
       <div><span>Blocked room</span><b>Room ${esc(item.roomNo)}</b><small>${esc(item.categoryName)} · ${fmt(item.startDate,true)} – ${fmt(endInclusive,true)}</small></div>
     </div>
-    <div class="fdc-block-detail-card">
-      <div class="fdc-kv"><span>Room</span><b>${esc(item.roomNo)}</b></div>
-      <div class="fdc-kv"><span>Category</span><b>${esc(item.categoryName)}</b></div>
-      <div class="fdc-kv"><span>Dates</span><b>${fmt(item.startDate,true)} – ${fmt(endInclusive,true)}</b></div>
-      <div class="fdc-kv"><span>Type</span><b>${esc(item.kind||'Room Block')}</b></div>
-      <div class="fdc-kv"><span>Reason</span><b>${esc(item.reason||'—')}</b></div>
+    <div class="fdcmw-fdc-block-detail-card">
+      <div class="fdcmw-fdc-kv"><span>Room</span><b>${esc(item.roomNo)}</b></div>
+      <div class="fdcmw-fdc-kv"><span>Category</span><b>${esc(item.categoryName)}</b></div>
+      <div class="fdcmw-fdc-kv"><span>Dates</span><b>${fmt(item.startDate,true)} – ${fmt(endInclusive,true)}</b></div>
+      <div class="fdcmw-fdc-kv"><span>Type</span><b>${esc(item.kind||'Room Block')}</b></div>
+      <div class="fdcmw-fdc-kv"><span>Reason</span><b>${esc(item.reason||'—')}</b></div>
     </div>`;
-    openModal('Room Block',body,`<button class="fdc-btn fdc-btn-secondary" data-close-modal>Close</button><button class="fdc-btn" id="editBlock">Edit</button><button class="fdc-btn success" id="activateBlock">Activate from today</button><button class="fdc-btn danger" id="removeBlock">Remove block</button>`,'fdc-professional-mode fdc-block-details-mode');
+    openModal('Room Block',body,`<button class="fdcmw-fdc-btn fdcmw-fdc-btn-secondary" data-close-modal>Close</button><button class="fdcmw-fdc-btn" id="editBlock">Edit</button><button class="fdcmw-fdc-btn fdcmw-success" id="activateBlock">Activate from today</button><button class="fdcmw-fdc-btn fdcmw-danger" id="removeBlock">Remove block</button>`,'fdcmw-fdc-professional-mode fdcmw-fdc-block-details-mode');
     $('editBlock').onclick=()=>openBlockForm(item,item);
     $('activateBlock').onclick=async e=>{const btn=e.currentTarget;try{await mutate(cfg.activateRoomUrl,{blockId:item.blockId,roomNo:item.roomNo,categoryId:item.categoryId,categoryName:item.categoryName},'Activating…',btn);closeModal();await loadCalendar(state.start,true);}catch{}};
     $('removeBlock').onclick=async e=>{if(!confirm('Remove this room block?'))return;const btn=e.currentTarget;try{await mutate(cfg.removeBlockUrl,{blockId:item.blockId,roomNo:item.roomNo,categoryId:item.categoryId,categoryName:item.categoryName},'Removing…',btn);closeModal();await loadCalendar(state.start,true);}catch{}};
@@ -1425,14 +1425,14 @@ ${tag}`:tag;
 
 
   function openCellContext(cell,x,y){
-    closeContext(true);state.selectedCell?.classList.remove('selected');state.selectedCell=cell;cell.classList.add('selected');
-    const room=cell.dataset.room, dirty=cell.classList.contains('has-dirty');
+    closeContext(true);state.selectedCell?.classList.remove('fdcmw-selected');state.selectedCell=cell;cell.classList.add('fdcmw-selected');
+    const room=cell.dataset.room, dirty=cell.classList.contains('fdcmw-has-dirty');
     context.innerHTML=`<button data-ctx="reserve">New Reservation</button>${String(room).toUpperCase()!=='UNASSIGNED'?'<button data-ctx="block">Block Room</button>':''}${dirty?'<button data-ctx="clean">Mark Clean</button>':''}`;
-    context.style.left=`${Math.min(x,innerWidth-225)}px`;context.style.top=`${Math.min(y,innerHeight-150)}px`;context.classList.add('open');
+    context.style.left=`${Math.min(x,innerWidth-225)}px`;context.style.top=`${Math.min(y,innerHeight-150)}px`;context.classList.add('fdcmw-open');
   }
 
   function showContextAt(x,y){
-    context.classList.add('open');
+    context.classList.add('fdcmw-open');
     requestAnimationFrame(()=>{
       const pad=8;
       const rect=context.getBoundingClientRect();
@@ -1442,7 +1442,7 @@ ${tag}`:tag;
   }
 
   function bookingMenuItem(icon,label,key,tone=''){
-    return `<button type="button" class="fdc-booking-menu-action ${tone}" data-booking-ctx="${key}"><span class="menu-icon" aria-hidden="true">${icon}</span><span class="menu-label">${label}</span></button>`;
+    return `<button type="button" class="fdcmw-fdc-booking-menu-action ${tone}" data-booking-ctx="${key}"><span class="fdcmw-menu-icon" aria-hidden="true">${icon}</span><span class="fdcmw-menu-label">${label}</span></button>`;
   }
 
   function openBookingContext(item,x,y){
@@ -1479,9 +1479,9 @@ ${tag}`:tag;
       actions.push(bookingMenuItem('◆','Room Security','security'));
       actions.push(bookingMenuItem('◷','Guest History','history'));
       actions.push(bookingMenuItem('▤','Detail Invoice','detail-invoice'));
-      actions.push(bookingMenuItem('×','Cancel Reservation','cancel','danger-action'));
+      actions.push(bookingMenuItem('×','Cancel Reservation','cancel','fdcmw-danger-action'));
     }else{
-      actions.push(bookingMenuItem('➜','Check-In Now','checkin','primary-action'));
+      actions.push(bookingMenuItem('➜','Check-In Now','checkin','fdcmw-primary-action'));
       actions.push(bookingMenuItem('▣','Edit','edit'));
       actions.push(bookingMenuItem('Aa','Edit Guest Name','guest-name'));
       actions.push(bookingMenuItem('▤','Note Book','note'));
@@ -1489,33 +1489,33 @@ ${tag}`:tag;
       actions.push(bookingMenuItem('◷','Guest History','history'));
       actions.push(bookingMenuItem('▧','Invoice','invoice'));
       actions.push(bookingMenuItem('▤','Detail Invoice','detail-invoice'));
-      if(canNoShow) actions.push(bookingMenuItem('⊘','No Show','no-show','danger-action'));
-      else actions.push(bookingMenuItem('×','Cancel Reservation','cancel','danger-action'));
+      if(canNoShow) actions.push(bookingMenuItem('⊘','No Show','no-show','fdcmw-danger-action'));
+      else actions.push(bookingMenuItem('×','Cancel Reservation','cancel','fdcmw-danger-action'));
     }
 
     if(Number(item.balance||0)>0.005){
-      actions.push(bookingMenuItem('£','Record Payment','payment','payment-action'));
+      actions.push(bookingMenuItem('£','Record Payment','payment','fdcmw-payment-action'));
     }
-    actions.push(bookingMenuItem('✉','Send Email','sendpaylink','payment-action'));
+    actions.push(bookingMenuItem('✉','Send Email','sendpaylink','fdcmw-payment-action'));
 
     if(item.roomNo && String(item.roomNo).toUpperCase()!=='UNASSIGNED'){
-      terminal.push(bookingMenuItem('↧','Move to Unassigned','unassign','assignment-action'));
+      terminal.push(bookingMenuItem('↧','Move to Unassigned','unassign','fdcmw-assignment-action'));
     }
     if(checked){
-      terminal.push(bookingMenuItem('⇥','Check-Out','checkout','checkout-action'));
+      terminal.push(bookingMenuItem('⇥','Check-Out','checkout','fdcmw-checkout-action'));
     }
 
-    context.classList.add('booking-menu');
+    context.classList.add('fdcmw-booking-menu');
     context.dataset.booking=JSON.stringify(item);
     context.innerHTML=`
-      <div class="fdc-booking-menu-head">
-        <div class="fdc-booking-menu-avatar">${esc(initials(guest))}</div>
-        <div class="fdc-booking-menu-guest"><b>${esc(guest)}</b><small>Room ${esc(room)} · ${esc(statusLabel)}</small></div>
+      <div class="fdcmw-fdc-booking-menu-head">
+        <div class="fdcmw-fdc-booking-menu-avatar">${esc(initials(guest))}</div>
+        <div class="fdcmw-fdc-booking-menu-guest"><b>${esc(guest)}</b><small>Room ${esc(room)} · ${esc(statusLabel)}</small></div>
       </div>
-      <div class="fdc-booking-menu-body">
-        <div class="fdc-booking-menu-section-title">Booking actions</div>
-        <div class="fdc-booking-menu-actions">${actions.join('')}</div>
-        ${terminal.length?`<div class="fdc-booking-menu-divider"></div><div class="fdc-booking-menu-actions fdc-booking-menu-terminal">${terminal.join('')}</div>`:''}
+      <div class="fdcmw-fdc-booking-menu-body">
+        <div class="fdcmw-fdc-booking-menu-section-title">Booking actions</div>
+        <div class="fdcmw-fdc-booking-menu-actions">${actions.join('')}</div>
+        ${terminal.length?`<div class="fdcmw-fdc-booking-menu-divider"></div><div class="fdcmw-fdc-booking-menu-actions fdcmw-fdc-booking-menu-terminal">${terminal.join('')}</div>`:''}
       </div>`;
     showContextAt(x,y);
   }
@@ -1529,7 +1529,7 @@ ${tag}`:tag;
       const invoiceWindow=openDetailInvoiceWindow();
       if(!invoiceWindow) return;
       setButtonBusy(button,true,'Opening…');
-      context.classList.add('fdc-context-processing');
+      context.classList.add('fdcmw-fdc-context-processing');
       context.dataset.processing='1';
       try{
         const d=await fetchBookingDetails(item);
@@ -1541,7 +1541,7 @@ ${tag}`:tag;
         try{invoiceWindow.close();}catch{}
         showToast(e?.message||'Unable to open Detail Invoice.',true);
         setButtonBusy(button,false);
-        context.classList.remove('fdc-context-processing');
+        context.classList.remove('fdcmw-fdc-context-processing');
         context.removeAttribute('data-processing');
       }
       return;
@@ -1573,7 +1573,7 @@ ${tag}`:tag;
     };
 
     setButtonBusy(button,true,label);
-    context.classList.add('fdc-context-processing');
+    context.classList.add('fdcmw-fdc-context-processing');
     context.dataset.processing='1';
 
     // Force layout + two animation frames.  This guarantees the spinner is
@@ -1651,13 +1651,13 @@ ${tag}`:tag;
       showToast(e.message,true);
       await waitMin();
       setButtonBusy(button,false);
-      context.classList.remove('fdc-context-processing');
+      context.classList.remove('fdcmw-fdc-context-processing');
       context.removeAttribute('data-processing');
     }finally{
-      if(!samePageNavigation && !closeAfter && context.classList.contains('open')){
+      if(!samePageNavigation && !closeAfter && context.classList.contains('fdcmw-open')){
         await waitMin();
         setButtonBusy(button,false);
-        context.classList.remove('fdc-context-processing');
+        context.classList.remove('fdcmw-fdc-context-processing');
         context.removeAttribute('data-processing');
       }
     }
@@ -1679,17 +1679,17 @@ ${tag}`:tag;
     layer=document.createElement('div');
     layer.id='fdcDragFocusLayer';
     layer.setAttribute('aria-hidden','true');
-    layer.innerHTML='<div class="fdc-drag-focus-backdrop"></div><div class="fdc-destination-preview"></div>';
+    layer.innerHTML='<div class="fdcmw-fdc-drag-focus-backdrop"></div><div class="fdcmw-fdc-destination-preview"></div>';
     document.body.appendChild(layer);
     return layer;
   }
 
   function clearDestinationHighlights(){
-    calendar.querySelectorAll('.fdc-dnd-room-active').forEach(x=>x.classList.remove('fdc-dnd-room-active'));
-    calendar.querySelectorAll('.fdc-dnd-date-active').forEach(x=>x.classList.remove('fdc-dnd-date-active'));
-    const preview=document.querySelector('#fdcDragFocusLayer .fdc-destination-preview');
+    calendar.querySelectorAll('.fdcmw-fdc-dnd-room-active').forEach(x=>x.classList.remove('fdcmw-fdc-dnd-room-active'));
+    calendar.querySelectorAll('.fdcmw-fdc-dnd-date-active').forEach(x=>x.classList.remove('fdcmw-fdc-dnd-date-active'));
+    const preview=document.querySelector('#fdcDragFocusLayer .fdcmw-fdc-destination-preview');
     if(preview){
-      preview.classList.remove('fdc-is-active','invalid');
+      preview.classList.remove('fdcmw-fdc-is-active','fdcmw-invalid');
       preview.style.transform='translate3d(-10000px,-10000px,0)';
       preview.style.width='1px';
       preview.style.height='1px';
@@ -1703,25 +1703,25 @@ ${tag}`:tag;
 
   function beginDragFocus(bar){
     const layer=ensureDragFocusLayer();
-    const preview=layer.querySelector('.fdc-destination-preview');
+    const preview=layer.querySelector('.fdcmw-fdc-destination-preview');
     const bg=window.getComputedStyle(bar).backgroundColor || '#2975db';
     state.dragFocus={layer,preview,roomLabel:null,dateHeaders:[],lastKey:'',previewColor:bg};
     preview.style.backgroundColor=bg;
     preview.style.transform='translate3d(-10000px,-10000px,0)';
     preview.style.width='1px';
     preview.style.height='1px';
-    layer.classList.add('fdc-is-active');
-    document.body.classList.add('fdc-dnd-focus-active');
-    page.classList.add('is-dragging');
+    layer.classList.add('fdcmw-fdc-is-active');
+    document.body.classList.add('fdcmw-fdc-dnd-focus-active');
+    page.classList.add('fdcmw-is-dragging');
     closeTip();
   }
 
   function endDragFocus(){
     clearDestinationHighlights();
     const layer=document.getElementById('fdcDragFocusLayer');
-    layer?.classList.remove('fdc-is-active');
-    document.body.classList.remove('fdc-dnd-focus-active');
-    page.classList.remove('is-dragging');
+    layer?.classList.remove('fdcmw-fdc-is-active');
+    document.body.classList.remove('fdcmw-fdc-dnd-focus-active');
+    page.classList.remove('fdcmw-is-dragging');
     state.dragFocus=null;
     closeTip();
   }
@@ -1729,7 +1729,7 @@ ${tag}`:tag;
   function renderDragFocus(cell,valid){
     if(!state.drag||!cell) return;
     const item=state.drag.item;
-    const row=cell.closest('.fdc-room-row');
+    const row=cell.closest('.fdcmw-fdc-room-row');
     if(!row) return;
     const target=targetRange(item,cell);
     const bounds=geometryForRange(target.start,target.end);
@@ -1738,29 +1738,29 @@ ${tag}`:tag;
     const focus=state.dragFocus||{};
     if(focus.lastKey===key) return;
     clearDestinationHighlights();
-    const roomLabel=row.querySelector('.fdc-room-label');
-    roomLabel?.classList.add('fdc-dnd-room-active');
-    const headers=[...calendar.querySelectorAll('.fdc-date-head .fdc-day')];
+    const roomLabel=row.querySelector('.fdcmw-fdc-room-label');
+    roomLabel?.classList.add('fdcmw-fdc-dnd-room-active');
+    const headers=[...calendar.querySelectorAll('.fdcmw-fdc-date-head .fdcmw-fdc-day')];
     const activeHeaders=[];
     state.months.forEach((m,i)=>{
       if(rangeOverlaps(target.start,target.end,m.startDate,addDays(m.endDate,1))&&headers[i]){
-        headers[i].classList.add('fdc-dnd-date-active');activeHeaders.push(headers[i]);
+        headers[i].classList.add('fdcmw-fdc-dnd-date-active');activeHeaders.push(headers[i]);
       }
     });
-    const firstCell=row.querySelector('.fdc-cell');
+    const firstCell=row.querySelector('.fdcmw-fdc-cell');
     if(!firstCell)return;
     const firstRect=firstCell.getBoundingClientRect(),rowRect=row.getBoundingClientRect(),scrollRect=scroll.getBoundingClientRect();
     let left=firstRect.left+(bounds.leftUnits*firstRect.width);
     let right=firstRect.left+(bounds.rightUnits*firstRect.width);
     left=Math.max(left,scrollRect.left);right=Math.min(right,scrollRect.right);
     const top=Math.max(rowRect.top+3,scrollRect.top),bottom=Math.min(rowRect.bottom-3,scrollRect.bottom);
-    const preview=(state.dragFocus?.preview)||ensureDragFocusLayer().querySelector('.fdc-destination-preview');
+    const preview=(state.dragFocus?.preview)||ensureDragFocusLayer().querySelector('.fdcmw-fdc-destination-preview');
     if(preview&&right>left&&bottom>top){
       preview.style.backgroundColor=state.dragFocus?.previewColor||window.getComputedStyle(state.drag.bar).backgroundColor||'#2975db';
       preview.style.transform=`translate3d(${Math.round(left)}px,${Math.round(top)}px,0)`;
       preview.style.width=`${Math.max(1,Math.round(right-left))}px`;
       preview.style.height=`${Math.max(1,Math.round(bottom-top))}px`;
-      preview.classList.toggle('invalid',!valid);preview.classList.add('fdc-is-active');
+      preview.classList.toggle('fdcmw-invalid',!valid);preview.classList.add('fdcmw-fdc-is-active');
     }
     if(state.dragFocus){state.dragFocus.roomLabel=roomLabel;state.dragFocus.dateHeaders=activeHeaders;state.dragFocus.lastKey=key;}
   }
@@ -1770,10 +1770,10 @@ ${tag}`:tag;
     if(e.target.closest('[data-resize]')){e.preventDefault();return;}
     closeTip();
     closeContext();
-    state.selectedCell?.classList.remove('selected');
+    state.selectedCell?.classList.remove('fdcmw-selected');
     state.selectedCell=null;
     state.drag={item,bar};
-    bar.classList.add('dragging');
+    bar.classList.add('fdcmw-dragging');
     beginDragFocus(bar);
     e.dataTransfer.effectAllowed='move';
     e.dataTransfer.setData('text/plain',item.id||item.regId);
@@ -1856,11 +1856,11 @@ ${tag}`:tag;
     return true;
   }
   function monthCellFromEvent(e){
-    const direct=e.target.closest('.fdc-cell');
+    const direct=e.target.closest('.fdcmw-fdc-cell');
     if(direct)return direct;
-    const row=e.target.closest('.fdc-room-row');
+    const row=e.target.closest('.fdcmw-fdc-room-row');
     if(!row)return null;
-    const cells=[...row.querySelectorAll('.fdc-cell')];
+    const cells=[...row.querySelectorAll('.fdcmw-fdc-cell')];
     if(!cells.length)return null;
     const x=e.clientX;
     return cells.find(c=>{const r=c.getBoundingClientRect();return x>=r.left&&x<r.right;})||
@@ -1878,12 +1878,12 @@ ${tag}`:tag;
   }
 
   function setMoveDropLoading(show){
-    const preview=document.querySelector('#fdcDragFocusLayer .fdc-destination-preview');
+    const preview=document.querySelector('#fdcDragFocusLayer .fdcmw-fdc-destination-preview');
     state.dropPending=!!show;
-    document.body.classList.toggle('fdc-move-drop-pending',!!show);
+    document.body.classList.toggle('fdcmw-fdc-move-drop-pending',!!show);
     if(preview){
-      preview.classList.toggle('loading',!!show);
-      if(show) preview.classList.add('fdc-is-active');
+      preview.classList.toggle('fdcmw-loading',!!show);
+      if(show) preview.classList.add('fdcmw-fdc-is-active');
     }
     if(show){
       closeTip();
@@ -1894,7 +1894,7 @@ ${tag}`:tag;
   function finishDragUi(){
     setMoveDropLoading(false);
     clearDropMarks();
-    state.drag?.bar?.classList.remove('dragging');
+    state.drag?.bar?.classList.remove('fdcmw-dragging');
     endDragFocus();
     state.drag=null;
     closeTip();
@@ -1904,8 +1904,8 @@ ${tag}`:tag;
     if(!state.drag)return;
     e.preventDefault();
     const item=state.drag.item;
-    const directBookingBar=e.target.closest('.fdc-bar[data-booking]');
-    const directBlockBar=e.target.closest('.fdc-bar[data-block-id]');
+    const directBookingBar=e.target.closest('.fdcmw-fdc-bar[data-booking]');
+    const directBlockBar=e.target.closest('.fdcmw-fdc-bar[data-block-id]');
     const targetBlock=targetBlockAtCell(cell,directBlockBar);
     if(targetBlock){
       showToast('Cannot change room: the target room is blocked.',true);
@@ -1927,7 +1927,7 @@ ${tag}`:tag;
         targetCategoryId:targetBooking.categoryId||'',targetCategoryName:targetBooking.categoryName||''
       };
       setMoveDropLoading(true);
-      state.drag?.bar?.classList.remove('dragging');
+      state.drag?.bar?.classList.remove('fdcmw-dragging');
       try{
         await mutate(cfg.mwSwapUrl||'/CalendarMW/SwapBooking',swapReq,`Swapping ${item.guestName||'booking'}…`);
         await loadCalendar(state.start,true);
@@ -1968,7 +1968,7 @@ ${tag}`:tag;
     // drag ends. The spinner is rendered INSIDE the exact destination bar and
     // remains there until both the move request and calendar reload complete.
     setMoveDropLoading(true);
-    state.drag?.bar?.classList.remove('dragging');
+    state.drag?.bar?.classList.remove('fdcmw-dragging');
 
     let handOffToRatePopup=false;
     try{
@@ -1991,17 +1991,17 @@ ${tag}`:tag;
     const newCategory=data.newCategory||req.targetCategoryName||'New category';
     const suggested=Math.max(0,Number(data.suggestedRate||0));
     const body=`
-      <div class="fdc-crm-note">
-        <div class="fdc-crm-note-icon">i</div>
+      <div class="fdcmw-fdc-crm-note">
+        <div class="fdcmw-fdc-crm-note-icon">i</div>
         <div><b>Tip</b><span>Use the same rate if you are only changing category, or adjust it to match the new category pricing.</span></div>
       </div>
-      <div class="fdc-crm-form">
-        <div class="fdc-crm-label"><span>Rate per night</span><em>Editable</em></div>
-        <div class="fdc-crm-inputwrap"><span class="fdc-crm-prefix">${esc(state.currency)}</span><input id="moveRate" type="number" step="0.01" min="0.01" inputmode="decimal" value="${suggested>0?suggested.toFixed(2):''}"></div>
-        <div class="fdc-crm-hint">Old: ${esc(oldCategory)} → New: ${esc(newCategory)}</div>
+      <div class="fdcmw-fdc-crm-form">
+        <div class="fdcmw-fdc-crm-label"><span>Rate per night</span><em>Editable</em></div>
+        <div class="fdcmw-fdc-crm-inputwrap"><span class="fdcmw-fdc-crm-prefix">${esc(state.currency)}</span><input id="moveRate" type="number" step="0.01" min="0.01" inputmode="decimal" value="${suggested>0?suggested.toFixed(2):''}"></div>
+        <div class="fdcmw-fdc-crm-hint">Old: ${esc(oldCategory)} → New: ${esc(newCategory)}</div>
       </div>`;
-    const foot=`<button type="button" class="fdc-btn" data-close-modal>Cancel</button><button type="button" class="fdc-btn primary fdc-crm-apply" id="confirmMoveRate">✓&nbsp;&nbsp;Apply &amp; Continue</button>`;
-    openModal('Category Change Rate',body,foot,'fdc-category-rate-mode');
+    const foot=`<button type="button" class="fdcmw-fdc-btn" data-close-modal>Cancel</button><button type="button" class="fdcmw-fdc-btn fdcmw-primary fdcmw-fdc-crm-apply" id="confirmMoveRate">✓&nbsp;&nbsp;Apply &amp; Continue</button>`;
+    openModal('Category Change Rate',body,foot,'fdcmw-fdc-category-rate-mode');
     const input=$('moveRate'),confirmBtn=$('confirmMoveRate');
     setTimeout(()=>{input?.focus();input?.select();},40);
     confirmBtn.onclick=async()=>{
@@ -2016,19 +2016,19 @@ ${tag}`:tag;
     };
     input?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmBtn.click();}});
   }
-  function clearDropMarks(){calendar.querySelectorAll('.fdc-drag-ghost').forEach(x=>x.remove());calendar.querySelectorAll('.drop-ok,.drop-no,.drag-preview,.first,.last').forEach(x=>x.classList.remove('drop-ok','drop-no','drag-preview','first','last'));}
+  function clearDropMarks(){calendar.querySelectorAll('.fdcmw-fdc-drag-ghost').forEach(x=>x.remove());calendar.querySelectorAll('.fdcmw-drop-ok,.fdcmw-drop-no,.fdcmw-drag-preview,.fdcmw-first,.fdcmw-last').forEach(x=>x.classList.remove('fdcmw-drop-ok','fdcmw-drop-no','fdcmw-drag-preview','fdcmw-first','fdcmw-last'));}
 
   function resizeStart(e,handle){
     e.preventDefault();e.stopPropagation();
-    const bar=handle.closest('.fdc-bar'),item=bookingFrom(bar);if(!item?.canResize)return;
+    const bar=handle.closest('.fdcmw-fdc-bar'),item=bookingFrom(bar);if(!item?.canResize)return;
     closeTip();
-    const row=bar.closest('.fdc-room-row');
-    const firstCell=row?.querySelector('.fdc-cell');
+    const row=bar.closest('.fdcmw-fdc-room-row');
+    const firstCell=row?.querySelector('.fdcmw-fdc-cell');
     if(!row||!firstCell)return;
     const monthPx=firstCell.getBoundingClientRect().width||112;
     const oldMonths=Math.max(1,monthDiffCeil(item.arrival,item.departure));
     state.resize={item,startX:e.clientX,bar,row,monthPx,monthDelta:0,oldMonths,candidate:dateOnly(item.departure)};
-    bar.classList.add('resizing');bar.setPointerCapture?.(e.pointerId);document.body.style.userSelect='none';
+    bar.classList.add('fdcmw-resizing');bar.setPointerCapture?.(e.pointerId);document.body.style.userSelect='none';
   }
 
   function resizeMove(e){
@@ -2062,10 +2062,10 @@ ${tag}`:tag;
   }
 
   function renderMwPlanRows(plans){
-    return plans.map((p,i)=>`<div class="fdc-mw-plan-row">
-      <div class="fdc-mw-plan-name"><b>${esc(p.roomType||p.planName||p.planId||'Room')}</b><small>${esc(p.planName||p.planId||'')}</small></div>
-      <div class="fdc-mw-plan-old">${money(p.oldRate||0)}</div>
-      <div class="fdc-mw-plan-new"><span>${esc(state.currency||'£')}</span><input class="fdc-mw-plan-rate" data-plan-index="${i}" type="number" min="0" step="0.01" value="${Number(p.newRate??p.oldRate??0).toFixed(2)}"></div>
+    return plans.map((p,i)=>`<div class="fdcmw-fdc-mw-plan-row">
+      <div class="fdcmw-fdc-mw-plan-name"><b>${esc(p.roomType||p.planName||p.planId||'Room')}</b><small>${esc(p.planName||p.planId||'')}</small></div>
+      <div class="fdcmw-fdc-mw-plan-old">${money(p.oldRate||0)}</div>
+      <div class="fdcmw-fdc-mw-plan-new"><span>${esc(state.currency||'£')}</span><input class="fdcmw-fdc-mw-plan-rate" data-plan-index="${i}" type="number" min="0" step="0.01" value="${Number(p.newRate??p.oldRate??0).toFixed(2)}"></div>
     </div>`).join('');
   }
 
@@ -2079,28 +2079,28 @@ ${tag}`:tag;
     const title=isExtend?'Confirm Extend Reservation':'Confirm Shrink Reservation';
     const subtitle=isExtend?'Review extended months and monthly rates before confirming.':'Review the reduced stay and monthly rates before confirming.';
 
-    const body=`<div class="fdc-resize-confirm fdc-mw-resize-confirm">
-      <div class="fdc-resize-sub">${subtitle}</div>
-      <div class="fdc-resize-grid">
+    const body=`<div class="fdcmw-fdc-resize-confirm fdcmw-fdc-mw-resize-confirm">
+      <div class="fdcmw-fdc-resize-sub">${subtitle}</div>
+      <div class="fdcmw-fdc-resize-grid">
         <div><span>Guest Name</span><b>${esc(item.guestName||'—')}</b></div>
         <div><span>Reference</span><b>${esc(item.regId||'—')}</b></div>
         <div><span>Arrival</span><b>${fmt(arrival,true)}</b></div>
         <div><span>Old Departure</span><b>${fmt(oldDeparture,true)}</b></div>
         <div><span>New Departure</span><b>${fmt(newDeparture,true)}</b></div>
-        <div class="highlight"><span>${isExtend?'Extended Months':'New Total Months'}</span><b>${isExtend?changedMonths:newMonths} month(s)</b></div>
+        <div class="fdcmw-highlight"><span>${isExtend?'Extended Months':'New Total Months'}</span><b>${isExtend?changedMonths:newMonths} month(s)</b></div>
       </div>
-      <div class="fdc-mw-plan-box">
-        <div class="fdc-mw-plan-head"><span>Room Type / Rate Plan</span><span>Old Rate / Month</span><span>New Rate / Month</span></div>
+      <div class="fdcmw-fdc-mw-plan-box">
+        <div class="fdcmw-fdc-mw-plan-head"><span>Room Type / Rate Plan</span><span>Old Rate / Month</span><span>New Rate / Month</span></div>
         <div id="fdcMwPlans">${renderMwPlanRows(workingPlans)}</div>
       </div>
-      <div class="fdc-resize-total"><span>${isExtend?'Total Amount of Extended Months':'New Room Amount'}</span><b id="resizeTotal"></b></div>
+      <div class="fdcmw-fdc-resize-total"><span>${isExtend?'Total Amount of Extended Months':'New Room Amount'}</span><b id="resizeTotal"></b></div>
     </div>`;
 
-    openModal(title,body,`<button class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button><button class="fdc-btn primary" id="confirmResize">${isExtend?'Confirm Extend':'Confirm Shrink'}</button>`,'fdc-professional-mode fdc-resize-mode');
+    openModal(title,body,`<button class="fdcmw-fdc-btn fdcmw-fdc-btn-secondary" data-close-modal>Cancel</button><button class="fdcmw-fdc-btn fdcmw-primary" id="confirmResize">${isExtend?'Confirm Extend':'Confirm Shrink'}</button>`,'fdcmw-fdc-professional-mode fdcmw-fdc-resize-mode');
 
     const totalEl=$('resizeTotal');
     const recalc=()=>{
-      document.querySelectorAll('.fdc-mw-plan-rate').forEach(input=>{
+      document.querySelectorAll('.fdcmw-fdc-mw-plan-rate').forEach(input=>{
         const i=Number(input.dataset.planIndex||0);
         if(workingPlans[i])workingPlans[i].newRate=Math.max(0,Number(input.value||0));
       });
@@ -2108,7 +2108,7 @@ ${tag}`:tag;
       const total=workingPlans.reduce((sum,p)=>sum+(Math.max(0,Number(p.newRate||0))*multiplier),0);
       totalEl.textContent=money(total);
     };
-    document.querySelectorAll('.fdc-mw-plan-rate').forEach(input=>input.addEventListener('input',recalc));
+    document.querySelectorAll('.fdcmw-fdc-mw-plan-rate').forEach(input=>input.addEventListener('input',recalc));
     recalc();
 
     $('confirmResize').onclick=async e=>{
@@ -2132,7 +2132,7 @@ ${tag}`:tag;
 
   async function resizeEnd(){
     const r=state.resize;if(!r)return;
-    state.resize=null;document.body.style.userSelect='';r.bar.classList.remove('resizing');
+    state.resize=null;document.body.style.userSelect='';r.bar.classList.remove('fdcmw-resizing');
     const delta=r.monthDelta||0;
     render();
     if(!delta)return;
@@ -2152,7 +2152,7 @@ ${tag}`:tag;
   }
 
   function showBookingTip(bar,e){
-    if(state.drag||state.resize||page.classList.contains('is-dragging')) return;
+    if(state.drag||state.resize||page.classList.contains('fdcmw-is-dragging')) return;
     const b=bookingFrom(bar);if(!b)return;
     const ref=b.regId||'—',book=b.bookId||'—',room=b.roomNo||'Unassigned';
     tip.innerHTML=`<b>${esc(b.guestName||ref)}</b>
@@ -2163,7 +2163,7 @@ ${tag}`:tag;
       <div><span>Plan:</span> ${esc(b.planName||'—')}</div>
       <div><span>Source:</span> ${esc(b.source||'—')}</div>
       <div><span>Payment:</span> ${esc(b.paymentStatus||'—')}${Number(b.balance||0)>0?` · ${money(b.balance)} due`:''}</div>`;
-    const x=Math.min(e.clientX+14,innerWidth-315),y=Math.min(e.clientY+14,innerHeight-200);tip.style.left=`${x}px`;tip.style.top=`${y}px`;tip.classList.add('open');
+    const x=Math.min(e.clientX+14,innerWidth-315),y=Math.min(e.clientY+14,innerHeight-200);tip.style.left=`${x}px`;tip.style.top=`${y}px`;tip.classList.add('fdcmw-open');
   }
 
   function openRangePicker(){
@@ -2175,9 +2175,9 @@ ${tag}`:tag;
       let days='';
       for(let i=0;i<42;i++){
         const d=addDays(gridStart,i),out=d.getMonth()!==month.getMonth(),sel=sameDate(d,state.start);
-        days+=`<button type="button" class="fdc-range-day ${out?'out':''} ${sel?'selected':''}" data-range-date="${iso(d)}">${d.getDate()}</button>`;
+        days+=`<button type="button" class="fdcmw-fdc-range-day ${out?'fdcmw-out':''} ${sel?'fdcmw-selected':''}" data-range-date="${iso(d)}">${d.getDate()}</button>`;
       }
-      rangePicker.innerHTML=`<div class="fdc-range-head"><button type="button" class="fdc-month-arrow prev" data-month="-1" aria-label="Previous month">‹</button><b>${month.toLocaleDateString('en-GB',{month:'long',year:'numeric'})}</b><button type="button" class="fdc-month-arrow next" data-month="1" aria-label="Next month">›</button></div><div class="fdc-week"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div><div class="fdc-days">${days}</div><div class="fdc-range-actions"><button type="button" class="fdc-btn" data-range-close>Close</button></div>`;
+      rangePicker.innerHTML=`<div class="fdcmw-fdc-range-head"><button type="button" class="fdcmw-fdc-month-arrow fdcmw-prev" data-month="-1" aria-label="Previous month">‹</button><b>${month.toLocaleDateString('en-GB',{month:'long',year:'numeric'})}</b><button type="button" class="fdcmw-fdc-month-arrow fdcmw-next" data-month="1" aria-label="Next month">›</button></div><div class="fdcmw-fdc-week"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div><div class="fdcmw-fdc-days">${days}</div><div class="fdcmw-fdc-range-actions"><button type="button" class="fdcmw-fdc-btn" data-range-close>Close</button></div>`;
     };
 
     rangePicker.onclick=e=>{
@@ -2192,14 +2192,14 @@ ${tag}`:tag;
       const dateBtn=e.target.closest('[data-range-date]');
       if(dateBtn){
         e.preventDefault();e.stopPropagation();
-        rangePicker.classList.remove('open');
+        rangePicker.classList.remove('fdcmw-open');
         const newStart=dateOnly(dateBtn.dataset.rangeDate);
         const spanDays=Math.max(0,diffDays(state.start,state.end));
         loadCalendar(newStart,addDays(newStart,spanDays));
         return;
       }
       if(e.target.closest('[data-range-close]')){
-        e.preventDefault();e.stopPropagation();rangePicker.classList.remove('open');
+        e.preventDefault();e.stopPropagation();rangePicker.classList.remove('fdcmw-open');
       }
     };
 
@@ -2207,20 +2207,20 @@ ${tag}`:tag;
     const r=$('fdcRange').getBoundingClientRect();
     rangePicker.style.left=`${Math.min(r.left,innerWidth-345)}px`;
     rangePicker.style.top=`${r.bottom+6}px`;
-    rangePicker.classList.add('open');
+    rangePicker.classList.add('fdcmw-open');
   }
 
   calendar.addEventListener('click',e=>{
     const collapse=e.target.closest('[data-collapse]');if(collapse){const id=collapse.dataset.collapse;state.collapsed.has(id)?state.collapsed.delete(id):state.collapsed.add(id);render();return;}
-    const block=e.target.closest('.fdc-bar[data-block-id]');if(block){openBlockDetails(blockFrom(block));return;}
-    const cell=e.target.closest('.fdc-cell');if(cell&&!e.target.closest('.fdc-bar')){state.selectedCell?.classList.remove('selected');state.selectedCell=cell;cell.classList.add('selected');}
+    const block=e.target.closest('.fdcmw-fdc-bar[data-block-id]');if(block){openBlockDetails(blockFrom(block));return;}
+    const cell=e.target.closest('.fdcmw-fdc-cell');if(cell&&!e.target.closest('.fdcmw-fdc-bar')){state.selectedCell?.classList.remove('fdcmw-selected');state.selectedCell=cell;cell.classList.add('fdcmw-selected');}
   });
   calendar.addEventListener('dblclick',e=>{
-    const bar=e.target.closest('.fdc-bar[data-booking]');if(bar){openDetails(bookingFrom(bar));return;}
-    const cell=e.target.closest('.fdc-cell');if(cell&&!e.target.closest('.fdc-bar')){openRoomAction(cell);}
+    const bar=e.target.closest('.fdcmw-fdc-bar[data-booking]');if(bar){openDetails(bookingFrom(bar));return;}
+    const cell=e.target.closest('.fdcmw-fdc-cell');if(cell&&!e.target.closest('.fdcmw-fdc-bar')){openRoomAction(cell);}
   });
   calendar.addEventListener('contextmenu',e=>{
-    const bookingBar=e.target.closest('.fdc-bar[data-booking]');
+    const bookingBar=e.target.closest('.fdcmw-fdc-bar[data-booking]');
     if(bookingBar){
       e.preventDefault();
       e.stopPropagation();
@@ -2230,21 +2230,21 @@ ${tag}`:tag;
     }
     // Match the WebForms behaviour requested for this conversion:
     // right-click is for reservation/check-in bars, not empty grid cells.
-    if(e.target.closest('.fdc-cell')){
+    if(e.target.closest('.fdcmw-fdc-cell')){
       e.preventDefault();
       closeContext();
     }
   });
-  calendar.addEventListener('mouseover',e=>{const bar=e.target.closest('.fdc-bar[data-booking]');if(bar)showBookingTip(bar,e);});
-  calendar.addEventListener('mousemove',e=>{if(tip.classList.contains('open')){tip.style.left=`${Math.min(e.clientX+14,innerWidth-290)}px`;tip.style.top=`${Math.min(e.clientY+14,innerHeight-120)}px`;}});
-  calendar.addEventListener('mouseout',e=>{if(e.target.closest('.fdc-bar[data-booking]'))closeTip();});
-  calendar.addEventListener('dragstart',e=>{const bar=e.target.closest('.fdc-bar[data-booking]');if(bar)dragStart(e,bar);});
+  calendar.addEventListener('mouseover',e=>{const bar=e.target.closest('.fdcmw-fdc-bar[data-booking]');if(bar)showBookingTip(bar,e);});
+  calendar.addEventListener('mousemove',e=>{if(tip.classList.contains('fdcmw-open')){tip.style.left=`${Math.min(e.clientX+14,innerWidth-290)}px`;tip.style.top=`${Math.min(e.clientY+14,innerHeight-120)}px`;}});
+  calendar.addEventListener('mouseout',e=>{if(e.target.closest('.fdcmw-fdc-bar[data-booking]'))closeTip();});
+  calendar.addEventListener('dragstart',e=>{const bar=e.target.closest('.fdcmw-fdc-bar[data-booking]');if(bar)dragStart(e,bar);});
   calendar.addEventListener('dragend',()=>{if(!state.dropPending)finishDragUi();});
   calendar.addEventListener('dragover',e=>{
     const cell=monthCellFromEvent(e);
     if(cell&&state.drag){
       e.preventDefault();
-      markDropPreview(cell,e.target.closest('.fdc-bar[data-booking]'),e.target.closest('.fdc-bar[data-block-id]'));
+      markDropPreview(cell,e.target.closest('.fdcmw-fdc-bar[data-booking]'),e.target.closest('.fdcmw-fdc-bar[data-block-id]'));
     }
   });
   calendar.addEventListener('drop',e=>{const cell=monthCellFromEvent(e);if(cell)dropBooking(e,cell);});
@@ -2291,8 +2291,8 @@ ${tag}`:tag;
   $('fdcDrawerClose').onclick=closeDrawer;$('fdcModalClose').onclick=closeModal;
   document.addEventListener('click',e=>{
     if(e.target.closest('[data-close-modal]')) closeModal();
-    if(!e.target.closest('#fdcContext')&&!e.target.closest('.fdc-cell')) closeContext();
-    if(!e.target.closest('#fdcRangePicker')&&!e.target.closest('#fdcRange')) rangePicker.classList.remove('open');
+    if(!e.target.closest('#fdcContext')&&!e.target.closest('.fdcmw-fdc-cell')) closeContext();
+    if(!e.target.closest('#fdcRangePicker')&&!e.target.closest('#fdcRange')) rangePicker.classList.remove('fdcmw-open');
   });
   window.addEventListener('scroll',closeContext,true);
   document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContext();closeTip();}});
@@ -2302,7 +2302,7 @@ ${tag}`:tag;
     if(bookingButton){
       e.preventDefault();
       e.stopPropagation();
-      if(bookingButton.disabled || context.classList.contains('fdc-context-processing')) return;
+      if(bookingButton.disabled || context.classList.contains('fdcmw-fdc-context-processing')) return;
       let item=null;
       try{item=JSON.parse(context.dataset.booking||'{}');}catch{}
       void bookingContextAction(bookingButton.dataset.bookingCtx,item,bookingButton);
@@ -2317,8 +2317,8 @@ ${tag}`:tag;
     if(b.dataset.ctx==='clean')markClean(cell.dataset.room);
   });
 
-  $('fdcPrev').onclick=()=>{rangePicker.classList.remove('open');shiftRangeByMonths(-monthCount());};
-  $('fdcNext').onclick=()=>{rangePicker.classList.remove('open');shiftRangeByMonths(monthCount());};
+  $('fdcPrev').onclick=()=>{rangePicker.classList.remove('fdcmw-open');shiftRangeByMonths(-monthCount());};
+  $('fdcNext').onclick=()=>{rangePicker.classList.remove('fdcmw-open');shiftRangeByMonths(monthCount());};
   $('fdcToday').onclick=()=>{const spanDays=Math.max(0,diffDays(state.start,state.end));loadCalendar(state.hotelToday,addDays(state.hotelToday,spanDays));};
 
   let monthFitTimer=0;

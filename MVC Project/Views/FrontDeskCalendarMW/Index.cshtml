@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="~/css/refund-payment.css" asp-append-version="true" />
 }
 
-<div class="fdc-page fdc-mw-page" id="frontDeskCalendarMWPage"
+<div class="fdcmw-fdc-page fdcmw-fdc-mw-page" id="frontDeskCalendarMWPage"
      data-start="@Model.StartDate.ToString("yyyy-MM-dd")"
      data-end="@Model.EndDate.ToString("yyyy-MM-dd")"
      data-hotel-today="@Model.HotelToday.ToString("yyyy-MM-dd")"
@@ -54,69 +54,69 @@
      data-send-calendar-email-url="@Url.Action("SendEmail", "FrontDeskCalendar")"
      data-pdq-url="/TerminalCardPayment.aspx">
 
-    <form id="fdcAntiForgery" class="fdc-hidden">@Html.AntiForgeryToken()</form>
+    <form id="fdcAntiForgery" class="fdcmw-fdc-hidden">@Html.AntiForgeryToken()</form>
 
-    <section class="fdc-card">
-        <div class="fdc-timeline fdc-mw-timeline">
-            <div class="fdc-title"><i class="fa-regular fa-calendar-days"></i><span>Front Desk Calendar</span></div>
+    <section class="fdcmw-fdc-card">
+        <div class="fdcmw-fdc-timeline fdcmw-fdc-mw-timeline">
+            <div class="fdcmw-fdc-title"><i class="fa-regular fa-calendar-days"></i><span>Front Desk Calendar</span></div>
 
-            <div class="fdc-date-nav fdc-mw-nav">
+            <div class="fdcmw-fdc-date-nav fdcmw-fdc-mw-nav">
                 <button type="button" id="fdcPrev" title="Previous period">‹</button>
                 <button type="button" id="fdcToday">Today</button>
-                <button type="button" id="fdcRange" class="fdc-range">@Model.StartDate.ToString("dd MMM yyyy") – @Model.EndDate.ToString("dd MMM yyyy")</button>
+                <button type="button" id="fdcRange" class="fdcmw-fdc-range">@Model.StartDate.ToString("dd MMM yyyy") – @Model.EndDate.ToString("dd MMM yyyy")</button>
                 <button type="button" id="fdcNext" title="Next period">›</button>
             </div>
 
-            <div class="fdc-tools">
-                <button type="button" class="fdc-tool" id="fdcRefresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
-                <button type="button" class="fdc-tool" id="fdcLegendToggle" title="Legend" aria-expanded="false"><i class="fa-solid fa-circle-info"></i></button>
-                <div class="fdc-legend-pop" id="fdcLegend" hidden>
+            <div class="fdcmw-fdc-tools">
+                <button type="button" class="fdcmw-fdc-tool" id="fdcRefresh" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
+                <button type="button" class="fdcmw-fdc-tool" id="fdcLegendToggle" title="Legend" aria-expanded="false"><i class="fa-solid fa-circle-info"></i></button>
+                <div class="fdcmw-fdc-legend-pop" id="fdcLegend" hidden>
                     <strong>Status legend</strong>
-                    <div><i class="confirmed"></i>Reserved</div>
-                    <div><i class="inhouse"></i>Checked in</div>
-                    <div><i class="tentative"></i>Provisional</div>
+                    <div><i class="fdcmw-confirmed"></i>Reserved</div>
+                    <div><i class="fdcmw-inhouse"></i>Checked in</div>
+                    <div><i class="fdcmw-tentative"></i>Provisional</div>
                     <div><i style="background:#a5a5a5"></i>Checked out</div>
-                    <div><i class="blocked"></i>Blocked room</div>
-                    <div><i class="dirty"></i>Dirty room</div>
+                    <div><i class="fdcmw-blocked"></i>Blocked room</div>
+                    <div><i class="fdcmw-dirty"></i>Dirty room</div>
                     <div><i style="background:#fff3cd;border:1px solid #e4cf8c"></i>Council assigned</div>
-                    <span class="fdc-legend-group-title">Payment indicator</span>
-                    <div><i class="pay-full"></i>Fully paid</div>
-                    <div><i class="pay-partial"></i>Partially paid</div>
-                    <div><i class="pay-not-paid"></i>Not paid</div>
+                    <span class="fdcmw-fdc-legend-group-title">Payment indicator</span>
+                    <div><i class="fdcmw-pay-full"></i>Fully paid</div>
+                    <div><i class="fdcmw-pay-partial"></i>Partially paid</div>
+                    <div><i class="fdcmw-pay-not-paid"></i>Not paid</div>
                 </div>
             </div>
         </div>
 
-        <div class="fdc-scroll" id="fdcScroll">
-            <div class="fdc-calendar" id="fdcCalendar">
-                <div class="fdc-loading" id="fdcLoading"><span></span><b>Loading month-wise calendar…</b></div>
+        <div class="fdcmw-fdc-scroll" id="fdcScroll">
+            <div class="fdcmw-fdc-calendar" id="fdcCalendar">
+                <div class="fdcmw-fdc-loading" id="fdcLoading"><span></span><b>Loading month-wise calendar…</b></div>
             </div>
         </div>
     </section>
 
-    <aside class="fdc-drawer" id="fdcDrawer" aria-hidden="true">
-        <div class="fdc-drawer-head">
-            <div class="fdc-avatar" id="fdcAvatar">G</div>
+    <aside class="fdcmw-fdc-drawer" id="fdcDrawer" aria-hidden="true">
+        <div class="fdcmw-fdc-drawer-head">
+            <div class="fdcmw-fdc-avatar" id="fdcAvatar">G</div>
             <div><h3 id="fdcDrawerTitle">Guest</h3><small id="fdcDrawerSub"></small></div>
-            <button type="button" class="fdc-close" id="fdcDrawerClose">×</button>
+            <button type="button" class="fdcmw-fdc-close" id="fdcDrawerClose">×</button>
         </div>
-        <div class="fdc-drawer-body" id="fdcDrawerBody"></div>
-        <div class="fdc-drawer-pay" id="fdcDrawerPay"></div>
-        <div class="fdc-drawer-foot" id="fdcDrawerFoot"></div>
+        <div class="fdcmw-fdc-drawer-body" id="fdcDrawerBody"></div>
+        <div class="fdcmw-fdc-drawer-pay" id="fdcDrawerPay"></div>
+        <div class="fdcmw-fdc-drawer-foot" id="fdcDrawerFoot"></div>
     </aside>
 
-    <div class="fdc-overlay" id="fdcOverlay" aria-hidden="true">
-        <div class="fdc-modal" role="dialog" aria-modal="true">
-            <div class="fdc-modal-head"><h2 id="fdcModalTitle"></h2><button type="button" id="fdcModalClose">×</button></div>
-            <div class="fdc-modal-body" id="fdcModalBody"></div>
-            <div class="fdc-modal-foot" id="fdcModalFoot"></div>
+    <div class="fdcmw-fdc-overlay" id="fdcOverlay" aria-hidden="true">
+        <div class="fdcmw-fdc-modal" role="dialog" aria-modal="true">
+            <div class="fdcmw-fdc-modal-head"><h2 id="fdcModalTitle"></h2><button type="button" id="fdcModalClose">×</button></div>
+            <div class="fdcmw-fdc-modal-body" id="fdcModalBody"></div>
+            <div class="fdcmw-fdc-modal-foot" id="fdcModalFoot"></div>
         </div>
     </div>
 
-    <div class="fdc-context" id="fdcContext"></div>
-    <div class="fdc-tip" id="fdcTip"></div>
-    <div class="fdc-range-picker" id="fdcRangePicker"></div>
-    <div class="fdc-toast" id="fdcToast"></div>
+    <div class="fdcmw-fdc-context" id="fdcContext"></div>
+    <div class="fdcmw-fdc-tip" id="fdcTip"></div>
+    <div class="fdcmw-fdc-range-picker" id="fdcRangePicker"></div>
+    <div class="fdcmw-fdc-toast" id="fdcToast"></div>
 </div>
 
 @await Html.PartialAsync("~/Views/Shared/_RecordPaymentModal.cshtml")
