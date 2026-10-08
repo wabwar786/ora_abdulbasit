@@ -1,0 +1,112 @@
+@model Orapmshms.Models.ChannexReviewsViewModel
+@{
+    ViewData["Title"] = "Reviews";
+    Layout = "_PmsLayout";
+}
+
+<style>
+    .cx-page { padding: 5px 0; }
+    .cx-topbar {
+        min-height: 56px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        padding: 8px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        box-shadow: 0 6px 18px rgba(15, 23, 42, .05);
+        margin-bottom: 1px;
+    }
+    .cx-title-wrap { display: flex; align-items: center; gap: 12px; }
+    .cx-back {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        border-radius: 12px;
+        border: 1px solid #dbe3ef;
+        background: #f8fbff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        color: #2563eb;
+        font-size: 20px;
+        font-weight: bold;
+    }
+    .cx-back:hover { background: #eff6ff; border-color: #bfdbfe; }
+    .cx-title { font-size: 20px; font-weight: 700; color: #1e293b; margin: 0; }
+    .cx-subtitle { font-size: 13px; color: #64748b; margin-top: 2px; }
+    .cx-badge {
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #bfdbfe;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .cx-frame-card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        overflow: hidden;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
+    }
+    .cx-frame-wrap {
+        height: calc(100vh - 165px);
+        min-height: 550px;
+        overflow: hidden;
+        position: relative;
+        background: #f8fafc;
+    }
+    .cx-frame-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+    .cx-error {
+        background: #fef2f2;
+        color: #b91c1c;
+        border: 1px solid #fecaca;
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        font-size: 14px;
+    }
+    @@media (max-width: 600px) {
+        .cx-title { font-size: 17px; }
+        .cx-subtitle { font-size: 11px; }
+        .cx-frame-wrap { min-height: 450px; height: calc(100vh - 165px); }
+    }
+</style>
+
+<div class="cx-page">
+    <div class="cx-topbar">
+        <div class="cx-title-wrap">
+            @* The WebForms version keeps this Back link hidden. *@
+            <a href="#"
+               class="cx-back"
+               style="display:none;"
+               title="Back to channel connections"
+               aria-label="Back"
+               onclick="history.back(); return false;">&#8592;</a>
+            <div>
+                <h2 class="cx-title">Reviews</h2>
+                <div class="cx-subtitle">View and respond to guest reviews inside ORA PMS.</div>
+            </div>
+        </div>
+        <span class="cx-badge">Reviews</span>
+    </div>
+
+    @if (Model.HasError)
+    {
+        <div class="cx-error">@Model.ErrorMessage</div>
+    }
+
+    <div class="cx-frame-card">
+        @if (Model.CanShowFrame)
+        {
+            <div class="cx-frame-wrap">
+                <iframe src="@Model.IframeUrl"
+                        title="OTA's Guest Reviews"
+                        referrerpolicy="strict-origin-when-cross-origin"></iframe>
+            </div>
+        }
+    </div>
+</div>

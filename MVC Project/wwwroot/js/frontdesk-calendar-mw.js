@@ -237,6 +237,30 @@
     return html+'</span>';
   }
 
+  // Draw subtle stay-month separators from the reservation's own arrival day,
+  // not from calendar month boundaries. Example: a stay starting 07 Oct gets
+  // separators at 07 Nov, 07 Dec, 07 Jan, etc. The position is calculated with
+  // the same month-unit geometry as the booking bar so responsive columns stay aligned.
+  function buildReservationMonthDividers(item,bounds){
+    if(!item||!bounds||!(bounds.widthUnits>0))return '';
+    const arrival=dateOnly(item.arrival),departure=dateOnly(item.departure);
+    if(!arrival||!departure||departure<=arrival)return '';
+
+    const epsilon=0.000001;
+    let html='';
+    for(let n=1;n<240;n++){
+      const markerDate=addMonths(arrival,n);
+      if(!markerDate||markerDate>=departure)break;
+      const markerUnit=dateToMonthUnit(markerDate,true);
+      if(markerUnit==null)continue;
+      if(markerUnit<=bounds.leftUnits+epsilon||markerUnit>=bounds.rightUnits-epsilon)continue;
+      const pct=((markerUnit-bounds.leftUnits)/bounds.widthUnits)*100;
+      if(pct>0.05&&pct<99.95)
+        html+=`<span class="fdc-mw-month-divider" style="left:${pct.toFixed(3)}%" aria-hidden="true"></span>`;
+    }
+    return html;
+  }
+
   function monthCount(){return Math.max(1,state.months.length||1);}
 
   function fitMonthColumnsToViewport(){
@@ -393,7 +417,7 @@
     let html = `<div class="fdc-date-head"><div class="fdc-rooms-head">Rooms</div>`;
     for (const [monthIndex,m] of months.entries()) {
       const ms=dateOnly(m.startDate),me=dateOnly(m.endDate),todayIn=state.hotelToday>=ms&&state.hotelToday<=me;
-      html += `<div class="fdc-day fdc-month ${todayIn?'today':''}" data-month-index="${monthIndex}" data-date="${iso(ms)}"><span>${esc(m.month||ms.toLocaleDateString('en-GB',{month:'long'}))}</span><b>${esc(m.label||ms.toLocaleDateString('en-GB',{month:'short',year:'numeric'}))}</b><small>${fmt(ms)} – ${fmt(me)}</small></div>`;
+      html += `<div class="fdc-day fdc-month ${todayIn?'today':''}" data-month-index="${monthIndex}" data-date="${iso(ms)}"><b>${esc(m.label||ms.toLocaleDateString('en-GB',{month:'short',year:'numeric'}))}</b><small>${fmt(ms)} – ${fmt(me)}</small></div>`;
     }
     html += '</div>';
 
@@ -469,10 +493,11 @@
       const cls=statusClass(item.statusCode||item.status);
       const roomClass=room==='UNASSIGNED'?' unassigned-booking':'';
       const paymentStrip=buildMonthPaymentStrip(item);
+      const monthEndDividers=buildReservationMonthDividers(item,bounds);
       row.insertAdjacentHTML('beforeend',
         `<div class="fdc-bar ${cls}${roomClass}" draggable="${item.canDrag?'true':'false'}" `+
         `style="left:${left};width:${width}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}">`+
-        `${paymentStrip}<span class="name">${esc(item.guestName||item.regId)}</span>`+
+        `${paymentStrip}${monthEndDividers}<span class="name">${esc(item.guestName||item.regId)}</span>`+
         `${item.hasNote?'<span class="fdc-note-indicator" title="Notebook note" aria-label="Notebook note">★</span>':''}`+
         `${item.hasRoomChange?'<span class="fdc-room-change-indicator" title="Room changed" aria-label="Room changed">★</span>':''}`+
         `${item.canResize?'<span class="fdc-handle right" data-resize="right" title="Drag to extend / shrink"></span>':''}</div>`);

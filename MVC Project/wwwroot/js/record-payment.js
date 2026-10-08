@@ -127,6 +127,25 @@
       && bookingId.toUpperCase() !== 'N/A' && Number(ctx.balance || 0) > 0.005;
   }
 
+  function normalizePreferredMethod(value){
+    const method=String(value||'').trim().toLowerCase();
+    if(['pdq','pdq terminal','pdq payment','terminal'].includes(method)) return 'pdq';
+    if(['online','online card','card','card payment','stripe'].includes(method)) return 'online';
+    if(['auto','auto payment'].includes(method)) return 'auto';
+    return '';
+  }
+
+  function markPreferredMethod(method){
+    const preferred=normalizePreferredMethod(method);
+    [[els.online,'online'],[els.pdq,'pdq'],[els.auto,'auto']].forEach(([button,key])=>{
+      if(!button) return;
+      const selected=preferred===key;
+      button.classList.toggle('is-selected',selected);
+      button.setAttribute('aria-pressed',selected?'true':'false');
+    });
+    return preferred;
+  }
+
   function canManageHolds(ctx){
     return !!ctx && (ctx.showPdqPayment===true || ctx.showOnlineCard===true);
   }
@@ -168,9 +187,16 @@
     setOptionVisible(els.online, ctx.showOnlineCard === true);
     setOptionVisible(els.pdq, ctx.showPdqPayment === true);
     setOptionVisible(els.auto, isAutoPayEligible(ctx));
+    const preferred=markPreferredMethod(ctx.preferredMethod||ctx.selectedMethod||'');
     root.classList.add('open');root.setAttribute('aria-hidden','false');
-    setTimeout(()=>els.amount?.focus(),0);
-    root.dispatchEvent(new CustomEvent('recordpayment:opened',{detail:{...current}}));
+    if(preferred==='pdq' && ctx.showPdqPayment===true) showPdqChooser();
+    else if(preferred==='online' && ctx.showOnlineCard===true) showOnlineChooser();
+    setTimeout(()=>{
+      if(preferred==='pdq') els.pdq?.focus();
+      else if(preferred==='online') els.online?.focus();
+      else els.amount?.focus();
+    },0);
+    root.dispatchEvent(new CustomEvent('recordpayment:opened',{detail:{...current,preferredMethod:preferred}}));
     if(canManageHolds(ctx)){
       loadHolds(false).then(()=>{
         if(ctx.focusHolds===true && els.holds){
@@ -426,7 +452,7 @@
   }
 
   root.querySelectorAll('[data-orp-close]').forEach(btn=>btn.addEventListener('click',close));
-  els.online?.addEventListener('click',showOnlineChooser);
+  els.online?.addEventListener('click',()=>{markPreferredMethod('online');showOnlineChooser();});
   els.onlineBack?.addEventListener('click',hideOnlineChooser);
   els.onlineCharge?.addEventListener('click',()=>launchOnline('charge'));
   els.onlineHold?.addEventListener('click',()=>launchOnline('hold'));
@@ -447,12 +473,13 @@
     const w=window.open(value,'_blank','noopener,noreferrer');
     if(!w) showToast('Please allow pop-ups for this website.',true);
   });
-  els.pdq?.addEventListener('click',showPdqChooser);
+  els.pdq?.addEventListener('click',()=>{markPreferredMethod('pdq');showPdqChooser();});
   els.pdqBack?.addEventListener('click',hidePdqChooser);
   els.pdqCharge?.addEventListener('click',()=>launchPdq('charge'));
   els.pdqHold?.addEventListener('click',()=>launchPdq('hold'));
   els.holdsRefresh?.addEventListener('click',()=>loadHolds(true));
-  els.auto?.addEventListener('click',autoPayment);
+  els.auto?.addEventListener('click',()=>{markPreferredMethod('auto');autoPayment();});
+  els.method?.addEventListener('change',()=>markPreferredMethod(''));
   els.save?.addEventListener('click',manualPayment);
 
   root.addEventListener('click',e=>{if(e.target===root)e.preventDefault();});

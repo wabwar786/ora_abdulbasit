@@ -12,7 +12,7 @@ namespace Orapmshms.Controllers;
 /// The working /Calendar page is not replaced or modified by this controller.
 /// </summary>
 [Route("CalendarMW")]
-public sealed class FrontDeskCalendarMWController : Controller
+public sealed class FrontDeskCalendarMWController  : Controller
 {
     private readonly IFrontDeskCalendarMWService _calendar;
     private readonly IAppLogger _logger;

@@ -116,6 +116,56 @@
         return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
     }
 
+    function openSharedRecordPayment(preferredMethod = '') {
+        if (!window.RecordPayment || typeof window.RecordPayment.open !== 'function') {
+            message('Record Payment component is not loaded.', 'error');
+            return;
+        }
+        const currentRegId = String(regId || '').trim();
+        if (!currentRegId) {
+            message('Select or save the reservation before taking payment.', 'error');
+            return;
+        }
+
+        const guest = state.guest || {};
+        const guestName = [byId('firstName')?.value || guest.firstName, byId('lastName')?.value || guest.lastName]
+            .filter(Boolean).join(' ').trim() || 'Guest';
+        const roomNo = String(guest.roomNo || state.charges?.find?.(x => String(x.description || '').toLowerCase() === 'room rent')?.roomNo || '').trim();
+        const balance = toNumber(byId('balance')?.textContent || state.totals?.remaining || 0);
+        const arrival = String(byId('checkIn')?.value || guest.arrivalDate || '').slice(0, 10);
+        const departure = String(byId('checkOut')?.value || guest.departureDate || '').slice(0, 10);
+        const cardAllowed = app.dataset.cardPermission === '1';
+        const stripeConfigured = app.dataset.stripe === '1';
+        const pdqConfigured = app.dataset.stripe === '1' || app.dataset.clover === '1';
+
+        window.RecordPayment.open({
+            regId: currentRegId,
+            visitId: visitId || '',
+            roomNo,
+            guestName,
+            balance,
+            currencySymbol: currency || '£',
+            currencyCode: String(currencyCode || 'GBP').toUpperCase(),
+            hotelId: String(state.hotelId || '').trim(),
+            userId: String(state.userId || '').trim(),
+            arrival,
+            departure,
+            source: visitId ? 'GI' : 'NR',
+            status: String(state.reservationStatus || ''),
+            showOnlineCard: cardAllowed && stripeConfigured,
+            showPdqPayment: cardAllowed && pdqConfigured,
+            preferredMethod,
+            defaultMethod: preferredMethod === 'online' ? 'Card' : (byId('paymentMethod')?.value || 'Cash'),
+            urls: {
+                recordPaymentUrl: urls.recordPayment,
+                pdqUrl: app.dataset.terminalUrl || '/TerminalCardPayment.aspx'
+            },
+            onCompleted: async () => {
+                await refreshReservationUi(currentRegId);
+            }
+        });
+    }
+
     function openPdqPaymentLikeWebForms() {
         const hotelId = String(state.hotelId || '').trim();
         const currentRegId = String(regId || '').trim();
@@ -3326,8 +3376,8 @@
         openSharedRoomSecurity(Number(b.dataset.securitySettle || 0));
     });
 
-    byId('openPdqPayment')?.addEventListener('click', () => openPdqPaymentLikeWebForms());
-    byId('openStripeCardPayment')?.addEventListener('click', openStripeCheckoutPayment);
+    byId('openPdqPayment')?.addEventListener('click', () => openSharedRecordPayment('pdq'));
+    byId('openStripeCardPayment')?.addEventListener('click', () => openSharedRecordPayment('online'));
     $$('[data-card-mode]').forEach(tab => tab.addEventListener('click', () => setCardMode(tab.dataset.cardMode || 'terminal')));
     $$('[data-card-provider]').forEach(tab => tab.addEventListener('click', () => {
         currentCardProvider = tab.dataset.cardProvider || 'stripe';

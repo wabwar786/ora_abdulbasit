@@ -166,6 +166,7 @@
 
 @section Styles {
     <link rel="stylesheet" href="@Url.Content("~/css/checkin-mvc.css")" asp-append-version="true" />
+    <link rel="stylesheet" href="@Url.Content("~/css/record-payment.css")" asp-append-version="true" />
     <link rel="stylesheet" href="@Url.Content("~/css/room-security.css")" asp-append-version="true" />
     <link rel="stylesheet" href="@Url.Content("~/css/refund-payment.css")" asp-append-version="true" />
     <style>
@@ -1240,7 +1241,11 @@
     <div id="busyOverlay" class="busy-overlay hidden"><div class="busy-card"><i class="fa-solid fa-circle-notch fa-spin"></i><span id="busyText">Processing…</span></div></div>
 </div>
 
+@* Reuse the exact Record Payment partial used by Front Desk Calendar. *@
+@await Html.PartialAsync("~/Views/Shared/_RecordPaymentModal.cshtml")
+
 @section Scripts {
+    <script src="~/js/record-payment.js" asp-append-version="true"></script>
     <script src="~/js/room-security.js" asp-append-version="true"></script>
     <script src="~/js/refund-payment.js" asp-append-version="true"></script>
     <script src="~/js/checkin-mvc.js" asp-append-version="true"></script>

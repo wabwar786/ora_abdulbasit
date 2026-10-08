@@ -1,0 +1,79 @@
+@model Orapmshms.Models.ChannexPropertySettingsViewModel
+@{
+    ViewData["Title"] = "Channex Property Settings";
+    Layout = "_PmsLayout";
+}
+
+<style>
+    .cx-page { padding: 5px 0; }
+    .cx-topbar {
+        height: 56px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        padding: 0 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 6px 18px rgba(15,23,42,.05);
+        margin-bottom: 1px;
+    }
+    .cx-title-wrap { display:flex; align-items:center; gap:12px; }
+    .cx-back {
+        width:40px; height:40px; border:1px solid #dbe3ef;
+        background:#f8fbff; display:inline-flex; align-items:center;
+        justify-content:center; text-decoration:none; color:#2563eb;
+        font-size:20px; font-weight:700; line-height:1;
+    }
+    .cx-back:hover { background:#eff6ff; border-color:#bfdbfe; }
+    .cx-title { font-size:20px; font-weight:700; color:#1e293b; margin:0; }
+    .cx-subtitle { font-size:13px; color:#64748b; margin-top:2px; }
+    .cx-badge {
+        background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe;
+        padding:6px 10px; font-size:12px; font-weight:700;
+    }
+    .cx-frame-card {
+        background:#fff; border:1px solid #e5e7eb; overflow:hidden;
+        box-shadow:0 8px 20px rgba(15,23,42,.05);
+    }
+    .cx-frame-wrap {
+        height:calc(100vh - 165px); min-height:550px; overflow:hidden;
+        position:relative; background:#f8fafc;
+    }
+    .cx-frame-wrap iframe { width:100%; height:100%; border:0; display:block; }
+    .cx-error {
+        background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;
+        padding:14px 16px; margin-bottom:12px; font-size:14px;
+    }
+</style>
+
+<div class="cx-page">
+    <div class="cx-topbar">
+        <div class="cx-title-wrap">
+            <a href="#" class="cx-back" title="Back" aria-label="Back"
+               onclick="history.back(); return false;">&#8592;</a>
+            <div>
+                <div class="cx-title">Property Settings</div>
+                <div class="cx-subtitle">Manage Channex property settings inside your PMS.</div>
+            </div>
+        </div>
+        <div>
+            <span class="cx-badge">Property Settings</span>
+        </div>
+    </div>
+
+    @if (Model.HasError)
+    {
+        <div class="cx-error">@Model.ErrorMessage</div>
+    }
+
+    <div class="cx-frame-card">
+        @if (Model.CanShowFrame)
+        {
+            <div class="cx-frame-wrap">
+                <iframe src="@Model.IframeUrl"
+                        title="Channex Property Settings"
+                        referrerpolicy="strict-origin-when-cross-origin"></iframe>
+            </div>
+        }
+    </div>
+</div>

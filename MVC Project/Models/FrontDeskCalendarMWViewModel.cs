@@ -7,7 +7,7 @@ namespace Orapmshms.Models;
 /// </summary>
 public sealed class FrontDeskCalendarMWPageViewModel
 {
-    public string HotelId { get; set; } = string.Empty;
+    public string HotelId { get; set; } =  string.Empty;
     public string HotelName { get; set; } = string.Empty;
     public string UserId { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
@@ -16,8 +16,16 @@ public sealed class FrontDeskCalendarMWPageViewModel
     public DateTime HotelToday { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
-    public bool CanOnlineCardPayment { get; set; }
+    public bool CanOnlineCardPayment { get; set; } 
+
+
+
+
+
+
     public bool CanPdqPayment { get; set; }
+
+
     public FrontDeskCalendarPermissions Permissions { get; set; } = new();
 }
 

@@ -1654,12 +1654,14 @@ WHERE ID=@id
                 "PAYMENT", $"{request.Method}: {amount:0.00}; security={request.RoomSecurity:0.00}", ct);
             await tx.CommitAsync(ct);
 
+            // A positive recorded payment is refundable when the user has Refund
+            // permission. Provider transaction IDs are only required when a provider
+            // refund is actually needed; manual methods (Cash, Bank Transfer, Cheque,
+            // manual card entries, etc.) are refunded locally in the PMS.
             var canRefund =
                 insertedPaymentLogId > 0 &&
                 amount > 0m &&
-                permissions.HasAction("Refund") &&
-                (IsCashMethod(request.Method) ||
-                 (!string.IsNullOrWhiteSpace(request.PaymentId) && !string.IsNullOrWhiteSpace(request.ChargeId)));
+                permissions.HasAction("Refund");
 
             return CheckInOperationResult.Ok(
                 "Payment recorded successfully.",
@@ -1728,11 +1730,19 @@ WHERE ID=@id
         if (request.Amount > remainingRefundable + 0.005m)
             return CheckInOperationResult.Fail($"Maximum refundable amount is {remainingRefundable:0.00}.");
 
-        // Same provider split as WebForms: Cash is local; card refunds must be
-        // accepted by the provider before any PMS refund row is committed.
-        if (IsCashMethod(original.Method))
+        // Keep existing provider refunds intact, but treat a payment with no
+        // provider transaction identifiers as a manually recorded PMS payment.
+        // This covers Cash, Bank Transfer, Cheque and any other manually selected
+        // method without sending a refund request to Stripe/Clover.
+        var hasProviderReference =
+            !string.IsNullOrWhiteSpace(original.PaymentId) ||
+            !string.IsNullOrWhiteSpace(original.ChargeId);
+
+        if (IsCashMethod(original.Method) || !hasProviderReference)
         {
-            original.RefundId = "CASH_REFUND_" + Guid.NewGuid().ToString("N");
+            original.RefundId = IsCashMethod(original.Method)
+                ? "CASH_REFUND_" + Guid.NewGuid().ToString("N")
+                : "MANUAL_REFUND_" + Guid.NewGuid().ToString("N");
         }
         else if (original.Method.Contains("Clover", StringComparison.OrdinalIgnoreCase))
         {
@@ -1742,8 +1752,6 @@ WHERE ID=@id
         }
         else
         {
-            if (string.IsNullOrWhiteSpace(original.ChargeId) && string.IsNullOrWhiteSpace(original.PaymentId))
-                return CheckInOperationResult.Fail("Card refund requires the original Stripe payment/charge ID.");
             var provider = await RefundStripeProviderAsync(cn, hotelId, original, request.Amount, ct);
             if (!provider.Success) return CheckInOperationResult.Fail(provider.Message);
             original.RefundId = provider.PaymentIntentId;
@@ -4439,15 +4447,8 @@ ORDER BY id DESC;", cn) { CommandTimeout = 6 };
                     continue;
                 }
 
-                var isCash = IsCashMethod(row.Method);
-                var isCard = !string.IsNullOrWhiteSpace(row.PaymentId) && !string.IsNullOrWhiteSpace(row.ChargeId);
-                if (!isCash && !isCard)
-                {
-                    row.CanRefund = false;
-                    row.RemainingRefundable = 0m;
-                    continue;
-                }
-
+                // Do not require provider IDs just to expose Refund. Manual payment
+                // methods have no Stripe/Clover identifiers but are still refundable.
                 var targetId = row.Id.ToString(CultureInfo.InvariantCulture);
                 var hasExplicitLink = false;
                 decimal alreadyRefunded = 0m;
@@ -4470,10 +4471,14 @@ ORDER BY id DESC;", cn) { CommandTimeout = 6 };
                     foreach (var refund in refunds)
                     {
                         if (refund.Id == row.Id) continue;
+                        // Provider identifiers are a safe legacy fallback. Manual
+                        // payments have neither identifier, so do not match them to
+                        // unrelated refund rows merely because RefundId is populated.
+                        // Manual refunds are linked to the exact original log row by
+                        // externalrefundid when the refund is created.
                         var matches =
                             (!string.IsNullOrWhiteSpace(row.PaymentId) && string.Equals(refund.PaymentId, row.PaymentId, StringComparison.OrdinalIgnoreCase)) ||
-                            (!string.IsNullOrWhiteSpace(row.ChargeId) && string.Equals(refund.ChargeId, row.ChargeId, StringComparison.OrdinalIgnoreCase)) ||
-                            (string.IsNullOrWhiteSpace(row.PaymentId) && string.IsNullOrWhiteSpace(row.ChargeId) && !string.IsNullOrWhiteSpace(refund.RefundId));
+                            (!string.IsNullOrWhiteSpace(row.ChargeId) && string.Equals(refund.ChargeId, row.ChargeId, StringComparison.OrdinalIgnoreCase));
                         if (matches) alreadyRefunded += Math.Abs(refund.Amount);
                     }
                 }
@@ -4523,15 +4528,8 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
                     continue;
                 }
 
-                var isCash = IsCashMethod(row.Method);
-                var isCard = !string.IsNullOrWhiteSpace(row.PaymentId) && !string.IsNullOrWhiteSpace(row.ChargeId);
-                if (!isCash && !isCard)
-                {
-                    row.CanRefund = false;
-                    row.RemainingRefundable = 0m;
-                    continue;
-                }
-
+                // Do not require provider IDs just to expose Refund. Manual payment
+                // methods have no Stripe/Clover identifiers but are still refundable.
                 var alreadyRefunded = await GetRefundedAmountAsync(cn, null, hotelId, regId, row.PaymentId, row.ChargeId, row.Id, ct);
                 row.RemainingRefundable = Math.Max(0m, Math.Abs(row.Amount) - alreadyRefunded);
                 row.CanRefund = row.RemainingRefundable > 0.005m;
@@ -6769,8 +6767,10 @@ END
 ELSE
 BEGIN
     -- Compatibility with older WebForms refund rows that did not link back by
-    -- PaymentLog ID. Card rows match PaymentId/chargeid; legacy cash rows use
-    -- the same RefundId fallback as CanShowRefundButton.
+    -- PaymentLog ID. Only provider-backed rows can be matched safely by
+    -- PaymentId/chargeid. A manual payment has neither identifier, therefore
+    -- generic RefundId matching would incorrectly consume refunds belonging to
+    -- other payment rows on the same reservation.
     SELECT ISNULL(SUM(ABS(ISNULL(TRY_CONVERT(decimal(18,2),paid_amount),0))),0)
     FROM dbo.PaymentsLogTB
     WHERE hotel_id=@hotel
@@ -6781,7 +6781,6 @@ BEGIN
       (
           (@pi<>'' AND PaymentId=@pi)
           OR (@ch<>'' AND chargeid=@ch)
-          OR (@pi='' AND @ch='' AND ISNULL(RefundId,'')<>'')
       );
 END;",cn,tx);
         cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=regId;cmd.Parameters.Add("@id",SqlDbType.Int).Value=originalId;cmd.Parameters.Add("@pi",SqlDbType.VarChar,200).Value=paymentId??string.Empty;cmd.Parameters.Add("@ch",SqlDbType.VarChar,200).Value=chargeId??string.Empty;

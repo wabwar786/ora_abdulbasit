@@ -7,6 +7,10 @@
 .fdc-date-nav{height:30px;display:flex;border:1px solid #ccd8e6;border-radius:7px;overflow:hidden}.fdc-date-nav button{border:0;border-right:1px solid #dce4ec;background:#fff;height:28px;padding:0 12px;min-width:36px}.fdc-date-nav button:hover{background:#f3f7fb}.fdc-date-nav .fdc-range{min-width:205px;font-weight:800}.fdc-date-nav button:last-child{border-right:0}
 .fdc-tools{display:flex;align-items:center;gap:6px;position:relative;margin-left:auto}.fdc-tool{width:29px;height:29px;border:1px solid #d6e0eb;border-radius:50%;background:#f3f7fc;color:#285a85;display:grid;place-items:center;padding:0}.fdc-tool:hover,.fdc-tool[aria-expanded=true]{background:#e7f0fb;border-color:#a9c8e9}
 .fdc-legend-pop{position:absolute;right:0;top:36px;width:225px;padding:11px 12px;background:#14283f;color:#fff;border-radius:9px;box-shadow:0 12px 32px rgba(12,34,56,.24);z-index:100}.fdc-legend-pop[hidden]{display:none}.fdc-legend-pop strong{display:block;padding-bottom:8px;margin-bottom:7px;border-bottom:1px solid #39516a}.fdc-legend-pop div{display:flex;align-items:center;gap:8px;min-height:24px}.fdc-legend-pop i{width:18px;height:9px;border-radius:3px}.fdc-legend-pop i.confirmed{background:#2975db}.fdc-legend-pop i.arrival{background:#D4AF37}.fdc-legend-pop i.inhouse{background:#359f3a}.fdc-legend-pop i.tentative{background:#00767c}.fdc-legend-pop i.blocked{background:#f24a4a}.fdc-legend-pop i.dirty{background:#000}
+.fdc-legend-pop .fdc-legend-group-title{display:block;margin:7px 0 4px;padding-top:7px;border-top:1px solid #39516a;color:#c8d7e6;font-size:9px;font-weight:850;letter-spacing:.04em;text-transform:uppercase}
+.fdc-legend-pop i.pay-full{background:#09b753}
+.fdc-legend-pop i.pay-partial{background:#f0d707}
+.fdc-legend-pop i.pay-not-paid{background:#7c3aed}
 .fdc-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;background:#fff}.fdc-calendar{position:relative;min-width:calc(var(--room) + 20 * 62px);--view-days:20}.fdc-date-head,.fdc-room-row{display:grid;grid-template-columns:var(--room) repeat(var(--view-days),minmax(60px,1fr))}
 .fdc-date-head{height:46px;position:sticky;top:0;z-index:30;background:#fff;border-bottom:1px solid var(--line)}.fdc-rooms-head{position:sticky;left:0;z-index:34;background:#fff;border-right:1px solid var(--line);padding:0 9px;display:flex;align-items:center;font-weight:850}.fdc-day{border-right:1px solid var(--line);text-align:center;padding-top:3px;color:#536377;font-size:9px;position:relative}.fdc-day b{display:block;color:#11243a;font-size:14px;line-height:16px}.fdc-day.weekend{background:var(--weekend)}.fdc-day.today{box-shadow:inset 0 3px #4b89f8;background:#f5f9ff}
 .fdc-category{height:21px;display:grid;grid-template-columns:var(--room) 1fr;background:#edf2f6;border-bottom:1px solid #dfe6ed}.fdc-category-label{position:sticky;left:0;z-index:24;background:#edf2f6;border-right:1px solid var(--line);padding:0 7px;display:flex;align-items:center;font-size:9px;font-weight:900;white-space:nowrap;cursor:pointer;overflow:hidden}.fdc-category-label:hover{background:#e5ebf1}.fdc-category-label .arrow{width:13px}.fdc-category-label small{margin-left:auto;color:var(--muted);font-weight:600;font-size:8px}.fdc-category-grid{background:repeating-linear-gradient(90deg,transparent 0,transparent calc((100% / var(--view-days)) - 1px),#d8e2ec calc((100% / var(--view-days)) - 1px),#d8e2ec calc(100% / var(--view-days)))}
@@ -1219,7 +1223,7 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
   align-items:center;
   justify-content:center;
 }
-.fdc-mw-page .fdc-day span{font-size:9px;font-weight:800;color:#50647b;text-transform:uppercase;letter-spacing:.04em;display:none;}
+.fdc-mw-page .fdc-day span{font-size:9px;font-weight:800;color:#50647b;text-transform:uppercase;letter-spacing:.04em}
 .fdc-mw-page .fdc-day b{font-size:12px;line-height:15px}.fdc-mw-page .fdc-day small{font-size:8px;color:#8a98a8}
 .fdc-mw-page .fdc-category{width:max-content;min-width:100%;grid-template-columns:var(--room) calc(var(--view-months) * var(--month-col))}
 .fdc-mw-page .fdc-category-grid{
@@ -1247,7 +1251,7 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
   z-index:3;
   pointer-events:none;
 }
-.fdc-mw-page .fdc-mw-pay-dot.not-paid{background:#f36767}
+.fdc-mw-page .fdc-mw-pay-dot.not-paid{background:#7c3aed}
 .fdc-mw-page .fdc-mw-pay-dot.part-paid{background:#f0d707}
 .fdc-mw-page .fdc-mw-pay-dot.fully-paid{background:#09b753}
 .fdc-mw-page .fdc-bar .pay-dot{display:none!important}
@@ -1318,7 +1322,7 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
   border:0;
   box-shadow:none;
 }
-.fdc-mw-page .fdc-mw-pay-segment.not-paid{background:#f36767}
+.fdc-mw-page .fdc-mw-pay-segment.not-paid{background:#7c3aed}
 .fdc-mw-page .fdc-mw-pay-segment.part-paid{background:#f0d707}
 .fdc-mw-page .fdc-mw-pay-segment.fully-paid{background:#09b753}
 .fdc-mw-page .fdc-mw-pay-segment.payment-hidden{display:none}
@@ -1327,6 +1331,20 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
 .fdc-mw-page .fdc-bar>.fdc-room-change-indicator,
 .fdc-mw-page .fdc-bar>.fdc-handle{position:relative;z-index:5}
 .fdc-mw-page .fdc-bar>.fdc-handle{position:absolute}
+/* Subtle stay-month separators drawn inside reservation bars at each monthly
+   anniversary of the booking's arrival date. They sit above the payment colour
+   strip but below guest text/resize handles. */
+.fdc-mw-page .fdc-mw-month-divider{
+  position:absolute;
+  top:2px;
+  bottom:2px;
+  width:1px;
+  margin-left:-.5px;
+  background:rgba(255,255,255,.78);
+  box-shadow:1px 0 0 rgba(17,36,58,.16);
+  z-index:3;
+  pointer-events:none;
+}
 
 /* Month-wise Extend / Shrink rate-plan table. */
 .fdc-mw-plan-box{

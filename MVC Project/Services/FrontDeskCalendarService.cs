@@ -634,17 +634,10 @@ ORDER BY id DESC;";
                 continue;
             }
 
-            var isCash = (row.Method ?? string.Empty).Trim()
-                .Equals("cash", StringComparison.OrdinalIgnoreCase);
-            var isCard = !string.IsNullOrWhiteSpace(row.PaymentId) &&
-                         !string.IsNullOrWhiteSpace(row.ChargeId);
-            if (!isCash && !isCard)
-            {
-                row.CanRefund = false;
-                row.RemainingRefundable = 0m;
-                continue;
-            }
-
+            // Every positive payment can have a refundable balance. Provider-backed
+            // card/PDQ payments are refunded through their provider by CheckInService;
+            // manual methods such as Cash, Bank Transfer, Cheque, etc. are refunded
+            // locally in the PMS and therefore do not require PaymentId/chargeid.
             var targetId = row.Id.ToString(CultureInfo.InvariantCulture);
             var hasExplicitLink = false;
             decimal alreadyRefunded = 0m;
@@ -668,14 +661,16 @@ ORDER BY id DESC;";
                 foreach (var refund in refundRows)
                 {
                     if (refund.Id == row.Id) continue;
+                    // Legacy fallback is safe only for provider-backed payments.
+                    // Manual payments (Cash, Bank Transfer, Cheque, etc.) do not
+                    // have PaymentId/ChargeId, so a generic RefundId must NOT be
+                    // allowed to consume every manual payment on the reservation.
+                    // New/manual refunds are linked exactly through externalrefundid.
                     var matches =
                         (!string.IsNullOrWhiteSpace(row.PaymentId) &&
                          string.Equals(refund.PaymentId, row.PaymentId, StringComparison.OrdinalIgnoreCase)) ||
                         (!string.IsNullOrWhiteSpace(row.ChargeId) &&
-                         string.Equals(refund.ChargeId, row.ChargeId, StringComparison.OrdinalIgnoreCase)) ||
-                        (string.IsNullOrWhiteSpace(row.PaymentId) &&
-                         string.IsNullOrWhiteSpace(row.ChargeId) &&
-                         !string.IsNullOrWhiteSpace(refund.RefundId));
+                         string.Equals(refund.ChargeId, row.ChargeId, StringComparison.OrdinalIgnoreCase));
 
                     if (matches) alreadyRefunded += Math.Abs(refund.Amount);
                 }
