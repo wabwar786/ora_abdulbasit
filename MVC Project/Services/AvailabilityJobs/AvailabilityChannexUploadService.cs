@@ -181,6 +181,7 @@ WHERE p.hotel_id=@hotel AND TRY_CONVERT(int,p.localplanid)>0;", connection))
     /// The cutoff_stop_sell marker preserves manual stop-sells so disabling/reducing a cutoff
     /// reopens only rows that Booking Cutoff itself previously closed.
     /// </summary>
+    // Preserve the original API for the existing rates/inventory workflows.
     public async Task PrepareBookingCutoffRowsAsync(
         string hotelId,
         DateTime fromDate,
@@ -190,7 +191,22 @@ WHERE p.hotel_id=@hotel AND TRY_CONVERT(int,p.localplanid)>0;", connection))
         string updatedBy,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(hotelId)) return;
+        await PrepareBookingCutoffRowsWithCountsAsync(
+            hotelId, fromDate, toDate, planIds, categoryIds, updatedBy, cancellationToken);
+    }
+
+    internal sealed record BookingCutoffPreparationCounts(int UpdatedRows, int InsertedRows);
+
+    internal async Task<BookingCutoffPreparationCounts> PrepareBookingCutoffRowsWithCountsAsync(
+        string hotelId,
+        DateTime fromDate,
+        DateTime toDate,
+        IEnumerable<string> planIds,
+        IEnumerable<string> categoryIds,
+        string updatedBy,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(hotelId)) return new(0, 0);
 
         fromDate = fromDate.Date;
         toDate = toDate.Date;
@@ -202,7 +218,7 @@ WHERE p.hotel_id=@hotel AND TRY_CONVERT(int,p.localplanid)>0;", connection))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        if (plans.Length == 0) return;
+        if (plans.Length == 0) return new(0, 0);
 
         var categories = (categoryIds ?? Array.Empty<string>())
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -225,7 +241,9 @@ WHERE p.hotel_id=@hotel AND TRY_CONVERT(int,p.localplanid)>0;", connection))
               string.Join(",", categories.Select((_, i) => "@bc" + i)) + ") ";
 
         var sql = $@"
+SET NOCOUNT ON;
 DECLARE @days int=DATEDIFF(day,@from,@to)+1;
+DECLARE @insertedRows int=0, @updatedRows int=0;
 ;WITH N AS
 (
     SELECT TOP (CASE WHEN @days>0 THEN @days ELSE 0 END)
@@ -253,6 +271,7 @@ WHERE cp.hotel_id=@hotel
         AND CONVERT(nvarchar(100),dr.category_id)=CONVERT(nvarchar(100),cp.category_id)
         AND dr.[date]=D.[date]
   );
+SET @insertedRows = @@ROWCOUNT;
 
 UPDATE dr
 SET dr.stop_sell=NewState.NewStopSell,
@@ -314,7 +333,9 @@ CROSS APPLY
 WHERE dr.hotel_id=@hotel
   AND dr.[date] BETWEEN @from AND @to
   {drPlanFilter}
-  {drCategoryFilter};";
+  {drCategoryFilter};
+SET @updatedRows = @@ROWCOUNT;
+SELECT @updatedRows AS UpdatedRows, @insertedRows AS InsertedRows;";
 
         await using var connection = new SqlConnection(_connectionString);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 45 };
@@ -330,7 +351,10 @@ WHERE dr.hotel_id=@hotel
             command.Parameters.Add("@bc" + i, SqlDbType.NVarChar, 100).Value = categories[i];
 
         await connection.OpenAsync(cancellationToken);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+            return new BookingCutoffPreparationCounts(reader.GetInt32(0), reader.GetInt32(1));
+        throw new InvalidOperationException("Booking cutoff update did not return row counts.");
     }
 
     private async Task PrepareManualRateRowsForPlanAsync(
