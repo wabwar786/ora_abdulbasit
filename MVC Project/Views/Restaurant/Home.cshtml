@@ -1,0 +1,166 @@
+@model Orapmshms.Models.Restaurant.RestaurantHomeViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Restaurant Point of Sale";
+    Layout = "_PmsLayout";
+}
+<link rel="stylesheet" href="~/css/restaurant-pos.css" asp-append-version="true" />
+<div class="restaurant-page r-pos r-pos-classic r-pos-modern" id="restaurant-pos"
+     data-variant-url="@Url.Action("Variants", "Restaurant")"
+     data-side-url="@Url.Action("Sides", "Restaurant")"
+     data-preview-url="@Url.Action("PrintPreview", "Restaurant")"
+     data-tax-url="@Url.Action("TaxQuote", "Restaurant")"
+     data-bill-panel-url="@Url.Action("BillPanel", "Restaurant")">
+    @if (ViewBag.Error is string loadError)
+    {
+        <div class="restaurant-alert error" role="alert">@loadError</div>
+    }
+    @if (TempData["RestaurantError"] is string err)
+    {
+        <div class="restaurant-alert error" role="alert">@err</div>
+    }
+    @if (TempData["RestaurantNotice"] is string message)
+    {
+        <div class="restaurant-alert success" role="status">@message</div>
+    }
+
+    <div class="r-pos-status" id="r-pos-status" role="status" aria-live="polite" hidden></div>
+
+    <main class="r-main">
+        <section class="restaurant-panel r-menu" aria-labelledby="r-menu-title">
+            <div class="r-classic-menu-heading">
+                <div class="r-classic-title">
+                    <h1 id="r-menu-title">Restaurant POS <span class="r-modern-counter">@Model.Items.Count items</span></h1>
+                    <p>Tap an item image to add it to the bill.</p>
+                </div>
+                <div class="r-classic-tools">
+                    <a class="restaurant-btn r-classic-inventory" href="@Url.Action("Inventory", "Restaurant")">Items Management</a>
+                    <form method="get" action="@Url.Action("Home", "Restaurant")" class="r-classic-search">
+                        @if (!string.IsNullOrWhiteSpace(Model.Category))
+                        {
+                            <input type="hidden" name="category" value="@Model.Category" />
+                        }
+                        <input type="search" name="search" value="@Model.Search" placeholder="Search item by name" aria-label="Search item by name" />
+                        <button type="submit" class="r-classic-search-icon" aria-label="Search menu">⌕</button>
+                    </form>
+                </div>
+            </div>
+            @if (Model.Categories.Any(x => x.Show.Equals("Yes", StringComparison.OrdinalIgnoreCase)))
+            {
+                <nav class="r-menu-categories" aria-label="Menu categories">
+                    <a class="@(string.IsNullOrEmpty(Model.Category) ? "active" : "")" href="@Url.Action("Home", "Restaurant", new { search = Model.Search })">All Items</a>
+                    @foreach (var cat in Model.Categories.Where(x => x.Show.Equals("Yes", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        <a class="@(Model.Category == cat.Id ? "active" : "")" href="@Url.Action("Home", "Restaurant", new { category = cat.Id, search = Model.Search })">@cat.Name</a>
+                    }
+                </nav>
+            }
+            <div class="r-product-grid">
+                @foreach (var item in Model.Items)
+                {
+                    <article class="r-product" aria-label="@item.Name" data-category="@item.CategoryId" data-search="@item.Name.ToLowerInvariant()">
+                        <button type="button" class="r-product-picture r-product-photo-add" aria-label="Add @item.Name to bill" title="Add @item.Name">
+                            <img src="@ProductImage(item.Image)" alt="" loading="lazy" onerror="this.src='/img/restaurant-placeholder.svg'" />
+                        </button>
+                        <div class="r-product-category-tag">@(Model.Categories.FirstOrDefault(c => c.Id == item.CategoryId)?.Name ?? "Menu")</div>
+                        <div class="r-product-name">@item.Name</div>
+                        <div class="r-classic-product-price">@Model.Currency @item.Price.ToString("0.##")</div>
+                        @* Direct add: the quantity on this card is posted without opening a dialog. *@
+                        <form asp-controller="Restaurant" asp-action="AddToCart" method="post"
+                              class="r-classic-product-actions r-product-add-form" data-pos-async="add"
+                              data-barcode="@item.Barcode" data-name="@item.Name">
+                            <input type="hidden" name="Barcode" value="@item.Barcode" />
+                            <div class="r-classic-stepper" aria-label="Quantity for @item.Name">
+                                <button type="button" class="r-product-step-down" aria-label="Decrease quantity of @item.Name">−</button>
+                                <input class="r-product-qty" name="Quantity" type="number" value="1" min="1" max="999" required inputmode="numeric" aria-label="Quantity of @item.Name" />
+                                <button type="button" class="r-product-step-up" aria-label="Increase quantity of @item.Name">+</button>
+                            </div>
+                            <button type="submit" class="r-classic-add">Add</button>
+                        </form>
+                    </article>
+                }
+                @if (Model.Items.Count == 0)
+                {
+                    <div class="restaurant-empty r-pos-empty" role="status"><div class="r-pos-empty-icon" aria-hidden="true">⌕</div><h3>No menu items found</h3><p>Try another search term or choose a different category.</p><button type="button" class="r-pos-empty-reset" data-empty-reset>Clear filters</button></div>
+                }
+            </div>
+        </section>
+
+        @await Html.PartialAsync("_BillPanel", Model)
+    </main>
+</div>
+
+<div class="restaurant-dialog" id="r-cancel-dialog" hidden>
+    <div class="restaurant-dialog-shade" data-close="r-cancel-dialog"></div>
+    <div class="restaurant-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="r-cancel-title">
+        <div class="restaurant-dialog-title"><h2 id="r-cancel-title">Cancel Kitchen Item</h2><button type="button" class="restaurant-dialog-close" data-close="r-cancel-dialog" aria-label="Close">×</button></div>
+        <p class="restaurant-form-hint">This item was already sent to the kitchen. A cancellation notice must be printed and delivered to the kitchen.</p>
+        <form asp-controller="Restaurant" asp-action="CancelKitchenItem" method="post" id="r-cancel-form" target="_blank" data-pos-async="cancel">
+            <input type="hidden" name="RowId" id="r-cancel-row" />
+            <label>Item <input id="r-cancel-item" readonly /></label>
+            <label>Reason (required) <textarea name="Reason" id="r-cancel-reason" minlength="3" maxlength="250" rows="3" required class="restaurant-input" placeholder="Reason for kitchen cancellation"></textarea></label>
+            <div class="restaurant-dialog-actions"><button type="button" class="restaurant-btn r-secondary" data-close="r-cancel-dialog">Back</button>
+                <button type="submit" class="restaurant-btn r-danger">Cancel &amp; Print Notice</button></div>
+        </form>
+    </div>
+</div>
+<div class="r-modern-modal" id="r-qty-dialog" hidden>
+    <div class="r-modern-modal-shade" data-pos-dismiss="r-qty-dialog"></div>
+    <section class="r-modern-modal-panel r-modern-qty-dialog" role="dialog" aria-modal="true" aria-labelledby="r-qty-modal-title">
+        <div class="r-modern-modal-head"><div><h2 id="r-qty-modal-title">Update Quantity</h2><p id="r-qty-item-name"></p></div><button type="button" class="r-modern-close" data-pos-dismiss="r-qty-dialog" aria-label="Close">×</button></div>
+        <label for="r-qty-display" class="r-modern-input-label">Quantity</label>
+        <input id="r-qty-display" type="text" value="1" inputmode="numeric" autocomplete="off" readonly aria-live="polite" />
+        <div class="r-numpad" aria-label="Quantity keypad">
+            @foreach (var n in new[] { "1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "⌫" })
+            {
+                <button type="button" class="r-numpad-key" data-digit="@n">@n</button>
+            }
+        </div>
+        <div class="r-modern-dialog-buttons"><button type="button" class="r-modern-cancel" data-pos-dismiss="r-qty-dialog">Cancel</button><button type="button" id="r-qty-apply" class="r-modern-apply">Apply Quantity</button></div>
+    </section>
+</div>
+<div class="r-modern-modal" id="r-discount-dialog" hidden>
+    <div class="r-modern-modal-shade" data-pos-dismiss="r-discount-dialog"></div>
+    <section class="r-modern-modal-panel" role="dialog" aria-modal="true" aria-labelledby="r-discount-modal-title">
+        <div class="r-modern-modal-head"><div><h2 id="r-discount-modal-title">Edit Discount</h2><p>Choose a percentage or fixed amount.</p></div><button type="button" class="r-modern-close" data-pos-dismiss="r-discount-dialog" aria-label="Close">×</button></div>
+        <div class="r-discount-mode" role="group" aria-label="Discount type"><button type="button" data-discount-mode="percent">Percentage (%)</button><button type="button" data-discount-mode="amount">Amount</button></div>
+        <label class="r-modern-input-label" for="r-discount-editor">Discount</label><input type="number" id="r-discount-editor" min="0" step="0.01" inputmode="decimal" />
+        <p class="r-modern-preview" id="r-discount-preview"></p>
+        <div class="r-modern-dialog-buttons"><button type="button" class="r-modern-cancel" data-pos-dismiss="r-discount-dialog">Cancel</button><button type="button" class="r-modern-apply" id="r-discount-apply">Apply Discount</button></div>
+    </section>
+</div>
+<div class="r-modern-modal" id="r-tax-dialog" hidden>
+    <div class="r-modern-modal-shade" data-pos-dismiss="r-tax-dialog"></div>
+    <section class="r-modern-modal-panel" role="dialog" aria-modal="true" aria-labelledby="r-tax-modal-title">
+        <div class="r-modern-modal-head"><div><h2 id="r-tax-modal-title">Edit GST / VAT</h2><p>Use the hotel's default rate or a custom rate for this bill.</p></div><button type="button" class="r-modern-close" data-pos-dismiss="r-tax-dialog" aria-label="Close">×</button></div>
+        <form asp-controller="Restaurant" asp-action="SetTaxRate" method="post" id="r-tax-form" data-pos-async="tax">
+            <input type="hidden" name="billNumber" id="r-tax-bill" />
+            <label class="r-modern-input-label" for="r-tax-edit-rate">Tax rate (%)</label><input type="number" name="rate" id="r-tax-edit-rate" min="0" max="100" step="0.01" inputmode="decimal" required />
+            <p class="r-modern-preview" id="r-tax-preview"></p>
+            <p class="r-modern-help">Manual tax rates apply to this bill in your current POS session; the chosen rate is recorded in the payment notes when you close the bill.</p>
+            <div class="r-modern-dialog-buttons"><button type="button" class="r-modern-cancel" id="r-tax-reset">Hotel Default</button><button type="submit" class="r-modern-apply" id="r-tax-apply">Apply Tax</button></div>
+        </form>
+    </section>
+</div>
+@functions {
+    string ProductImage(string? image)
+    {
+        // Resolve both new image paths and existing Web Forms / previous MVC database values.
+        if (string.IsNullOrWhiteSpace(image)) return "/img/restaurant-placeholder.svg";
+        var value = image.Trim().Replace('\\', '/');
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps) return value;
+        if (value.StartsWith("/img/", StringComparison.OrdinalIgnoreCase)) return value;
+        if (value.StartsWith("img/", StringComparison.OrdinalIgnoreCase)) return "/" + value;
+        const string previousUpload = "/restaurant/uploads/";
+        if (value.StartsWith(previousUpload, StringComparison.OrdinalIgnoreCase))
+            return "/img/pos-uploads/" + value.Substring(previousUpload.Length);
+        if (value.StartsWith(previousUpload.TrimStart('/'), StringComparison.OrdinalIgnoreCase))
+            return "/img/pos-uploads/" + value.Substring(previousUpload.Length - 1);
+        if (value.Contains("/Uploads/", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("Uploads/", StringComparison.OrdinalIgnoreCase))
+            return "/img/" + Uri.EscapeDataString(System.IO.Path.GetFileName(value));
+        return "/img/restaurant-placeholder.svg";
+    }
+}
+<script src="~/js/restaurant.js" asp-append-version="true"></script>
+<script src="~/js/restaurant-pos.js" asp-append-version="true"></script>

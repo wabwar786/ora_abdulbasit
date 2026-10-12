@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
+using Orapmshms.Services.Restaurant;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -17,6 +18,7 @@ public sealed class FrontDeskCalendarController : Controller
     private readonly FrontDeskCalendarDbLogger _dbLogger;
     private readonly IDataProtector _invoiceShareProtector;
     private readonly IDataProtector _payNowShareProtector;
+    private readonly RestaurantGuestLinkTokens _restaurantGuestLinks;
     private readonly string _connectionString;
 
     private const string InvoiceSharePurpose = "ORAPMS.InvoiceShare.v1";
@@ -38,6 +40,7 @@ public sealed class FrontDeskCalendarController : Controller
         _logger = new AppLogger(loggerFactory.CreateLogger<AppLogger>());
         _invoiceShareProtector = dataProtectionProvider.CreateProtector(InvoiceSharePurpose);
         _payNowShareProtector = dataProtectionProvider.CreateProtector(PayNowSharePurpose);
+        _restaurantGuestLinks = new RestaurantGuestLinkTokens(dataProtectionProvider);
         _connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is missing.");
         var connectionString = _connectionString;
@@ -88,6 +91,26 @@ public sealed class FrontDeskCalendarController : Controller
                 SessionValue("Role"),
                 start,
                 cancellationToken);
+            try
+            {
+                // Matches FrontDeskCalender.aspx: HotelsSignUpTB.isResturant controls access.
+                await using (var cn = new SqlConnection(_connectionString))
+                await using (var cmd = new SqlCommand(@"SELECT TOP (1) ISNULL(isResturant,0) FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel", cn))
+                {
+                    cmd.Parameters.AddWithValue("@hotel", SessionValue("hotel"));
+                    await cn.OpenAsync(cancellationToken);
+                    var enabled = await cmd.ExecuteScalarAsync(cancellationToken);
+                    model.IsRestaurantEnabled = enabled != null && enabled != DBNull.Value &&
+                        (string.Equals(Convert.ToString(enabled), "True", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(Convert.ToString(enabled), "1", StringComparison.OrdinalIgnoreCase));
+                }
+            }
+            catch (SqlException ex)
+            {
+                // The optional Restaurant action must never prevent the Calendar from loading.
+                _logger.Error(ex, "Cannot read restaurant-enabled setting for current hotel.");
+                model.IsRestaurantEnabled = false;
+            }
             return View(model);
         }
         catch (Exception ex)
@@ -354,6 +377,47 @@ WHERE hotel_id = @hotel_id;", connection);
             _logger.Error(ex, "Front desk calendar action failed.");
             var errorRef = await _dbLogger.LogExceptionAsync(ex, "Front Desk Calendar", "Calendar Action", SessionValue("hotel"), SessionValue("UserId"), SessionValue("UserName"), Ip());
             return StatusCode(500, new { ok = false, message = $"The calendar action could not be completed. Ref: {errorRef}" });
+        }
+    }
+
+    // Protect reservation/room identifiers before placing them in a browser URL.
+    // Existing Calendar anti-forgery token and user session are required.
+    [HttpPost("RestaurantAccessUrl"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> RestaurantAccessUrl([FromBody] RestaurantCalendarLinkRequest? request, CancellationToken ct)
+    {
+        if (!HasSession() || string.IsNullOrWhiteSpace(SessionValue("UserId")))
+            return Unauthorized(new { message = "Your PMS session has expired." });
+        if (SessionValue("Role").Contains("Council", StringComparison.OrdinalIgnoreCase))
+            return Forbid();
+        var regId = request?.RegId?.Trim() ?? "";
+        var roomNo = request?.RoomNo?.Trim() ?? "";
+        if (regId.Length is < 1 or > 100 || roomNo.Length is < 1 or > 100 ||
+            string.Equals(roomNo, "UNASSIGNED", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Select a checked-in guest with an assigned room." });
+        try
+        {
+            await using var cn = new SqlConnection(_connectionString);
+            await using var cmd = new SqlCommand(@"SELECT TOP (1) ISNULL(isResturant,0)
+                FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel", cn);
+            cmd.Parameters.AddWithValue("@hotel", SessionValue("hotel"));
+            await cn.OpenAsync(ct);
+            var enabled = await cmd.ExecuteScalarAsync(ct);
+            if (enabled is null || enabled == DBNull.Value ||
+                !(string.Equals(Convert.ToString(enabled), "True", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(Convert.ToString(enabled), "1", StringComparison.OrdinalIgnoreCase)))
+                return BadRequest(new { message = "Restaurant is not enabled for this hotel." });
+
+            // Encrypt and authenticate the parameters; Home still verifies room/check-in in SQL.
+            var guestToken = _restaurantGuestLinks.Create(SessionValue("hotel"), SessionValue("UserId"), regId, roomNo);
+            var link = Url.Action("Home", "Restaurant", new { guestToken });
+            if (string.IsNullOrWhiteSpace(link))
+                throw new InvalidOperationException("The Restaurant Home route could not be resolved.");
+            return Json(new { url = link });
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Cannot generate protected Restaurant guest link.");
+            return StatusCode(500, new { message = "Unable to open Restaurant. Please try again." });
         }
     }
 

@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   'use strict';
 
   const page = document.getElementById('frontDeskCalendarPage');
@@ -733,6 +733,7 @@
     const trailing=[];
     const action=(icon,label,key,tone='')=>`<button class="fdc-drawer-action ${tone}" type="button" data-drawer-action="${key}"><span class="fdc-action-icon">${icon}</span><span class="fdc-action-text">${label}</span></button>`;
     if(checked){
+      if(cfg.restaurantEnabled==='1' && !/council/i.test(cfg.role||'') && d.regId && d.roomNo && String(d.roomNo).toUpperCase()!=='UNASSIGNED') actions.push(action('▣','Restaurant','restaurant'));
       actions.push(action('✎','Edit','edit'));
       actions.push(action('Aa','Edit Guest Name','guest-name'));
       actions.push(action('↶','Undo Check-in','undo'));
@@ -779,6 +780,26 @@
     return `<button type="button" class="fdc-drawer-actions-toggle" data-drawer-actions-toggle aria-expanded="false"><span>Actions</span><span class="chevron">⌄</span></button><div class="fdc-drawer-actions" data-drawer-actions-list hidden>${actions.join('')}${trailing.length?`<div class="fdc-drawer-actions-terminal">${trailing.join('')}</div>`:''}</div>`;
   }
 
+  async function openRestaurantForGuest(d){
+    if(cfg.restaurantEnabled!=='1' || /council/i.test(cfg.role||'') || !isCheckedInStatus(d?.status)) {
+      showToast('Restaurant is available only for checked-in guests at enabled properties.',true);return;
+    }
+    if(!d.regId || !d.roomNo || String(d.roomNo).toUpperCase()==='UNASSIGNED')return;
+    try {
+      // Parameters travel in a protected short-lived token. No regId or roomNo in URL.
+      const data=await api(cfg.restaurantLinkUrl||calendarActionUrl('RestaurantAccessUrl'),{
+        method:'POST', body:JSON.stringify({regId:d.regId,roomNo:d.roomNo})
+      });
+      const url=new URL(data.url,location.origin);
+      if(url.origin!==location.origin) throw new Error('Invalid Restaurant destination.');
+      const tab=window.open(url.toString(),'_blank');
+      // Window.open(..., 'noopener') returns null in some browsers even when the
+      // tab opens successfully. Avoid navigating Calendar as an accidental fallback.
+      if(tab) { try { tab.opener=null; } catch(_){} }
+      else window.location.assign(url.toString());
+    } catch(error) { showToast(error.message||'Unable to open Restaurant.',true); }
+  }
+
   function openCheckInEditor(d,button=null){
     if(!d?.regId){showToast('Reservation reference is missing.',true);return;}
     setButtonBusy(button,true,'Opening…');
@@ -791,6 +812,7 @@
 
   async function drawerAction(action,button=null){
     const d=state.currentDetails;if(!d)return;
+    if(action==='restaurant'){ openRestaurantForGuest(d); return; }
     if(action==='checkin-now'){ await directCheckIn(d,button); return; }
     if(action==='edit'){
       openCheckInEditor(d,button);
@@ -1278,6 +1300,7 @@ ${tag}`:tag;
     const terminal=[];
 
     if(checked){
+      if(cfg.restaurantEnabled==='1' && !/council/i.test(cfg.role||'') && item.regId && item.roomNo && String(item.roomNo).toUpperCase()!=='UNASSIGNED') actions.push(bookingMenuItem('▣','Restaurant','restaurant'));
       actions.push(bookingMenuItem('✎','Edit','edit'));
       actions.push(bookingMenuItem('Aa','Edit Guest Name','guest-name'));
       actions.push(bookingMenuItem('↶','Undo Check-in','undo'));
@@ -1410,6 +1433,12 @@ ${tag}`:tag;
         await mutate(cfg.directCheckinUrl,{regId:item.regId,paymentId:item.paymentId||0},'Checking in…',null);
         await loadCalendar(state.start,true);
         closeAfter=true;
+      }
+      else if(action==='restaurant'){
+        const d=await fetchBookingDetails(item);
+        if(!d) return;
+        closeAfter=true;
+        deferredAction=()=>openRestaurantForGuest(d);
       }
       else if(action==='edit'){
         const d=await fetchBookingDetails(item);

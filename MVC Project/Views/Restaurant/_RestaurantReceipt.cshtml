@@ -1,0 +1,50 @@
+@model Orapmshms.Models.Restaurant.RestaurantPrintViewModel
+@{
+    var paid=Model.Finalized;
+    var postedToRoom=Model.BillType.Equals("Room",StringComparison.OrdinalIgnoreCase) && (Model.DocumentKind.Contains("ROOM",StringComparison.OrdinalIgnoreCase) || Model.DocumentKind.Equals("RESTAURANT BILL",StringComparison.OrdinalIgnoreCase));
+    var detail=postedToRoom?"POSTED TO GUEST SERVICES · UNPAID":paid?"PAYMENT CONFIRMED":"NOT PAID · PREVIEW ONLY";
+}
+<!doctype html>
+<html lang="en" class="restaurant-print-document"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>@Model.DocumentKind #@Model.BillNumber</title>
+<link rel="stylesheet" href="/css/restaurant-pos.css" />
+</head><body class="print-screen">
+<div class="receipt-toolbar"><div class="toolbar-title"><b>@Model.DocumentKind</b><span>Bill #@Model.BillNumber</span></div>
+    <div class="toolbar-buttons"><button type="button" class="btn-neutral" onclick="document.body.classList.toggle('print-a4')">80 mm / A4</button>
+        <button type="button" class="btn-primary" onclick="window.print()">Print @((paid || postedToRoom)?"Receipt":"Preview")</button>
+        <button type="button" class="btn-neutral" onclick="window.close()">Close</button></div></div>
+<div class="receipt-paper">
+    <div class="rp-hotel"><div class="rp-mark">✦</div><h1>@Model.Hotel.Name</h1>
+        @if(!string.IsNullOrWhiteSpace(Model.Hotel.Address)){<p>@Model.Hotel.Address</p>}
+        @if(!string.IsNullOrWhiteSpace(Model.Hotel.Phone)){<p>@Model.Hotel.Phone</p>}</div>
+    <div class="rp-title">@Model.DocumentKind</div>
+    <div class="rp-status @(paid?"rp-paid":"rp-unpaid")">@detail</div>
+    <div class="rp-metadata">
+        <div><span>Bill no.</span><strong>#@Model.BillNumber</strong></div>
+        <div><span>Date / time</span><strong>@Model.PrintedAt.ToString("dd MMM yyyy, hh:mm tt")</strong></div>
+        <div><span>Order type</span><strong>@Model.BillType</strong></div>
+        <div><span>Cashier</span><strong>@Model.Cashier</strong></div>
+        <div><span>Payment</span><strong>@Model.PaymentMethod</strong></div>
+    </div>
+    <table class="rp-items"><thead><tr><th>ITEM</th><th class="numeric">QTY</th><th class="numeric">RATE</th><th class="numeric">AMOUNT</th></tr></thead><tbody>
+        @foreach(var item in Model.Lines)
+        {<tr><td><b>@item.Name</b>
+            @if(!string.IsNullOrEmpty(item.Variant)){<small>@item.Variant</small>}
+            @if(!string.IsNullOrEmpty(item.Side)){<small>@item.Side</small>}</td>
+            <td class="numeric">@item.Quantity.ToString("0.##")</td><td class="numeric">@item.Price.ToString("0.00")</td>
+            <td class="numeric">@item.Total.ToString("0.00")</td></tr>}
+    </tbody></table>
+    <div class="rp-calculation"><div><span>Subtotal</span><strong>@Model.Hotel.Currency @Model.Subtotal.ToString("0.00")</strong></div>
+        <div><span>@Model.Tax.Name @(Model.Tax.Rate>0?$"({Model.Tax.Rate:0.##}%)":"")</span><strong>@Model.Hotel.Currency @Model.Tax.Amount.ToString("0.00")</strong></div>
+        @if(Model.Discount>0){<div><span>Discount</span><strong>- @Model.Hotel.Currency @Model.Discount.ToString("0.00")</strong></div>}
+        @if(Model.Complimentary){<div><span>Complimentary</span><strong>100% waived</strong></div>}
+        <div class="rp-grand"><span>TOTAL</span><strong>@Model.Hotel.Currency @Model.GrandTotal.ToString("0.00")</strong></div>
+    </div>
+    <div class="rp-footer"><b>Thank you for visiting!</b><p>@(postedToRoom?"Restaurant charges have been added to the guest's Services. They are not recorded as paid.":paid?"Please keep this receipt for your records.":"Preview only — no payment has been recorded. This is not a final receipt.")</p>
+        <span>Powered by ORA PMS · Restaurant POS</span></div>
+</div>
+<script>
+@if(paid)
+{<text>(function(){ try{if(window.opener&&!window.opener.closed) window.opener.location.reload();}catch(e){} })();</text>}
+</script>
+</body></html>

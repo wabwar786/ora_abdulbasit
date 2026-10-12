@@ -64,7 +64,32 @@
                             <i class="fa-solid fa-lock table-lock" title="This row is not available for check-in selection."></i>
                         }
                     </td>
-                    <td>@(isRoomRentRow ? row.Description : (!string.IsNullOrWhiteSpace(row.DeductionInfo) ? row.DeductionInfo : row.Description))</td>
+                    <td>
+                        @if (!isRoomRentRow && row.Description.Equals("Extras", StringComparison.OrdinalIgnoreCase) &&
+                             (row.DeductionInfo ?? string.Empty).StartsWith("Resturant Charges", StringComparison.OrdinalIgnoreCase) &&
+                             !string.IsNullOrWhiteSpace(row.VoucherNumber))
+                        {
+
+                            var rawDetails = string.IsNullOrWhiteSpace(row.DeductionInfo) ? "Restaurant Charges" : row.DeductionInfo;
+
+                            var details = rawDetails.Replace("Resturant Charges", "Restaurant Charges", StringComparison.OrdinalIgnoreCase).Trim();
+
+                            var billMarker = "Bill #" + row.VoucherNumber;
+
+                            var displayText = details.Contains(billMarker, StringComparison.OrdinalIgnoreCase) ? details : details + " | " + billMarker;
+
+                            <a class="restaurant-duplicate-bill-inline" target="_blank" rel="noopener noreferrer"
+
+                               href="@Url.Action("GuestBill", "Restaurant", new { regId = Model.ReservationId, billNumber = row.VoucherNumber })"
+
+                               title="Open itemised restaurant bill #@row.VoucherNumber" aria-label="Open restaurant bill #@row.VoucherNumber">
+
+                                <i class="fa-solid fa-receipt" aria-hidden="true"></i> @displayText
+
+                            </a>
+                        }
+                        else { @(isRoomRentRow ? row.Description : (!string.IsNullOrWhiteSpace(row.DeductionInfo) ? row.DeductionInfo : row.Description)) }
+                    </td>
                     <td>@(isRoomRentRow ? row.Category : string.Empty)</td>
                     <td class="room-cell reservation-room-number-cell">
                         @if (isRoomRentRow)

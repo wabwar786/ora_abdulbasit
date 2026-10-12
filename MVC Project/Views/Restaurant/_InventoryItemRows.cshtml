@@ -1,0 +1,51 @@
+@model List<Orapmshms.Models.Restaurant.RestaurantItem>
+@foreach(var item in Model)
+{
+    <tr data-search="@((item.Name + " " + item.Barcode + " " + item.CategoryName).ToLowerInvariant())" data-category="@item.CategoryId">
+        <td>
+            <div class="restaurant-item-cell r-inv-item-name">
+                <img src="@RestaurantImage(item.Image)" alt="" loading="lazy" decoding="async" onerror="this.src='/img/restaurant-placeholder.svg';this.onerror=null" />
+                <span class="r-inv-item-text"><strong class="restaurant-strong">@item.Name</strong><small>Menu item</small></span>
+            </div>
+        </td>
+        <td><span class="r-inv-barcode">@item.Barcode</span></td>
+        <td><span class="r-inv-category-chip">@item.CategoryName</span></td>
+        <td class="r-inv-num r-inv-sale">@item.Price.ToString("N2")</td>
+        <td class="r-inv-num">@item.CostPrice.ToString("N2")</td>
+        <td class="restaurant-right r-inv-actions">
+            <button type="button" class="restaurant-btn restaurant-btn-quiet restaurant-item-edit"
+                data-barcode="@item.Barcode" data-name="@item.Name" data-category="@item.CategoryId"
+                data-price="@item.Price.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                data-cost="@item.CostPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)">Edit</button>
+            <form asp-controller="Restaurant" asp-action="DeleteItem" method="post" class="restaurant-inline"
+                  data-confirm="Delete only if this item has no existing sales or active bills?">
+                <input type="hidden" name="barcode" value="@item.Barcode" />
+                <button type="submit" class="restaurant-btn restaurant-btn-danger">Delete</button>
+            </form>
+        </td>
+    </tr>
+}
+@if (Model.Count == 0)
+{
+    <tr><td colspan="6" class="restaurant-empty">No menu items yet. Use “Add Item” to create one.</td></tr>
+}
+@functions {
+    string RestaurantImage(string? raw)
+    {
+        // Resolve both new image paths and existing Web Forms / previous MVC database values.
+        if (string.IsNullOrWhiteSpace(raw)) return "/img/restaurant-placeholder.svg";
+        var value = raw.Trim().Replace('\\', '/');
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps) return value;
+        if (value.StartsWith("/img/", StringComparison.OrdinalIgnoreCase)) return value;
+        if (value.StartsWith("img/", StringComparison.OrdinalIgnoreCase)) return "/" + value;
+        const string previousUpload = "/restaurant/uploads/";
+        if (value.StartsWith(previousUpload, StringComparison.OrdinalIgnoreCase))
+            return "/img/pos-uploads/" + value.Substring(previousUpload.Length);
+        if (value.StartsWith(previousUpload.TrimStart('/'), StringComparison.OrdinalIgnoreCase))
+            return "/img/pos-uploads/" + value.Substring(previousUpload.Length - 1);
+        if (value.Contains("/Uploads/", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("Uploads/", StringComparison.OrdinalIgnoreCase))
+            return "/img/" + Uri.EscapeDataString(System.IO.Path.GetFileName(value));
+        return "/img/restaurant-placeholder.svg";
+    }
+}

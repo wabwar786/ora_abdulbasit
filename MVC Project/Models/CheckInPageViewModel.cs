@@ -162,6 +162,7 @@ public sealed class CheckInChargeRow
     public string CategoryId { get; set; } = string.Empty;
     public string TypeValue { get; set; } = string.Empty;
     public string DeductionInfo { get; set; } = string.Empty;
+    public string VoucherNumber { get; set; } = string.Empty;
     public string RoomNo { get; set; } = string.Empty;
     public int RoomAdults { get; set; }
     public int RoomChildren { get; set; }

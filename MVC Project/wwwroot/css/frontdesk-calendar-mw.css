@@ -10,7 +10,7 @@
 .fdcmw-fdc-legend-pop .fdcmw-fdc-legend-group-title{display:block;margin:7px 0 4px;padding-top:7px;border-top:1px solid #39516a;color:#c8d7e6;font-size:9px;font-weight:850;letter-spacing:.04em;text-transform:uppercase}
 .fdcmw-fdc-legend-pop i.fdcmw-pay-full{background:#09b753}
 .fdcmw-fdc-legend-pop i.fdcmw-pay-partial{background:#f0d707}
-.fdcmw-fdc-legend-pop i.fdcmw-pay-not-paid{background:#7c3aed}
+.fdcmw-fdc-legend-pop i.fdcmw-pay-not-paid{background:#ffadad}
 .fdcmw-fdc-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;background:#fff}.fdcmw-fdc-calendar{position:relative;min-width:calc(var(--room) + 20 * 62px);--view-days:20}.fdcmw-fdc-date-head,.fdcmw-fdc-room-row{display:grid;grid-template-columns:var(--room) repeat(var(--view-days),minmax(60px,1fr))}
 .fdcmw-fdc-date-head{height:46px;position:sticky;top:0;z-index:30;background:#fff;border-bottom:1px solid var(--line)}.fdcmw-fdc-rooms-head{position:sticky;left:0;z-index:34;background:#fff;border-right:1px solid var(--line);padding:0 9px;display:flex;align-items:center;font-weight:850}.fdcmw-fdc-day{border-right:1px solid var(--line);text-align:center;padding-top:3px;color:#536377;font-size:9px;position:relative}.fdcmw-fdc-day b{display:block;color:#11243a;font-size:14px;line-height:16px}.fdcmw-fdc-day.fdcmw-weekend{background:var(--weekend)}.fdcmw-fdc-day.fdcmw-today{box-shadow:inset 0 3px #4b89f8;background:#f5f9ff}
 .fdcmw-fdc-category{height:21px;display:grid;grid-template-columns:var(--room) 1fr;background:#edf2f6;border-bottom:1px solid #dfe6ed}.fdcmw-fdc-category-label{position:sticky;left:0;z-index:24;background:#edf2f6;border-right:1px solid var(--line);padding:0 7px;display:flex;align-items:center;font-size:9px;font-weight:900;white-space:nowrap;cursor:pointer;overflow:hidden}.fdcmw-fdc-category-label:hover{background:#e5ebf1}.fdcmw-fdc-category-label .fdcmw-arrow{width:13px}.fdcmw-fdc-category-label small{margin-left:auto;color:var(--muted);font-weight:600;font-size:8px}.fdcmw-fdc-category-grid{background:repeating-linear-gradient(90deg,transparent 0,transparent calc((100% / var(--view-days)) - 1px),#d8e2ec calc((100% / var(--view-days)) - 1px),#d8e2ec calc(100% / var(--view-days)))}
@@ -47,7 +47,7 @@
 
 /* WebForms payment dot: red = not paid, yellow = partial, green = fully paid. */
 .fdcmw-fdc-bar .fdcmw-pay-dot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;margin-left:auto}
-.fdcmw-fdc-bar .fdcmw-pay-dot.fdcmw-not-paid{background:#ff0000}
+.fdcmw-fdc-bar .fdcmw-pay-dot.fdcmw-not-paid{background:#ffadad}
 .fdcmw-fdc-bar .fdcmw-pay-dot.fdcmw-part-paid{background:#ffeb00}
 .fdcmw-fdc-bar .fdcmw-pay-dot.fdcmw-fully-paid{background:#27ff00}
 .fdcmw-fdc-bar .fdcmw-pay-dot.fdcmw-payment-hidden{visibility:hidden}
@@ -1251,7 +1251,7 @@ body.fdcmw-fdc-move-drop-pending .fdcmw-fdc-drag-focus-backdrop{
   z-index:3;
   pointer-events:none;
 }
-.fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-dot.fdcmw-not-paid{background:#7c3aed}
+.fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-dot.fdcmw-not-paid{background:#ffadad}
 .fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-dot.fdcmw-part-paid{background:#f0d707}
 .fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-dot.fdcmw-fully-paid{background:#09b753}
 .fdcmw-fdc-mw-page .fdcmw-fdc-bar .fdcmw-pay-dot{display:none!important}
@@ -1322,7 +1322,7 @@ body.fdcmw-fdc-move-drop-pending .fdcmw-fdc-drag-focus-backdrop{
   border:0;
   box-shadow:none;
 }
-.fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-segment.fdcmw-not-paid{background:#7c3aed}
+.fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-segment.fdcmw-not-paid{background:#ffadad}
 .fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-segment.fdcmw-part-paid{background:#f0d707}
 .fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-segment.fdcmw-fully-paid{background:#09b753}
 .fdcmw-fdc-mw-page .fdcmw-fdc-mw-pay-segment.fdcmw-payment-hidden{display:none}
@@ -1409,4 +1409,40 @@ body.fdcmw-fdc-move-drop-pending .fdcmw-fdc-drag-focus-backdrop{
   .fdcmw-fdc-mw-page .fdcmw-fdc-mw-timeline{height:auto;min-height:42px;flex-wrap:wrap}
   .fdcmw-fdc-mw-page .fdcmw-fdc-mw-nav{width:auto;margin-left:auto}
   .fdcmw-fdc-mw-plan-head,.fdcmw-fdc-mw-plan-row{grid-template-columns:1fr 105px 125px}
+}
+
+/* =========================================================
+   2026-10-08 MW reservation foreground contrast — no shadows
+   Payment colours stay distinct and guest text uses a plain high-contrast
+   foreground. Not Paid uses soft pink (#ffadad) so dark text remains readable while
+   remaining visually distinct from the stronger red Block colour.
+   ========================================================= */
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar > .fdcmw-name{
+  color:#fff!important;
+  font-weight:750!important;
+  text-shadow:none!important;
+}
+
+/* All visible payment-strip colours are deliberately light enough for navy text:
+   Fully Paid = green, Partially Paid = yellow, Not Paid = soft pink. */
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar:has(.fdcmw-fdc-mw-pay-segment:not(.fdcmw-payment-hidden)) > .fdcmw-name{
+  color:#0c2238!important;
+}
+
+/* Light / warm status bars also use a plain dark foreground. */
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar.fdcmw-golden > .fdcmw-name,
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar.fdcmw-co > .fdcmw-name,
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar.fdcmw-b > .fdcmw-name{
+  color:#0c2238!important;
+}
+
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar.fdcmw-maintenance > .fdcmw-name{
+  color:#8f2530!important;
+  text-shadow:none!important;
+}
+
+/* Do not use text shadows on the small bar indicators either. */
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar > .fdcmw-fdc-note-indicator,
+.fdcmw-fdc-mw-page .fdcmw-fdc-bar > .fdcmw-fdc-room-change-indicator{
+  text-shadow:none!important;
 }

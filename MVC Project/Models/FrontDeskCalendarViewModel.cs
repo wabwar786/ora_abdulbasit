@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Orapmshms.Models;
 
@@ -10,6 +10,7 @@ public sealed class FrontDeskCalendarPageViewModel
     public string UserName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string CurrencySymbol { get; set; } = "£";
+    public bool IsRestaurantEnabled { get; set; }
     public DateTime HotelToday { get; set; }
     public DateTime StartDate { get; set; }
     public int ViewDays { get; set; } = 20;

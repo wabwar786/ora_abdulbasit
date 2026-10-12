@@ -1,0 +1,24 @@
+@model List<Orapmshms.Models.Restaurant.RestaurantCategory>
+@foreach(var c in Model)
+{
+    var visible = c.Show.Equals("Yes", StringComparison.OrdinalIgnoreCase) || c.Show.Equals("True", StringComparison.OrdinalIgnoreCase);
+    <tr data-search="@((c.Name + " " + c.Printer).ToLowerInvariant())">
+        <td><div class="r-inv-category-name"><span class="r-inv-category-mark" aria-hidden="true">▦</span><strong class="restaurant-strong">@c.Name</strong></div></td>
+        <td>@c.Printer</td>
+        <td><span class="r-inv-visibility @(visible ? "is-visible" : "is-hidden")"><span aria-hidden="true"></span>@(visible ? "Visible" : "Hidden")</span></td>
+        <td class="r-inv-num">@c.Order</td>
+        <td class="restaurant-right r-inv-actions">
+            <button type="button" class="restaurant-btn restaurant-btn-quiet restaurant-cat-edit"
+                data-id="@c.Id" data-name="@c.Name" data-printer="@c.Printer" data-show="@c.Show" data-order="@c.Order">Edit</button>
+            <form asp-controller="Restaurant" asp-action="DeleteCategory" method="post" class="restaurant-inline"
+                  data-confirm="Remove this empty category?">
+                <input type="hidden" name="id" value="@c.Id" />
+                <button class="restaurant-btn restaurant-btn-danger" type="submit">Delete</button>
+            </form>
+        </td>
+    </tr>
+}
+@if (Model.Count == 0)
+{
+    <tr><td colspan="5" class="restaurant-empty">No categories yet. Use “Add Category” to get started.</td></tr>
+}

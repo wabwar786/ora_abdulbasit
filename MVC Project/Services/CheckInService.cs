@@ -4350,7 +4350,7 @@ ORDER BY ord, rid DESC;", cn) { CommandTimeout = 4 };
     {
         var list = new List<CheckInChargeRow>();
         await using var cmd = new SqlCommand(@"
-SELECT ID,res_status,descr,[Type],category_id,deductioninfo,room_no,room_adults,room_children,room_infants,
+SELECT ID,res_status,descr,[Type],category_id,deductioninfo,VoucherNumber,room_no,room_adults,room_children,room_infants,
        rateplan,rateplanname,guestname,ArrivalDate,DepartureDate,Rate,Charge,discount,GST,Bed,Nights,totalamount
 FROM dbo.payments
 WHERE hotel_id=@hotel AND reg_id=@reg
@@ -4368,7 +4368,7 @@ ORDER BY ID;", cn) { CommandTimeout = 6 };
                 var row = new CheckInChargeRow
                 {
                     Id = I(rd, "ID"), Description = descr, Category = S(rd, "Type"), CategoryId = S(rd, "category_id"), TypeValue = S(rd, "Type"),
-                    DeductionInfo = S(rd, "deductioninfo"), RoomNo = room,
+                    DeductionInfo = S(rd, "deductioninfo"), VoucherNumber = S(rd, "VoucherNumber"), RoomNo = room,
                     RoomAdults = I(rd, "room_adults"), RoomChildren = I(rd, "room_children"), RoomInfants = I(rd, "room_infants"),
                     RatePlanId = S(rd, "rateplan"), RatePlanName = S(rd, "rateplanname"),
                     GuestName = S(rd, "guestname"), ArrivalDate = DateAny(rd, "ArrivalDate"), DepartureDate = DateAny(rd, "DepartureDate"),

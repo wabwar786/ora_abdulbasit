@@ -1,0 +1,37 @@
+@model Orapmshms.Models.Restaurant.RestaurantKitchenTicketModel
+@{
+    Layout=null;
+    var category="";
+}
+<!doctype html><html lang="en" class="restaurant-print-document"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>@(Model.Cancellation?"Kitchen Cancellation":"Kitchen Ticket") #@Model.BillNumber@if(!string.IsNullOrWhiteSpace(Model.RoomNo)){<span class="kitchen-room"> · ROOM @Model.RoomNo</span>}</title>
+<link rel="stylesheet" href="/css/restaurant-pos.css" /></head>
+<body class="print-screen kitchen-screen">
+<div class="receipt-toolbar"><div class="toolbar-title"><b>@(Model.Cancellation?"Kitchen Cancellation":"Kitchen Order")</b><span>Bill #@Model.BillNumber</span></div>
+<div class="toolbar-buttons"><button type="button" class="btn-neutral" onclick="document.body.classList.toggle('print-a4')">80 mm / A4</button>
+<button type="button" class="btn-primary" onclick="window.print()">Print Kitchen Ticket</button><button type="button" class="btn-neutral" onclick="window.close()">Close</button></div></div>
+<div class="receipt-paper kitchen-paper">
+    <div class="kt-type">@(Model.Cancellation?"CANCELLATION":"KITCHEN ORDER")</div>
+    <div class="kt-top"><h1>@(Model.Cancellation?"CANCEL ITEM":"NEW ORDER")</h1><span>@(Model.Cancellation?"CANCEL":"KOT")</span></div>
+    <div class="rp-metadata"><div><span>Bill no.</span><strong>#@Model.BillNumber</strong></div>
+        <div><span>Date / time</span><strong>@Model.PrintedAt.ToString("dd MMM yyyy, hh:mm tt")</strong></div>
+        <div><span>Cashier</span><strong>@Model.Cashier</strong></div>
+        <div><span>Service</span><strong>Dine In · Direct Sale</strong></div></div>
+    @if(Model.Cancellation){<div class="kt-cancel-reason"><small>REASON FOR CANCELLATION</small><p>@Model.Reason</p></div>}
+    <table class="kt-table"><thead><tr><th>MENU ITEM / VARIATION</th><th>QTY</th></tr></thead><tbody>
+    @foreach(var item in Model.Lines)
+    {
+        if(!string.Equals(category,item.Category,StringComparison.OrdinalIgnoreCase))
+        {category=item.Category;<tr class="kt-category"><td colspan="2">@category</td></tr>}
+        <tr><td><b>@item.Name</b>
+        @if(!string.IsNullOrEmpty(item.Variant)){<small>@item.Variant</small>}
+        @if(!string.IsNullOrEmpty(item.Side)){<small>@item.Side</small>}</td>
+        <td class="kt-qty">@(Model.Cancellation?"−":"")@item.Quantity.ToString("0.##")</td></tr>
+    }
+    </tbody></table>
+    <div class="kt-footer">@(Model.Cancellation?"Remove the above item from preparation.":"Please prepare the items and quantities listed above.")</div>
+</div>
+<script>
+(function(){try{if(window.opener&&!window.opener.closed)window.opener.location.reload();}catch(e){}})();
+</script>
+</body></html>

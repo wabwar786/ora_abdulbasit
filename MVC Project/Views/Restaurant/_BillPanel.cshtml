@@ -1,0 +1,164 @@
+@model Orapmshms.Models.Restaurant.RestaurantHomeViewModel
+@using System.Globalization
+@{ var hasBill = Model.Cart.Count > 0; }
+        <aside class="restaurant-panel r-checkout" aria-label="Current bill"
+               data-quoted-payment="@(Model.PaymentMethods.FirstOrDefault() ?? "Cash")"
+               data-quoted-tax-rate="@Model.Tax.Rate.ToString(CultureInfo.InvariantCulture)"
+               data-quoted-tax-amount="@Model.Tax.Amount.ToString(CultureInfo.InvariantCulture)"
+               data-quoted-tax-name="@Model.Tax.Name" data-bill-number="@Model.BillNumber">
+            <header class="r-classic-bill-heading">
+                <div><h2>Current Bill</h2><p>Add items, review totals, then print and close.</p></div>
+                <div class="r-classic-bill-badges"><span>Bill #@Model.BillNumber</span><span>@Model.BillType</span></div>
+            </header>
+            <div class="r-classic-sale-info">
+                <div class="r-classic-selects">
+                    <label for="r-bill-type"><span>Bill Type</span>
+                        <select id="r-bill-type" class="restaurant-input" disabled title="Bill type follows the selected guest context"><option>@Model.BillType</option></select>
+                    </label>
+                    @if (Model.BillType == "Room")
+                    {
+                        <label><span>Payment</span><span class="r-room-payment">To Guest Services (Unpaid)</span></label>
+                        <input type="hidden" name="PaymentMethod" value="Extras" form="r-close-form" />
+                    }
+                    else
+                    {
+                        <label for="r-payment"><span>Payment Method</span>
+                            <select id="r-payment" class="restaurant-input" name="PaymentMethod" form="r-close-form" @(hasBill ? null : "disabled")>
+                                @foreach (var method in Model.PaymentMethods)
+                                {
+                                    <option value="@method">@method</option>
+                                }
+                            </select>
+                        </label>
+                    }
+                </div>
+                <div class="r-classic-direct">@(Model.BillType == "Room" ? "Room service · Post to guest folio" : "Direct sale")</div>
+            </div>
+
+            <div class="r-cart-scroll" aria-label="Bill items">
+                @if (!hasBill)
+                {
+                    <div class="r-empty-cart"><div class="r-empty-icon">▤</div><strong>Your bill is empty</strong><p>Select menu items on the left to begin.</p></div>
+                }
+                else
+                {
+                    @foreach (var line in Model.Cart)
+                    {
+                        var printed = line.Status.Equals("kitchen", StringComparison.OrdinalIgnoreCase) || line.Status.Equals("bill print", StringComparison.OrdinalIgnoreCase);
+                        var img = line.Image;
+                        <div class="r-classic-cart-card @(printed ? "r-cart-printed" : "r-cart-editable")">
+                            <div class="r-cart-line-number">@(Model.Cart.IndexOf(line) + 1)</div>
+                            <div class="r-classic-cart-main">
+                                @if (!printed) { <button type="button" class="r-cart-qty-edit" data-row="@line.Id" data-item="@line.Name" data-quantity="@line.Quantity" title="Tap to update quantity"><strong>@line.Name</strong><span class="r-cart-edit-hint">Edit Qty</span></button> }
+                                else { <strong>@line.Name</strong> }
+                                @if (!string.IsNullOrWhiteSpace(line.Variant)) { <small>@line.Variant</small> }
+                                @if (!string.IsNullOrWhiteSpace(line.Side)) { <small>@line.Side</small> }
+                                <div class="r-classic-cart-price"><span>@line.Quantity × @Model.Currency @line.Price.ToString("0.##")</span></div>
+                                @if (printed) { <span class="r-kitchen-state">Sent to kitchen</span> }
+                                else
+                                {
+                                    <form asp-controller="Restaurant" asp-action="UpdateQuantity" method="post" class="r-quantity-form r-modern-hidden-quantity" data-pos-async="update" aria-label="Change quantity of @line.Name" hidden>
+                                        <input type="hidden" name="RowId" value="@line.Id" />
+                                        <input type="hidden" name="Quantity" value="@line.Quantity" />
+                                    </form>
+                                }
+                            </div>
+                            <div class="r-modern-cart-total">@Model.Currency @line.Total.ToString("0.00")</div>
+                            <div class="r-classic-remove">
+                                @if (printed)
+                                {
+                                    <button type="button" class="r-delete r-cancel-kitchen" title="Cancel kitchen item" data-row="@line.Id" data-item="@line.Name" aria-label="Cancel @line.Name at kitchen">×</button>
+                                }
+                                else
+                                {
+                                    <form asp-controller="Restaurant" asp-action="RemoveCartLine" method="post" data-pos-async="remove">
+                                        <input type="hidden" name="rowId" value="@line.Id" />
+                                        <button type="submit" class="r-delete" title="Remove item" aria-label="Remove @line.Name">×</button>
+                                    </form>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            @if (Model.BillType == "Room")
+            {
+                <div class="r-room-info"><strong>Room @Model.RoomNo</strong><small>Guest Reg ID @Model.RoomRegId · Unpaid room charge</small></div>
+            }
+            <div class="r-bill-bottom">
+                <form asp-controller="Restaurant" asp-action="@(Model.BillType == "Room" ? "PostToRoom" : "CloseBill")" method="post" id="r-close-form" target="_blank" data-pos-async="close">
+                    <input type="hidden" name="BillNumber" value="@Model.BillNumber" />
+                    <div class="r-modern-adjustment-options">
+                        <input id="r-discount" name="Discount" type="hidden" value="@Model.Discount.ToString(CultureInfo.InvariantCulture)" />
+                        <label class="r-complimentary" for="r-complimentary"><input type="checkbox" name="Complimentary" value="true" id="r-complimentary" @(Model.Complimentary ? "checked" : null) @(hasBill ? null : "disabled") /> Complimentary Bill</label>
+                    </div>
+                    <div class="r-amounts">
+                        <div><span>Sub Total</span><strong>@Model.Currency @Model.SubTotal.ToString("0.00")</strong></div>
+                        <div><span>Discount <button type="button" class="r-modern-edit" id="r-edit-discount" aria-label="Edit discount" @(hasBill ? null : "disabled")>✎ Edit</button></span><strong id="r-discount-display">− @Model.Currency @Model.Discount.ToString("0.00")</strong></div>
+                        <div><span><span id="r-tax-label">@Model.Tax.Name (@Model.Tax.Rate.ToString("0.##")%)</span> <button type="button" class="r-modern-edit" id="r-edit-tax" aria-label="Edit GST or VAT" @(hasBill ? null : "disabled")>✎ Edit</button></span><strong id="r-tax-amount">@Model.Currency @Model.Tax.Amount.ToString("0.00")</strong></div>
+                        <div class="r-grand-total"><span>Payable amount</span><strong id="r-total">@Model.Currency @((Model.SubTotal + Model.Tax.Amount).ToString("0.00"))</strong></div>
+                    </div>
+                    <input type="hidden" id="r-subtotal" value="@Model.SubTotal.ToString(CultureInfo.InvariantCulture)" />
+                    <input type="hidden" id="r-currency" value="@Model.Currency" />
+                    <input type="hidden" id="r-tax-default" value="@Model.Tax.Rate.ToString(CultureInfo.InvariantCulture)" />
+                    <div class="r-action-grid">
+                        <button type="button" class="restaurant-btn r-action" id="r-hold-btn" @(hasBill && Model.BillType != "Room" ? null : "disabled")>Hold Bill</button>
+                        <button type="button" class="restaurant-btn r-action r-held-toggle" id="r-held-toggle" @(Model.BillType == "Room" ? "disabled" : null) aria-controls="r-held-list" aria-expanded="false">Held Bills (@Model.HeldBills.Count)</button>
+                        <button type="button" class="restaurant-btn r-action" id="r-kitchen-btn" @(hasBill ? null : "disabled")>Kitchen Print</button>
+                        <button type="button" class="restaurant-btn r-action" id="r-print-btn" @(hasBill ? null : "disabled")>Print Bill</button>
+                        <button type="submit" class="restaurant-btn r-action r-action-close" @(hasBill ? null : "disabled")>@(Model.BillType == "Room" ? "Post to Guest Services & Print" : "Confirm, Print & Close")</button>
+                    </div>
+                </form>
+                <form asp-controller="Restaurant" asp-action="Hold" method="post" id="r-hold-form" data-pos-async="hold" hidden>
+                    <input type="hidden" name="billNumber" value="@Model.BillNumber" />
+                    <input type="hidden" name="discount" /><input type="hidden" name="complimentary" />
+                </form>
+                <form asp-controller="Restaurant" asp-action="SaveAdjustment" method="post" id="r-save-form" data-pos-async="adjustment" hidden>
+                    <input type="hidden" name="billNumber" value="@Model.BillNumber" />
+                    <input type="hidden" name="discount" /><input type="hidden" name="complimentary" />
+                </form>
+                <form asp-controller="Restaurant" asp-action="SendToKitchen" method="post" id="r-kitchen-form" target="_blank" data-pos-async="kitchen" hidden>
+                    <input type="hidden" name="billNumber" value="@Model.BillNumber" />
+                </form>
+            </div>
+            <div class="r-held r-held-modal" id="r-held-list" hidden role="dialog" aria-modal="true" aria-labelledby="r-held-title">
+                <button type="button" class="r-held-backdrop" data-held-close aria-label="Close held bills"></button>
+                <div class="r-held-window">
+                    <div class="r-held-head"><div><h3 id="r-held-title">Held Bills <span class="r-count">@Model.HeldBills.Count</span></h3><p>Resume an order from the current shift</p></div><button type="button" class="r-held-close" data-held-close aria-label="Close">×</button></div>
+                @if (Model.HeldBills.Count == 0)
+                {
+                    <p class="restaurant-muted">There are no held bills for this shift.</p>
+                }
+                @foreach (var bill in Model.HeldBills)
+                {
+                    <div class="r-held-row"><div class="r-held-bill-icon">▤</div><div class="r-held-bill-copy"><strong>Bill #@bill.BillNumber</strong><small>@bill.Lines item line(s) · @Model.Currency @bill.Total.ToString("0.00")</small></div>
+                        <form asp-controller="Restaurant" asp-action="Resume" method="post" data-pos-async="resume">
+                            <input type="hidden" name="billNumber" value="@bill.BillNumber" />
+                            <button type="submit" class="restaurant-btn r-secondary">Resume</button>
+                        </form>
+                    </div>
+                }
+                </div>
+            </div>
+        </aside>
+@functions {
+    string ProductImage(string? image)
+    {
+        // Resolve both new image paths and existing Web Forms / previous MVC database values.
+        if (string.IsNullOrWhiteSpace(image)) return "/img/restaurant-placeholder.svg";
+        var value = image.Trim().Replace('\\', '/');
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps) return value;
+        if (value.StartsWith("/img/", StringComparison.OrdinalIgnoreCase)) return value;
+        if (value.StartsWith("img/", StringComparison.OrdinalIgnoreCase)) return "/" + value;
+        const string previousUpload = "/restaurant/uploads/";
+        if (value.StartsWith(previousUpload, StringComparison.OrdinalIgnoreCase))
+            return "/img/pos-uploads/" + value.Substring(previousUpload.Length);
+        if (value.StartsWith(previousUpload.TrimStart('/'), StringComparison.OrdinalIgnoreCase))
+            return "/img/pos-uploads/" + value.Substring(previousUpload.Length - 1);
+        if (value.Contains("/Uploads/", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("Uploads/", StringComparison.OrdinalIgnoreCase))
+            return "/img/" + Uri.EscapeDataString(System.IO.Path.GetFileName(value));
+        return "/img/restaurant-placeholder.svg";
+    }
+}

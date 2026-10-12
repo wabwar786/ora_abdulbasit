@@ -1,0 +1,10 @@
+@model string
+@{
+    Layout=null;
+    ViewData["Title"]="Restaurant POS — Operation Not Completed";
+}
+<!doctype html><html lang="en" class="restaurant-print-document"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Restaurant POS — Operation Not Completed</title><link rel="stylesheet" href="/css/restaurant-pos.css"/></head>
+<body class="print-screen"><div class="print-error"><h1>Unable to complete the action</h1><p>@Model</p>
+<p>No receipt or kitchen ticket was generated. Check the bill on the main POS screen before trying again.</p>
+<button type="button" class="btn-neutral" onclick="window.close()">Close this window</button></div></body></html>

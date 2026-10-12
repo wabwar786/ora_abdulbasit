@@ -1,0 +1,147 @@
+@model Orapmshms.Models.Restaurant.RestaurantInventoryViewModel
+@{
+    ViewData["Title"] = "Restaurant • Items Management";
+    Layout = "_PmsLayout";
+    bool isItems = Model.Section == "items";
+}
+<link rel="stylesheet" href="~/css/restaurant-inventory.css" asp-append-version="true" />
+<div class="restaurant-page r-inventory" id="restaurant-inventory"
+     data-rows-url="@Url.Action("InventoryRows", "Restaurant")" data-section="@Model.Section">
+    <div class="restaurant-inventory-status" id="r-inventory-status" role="status" aria-live="polite" hidden></div>
+    <div class="r-inv-layout">
+        <header class="r-inv-topbar">
+            <div class="r-inv-title-group">
+                <div class="r-inv-kicker"><span class="r-inv-kicker-mark" aria-hidden="true"></span> RESTAURANT POS <span class="r-inv-kicker-separator">/</span> INVENTORY</div>
+                <h1>Items Management</h1>
+                <p>Organise your menu categories, item details and prices in one place.</p>
+            </div>
+            <a class="restaurant-btn r-inv-back" href="@Url.Action("Home","Restaurant")">
+                <span aria-hidden="true">←</span> Back to Sale Point
+            </a>
+        </header>
+
+        @if(!string.IsNullOrEmpty(Model.Error)) { <div class="restaurant-alert error" role="alert">@Model.Error</div> }
+        @if(TempData["RestaurantError"] is string err) { <div class="restaurant-alert error" role="alert">@err</div> }
+        @if(TempData["RestaurantNotice"] is string info) { <div class="restaurant-alert success" role="status">@info</div> }
+
+        <nav class="restaurant-tabs r-inv-tabs" aria-label="Inventory sections">
+            <a class="@(isItems ? "" : "active")" aria-current="@(isItems ? null : "page")"
+               href="@Url.Action("Inventory","Restaurant",new{section="categories"})">
+                <span class="r-inv-tab-icon" aria-hidden="true">▦</span> Categories
+                <span class="restaurant-count">@Model.Categories.Count</span>
+            </a>
+            <a class="@(isItems ? "active" : "")" aria-current="@(isItems ? "page" : null)"
+               href="@Url.Action("Inventory","Restaurant",new{section="items"})">
+                <span class="r-inv-tab-icon" aria-hidden="true">▤</span> Items
+                @if (isItems) { <span class="restaurant-count" id="r-inv-tab-count">@Model.Items.Count</span> }
+            </a>
+        </nav>
+
+        @if(!isItems)
+        {
+            <section class="restaurant-panel r-inv-card" aria-labelledby="r-inv-section-title">
+                <div class="restaurant-panel-head r-inv-card-head">
+                    <div>
+                        <span class="r-inv-section-label">MENU ORGANISATION</span>
+                        <h2 id="r-inv-section-title">Categories</h2>
+                        <p>Manage category names, printer assignment and menu visibility.</p>
+                    </div>
+                    <button type="button" class="restaurant-btn restaurant-btn-primary r-inv-add" onclick="restaurantCategoryOpen()">
+                        <span class="r-inv-plus" aria-hidden="true">+</span> Add Category
+                    </button>
+                </div>
+                <div class="r-inv-toolbar">
+                    <label class="r-inv-search-box">
+                        <span class="r-inv-search-icon" aria-hidden="true">⌕</span>
+                        <span class="r-inv-visually-hidden">Search categories</span>
+                        <input type="search" class="restaurant-input" id="restaurant-category-search"
+                               placeholder="Search categories or printers" autocomplete="off" />
+                    </label>
+                    <span class="r-inv-showing" id="r-inv-showing" role="status">@Model.Categories.Count categories</span>
+                </div>
+                <div class="restaurant-table-scroll r-inv-table-scroll">
+                    <table class="restaurant-table r-inv-table r-inv-category-table" id="restaurant-categories-table">
+                        <thead><tr>
+                            <th scope="col">Category</th><th scope="col">Printer</th><th scope="col">Visibility</th>
+                            <th scope="col" class="r-inv-num">Order</th><th scope="col" class="restaurant-right">Actions</th>
+                        </tr></thead>
+                        <tbody>@await Html.PartialAsync("_InventoryCategoryRows", Model.Categories)</tbody>
+                    </table>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="restaurant-panel r-inv-card" aria-labelledby="r-inv-section-title">
+                <div class="restaurant-panel-head r-inv-card-head">
+                    <div>
+                        <span class="r-inv-section-label">MENU CATALOGUE</span>
+                        <h2 id="r-inv-section-title">Menu Items</h2>
+                        <p>Manage item names, sale prices, cost prices and images.</p>
+                    </div>
+                    <button type="button" class="restaurant-btn restaurant-btn-primary r-inv-add" onclick="restaurantItemOpen()">
+                        <span class="r-inv-plus" aria-hidden="true">+</span> Add Item
+                    </button>
+                </div>
+                <div class="r-inv-toolbar">
+                    <label class="r-inv-search-box">
+                        <span class="r-inv-search-icon" aria-hidden="true">⌕</span>
+                        <span class="r-inv-visually-hidden">Search items</span>
+                        <input type="search" class="restaurant-input" id="restaurant-inventory-search"
+                               placeholder="Search items or barcodes" autocomplete="off" />
+                    </label>
+                    <label class="r-inv-filter-box">
+                        <span class="r-inv-visually-hidden">Filter by category</span>
+                        <select class="restaurant-input" id="restaurant-inventory-category">
+                            <option value="">All categories</option>
+                            @foreach(var cat in Model.Categories) { <option value="@cat.Id">@cat.Name</option> }
+                        </select>
+                    </label>
+                    <button type="button" class="r-inv-clear" id="r-inv-clear-filters" hidden>Clear filters</button>
+                    <span class="r-inv-showing" id="r-inv-showing" role="status">@Model.Items.Count items</span>
+                </div>
+                <div class="restaurant-table-scroll r-inv-table-scroll">
+                    <table class="restaurant-table r-inv-table r-inv-item-table" id="restaurant-items-table">
+                        <thead><tr>
+                            <th scope="col">Menu Item</th><th scope="col">Barcode</th><th scope="col">Category</th>
+                            <th scope="col" class="r-inv-num">Sale Price</th><th scope="col" class="r-inv-num">Cost Price</th>
+                            <th scope="col" class="restaurant-right">Actions</th>
+                        </tr></thead>
+                        <tbody>@await Html.PartialAsync("_InventoryItemRows", Model.Items)</tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+<div class="restaurant-dialog r-inv-dialog" id="restaurant-category-dialog" hidden>
+    <div class="restaurant-dialog-shade" data-close="restaurant-category-dialog"></div>
+    <div class="restaurant-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="restaurant-category-title">
+        <div class="restaurant-dialog-title"><div><h2 id="restaurant-category-title">Add Category</h2><p>Category details</p></div><button type="button" class="restaurant-dialog-close" data-close="restaurant-category-dialog" aria-label="Close">×</button></div>
+        <form asp-controller="Restaurant" asp-action="SaveCategory" method="post" id="restaurant-category-form">
+            <input type="hidden" name="Id" id="rc-id" />
+            <label>Category name <input name="Name" id="rc-name" maxlength="30" placeholder="e.g. Breakfast" required /></label>
+            <label>Printer <input name="Printer" id="rc-printer" maxlength="20" placeholder="Printer name" required /></label>
+            <label>Display order <input name="Order" id="rc-order" type="number" min="0" max="9999" required value="0" /></label>
+            <label class="restaurant-checkbox"><input type="checkbox" name="Show" id="rc-show" value="true" checked /><span>Visible on the menu</span></label>
+            <div class="restaurant-dialog-actions"><button type="button" class="restaurant-btn restaurant-btn-quiet" data-close="restaurant-category-dialog">Cancel</button><button type="submit" class="restaurant-btn restaurant-btn-primary">Save Category</button></div>
+        </form>
+    </div>
+</div>
+<div class="restaurant-dialog r-inv-dialog" id="restaurant-item-dialog" hidden>
+    <div class="restaurant-dialog-shade" data-close="restaurant-item-dialog"></div>
+    <div class="restaurant-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="restaurant-item-title">
+        <div class="restaurant-dialog-title"><div><h2 id="restaurant-item-title">Add Menu Item</h2><p>Item details and pricing</p></div><button type="button" class="restaurant-dialog-close" data-close="restaurant-item-dialog" aria-label="Close">×</button></div>
+        <form asp-controller="Restaurant" asp-action="SaveItem" method="post" enctype="multipart/form-data" id="restaurant-item-form">
+            <div class="r-inv-item-feedback" id="r-inv-item-feedback" role="status" aria-live="polite" hidden></div>
+            <input type="hidden" id="ri-barcode" name="Barcode" />
+            <label>Category <select name="CategoryId" id="ri-category" required><option value="">Select category</option>@foreach(var cat in Model.Categories){<option value="@cat.Id">@cat.Name</option>}</select></label>
+            <label>Item name <input name="Name" id="ri-name" maxlength="40" placeholder="Enter menu item name" required /></label>
+            <div class="restaurant-form-grid"><label>Sale price <input name="Price" id="ri-price" type="number" step="0.01" min="0" required /></label><label>Cost price <input name="CostPrice" id="ri-cost" type="number" step="0.01" min="0" required /></label></div>
+            <label>Item image <input name="image" type="file" accept="image/png,image/jpeg,image/webp" /><small>Optional · JPG, PNG or WEBP · max 3 MB</small></label>
+            <div class="restaurant-dialog-actions"><button type="button" class="restaurant-btn restaurant-btn-quiet" data-close="restaurant-item-dialog">Cancel</button><button type="submit" class="restaurant-btn restaurant-btn-primary">Save Item</button></div>
+        </form>
+    </div>
+</div>
+<script src="~/js/restaurant.js" asp-append-version="true"></script>
