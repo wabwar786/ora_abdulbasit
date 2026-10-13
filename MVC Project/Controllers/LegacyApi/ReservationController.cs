@@ -27,8 +27,8 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using static Orapmshms.Controllers.ReservationController;
-using static Orapmshms.Services.LegacyApi.NoShowScheduler;
+using static Orapmshms.Controllers;
+using static Orapmshms.Services.LegacyApi;
 using Microsoft.AspNetCore.Authorization;
 namespace Orapmshms.Controllers
 {
