@@ -32,7 +32,7 @@ using static Orapmshms.Services.LegacyApi.NoShowScheduler;
 using Microsoft.AspNetCore.Authorization;
 namespace Orapmshms.Controllers
 {
-    [Route("smartapi/api/Reservation")]
+    [Route("smartapi/api/Reservation" )]
     [AllowAnonymous]
     public class ReservationController : LegacyApiControllerBase
     {
