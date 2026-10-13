@@ -15,7 +15,7 @@ namespace Orapmshms.Services;
 /// Stripe account, updates the reservation payment fields, and posts the successful payment
 /// into PaymentsLogTB / PaymentsUpdateTB.
 /// </summary>
-public sealed class AutoPaymentService
+public sealed class  AutoPaymentService
 {
     private readonly string _connectionString;
     private readonly IHttpClientFactory _httpClientFactory;

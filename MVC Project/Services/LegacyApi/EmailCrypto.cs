@@ -21,7 +21,7 @@ namespace Orapmshms.Services.LegacyApi
             return Convert.ToBase64String(protectedBytes);
         }
         // Decrypt Base64 -> plaintext
-        public static string DecryptFromBase64(string base64)
+        public static string DecryptFromBase64(string base64 )
         {
             if (string.IsNullOrEmpty(base64)) return "";
             var protectedBytes = Convert.FromBase64String(base64);

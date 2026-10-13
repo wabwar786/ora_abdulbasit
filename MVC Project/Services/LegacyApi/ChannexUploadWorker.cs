@@ -19,7 +19,7 @@ namespace Orapmshms.Services.LegacyApi
         // =========================================================
         // PUBLIC: Upload RATES (your existing, fixed endpoint)
         // =========================================================
-        public static void UploadHotelRangeToChannex(
+        public static void UploadHotelRangeToChannex( 
             string connStr,
             string hotelId,
             DateTime fromDate,

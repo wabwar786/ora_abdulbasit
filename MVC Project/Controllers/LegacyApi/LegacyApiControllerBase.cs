@@ -7,7 +7,7 @@ namespace Orapmshms.Controllers;
 /// <summary>Preserves classic Web API JSON response conventions without altering MVC page serialization.</summary>
 public abstract class LegacyApiControllerBase : ControllerBase
 {
-    protected new IActionResult Ok(object? value) => JsonContent(value, 200);
+    protected new IActionResult Ok(object? value) =>  JsonContent(value, 200);
     protected new IActionResult BadRequest(string error) => JsonContent(new { Message = error }, 400);
     protected IActionResult InternalServerError(Exception exception)
     {

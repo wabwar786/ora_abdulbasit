@@ -11,7 +11,7 @@ public sealed class BookingCutoffDailyHotelResult
     public bool Success { get; set; }
     public bool HasWarnings { get; set; }
     public int UpdatedRows { get; set; }
-    public int InsertedRows { get; set; }
+    public int InsertedRows { get; set;  }
     public int PendingUploadRows { get; set; }
     public int UploadedRows { get; set; }
     public int SkippedMappingRows { get; set; }

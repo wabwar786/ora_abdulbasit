@@ -15,7 +15,7 @@ internal sealed class AvailabilityChannexUploadService
     private readonly ILogger _logger;
     private bool _lastRemoteRatePlanMapLoadSucceeded;
 
-    public AvailabilityChannexUploadService(
+    public AvailabilityChannexUploadService (
         IConfiguration configuration,
         HttpClient httpClient,
         ILogger logger)

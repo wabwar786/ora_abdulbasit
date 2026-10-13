@@ -84,7 +84,7 @@ public sealed class BookingCutoffDailyJobController : ControllerBase
                 ok = false,
                 message = "Booking Cutoff daily job failed. See server logs for details."
             });
-        }
+         }
     }
 
     private static bool SecureEquals(string expected, string? actual)

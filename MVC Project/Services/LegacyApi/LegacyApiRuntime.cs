@@ -21,7 +21,7 @@ internal static class LegacyApiRuntime
     // IHttpContextAccessor uses a process-wide AsyncLocal context. The original
     // MVC application already registers AddHttpContextAccessor() in Program.cs.
     // This accessor can therefore read the current request without modifying startup.
-    private static readonly IHttpContextAccessor RequestContextAccessor = new HttpContextAccessor();
+    private static readonly IHttpContextAccessor RequestContextAccessor = new  HttpContextAccessor();
 
     public static HttpContext? Current => RequestContextAccessor.HttpContext;
 

@@ -23,7 +23,7 @@ namespace Orapmshms.Services.LegacyApi
 
         public VirtualCardInstantChargeService()
         {
-            _connectionString = LegacyApiRuntime.ConnectionString;
+            _connectionString = LegacyApiRuntime.ConnectionString ;
         }
         // ---------------- PUBLIC ENTRY POINT ----------------
         /// <summary>

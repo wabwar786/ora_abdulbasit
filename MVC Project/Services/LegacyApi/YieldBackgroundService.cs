@@ -21,7 +21,7 @@ namespace Orapmshms.Services.LegacyApi
         public string channexApiKey = "";
         public string channexBaseUrl = "";
         public string channexPropertyid = "";
-        public void RunYieldForDateRange(
+        public void RunYieldForDateRange (
     string hotelId,
     DateTime fromDate,
     DateTime toDate,

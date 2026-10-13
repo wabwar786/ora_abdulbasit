@@ -812,7 +812,6 @@ SELECT @Applied AS AppliedRows,@Restored AS RestoredRows;";
                 foreach (var plan in rule.PlanIds) planIds.Add(plan);
                 foreach (var category in rule.CategoryIds) categoryIds.Add(category);
             }
-
             var queued = planIds.Count > 0 && categoryIds.Count > 0 && _channelQueue.Queue(
                 new AvailabilityChannelSyncJob(
                     AvailabilityChannelSyncKind.YieldRates,
@@ -834,7 +833,6 @@ SELECT @Applied AS AppliedRows,@Restored AS RestoredRows;";
             throw;
         }
     }
-
     private static async Task<List<ActiveYieldRule>> LoadActiveRulesAsync(
         SqlConnection connection,
         string hotelId,

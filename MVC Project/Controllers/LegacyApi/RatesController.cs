@@ -14,7 +14,7 @@ using System.Data;
 using Microsoft.Data.SqlClient;
 
 using System.Globalization;
-using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization ;
 
 
 namespace Orapmshms.Controllers

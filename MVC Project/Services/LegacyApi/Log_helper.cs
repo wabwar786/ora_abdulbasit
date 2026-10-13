@@ -21,7 +21,7 @@ namespace Orapmshms.Services.LegacyApi
                                     (reg_id, descp, user_id, username, hotel_id, status, ipAddress, systemname)
                                     VALUES
                                     (@reg_id, @descp, @user_id, @username, @hotel_id, @status, @ipAddress, @systemname)";
-                using (SqlConnection conn = new SqlConnection(connectionString))
+                using (SqlConnection conn = new SqlConnection(connectionString) )
                 {
                     using (SqlCommand cmd = new SqlCommand(query, conn))
                     {

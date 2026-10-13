@@ -19,7 +19,7 @@ public sealed class NoShowDailyTaskScheduler : BackgroundService
         // The old API scheduled this destructive archiving job. Only one app/instance must enable it.
         if (!_configuration.GetValue<bool>("LegacyApi:EnableAutomaticNoShow"))
         {
-            _logger.LogInformation("Legacy API no-show scheduler disabled; enable after API cutover on one instance only.");
+            _logger.LogInformation("Legacy API no-show scheduler disabled; enable after API  cutover on one instance only.");
             return;
         }
         while (!stoppingToken.IsCancellationRequested)

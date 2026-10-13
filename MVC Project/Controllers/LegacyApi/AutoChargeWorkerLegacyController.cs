@@ -13,7 +13,7 @@ namespace Orapmshms.Controllers;
 /// </summary>
 [AllowAnonymous]
 [Route("AutoChargeWorker.ashx")]
-public sealed class AutoChargeWorkerLegacyController : LegacyApiControllerBase
+public sealed class AutoChargeWorkerLegacyController :  LegacyApiControllerBase
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<AutoChargeWorkerLegacyController> _logger;

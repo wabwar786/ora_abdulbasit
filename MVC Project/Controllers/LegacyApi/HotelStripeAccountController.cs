@@ -12,7 +12,7 @@ namespace Orapmshms.Controllers
 {
     [Route("smartapi/api/hotel-stripe")]
     [AllowAnonymous]
-    public class HotelStripeAccountController : LegacyApiControllerBase
+    public class HotelStripeAccountController :  LegacyApiControllerBase
     {
         private readonly string _connString =
             LegacyApiRuntime.ConnectionString;
