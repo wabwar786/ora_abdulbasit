@@ -1,0 +1,38 @@
+@model Orapmshms.Models.HotelInventory.InventoryPage
+@{
+    Layout = "_PmsLayout";
+    var page = Model.Page;
+    var pageInfo = page switch
+    {
+        "suppliers" => ("Suppliers", "Manage supplier contacts, addresses and purchasing details."),
+        "items" => ("Inventory Items", "Create and maintain your inventory items and opening stock."),
+        "item-settings" => ("Item Settings", "Manage item categories, types, units and locations."),
+        "requests" => ("Stock Requests", "Raise purchase or departmental demand notes."),
+        "approvals" => ("Approvals", "Review and approve or reject pending demand notes."),
+        "purchases" => ("Purchase Orders", "Create purchase orders from approved demands."),
+        "receiving" => ("Receive Stock", "Record full or partial deliveries against purchase orders."),
+        "balances" => ("Stock Balances", "Check inventory across the Main Store, rooms and departments."),
+        "issue" => ("Issue Stock", "Issue inventory against approved department requests."),
+        "movements" => ("Move / Return", "Transfer, return, consume or change the condition of existing stock."),
+        "assets" => ("Assets Register", "Track tagged equipment, locations, repairs and losses."),
+        "reports" => ("Reports", "View, print and export inventory reports."),
+        "history" => ("History", "Inspect previous transactions and their documents."),
+        _ => ("Hotel Inventory", "Stock, requests and deliveries in one place.")
+    };
+    ViewData["Title"] = pageInfo.Item1;
+}
+<link rel="stylesheet" href="~/css/ora-inventory-mvc.css" asp-append-version="true" />
+<div class="ora-inventory" id="ora-inventory-content" data-page="@@page">
+  <header class="oi-page-head">
+    <div><div class="oi-eyebrow">HOTEL OPERATIONS / INVENTORY</div><h1>@pageInfo.Item1</h1><p>@pageInfo.Item2</p></div>
+    <div class="oi-hotel-label" style="display:none"><strong>@Model.HotelName</strong><small>@Model.UserName</small></div>
+  </header>
+  <div id="oi-feedback" class="oi-feedback" role="status" aria-live="polite" hidden></div>
+  @if(ViewBag.LoadError is string msg){<div class="oi-notice error" role="alert">@msg</div>}
+  @if(TempData["InvError"] is string err){<div class="oi-notice error" role="alert">@err</div>}
+  @if(TempData["InvSuccess"] is string suc){<div class="oi-notice success" role="status">@suc</div>}
+  @if(!Model.WorkflowReady){<div class="oi-notice warning" role="status">Inventory transactions require the workflow SQL setup. Existing item and supplier lists remain available. Run the included <code>ORA_Inventory_Workflow_Setup.sql</code> on the sandbox database first.</div>}
+  @await Html.PartialAsync("Pages/"+page,Model)
+  <footer class="oi-page-footer"><span>ORA PMS · Inventory Management</span><span>All entries are scoped to your selected hotel.</span></footer>
+</div>
+<script src="~/js/ora-inventory-mvc.js" asp-append-version="true" defer></script>

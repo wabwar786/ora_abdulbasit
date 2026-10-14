@@ -1,0 +1,22 @@
+@model Orapmshms.Models.HotelInventory.InventoryPage
+<section class="oi-card">
+ <div class="oi-card-head"><div><h2>Inventory item register</h2><p>Consumables, reusable linen and individually trackable assets.</p></div></div>
+ <div class="oi-card-toolbar"><a class="oi-btn" href="/Inventory/ItemSettings">⚙ Manage categories / units</a><div class="oi-toolbar"><input type="search" data-filter-table="oi-items" placeholder="Search items..." /><button class="oi-btn primary" type="button" data-open-dialog="oi-item-dialog">+ Add item</button></div></div>
+ <div class="oi-table-scroll"><table id="oi-items"><thead><tr><th>ITEM CODE</th><th>ITEM</th><th>CATEGORY</th><th>TYPE</th><th>UNIT</th><th>MAIN STORE</th><th>REORDER</th><th>ACTIONS</th></tr></thead><tbody>
+ @foreach(var i in Model.Items){<tr><td>@i.Code</td><td><strong>@i.Name</strong></td><td>@i.Category</td><td><span class="oi-badge blue">@i.Kind</span></td><td>@i.Unit</td><td>@i.StoreQty</td><td>@i.ReorderAt</td><td class="oi-row-actions"><button class="oi-btn small" type="button" data-open-dialog="oi-item-dialog" data-edit-record data-id="@i.Id" data-code="@i.Code" data-name="@i.Name" data-category="@i.Category" data-item-type="@i.ItemType" data-unit="@i.Unit" data-location="@i.Location" data-supplier="@i.Supplier" data-price="@i.Price.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-reorder-at="@i.ReorderAt">✎ Edit</button><form action="/Inventory/item/delete" method="post" class="oi-ajax-form oi-inline" data-confirm="Delete this unused item? Items with stock or history cannot be deleted.">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@i.Id"/><button class="oi-btn small danger" type="submit">Delete</button></form></td></tr>}
+ @if(Model.Items.Count==0){<tr><td colspan="8" class="oi-empty">No inventory items registered.</td></tr>}</tbody></table></div>
+ <div class="oi-card-foot"><span>Opening stock is entered during new item creation. Subsequent changes use stock transactions.</span><strong>@Model.Items.Count items</strong></div>
+</section>
+<dialog id="oi-item-dialog" class="oi-dialog wide"><div class="oi-dialog-head"><div><h2 data-dialog-title>Add inventory item</h2><p>Item master details and opening stock.</p></div><button class="oi-btn icon" type="button" data-close-dialog>×</button></div>
+<form action="/Inventory/item" method="post" class="oi-ajax-form" id="oi-item-form">@Html.AntiForgeryToken()<input type="hidden" name="Id" value="0" />
+<div class="oi-dialog-body"><div class="oi-fields cols4">
+<label>Item code *<input name="Code" maxlength="100" required /></label><label>Item name *<input name="Name" maxlength="250" required /></label>
+<label>Category<select name="Category"><option value="">Select</option>@foreach(var v in Model.Categories){<option value="@v">@v</option>}</select></label>
+<label>Type *<select name="ItemType" required><option value="Consumable">Consumable</option><option value="Reusable">Reusable</option><option value="Asset">Asset</option>@foreach(var v in Model.Types.Where(x=>x!="Consumable"&&x!="Reusable"&&x!="Asset")){<option value="@v">@v</option>}</select></label>
+<label>Unit<select name="Unit"><option value="Each">Each</option>@foreach(var v in Model.Units){<option value="@v">@v</option>}</select></label>
+<label>Location<select name="Location"><option value="Main Store">Main Store</option>@foreach(var v in Model.Locations){<option value="@v">@v</option>}</select></label>
+<label>Supplier<select name="Supplier"><option value="">Not specified</option>@foreach(var v in Model.Suppliers){<option value="@v.Business">@v.Business</option>}</select></label>
+<label>Unit cost<input name="Price" type="number" step="0.01" min="0" value="0" /></label>
+<label>Reorder at<input name="ReorderAt" type="number" min="0" value="0" /></label>
+<label data-opening-field>Opening quantity<input name="OpeningQuantity" type="number" min="0" value="0" /><small>New items only; cannot be changed by editing.</small></label>
+</div></div><div class="oi-dialog-foot"><button class="oi-btn" type="button" data-close-dialog>Cancel</button><button class="oi-btn primary" type="submit">✓ Save item</button></div></form></dialog>

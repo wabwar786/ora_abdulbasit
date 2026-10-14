@@ -1,0 +1,45 @@
+@model Orapmshms.Models.HotelInventory.InventoryReportPrintPage
+@{
+    Layout = null;
+    ViewData["Title"] = Model.Report.Title;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>@Model.Report.Title – @Model.HotelName – ORA PMS</title>
+    <style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#20314a;margin:30px;font-size:12px}
+        h1{font-size:24px;margin:0 0 6px}h2{font-size:17px;margin:16px 0}
+        p{color:#60708a}.brand{font-size:11px;font-weight:700;letter-spacing:.1em;color:#6582a5;margin-bottom:12px;text-align:center}.hotel-heading{text-align:center;font-size:27px;font-weight:800;color:#152f54;border-bottom:2px solid #193d6c;padding:9px 0 17px;margin-bottom:20px}
+        .actions{display:flex;gap:10px;margin:15px 0 25px}
+        button{background:#174477;color:white;border:0;border-radius:7px;padding:10px 16px;cursor:pointer}
+        table{border-collapse:collapse;width:100%;table-layout:auto}
+        th,td{padding:8px 7px;text-align:left;border-bottom:1px solid #e4e8ef;vertical-align:top;overflow-wrap:anywhere}
+        th{background:#eef3f8;font-weight:600;color:#26466c}tr{break-inside:avoid}
+        .meta{display:flex;justify-content:space-between;gap:15px}.notice{color:#795b20;background:#fff8e8;padding:9px;margin:12px 0}
+        @@page{size:A4 landscape;margin:13mm}
+        @@media print{body{margin:0}.actions{display:none}th{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    </style>
+</head>
+<body>
+    <div class="hotel-heading">@Model.HotelName</div><div class="brand">ORA PMS · INVENTORY MANAGEMENT</div>
+    <div class="meta"><div><h1>@Model.Report.Title</h1></div><p>Generated @Model.GeneratedAtUtc.ToString("dd MMM yyyy HH:mm") UTC</p></div>
+    <div class="actions"><button type="button" onclick="window.print()">Print / Save as PDF</button></div>
+    <p>@Model.Report.Total matching record(s)</p>
+    @if (Model.Report.Total > Model.Report.Rows.Count)
+    {
+        <div class="notice">Showing the first @Model.Report.Rows.Count records for printing. Use Export CSV for the complete filtered report.</div>
+    }
+    <table><thead><tr>
+        @foreach(var heading in Model.Report.Columns){<th scope="col">@heading</th>}
+    </tr></thead><tbody>
+        @foreach(var row in Model.Report.Rows)
+        {
+            <tr>@foreach(var value in row){<td>@value</td>}</tr>
+        }
+        @if(Model.Report.Rows.Count == 0){<tr><td colspan="@Math.Max(1,Model.Report.Columns.Count)">No records match these filters.</td></tr>}
+    </tbody></table>
+</body>
+</html>
