@@ -2,6 +2,8 @@ using System.Data;
 using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Models;
@@ -16,17 +18,81 @@ public sealed class PmsMasterService : IPmsMasterService
     private readonly IConfiguration _configuration;
     private readonly ILegacyUrlSigner _urlSigner;
     private readonly IHotelClock _hotelClock;
+    private readonly IActionDescriptorCollectionProvider _routes;
     private readonly ILogger<PmsMasterService> _logger;
+
+    // =====================================================================
+    // Which pages have been converted, worked out from the route table.
+    //
+    // This used to be a hand-written if-chain, so every page ported to MVC
+    // needed a line adding here - and a menu entry whose line was missing went
+    // on pointing at the old .aspx, which looks exactly like the page not
+    // having been converted at all.
+    //
+    // The application already knows which controllers exist. Asking it means a
+    // new page starts working the moment its controller does, with nothing to
+    // remember and nothing to configure.
+    //
+    // Rebuilt when the route table changes. The version is bumped by ASP.NET
+    // Core itself, so this needs no invalidation of its own.
+    // =====================================================================
+    private static readonly object RouteMapLock = new();
+    private static Dictionary<string, string>? _routeMap;
+    private static int _routeMapVersion = -1;
+
+    /// <summary>
+    /// Page names in the menu that do not match their controller. The old site
+    /// spelled some of these differently - and misspelled a couple - so the menu
+    /// still carries names no controller will ever be called.
+    /// </summary>
+    private static readonly Dictionary<string, string> PageAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["frontdeskcalender"] = "Calendar",
+        ["calender"] = "Calendar",
+        ["availibiltysetup"] = "Availability",
+        ["availabilitysetup"] = "Availability",
+        ["availibilty"] = "Availability",
+        ["extendedreservation"] = "CreateReservation",
+        ["newreservation"] = "CreateReservation",
+
+        // Pages the old site named one thing and the port named another.
+        // Aliases rather than an UPDATE on AddMenuTB, because the live Web
+        // Forms customers read the same table - renaming a page there would
+        // break their links while fixing ours.
+        ["checkinlist"] = "BulkCheckout",                        // Group Check-out
+        ["rates"] = "RatePlan",                                  // Rate Plans
+        ["updateratevalues"] = "BulkRateUpload",                 // Bulk Rate Updates
+        ["yieldrules"] = "YieldManagement",                      // Dynamic Pricing
+        ["reservation"] = "CheckIn",
+        ["housekeepingassignmentreport"] = "HousekeepingReport"  // Housekeeping Report
+                                                                 // old reservation.aspx (Check-In) -> MVC CheckIn
+    };
+
+    /// <summary>
+    /// Whether a menu item whose page is still on Web Forms is shown at all.
+    ///
+    /// On during the port, so the sidebar only offers screens that work, and a
+    /// page appears by itself the moment its controller exists. Off in
+    /// production until every page is ported, because the customers on the
+    /// live Web Forms site need those links to keep working.
+    ///
+    /// Nothing is deleted either way. The menu rows stay exactly as they are;
+    /// this only decides whether a row is rendered today.
+    /// </summary>
+    private bool HideUnportedPages =>
+        _configuration.GetValue("Navigation:HideUnportedPages", false);
 
     public PmsMasterService(
         IConfiguration configuration,
         ILegacyUrlSigner urlSigner,
         IHotelClock hotelClock,
+        IActionDescriptorCollectionProvider routes,
         ILogger<PmsMasterService> logger)
     {
         _configuration = configuration;
         _urlSigner = urlSigner;
         _hotelClock = hotelClock;
+        _routes = routes;
         _logger = logger;
         _connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is missing from configuration.");
@@ -45,6 +111,42 @@ public sealed class PmsMasterService : IPmsMasterService
         var model = await BuildAsync(httpContext, cancellationToken);
         httpContext.Items[HttpContextCacheKey] = model;
         return model;
+    }
+
+    /// <summary>
+    /// Resolves a landing page name (RolePagesTB.page_name) or a legacy ".aspx"
+    /// path to the MVC route of its controller when that page has been
+    /// converted; null when it has not.
+    ///
+    /// This is the same lookup the menu's BuildPageUrl / IsPorted use, exposed so
+    /// the post-login redirect can send every role to its own landing page
+    /// without a hardcoded per-page list. No database is touched - it reads only
+    /// the route table.
+    /// </summary>
+    public string? ResolveConvertedUrl(string? pageName)
+    {
+        var name = (pageName ?? string.Empty).Trim();
+        if (name.Length == 0) return null;
+
+        // Drop any query string: "/Calendar?start=..." -> "/Calendar".
+        var queryIndex = name.IndexOf('?');
+        if (queryIndex >= 0) name = name[..queryIndex];
+
+        // Keep only the last path segment: "/x/YourHotels.aspx" -> "YourHotels.aspx".
+        name = name.Trim().Trim('/');
+        var lastSlash = name.LastIndexOf('/');
+        if (lastSlash >= 0) name = name[(lastSlash + 1)..];
+
+        if (name.Length == 0) return null;
+
+        if (name.EndsWith(".aspx", StringComparison.OrdinalIgnoreCase))
+            name = name[..^5];
+
+        var key = Compact(name);
+        if (PageAliases.TryGetValue(key, out var alias))
+            key = Compact(alias);
+
+        return GetRouteMap().TryGetValue(key, out var mvcUrl) ? mvcUrl : null;
     }
 
     private async Task<PmsMasterViewModel> BuildAsync(
@@ -120,10 +222,9 @@ public sealed class PmsMasterService : IPmsMasterService
                 }
             }
 
-            var allowHotelPages = await ResolveAllowHotelPagesAsync(
-                connection,
-                scope.AccountHotelId,
+            var (_, allowHotelPages) = await GetHotelIdByUserIdAsync(
                 model.UserId,
+                connection,
                 cancellationToken);
 
             model.LeftNavigation = await LoadLeftNavigationAsync(
@@ -474,31 +575,28 @@ ORDER BY CASE
             ReadString(reader, "UserName"));
     }
 
-    private async Task<bool> ResolveAllowHotelPagesAsync(
-        SqlConnection connection,
-        string accountHotelId,
+    private static async Task<(string hotelId, bool allowHotelPages)> GetHotelIdByUserIdAsync(
         string userId,
+        SqlConnection connection,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(accountHotelId, "-1", StringComparison.Ordinal))
-            return false;
-
-        // Generic_Helper was not part of the uploaded migration set. The Web Forms
-        // behavior is reproduced without a cross-request cache: when explicit general-user
-        // menu assignments exist they win; otherwise the user's selected hotel menu is used.
         const string sql = @"
-SELECT CASE WHEN EXISTS
-(
-    SELECT 1
-    FROM dbo.PagesToGeneralUsersTB
-    WHERE CAST(account_user_id AS varchar(100)) = @UserId
-)
-THEN 0 ELSE 1 END;";
+SELECT TOP (1)
+    hotel_id,
+    ISNULL(allow_hotel_pages, 0) AS allow_hotel_pages
+FROM dbo.Hms_accounts
+WHERE CAST(user_id AS varchar(100)) = @UserId;";
 
         await using var cmd = new SqlCommand(sql, connection);
         cmd.Parameters.Add("@UserId", SqlDbType.VarChar, 100).Value = userId;
-        var value = await cmd.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(value, CultureInfo.InvariantCulture) == 1;
+
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return (string.Empty, false);
+
+        var hotelId = ReadString(reader, "hotel_id");
+        var allowHotelPages = Convert.ToBoolean(reader["allow_hotel_pages"], CultureInfo.InvariantCulture);
+        return (hotelId, allowHotelPages);
     }
 
     private async Task<HotelInfo> LoadHotelInfoAsync(
@@ -554,6 +652,10 @@ WHERE CAST(hotel_id AS varchar(100)) = @HotelId;";
             }
             category.Items.Add(row);
         }
+
+        // A heading with nothing under it reads as a section that is broken
+        // rather than one that has not been built yet.
+        categories.RemoveAll(c => c.Items.Count == 0);
 
         return categories;
     }
@@ -667,6 +769,12 @@ ORDER BY CategoryOrderInt, MenuOrderInt;";
             var pageName = ReadString(reader, "page_name").Trim();
             var category = ReadString(reader, "category").Trim();
             if (pageName.Length == 0 || category.Length == 0)
+                continue;
+
+            // While the port is running, a row whose page has no controller is
+            // simply not rendered. The row stays in the database untouched, so
+            // the day the controller lands the link comes back on its own.
+            if (HideUnportedPages && !IsPorted(pageName))
                 continue;
 
             result.Add(new PmsNavigationItem
@@ -857,6 +965,14 @@ EXISTS
 )";
     }
 
+    // =====================================================================
+    // The menu link for one page.
+    //
+    // A converted page gets its MVC route; anything still on Web Forms gets the
+    // signed .aspx link it always had. Which is which is decided by whether a
+    // controller exists, so porting a page is enough - this file never has to
+    // be edited again.
+    // =====================================================================
     private string BuildPageUrl(string pageName, PmsMasterViewModel context)
     {
         pageName = (pageName ?? string.Empty).Trim();
@@ -866,30 +982,17 @@ EXISTS
         if (normalized.EndsWith(".aspx", StringComparison.OrdinalIgnoreCase))
             normalized = normalized[..^5];
 
-        if (string.Equals(normalized, "Dashboard", StringComparison.OrdinalIgnoreCase))
-            return "/Dashboard";
+        var key = Compact(normalized);
 
-        var compactPageName = new string(normalized.Where(char.IsLetterOrDigit).ToArray());
-        if (compactPageName.Equals("FrontDeskCalender", StringComparison.OrdinalIgnoreCase) ||
-            compactPageName.Equals("FrontDeskCalendar", StringComparison.OrdinalIgnoreCase) ||
-            compactPageName.Equals("Calendar", StringComparison.OrdinalIgnoreCase) ||
-            compactPageName.Equals("Calender", StringComparison.OrdinalIgnoreCase))
-            return "/Calendar";
-        if (compactPageName.Equals("AvailabilitySetup", StringComparison.OrdinalIgnoreCase) ||
-            compactPageName.Equals("AvailibiltySetup", StringComparison.OrdinalIgnoreCase) ||
-            compactPageName.Equals("Availability", StringComparison.OrdinalIgnoreCase) ||
-            compactPageName.Equals("Availibilty", StringComparison.OrdinalIgnoreCase))
-            return "/Availability";
+        // A menu name the old site spelled differently.
+        if (PageAliases.TryGetValue(key, out var alias))
+            key = Compact(alias);
 
-        if (string.Equals(normalized, "YourHotels", StringComparison.OrdinalIgnoreCase))
-            return "/YourHotels";
-        if (string.Equals(normalized, "ExtendedReservation", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "CreateReservation", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "NewReservation", StringComparison.OrdinalIgnoreCase))
-            return "/CreateReservation";
-        if (string.Equals(normalized, "loginHMS", StringComparison.OrdinalIgnoreCase))
-            return "/LoginHMS";
+        var routes = GetRouteMap();
+        if (routes.TryGetValue(key, out var mvcUrl))
+            return mvcUrl;
 
+        // Not converted yet: the signed legacy link, exactly as before.
         var legacyPage = pageName.EndsWith(".aspx", StringComparison.OrdinalIgnoreCase)
             ? pageName
             : pageName + ".aspx";
@@ -911,6 +1014,125 @@ EXISTS
         var baseUrl = (_configuration["Legacy:BaseUrl"] ?? string.Empty).Trim().TrimEnd('/');
         return baseUrl.Length == 0 ? "/" + signed.TrimStart('/') : baseUrl + "/" + signed.TrimStart('/');
     }
+
+    /// <summary>
+    /// Whether this page name has a controller behind it.
+    ///
+    /// The same lookup BuildPageUrl uses to choose between an MVC route and a
+    /// signed .aspx link - asked as a question rather than acted on, so the
+    /// menu and the link can never disagree about what has been ported.
+    /// </summary>
+    private bool IsPorted(string pageName)
+    {
+        pageName = (pageName ?? string.Empty).Trim();
+        if (pageName.Length == 0) return false;
+
+        if (pageName.EndsWith(".aspx", StringComparison.OrdinalIgnoreCase))
+            pageName = pageName[..^5];
+
+        var key = Compact(pageName);
+        if (PageAliases.TryGetValue(key, out var alias))
+            key = Compact(alias);
+
+        return GetRouteMap().ContainsKey(key);
+    }
+
+    /// <summary>
+    /// Every controller in the application, keyed by its compacted name, with
+    /// the path it actually answers on.
+    /// </summary>
+    private Dictionary<string, string> GetRouteMap()
+    {
+        var descriptors = _routes.ActionDescriptors;
+
+        // Version changes only when the route table does, which in practice
+        // means once, at start-up.
+        if (_routeMap is not null && _routeMapVersion == descriptors.Version)
+            return _routeMap;
+
+        lock (RouteMapLock)
+        {
+            if (_routeMap is not null && _routeMapVersion == descriptors.Version)
+                return _routeMap;
+
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            // Store one key -> url, preferring a real route over a legacy .aspx
+            // one when the same key is seen twice (the page EXISTS either way;
+            // only the URL to link to is chosen between).
+            void Register(string k, string url)
+            {
+                if (k.Length == 0) return;
+
+                if (map.TryGetValue(k, out var existing))
+                {
+                    var existingIsLegacy = existing.EndsWith(".aspx", StringComparison.OrdinalIgnoreCase);
+                    var urlIsLegacy = url.EndsWith(".aspx", StringComparison.OrdinalIgnoreCase);
+                    if (existingIsLegacy && !urlIsLegacy) map[k] = url;
+                    return;
+                }
+
+                map[k] = url;
+            }
+
+            foreach (var action in descriptors.Items.OfType<ControllerActionDescriptor>())
+            {
+                var controller = action.ControllerName;
+                if (controller.Length == 0) continue;
+
+                var path = RoutePathFor(action, controller);
+                var url = "/" + path;
+
+                // Key by the CONTROLLER CLASS NAME (as before)...
+                Register(Compact(controller), url);
+
+                // ...and ALSO by the ROUTE PATH's own name, so a controller whose
+                // [Route] differs from its class name is still found by the page
+                // name the menu uses. Example: FrontDeskCalendarController with
+                // [Route("Calendar")] answers on /Calendar; the menu's page_name
+                // "FrontDeskCalender" aliases to "Calendar", so it must match the
+                // path "Calendar", not the class name "FrontDeskCalendar".
+                // Without this the page opens by URL but is hidden from the menu
+                // whenever Navigation:HideUnportedPages is on.
+                var pathName = path;
+                if (pathName.EndsWith(".aspx", StringComparison.OrdinalIgnoreCase))
+                    pathName = pathName[..^5];
+                Register(Compact(pathName), url);
+            }
+
+            _routeMap = map;
+            _routeMapVersion = descriptors.Version;
+
+            _logger.LogInformation(
+                "PMS navigation: {Count} converted page(s) found in the route table.", map.Count);
+
+            return map;
+        }
+    }
+
+    /// <summary>
+    /// The path a controller answers on: its own [Route] prefix when it has a
+    /// literal one, otherwise the controller name.
+    /// </summary>
+    private static string RoutePathFor(ControllerActionDescriptor action, string controller)
+    {
+        var template = action.AttributeRouteInfo?.Template;
+        if (string.IsNullOrWhiteSpace(template)) return controller;
+
+        var first = template.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+        // A templated segment such as {id} is not a path we can link to.
+        return string.IsNullOrEmpty(first) || first.Contains('{', StringComparison.Ordinal)
+            ? controller
+            : first;
+    }
+
+    /// <summary>
+    /// Letters and digits only, lower case - so Reservation_History,
+    /// reservation_history and ReservationHistory all match one controller.
+    /// </summary>
+    private static string Compact(string value) =>
+        new string((value ?? string.Empty).Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
 
     private async Task InsertSafeLogAsync(
         SqlConnection connection,
