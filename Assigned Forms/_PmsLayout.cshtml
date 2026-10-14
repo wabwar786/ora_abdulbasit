@@ -1,0 +1,314 @@
+@using Orapmshms.Services
+@inject IPmsMasterService PmsMasterService
+@{
+    var master = await PmsMasterService.GetOrBuildAsync(Context, Context.RequestAborted);
+    var currentUrl = Context.Request.Path.ToString() + Context.Request.QueryString.ToString();
+    var currentPath = Context.Request.Path.ToString();
+    var pageTitle = ViewData["Title"]?.ToString();
+    if (string.IsNullOrWhiteSpace(pageTitle)) pageTitle = "ORA PMS";
+    var toastMessage = TempData["PmsMasterMessage"]?.ToString() ?? string.Empty;
+    var toastType = TempData["PmsMasterMessageType"]?.ToString() ?? "info";
+    var openChangePassword = string.Equals(TempData["PmsOpenChangePassword"]?.ToString(), "1", StringComparison.Ordinal);
+    var trimmedUserName = (master.UserName ?? string.Empty).Trim();
+    var profileInitial = trimmedUserName.Length == 0 ? "U" : char.ToUpperInvariant(trimmedUserName[0]).ToString();
+
+    string NavIcon(string pageName)
+    {
+        var compact = new string((pageName ?? string.Empty).Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        if (compact.Contains("dashboard")) return "fa-table-cells-large";
+        if (compact.Contains("calendar") || compact.Contains("calender")) return "fa-calendar-days";
+        if (compact.Contains("reservation")) return "fa-calendar-plus";
+        if (compact.Contains("availability") || compact.Contains("availibilty")) return "fa-chart-column";
+        if (compact.Contains("room")) return "fa-bed";
+        if (compact.Contains("payment") || compact.Contains("account")) return "fa-wallet";
+        if (compact.Contains("house")) return "fa-broom-ball";
+        if (compact.Contains("report")) return "fa-chart-line";
+        if (compact.Contains("guest") || compact.Contains("customer")) return "fa-users";
+        if (compact.Contains("setting")) return "fa-gear";
+        return "fa-arrow-up-right-from-square";
+    }
+
+    string CategoryIcon(string category)
+    {
+        var value = (category ?? string.Empty).ToLowerInvariant();
+        if (value.Contains("front")) return "fa-bell-concierge";
+        if (value.Contains("house")) return "fa-broom";
+        if (value.Contains("room")) return "fa-bed";
+        if (value.Contains("rate")) return "fa-tags";
+        if (value.Contains("account") || value.Contains("commercial")) return "fa-wallet";
+        if (value.Contains("inventor") || value.Contains("availab")) return "fa-chart-column";
+        if (value.Contains("channel")) return "fa-tower-broadcast";
+        if (value.Contains("guest") || value.Contains("crm") || value.Contains("customer")) return "fa-users";
+        if (value.Contains("report")) return "fa-chart-line";
+        if (value.Contains("monitor")) return "fa-gauge-high";
+        if (value.Contains("council")) return "fa-landmark";
+        if (value.Contains("propert")) return "fa-building";
+        if (value.Contains("user") || value.Contains("profile")) return "fa-user-gear";
+        if (value.Contains("setting")) return "fa-gear";
+        return "fa-layer-group";
+    }
+
+    string SectionName(string category)
+    {
+        var value = (category ?? string.Empty).ToLowerInvariant();
+        if (value.Contains("front") || value.Contains("room") || value.Contains("house") || value.Contains("operation")) return "Operations";
+        if (value.Contains("account") || value.Contains("rate") || value.Contains("channel") || value.Contains("inventor") || value.Contains("commercial")) return "Commercial";
+        return "Management";
+    }
+
+    // Fixed order, so a section heading is printed once. The previous version
+    // emitted a heading whenever the section changed from the previous
+    // category - and because the categories arrive in menu order rather than
+    // section order, MANAGEMENT and OPERATIONS appeared four times each.
+    var sectionOrder = new[] { "Operations", "Commercial", "Management" };
+
+    var grouped = sectionOrder
+        .Select(s => new
+        {
+            Section = s,
+            Categories = master.LeftNavigation.Where(c => SectionName(c.Name) == s).ToList()
+        })
+        .Where(g => g.Categories.Count > 0)
+        .ToList();
+
+    // Breadcrumb: find the menu item whose URL matches this request, so the
+    // header can say which category the current page sits under.
+    string crumbCategory = string.Empty, crumbPage = string.Empty;
+
+    foreach (var category in master.LeftNavigation)
+    {
+        foreach (var item in category.Items)
+        {
+            var url = (item.Url ?? string.Empty).Split('?')[0].TrimEnd('/');
+            if (url.Length == 0) continue;
+            if (!currentPath.TrimEnd('/').EndsWith(url, StringComparison.OrdinalIgnoreCase)) continue;
+
+            crumbCategory = category.Name;
+            crumbPage = item.Menu;
+            break;
+        }
+        if (crumbPage.Length > 0) break;
+    }
+
+    if (crumbPage.Length == 0) crumbPage = pageTitle;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@pageTitle - ORA PMS</title>
+    <meta name="description" content="ORA PMS hotel management system." />
+    <link rel="icon" type="image/png" href="~/img/smartPMS-01.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/pms-master.css" asp-append-version="true" />
+    @await RenderSectionAsync("Styles", required: false)
+</head>
+<body class="pms-master-body" data-open-change-password="@(openChangePassword ? "1" : "0")">
+
+    <header id="header" class="pms-master-header">
+        <div class="pms-header-row">
+
+            <button type="button" id="pmsMobileNavToggle" class="pms-mobile-nav-toggle"
+                    onclick="pmsToggleNav(); return false;" aria-label="Open navigation"
+                    aria-expanded="false" aria-controls="sidebar">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+
+            <a class="pms-brand" href="/" aria-label="ORA PMS">
+                <img src="~/img/orapms-logo.png" alt="ORA PMS - Property Management Software" />
+            </a>
+
+            <div class="pms-crumb">
+                @if (!string.IsNullOrWhiteSpace(crumbCategory))
+                {
+                    <div class="pms-crumb-path">@crumbCategory</div>
+                }
+                <h2>@crumbPage</h2>
+            </div>
+
+            <nav class="pms-quick" id="pmsQuick" aria-label="Quick links">
+                @foreach (var item in master.TopNavigation)
+                {
+                    <a class="pms-quick-link"
+                       href="@item.Url"
+                       data-page="@item.PageName"
+                       title="@item.Menu"
+                       target="@(item.OpenInNewTab ? "_blank" : null)"
+                       rel="@(item.OpenInNewTab ? "noopener" : null)">
+                        <i class="fa-solid @NavIcon(item.PageName)"></i>
+                        <span>@item.Menu</span>
+                    </a>
+                }
+            </nav>
+
+            <div class="pms-top-actions">
+                <button type="button" id="pmsSupportChat" class="pms-top-btn pms-chat"
+                        onclick="pmsOpenSupportChat(); return false;" title="Support chat" aria-label="Support chat">
+                    <i class="fa-regular fa-comments"></i>
+                </button>
+
+                <a class="pms-top-btn" href="@master.HelpUrl" target="_blank" rel="noopener"
+                   title="Help" aria-label="Help"><i class="fa-regular fa-circle-question"></i></a>
+
+                @if (master.Properties.Count > 0)
+                {
+                    <form class="pms-property-form" asp-controller="PmsMaster" asp-action="ChangeProperty" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="returnUrl" value="@currentUrl" />
+                        <select name="hotelId" class="pms-property-select" onchange="this.form.submit()" aria-label="Property">
+                            @foreach (var property in master.Properties)
+                            {
+                                if (property.Selected) { <option value="@property.HotelId" selected>@property.Name</option> }
+                                else { <option value="@property.HotelId">@property.Name</option> }
+                            }
+                        </select>
+                    </form>
+                }
+            </div>
+        </div>
+    </header>
+
+    <aside id="sidebar" class="pms-master-sidebar">
+
+        <div class="pms-sidebar-top">
+            <button type="button" id="pmsDesktopNavToggle" class="pms-master-toggle"
+                    onclick="pmsToggleNav(); return false;" aria-label="Collapse navigation" aria-expanded="true">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+        </div>
+
+        <div class="pms-sidebar-scroll">
+            @foreach (var group in grouped)
+            {
+                <div class="pms-nav-section">@group.Section</div>
+
+                foreach (var category in group.Categories)
+                {
+                    <a href="#" class="pms-category-link" aria-label="@category.Name" data-label="@category.Name"
+                       onclick="pmsToggleMenu(this); return false;">
+                        <i class="pms-cat-ico fa-solid @CategoryIcon(category.Name)"></i>
+                        <span class="pms-cat-text">@category.Name</span>
+                        <span class="pms-cat-arrow"><i class="fa-solid fa-chevron-right"></i></span>
+                    </a>
+                    <div class="pms-submenu">
+                        @foreach (var item in category.Items)
+                        {
+                            <a class="pms-sidebar-menu-link"
+                               data-page="@item.PageName"
+                               href="@item.Url"
+                               onclick="pmsSetSelectedSidebar(this)"
+                               target="@(item.OpenInNewTab ? "_blank" : null)"
+                               rel="@(item.OpenInNewTab ? "noopener" : null)">
+                                <span class="pms-menu-text">@item.Menu</span>
+                            </a>
+                        }
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="pms-sidebar-foot">
+            <div class="pms-foot-bar">
+                <button type="button" class="pms-foot-btn" data-label="Change password"
+                        onclick="pmsOpenChangePassword(); return false;" aria-label="Change password">
+                    <span class="pms-foot-avatar">@profileInitial</span>
+                </button>
+
+                <a class="pms-foot-btn" data-label="Documentation" href="/Docs" target="_blank" rel="noopener"
+                   aria-label="Documentation"><i class="fa-regular fa-file-lines"></i></a>
+
+                <button type="button" class="pms-foot-btn" data-label="About"
+                        onclick="pmsOpenAbout(); return false;" aria-label="About">
+                    <i class="fa-regular fa-circle-info"></i>
+                </button>
+
+                <form asp-controller="LoginHMS" asp-action="Logout" method="post" class="pms-foot-logout">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="pms-foot-btn danger" data-label="Sign out" aria-label="Sign out">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </aside>
+
+    <button type="button" id="pmsSidebarBackdrop" class="pms-sidebar-backdrop"
+            onclick="pmsCloseMobileNav(); return false;" aria-label="Close navigation" tabindex="-1"></button>
+
+    <main id="main" class="pms-master-content">
+        @if (master.ShowSubscriptionWarning)
+        {
+            <div class="pms-sub-expiry-alert">
+                <div class="pms-sub-expiry-inner">
+                    <div class="pms-sub-expiry-left">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span>Your subscription will expire in <strong>@master.SubscriptionDaysRemaining day(s)</strong> on <strong>@master.SubscriptionExpiryDate?.ToString("dd MMM yyyy")</strong>.</span>
+                    </div>
+                    <a class="pms-sub-renew-btn" href="@master.RenewUrl">Renew now</a>
+                </div>
+            </div>
+        }
+        @RenderBody()
+    </main>
+
+    <div id="pmsMasterOverlay" class="pms-screenblur" onclick="pmsCloseMasterModal();"></div>
+
+    <section id="pmsChangePasswordModal" class="pms-master-modal pms-password-modal" role="dialog" aria-modal="true" aria-label="Change Password">
+        <div class="pms-modal-head">
+            <h4>Change password</h4>
+            <button type="button" class="pms-modal-close" onclick="pmsCloseMasterModal(); return false;">&times;</button>
+        </div>
+        <form asp-controller="PmsMaster" asp-action="ChangePassword" method="post" autocomplete="off">
+            @Html.AntiForgeryToken()<input type="hidden" name="returnUrl" value="@currentUrl" />
+            <div class="pms-modal-body">
+                <div class="pms-field"><label>Current Password</label><input type="password" name="currentPassword" autocomplete="current-password" required /></div>
+                <div class="pms-field"><label>New Password</label><input type="password" name="newPassword" autocomplete="new-password" required /></div>
+                <div class="pms-field"><label>Confirm New Password</label><input type="password" name="confirmPassword" autocomplete="new-password" required /></div>
+            </div>
+            <button type="submit" class="pms-change-submit">Change password</button>
+        </form>
+    </section>
+
+    <section id="pmsAboutModal" class="pms-master-modal pms-about-modal" role="dialog" aria-modal="true" aria-label="About">
+        <div class="pms-modal-head">
+            <h4>About</h4>
+            <button type="button" class="pms-modal-close" onclick="pmsCloseMasterModal(); return false;">&times;</button>
+        </div>
+
+        <div class="pms-about-hero">
+            <img src="~/img/orapms-logo.png" alt="ORA PMS" />
+        </div>
+
+        <div class="pms-about-text">
+            ORA PMS runs front desk, reservations, rates and channel distribution for
+            independent hotels and small groups from one place.
+        </div>
+
+        <div class="pms-about-by">Powered by Tech Geni Ltd.</div>
+        <div class="pms-about-list">
+            @* TODO: replace these three with the real Tech Geni details. *@
+            <div class="pms-about-row"><i class="fa-solid fa-phone"></i><span>+44 0000 000000</span></div>
+            <div class="pms-about-row"><i class="fa-regular fa-envelope"></i><a href="mailto:info@techgeni.co.uk">info@techgeni.co.uk</a></div>
+            <div class="pms-about-row"><i class="fa-solid fa-location-dot"></i><span>Office address line 1<br />City, Postcode, United Kingdom</span></div>
+            <div class="pms-about-row"><i class="fa-solid fa-globe"></i><a href="https://techgeni.co.uk" target="_blank" rel="noopener">techgeni.co.uk</a></div>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(toastMessage))
+    {
+        <div id="pmsMasterToast" class="pms-master-toast @toastType">@toastMessage</div>
+    }
+
+    <script src="~/js/pms-master.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+
+    <!-- Wabwar Support — ORAPMS -->
+    <script src="https://teamworkportal-production.up.railway.app/widget.js"
+            data-key="orapms-2jly"
+            data-base="https://teamworkportal-production.up.railway.app" defer></script>
+</body>
+</html>
