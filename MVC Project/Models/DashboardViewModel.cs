@@ -10,6 +10,11 @@ public sealed class DashboardViewModel
     public string CurrencySymbol { get; set; } = "£";
     public DateTime HotelToday { get; set; }
     public DateTime GeneratedAt { get; set; }
+    // Dashboard chart and period KPI filter; room/operational snapshots use FilterEndDate.
+    public DateTime ActualHotelToday { get; set; }
+    public DateTime FilterStartDate { get; set; }
+    public DateTime FilterEndDate { get; set; }
+    public int FilterDays => (FilterEndDate.Date - FilterStartDate.Date).Days + 1;
 
     public int TotalRooms { get; set; }
     public int SellableRoomsToday { get; set; }
@@ -34,6 +39,19 @@ public sealed class DashboardViewModel
     public decimal AccommodationRevenueToday { get; set; }
     public decimal AdrToday { get; set; }
     public decimal RevParToday { get; set; }
+    // Occupancy Report date-range totals: each day contributes its room inventory.
+    public int SelectedTotalInventoryNights { get; set; }
+    public int SelectedBlockedRoomNights { get; set; }
+    public int SelectedSellableRoomNights { get; set; }
+    public int SelectedSoldRoomNights { get; set; }
+    public int SelectedVacantRoomNights { get; set; }
+    public int SelectedGuestNights { get; set; }
+    public decimal SelectedAccommodationRevenue { get; set; }
+    public decimal SelectedExtrasRevenue { get; set; }
+    public decimal SelectedReportTax { get; set; }
+    public decimal SelectedAdr { get; set; }
+    public decimal SelectedRevPar { get; set; }
+    public decimal ReceivablesSelectedPeriod { get; set; }
 
     public decimal RevenueToday { get; set; }
     public decimal RevenueTodayLastYear { get; set; }
@@ -79,6 +97,22 @@ public sealed class DashboardViewModel
     public List<DashboardDecisionItem> Decisions { get; set; } = new();
 
     public string Message { get; set; } = string.Empty;
+}
+
+// Monthly booking-source chart: one entry per real booking source, Jan–Dec.
+public sealed class DashboardBookingsChartResult
+{
+    public int Year { get; set; }
+    public List<string> Months { get; set; } = new();
+    public List<DashboardBookingSourceSeries> Sources { get; set; } = new();
+    public int TotalBookings { get; set; }
+}
+
+public sealed class DashboardBookingSourceSeries
+{
+    public string Source { get; set; } = string.Empty;
+    public List<int> Counts { get; set; } = new();
+    public int Total { get; set; }
 }
 
 // ============================================================
@@ -252,4 +286,27 @@ public sealed class DashboardStatisticDetailResult
     public string SummaryValue { get; set; } = string.Empty;
     public List<string> Columns { get; set; } = new();
     public List<List<string>> Rows { get; set; } = new();
+}
+
+// Compact calendar-year chart DTOs; aggregate in SQL before transferring rows.
+public sealed class DashboardAnnualOccupancyMonth
+{
+    public int Month { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public decimal Occupancy { get; set; }
+    public decimal PreviousOccupancy { get; set; }
+    public int Sold { get; set; }
+    public int Supply { get; set; }
+    public int PreviousSold { get; set; }
+    public int PreviousSupply { get; set; }
+}
+public sealed class DashboardAnnualFinancialMonth
+{
+    public int Month { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public decimal Revenue { get; set; }
+    public decimal Expense { get; set; }
+    public decimal Profit { get; set; }
+    public decimal LastYearRevenue { get; set; }
+    public decimal LastYearProfit { get; set; }
 }

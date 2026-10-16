@@ -8,6 +8,357 @@
         catch (_) { return []; }
     }
 
+    function selectedPeriod() {
+        var page = document.querySelector('.dashboard-page');
+        return {
+            start: page ? (page.getAttribute('data-range-start') || '') : '',
+            end: page ? (page.getAttribute('data-range-end') || '') : ''
+        };
+    }
+
+    // A single floating tooltip serves every SVG chart. Hover targets are computed from
+    // each chart's viewBox, so even thin lines work reliably on touchpads and smaller screens.
+    function chartTooltip() {
+        var tip = document.getElementById('dashboardChartTooltip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.id = 'dashboardChartTooltip';
+            tip.className = 'dashboard-chart-tooltip';
+            tip.setAttribute('role', 'tooltip');
+            tip.hidden = true;
+            document.body.appendChild(tip);
+        }
+        return tip;
+    }
+
+    function fullDate(value) {
+        if (!value) return '';
+        var parts = String(value).slice(0, 10).split('-').map(Number);
+        if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return String(value);
+        return new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString(undefined, {
+            weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+        });
+    }
+
+    function formatChartNumber(value, format) {
+        var n = Number(value || 0);
+        if (format === 'percent') return n.toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
+        if (format === 'money') return pageCurrency() + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+
+    function attachChartHover(svg, labels, dates, series, extras, plot, min, max, format) {
+        if (!svg || !labels.length) return;
+        var tooltip = chartTooltip();
+        var span = (max - min) || 1;
+        // Transparent hit surface makes hover work *between* SVG lines/bars,
+        // not only when the cursor lands exactly on a 2px path.
+        svg.appendChild(svgNode('rect', {
+            x: plot.left, y: plot.top,
+            width: Math.max(1, plot.right - plot.left),
+            height: Math.max(1, plot.bottom - plot.top),
+            fill: 'transparent', 'pointer-events': 'all'
+        }));
+        var guide = svgNode('line', { y1: plot.top, y2: plot.bottom, stroke: '#6c8098', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'pointer-events': 'none' });
+        guide.style.display = 'none';
+        svg.appendChild(guide);
+        var dots = series.map(function (item) {
+            if (item.marker === false) return null;
+            var dot = svgNode('circle', { r: 3.6, fill: '#fff', stroke: item.color || '#5f97c2', 'stroke-width': 2, 'pointer-events': 'none' });
+            dot.style.display = 'none';
+            svg.appendChild(dot);
+            return dot;
+        });
+        var currentIndex = 0;
+        function display(index, clientX, clientY) {
+            index = Math.max(0, Math.min(labels.length - 1, index));
+            currentIndex = index;
+            var x = labels.length <= 1 ? (plot.left + plot.right) / 2 : plot.left + index * (plot.right - plot.left) / (labels.length - 1);
+            guide.setAttribute('x1', x);
+            guide.setAttribute('x2', x);
+            guide.style.display = '';
+            dots.forEach(function (dot, i) {
+                if (!dot) return;
+                var value = Number((series[i].values || [])[index]);
+                if (!Number.isFinite(value)) { dot.style.display = 'none'; return; }
+                var y = plot.bottom - (value - min) / span * (plot.bottom - plot.top);
+                dot.setAttribute('cx', x);
+                dot.setAttribute('cy', y);
+                dot.style.display = '';
+            });
+            tooltip.replaceChildren();
+            var heading = document.createElement('strong');
+            heading.className = 'dashboard-chart-tooltip-date';
+            heading.textContent = fullDate(dates[index]) || labels[index];
+            tooltip.appendChild(heading);
+            series.forEach(function (item) {
+                var value = (item.values || [])[index];
+                if (value == null || !Number.isFinite(Number(value))) return;
+                var row = document.createElement('div');
+                row.className = 'dashboard-chart-tooltip-row';
+                var label = document.createElement('span');
+                var dot = document.createElement('i');
+                dot.style.backgroundColor = item.color || '#5f97c2';
+                label.appendChild(dot);
+                label.appendChild(document.createTextNode(item.label || 'Value'));
+                var number = document.createElement('b');
+                number.textContent = formatChartNumber(value, item.format || format);
+                row.appendChild(label);
+                row.appendChild(number);
+                tooltip.appendChild(row);
+            });
+            var detail = extras && extras[index];
+            if (detail && detail.length) {
+                var divider = document.createElement('div');
+                divider.className = 'dashboard-chart-tooltip-separator';
+                tooltip.appendChild(divider);
+                detail.forEach(function (item) {
+                    var row = document.createElement('div');
+                    row.className = 'dashboard-chart-tooltip-detail';
+                    var text = document.createElement('span');
+                    text.textContent = item[0];
+                    var number = document.createElement('b');
+                    number.textContent = String(item[1]);
+                    row.appendChild(text);
+                    row.appendChild(number);
+                    tooltip.appendChild(row);
+                });
+            }
+            tooltip.hidden = false;
+            // Keep tooltip inside the viewport, including on narrow dashboard cards.
+            var box = tooltip.getBoundingClientRect();
+            var left = Math.max(8, Math.min(window.innerWidth - box.width - 8, clientX + 16));
+            var top = clientY + 14;
+            if (top + box.height > window.innerHeight - 8) top = clientY - box.height - 14;
+            tooltip.style.left = Math.max(8, left) + 'px';
+            tooltip.style.top = Math.max(8, top) + 'px';
+        }
+        function hide() {
+            tooltip.hidden = true;
+            guide.style.display = 'none';
+            dots.forEach(function (dot) { if (dot) dot.style.display = 'none'; });
+        }
+        svg.onmousemove = function (event) {
+            var rect = svg.getBoundingClientRect();
+            if (!rect.width) return;
+            var vb = (svg.getAttribute('viewBox') || '0 0 560 175').split(/\s+/).map(Number);
+            var x = (event.clientX - rect.left) * ((vb[2] || 560) / rect.width);
+            if (x < plot.left || x > plot.right) { hide(); return; }
+            var i = labels.length === 1 ? 0 : Math.round((x - plot.left) * (labels.length - 1) / (plot.right - plot.left));
+            display(i, event.clientX, event.clientY);
+        };
+        svg.onmouseleave = hide;
+        svg.setAttribute('tabindex', '0');
+        svg.setAttribute('aria-description', 'Hover for daily details, or use left and right arrow keys after focusing this chart.');
+        svg.onfocus = function () {
+            var rect = svg.getBoundingClientRect();
+            display(currentIndex, rect.left + rect.width / 2, rect.top + 20);
+        };
+        svg.onblur = hide;
+        svg.onkeydown = function (event) {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            var next = currentIndex + (event.key === 'ArrowRight' ? 1 : -1);
+            var rect = svg.getBoundingClientRect();
+            display(next, rect.left + rect.width / 2, rect.top + 20);
+        };
+    }
+
+    // Availability page's two-month range picker, reused for Dashboard dates.
+    // The Dashboard changes only what Apply does: submit the selected period.
+    function wireDateRangeFilter() {
+        var form = document.getElementById('dashboardDateFilter');
+        if (!form) return;
+        var startInput = document.getElementById('dashboardStartDate');
+        var endInput = document.getElementById('dashboardEndDate');
+        var rangeDisplay = document.getElementById('inventoryRangeDisplay');
+        var rangePopover = document.getElementById('inventoryRangePopover');
+        var rangeText = document.getElementById('inventoryRangeText');
+        var leftMonthLabel = document.getElementById('leftMonthLabel');
+        var rightMonthLabel = document.getElementById('rightMonthLabel');
+        var leftCalendarGrid = document.getElementById('leftCalendarGrid');
+        var rightCalendarGrid = document.getElementById('rightCalendarGrid');
+        var selectedRangeText = document.getElementById('selectedRangeText');
+        var error = document.getElementById('dashboardRangeError');
+        var calendarLeftMonth = null;
+        var draftRangeStart = null;
+        var draftRangeEnd = null;
+
+        function parseIsoDate(value) {
+            if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+            var p = value.split('-').map(Number);
+            var date = new Date(p[0], p[1] - 1, p[2]);
+            return date.getFullYear() === p[0] && date.getMonth() === p[1] - 1 && date.getDate() === p[2] ? date : null;
+        }
+        function toIsoDate(date) {
+            return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        }
+        function sameDay(a, b) { return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+        function dayTime(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime(); }
+        function monthStart(date) { return new Date(date.getFullYear(), date.getMonth(), 1); }
+        function addMonths(date, amount) { return new Date(date.getFullYear(), date.getMonth() + amount, 1); }
+        function formatDisplayDate(date) { return date ? String(date.getDate()).padStart(2, '0') + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + date.getFullYear() : ''; }
+        function monthTitle(date) { return date.toLocaleString('en-GB', { month: 'short', year: 'numeric' }); }
+        function showError(message) {
+            if (!error) return;
+            error.textContent = message || '';
+            error.hidden = !message;
+        }
+        function updateRangeText() {
+            if (rangeText) rangeText.textContent = formatDisplayDate(parseIsoDate(startInput.value)) + ' - ' + formatDisplayDate(parseIsoDate(endInput.value));
+        }
+        function updateDraftRangeText() {
+            if (!selectedRangeText) return;
+            if (!draftRangeStart) { selectedRangeText.textContent = 'Select date range'; return; }
+            selectedRangeText.textContent = formatDisplayDate(draftRangeStart) + ' - ' + (draftRangeEnd ? formatDisplayDate(draftRangeEnd) : 'Select end date');
+        }
+        function selectCalendarDate(date) {
+            var clicked = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            if (!draftRangeStart || draftRangeEnd) { draftRangeStart = clicked; draftRangeEnd = null; }
+            else if (dayTime(clicked) < dayTime(draftRangeStart)) { draftRangeEnd = draftRangeStart; draftRangeStart = clicked; }
+            else draftRangeEnd = clicked;
+            showError(draftRangeEnd ? validateRange(draftRangeStart, draftRangeEnd) : '');
+            // Do not rebuild 84 date buttons after every click. Just update the highlights.
+            repaintCalendarSelection();
+        }
+        function repaintCalendarSelection() {
+            var start = draftRangeStart ? toIsoDate(draftRangeStart) : '';
+            var end = draftRangeEnd ? toIsoDate(draftRangeEnd) : '';
+            [leftCalendarGrid, rightCalendarGrid].forEach(function (grid) {
+                if (!grid) return;
+                grid.querySelectorAll('button[data-date]').forEach(function (button) {
+                    var iso = button.dataset.date;
+                    button.classList.toggle('range-fill', !!(start && end && iso >= start && iso <= end));
+                    button.classList.toggle('range-start', !!(start && iso === start));
+                    button.classList.toggle('range-end', !!(end && iso === end));
+                });
+            });
+            updateDraftRangeText();
+        }
+        function renderMonth(gridElement, monthDate) {
+            if (!gridElement) return;
+            var first = monthStart(monthDate);
+            var firstVisible = new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay());
+            var month = first.getMonth();
+            var todayIso = toIsoDate(new Date());
+            var startIso = draftRangeStart ? toIsoDate(draftRangeStart) : '';
+            var endIso = draftRangeEnd ? toIsoDate(draftRangeEnd) : '';
+            var pieces = [];
+            for (var i = 0; i < 42; i++) {
+                var current = new Date(firstVisible.getFullYear(), firstVisible.getMonth(), firstVisible.getDate() + i);
+                var iso = toIsoDate(current);
+                var classes = 'inventory-calendar-day';
+                if (current.getMonth() !== month) classes += ' outside-month';
+                if (iso === todayIso) classes += ' today';
+                if (startIso && endIso && iso >= startIso && iso <= endIso) classes += ' range-fill';
+                if (startIso && iso === startIso) classes += ' range-start';
+                if (endIso && iso === endIso) classes += ' range-end';
+                // HTML contains only calculated ISO dates, day numbers and fixed CSS classes.
+                pieces.push('<button type="button" class="' + classes + '" data-date="' + iso + '">' + current.getDate() + '</button>');
+            }
+            // One DOM insertion per month (previously 42 separate insertions).
+            gridElement.innerHTML = pieces.join('');
+        }
+        function renderDateRangeCalendars() {
+            if (!calendarLeftMonth) calendarLeftMonth = monthStart(draftRangeStart || parseIsoDate(startInput.value) || new Date());
+            var right = addMonths(calendarLeftMonth, 1);
+            if (leftMonthLabel) leftMonthLabel.textContent = monthTitle(calendarLeftMonth);
+            if (rightMonthLabel) rightMonthLabel.textContent = monthTitle(right);
+            renderMonth(leftCalendarGrid, calendarLeftMonth);
+            renderMonth(rightCalendarGrid, right);
+            updateDraftRangeText();
+        }
+        // Delegation preserves keyboard/Enter activation and needs only two handlers.
+        [leftCalendarGrid, rightCalendarGrid].forEach(function (grid) {
+            if (!grid) return;
+            grid.addEventListener('click', function (event) {
+                var target = event.target.closest('button[data-date]');
+                if (!target || !grid.contains(target)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                var date = parseIsoDate(target.dataset.date);
+                if (date) selectCalendarDate(date);
+            });
+        });
+        function openRangePopover() {
+            if (!rangePopover || !rangeDisplay) return;
+            showError('');
+            draftRangeStart = parseIsoDate(startInput.value);
+            draftRangeEnd = parseIsoDate(endInput.value);
+            calendarLeftMonth = monthStart(draftRangeStart || new Date());
+            renderDateRangeCalendars();
+            rangePopover.hidden = false;
+            document.body.classList.add('dashboard-calendar-open');
+            // Floating chart tooltips are appended directly to <body>.
+            // Dismiss any that remain visible when the calendar opens.
+            var floatingChartTip = document.getElementById('dashboardChartTooltip');
+            if (floatingChartTip) floatingChartTip.hidden = true;
+            rangeDisplay.setAttribute('aria-expanded', 'true');
+        }
+        function closeRangePopover(restoreFocus) {
+            if (!rangePopover || !rangeDisplay) return;
+            rangePopover.hidden = true;
+            document.body.classList.remove('dashboard-calendar-open');
+            rangeDisplay.setAttribute('aria-expanded', 'false');
+            if (restoreFocus) rangeDisplay.focus();
+        }
+        function validateRange(a, b) {
+            if (!a || !b) return 'Please select a start and end date.';
+            var days = Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000) + 1;
+            if (days < 1) return 'The end date must be on or after the start date.';
+            // Six calendar months maximum; the last allowed date is the day before start + 6 months.
+            // Match .NET DateTime.AddMonths: clamp the day at month end.
+            var monthEndDay = new Date(a.getFullYear(), a.getMonth() + 7, 0).getDate();
+            var boundary = new Date(a.getFullYear(), a.getMonth() + 6, Math.min(a.getDate(), monthEndDay));
+            if (dayTime(b) >= dayTime(boundary)) return 'Choose a range shorter than six calendar months.';
+            return '';
+        }
+        rangeDisplay.addEventListener('click', function (event) {
+            event.preventDefault(); event.stopPropagation();
+            if (!rangePopover.hidden) closeRangePopover(); else openRangePopover();
+        });
+        form.querySelectorAll('[data-calendar-shift]').forEach(function (button) {
+            button.addEventListener('click', function (event) {
+                event.preventDefault(); event.stopPropagation();
+                calendarLeftMonth = addMonths(calendarLeftMonth || new Date(), Number(button.dataset.calendarShift || 0));
+                renderDateRangeCalendars();
+            });
+        });
+        document.getElementById('rangeCloseButton').addEventListener('click', function (event) { event.preventDefault(); closeRangePopover(true); });
+        document.getElementById('rangeClearButton').addEventListener('click', function (event) {
+            event.preventDefault();
+            draftRangeStart = null; draftRangeEnd = null;
+            showError('');
+            repaintCalendarSelection();
+        });
+        document.getElementById('rangeApplyButton').addEventListener('click', function (event) {
+            event.preventDefault();
+            var selectionEnd = draftRangeEnd || draftRangeStart;
+            var message = validateRange(draftRangeStart, selectionEnd);
+            showError(message);
+            if (message) return;
+            startInput.value = toIsoDate(draftRangeStart);
+            endInput.value = toIsoDate(selectionEnd);
+            updateRangeText();
+            closeRangePopover();
+            form.requestSubmit();
+        });
+        document.addEventListener('click', function (event) {
+            if (!rangePopover.hidden && !form.contains(event.target)) closeRangePopover();
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !rangePopover.hidden) { event.preventDefault(); closeRangePopover(true); }
+        });
+        form.addEventListener('submit', function (event) {
+            var message = validateRange(parseIsoDate(startInput.value), parseIsoDate(endInput.value));
+            if (message) {
+                event.preventDefault();
+                if (rangePopover.hidden) openRangePopover();
+            }
+            showError(message);
+        });
+    }
+
     function svgNode(name, attrs) {
         var node = document.createElementNS('http://www.w3.org/2000/svg', name);
         Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, String(attrs[key])); });
@@ -31,8 +382,21 @@
         }).join(' ');
     }
 
+    // Keep the SVG's drawing coordinates in step with its CSS size.  A fixed
+    // 560x175 viewBox inside a wide, fixed-height chart uses SVG's default
+    // "meet" scaling and creates the large blank strips on both sides.
+    // Using actual rendered dimensions fills the card without stretching labels.
+    function chartSize(svg) {
+        var rect = svg.getBoundingClientRect();
+        var currentViewBox = (svg.getAttribute('viewBox') || '0 0 560 175').split(/\s+/).map(Number);
+        var width = Math.max(1, Math.round(rect.width || svg.clientWidth || currentViewBox[2] || 560));
+        var height = Math.max(1, Math.round(rect.height || svg.clientHeight || currentViewBox[3] || 175));
+        svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+        return { width: width, height: height };
+    }
+
     function drawGrid(svg, width, height, min, max, formatter) {
-        var left = 38, right = width - 8, top = 10, bottom = height - 23;
+        var left = 42, right = width - 22, top = 10, bottom = height - 23;
         for (var i = 0; i < 5; i++) {
             var ratio = i / 4;
             var y = top + ratio * (bottom - top);
@@ -46,8 +410,8 @@
     function drawLineChart(svg, labels, series, options) {
         if (!svg) return;
         while (svg.firstChild) svg.removeChild(svg.firstChild);
-        var vb = (svg.getAttribute('viewBox') || '0 0 560 175').split(/\s+/).map(Number);
-        var width = vb[2] || 560, height = vb[3] || 175;
+        var dimensions = chartSize(svg);
+        var width = dimensions.width, height = dimensions.height;
         var all = [];
         series.forEach(function (s) { (s.values || []).forEach(function (v) { if (Number.isFinite(Number(v))) all.push(Number(v)); }); });
         var min = options && options.min != null ? options.min : Math.min(0, all.length ? Math.min.apply(null, all) : 0);
@@ -78,6 +442,8 @@
                 addText(svg, x, height - 6, labels[idx], 'middle');
             });
         }
+        attachChartHover(svg, labels || [], (options && options.dates) || labels || [],
+            series, (options && options.extras) || [], plot, min, max, options && options.format);
     }
 
     function shortDate(value) {
@@ -86,83 +452,344 @@
         return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
     }
 
-    function drawOccupancyOnBooks(days) {
-        var current = readJson('dashboardOccupancyData').filter(function (x) { return Number(x.roomsSold) >= 0; });
-        var lastYear = readJson('dashboardOccupancyLyData');
-        if (!current.length) return;
-        // Initial first paint contains 30 future days only. The lazy analytics
-        // payload contains 15 history days followed by 90 future days.
-        var futureStart = current.length > 90 ? 15 : 0;
-        var lastYearStart = lastYear.length > 90 ? 15 : 0;
-        var rows = current.slice(futureStart, futureStart + days);
-        var lyRows = lastYear.slice(lastYearStart, lastYearStart + days);
-        drawLineChart(
-            document.getElementById('dashboardOccupancyChart'),
-            rows.map(function (x) { return shortDate(x.date); }),
-            [
-                { values: rows.map(function (x) { return Number(x.occupancyPercent || 0); }), color: '#5f97c2', width: 2.2 },
-                { values: lyRows.map(function (x) { return Number(x.occupancyPercent || 0); }), color: '#aeb9c4', width: 1.5, dash: '5 4' }
-            ],
-            { min: 0, max: 100, yFormatter: function (v) { return Math.round(v) + '%'; } }
-        );
+    var yearlyCharts = null;
+    var yearlyChartYear = 0;
+    var roomTypeRows = [];
+    var roomTypeSort = 'occupancy';
+
+    // Booked occupancy is compared by day for shorter date ranges, or by
+    // inventory-weighted weeks for long ranges. Percentages aren't added.
+    function occupancyBuckets(rows, lastYear, weekly) {
+        var buckets = [];
+        var size = weekly ? 7 : 1;
+        for (var start = 0; start < rows.length; start += size) {
+            var group = rows.slice(start, start + size);
+            var historical = lastYear.slice(start, start + size);
+            function total(items, key) {
+                return items.reduce(function (sum, row) { return sum + Number((row || {})[key] || 0); }, 0);
+            }
+            function rate(items) {
+                var supply = total(items, 'sellableInventory');
+                return supply > 0 ? 100 * total(items, 'roomsSold') / supply :
+                    items.reduce(function (sum, row) { return sum + Number((row || {}).occupancyPercent || 0); }, 0) / items.length;
+            }
+            var startDate = group[0].date, endDate = group[group.length - 1].date;
+            buckets.push({
+                label: shortDate(startDate),
+                title: weekly ? shortDate(startDate) + ' – ' + shortDate(endDate) + ' (' + group.length + ' nights)' : startDate,
+                currentPercent: rate(group), lastYearPercent: rate(historical),
+                currentSold: total(group, 'roomsSold'), currentSupply: total(group, 'sellableInventory'),
+                priorSold: total(historical, 'roomsSold'), priorSupply: total(historical, 'sellableInventory')
+            });
+        }
+        return buckets;
     }
 
-    function drawRevenueTrend() {
-        var rows = readJson('dashboardFinancialData');
-        drawLineChart(
-            document.getElementById('dashboardRevenueChart'),
-            rows.map(function (x) { return shortDate(x.date); }),
-            [
-                { values: rows.map(function (x) { return Number(x.revenue || 0); }), color: '#5f97c2', width: 2.1 },
-                { values: rows.map(function (x) { return Number(x.profit || 0); }), color: '#73ad91', width: 1.9 },
-                { values: rows.map(function (x) { return Number(x.lastYearRevenue || 0); }), color: '#aeb9c4', width: 1.4, dash: '5 4' }
-            ],
-            { yFormatter: function (v) { return Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : Math.round(v); } }
-        );
-    }
-
-    function drawOccupancyTrend() {
-        var rows = readJson('dashboardOccupancyData').slice(0, 30);
-        if (!rows.length) return;
-        var actual = rows.slice(0, 16);
-        var forecast = rows.slice(15);
-        var svg = document.getElementById('dashboardOccupancyTrendChart');
+    // Chart 1: grouped columns are an immediate visual comparison with last year.
+    function drawOccupancyOnBooks() {
+        var svg = document.getElementById('dashboardOccupancyChart');
         if (!svg) return;
-        while (svg.firstChild) svg.removeChild(svg.firstChild);
-        var width = 560, height = 175;
+        svg.replaceChildren();
+        if (!yearlyCharts) { showEmptyChart(svg, 'Loading annual occupancy…'); return; }
+        var buckets = (yearlyCharts.occupancyMonths || []).map(function (p) {
+            return {
+                label: p.label, title: p.label + ' ' + yearlyChartYear,
+                currentPercent: Number(p.occupancy || 0),
+                lastYearPercent: Number(p.previousOccupancy || 0),
+                currentSold: Number(p.sold || 0), currentSupply: Number(p.supply || 0),
+                priorSold: 0, priorSupply: 0
+            };
+        });
+        if (!buckets.length) { showEmptyChart(svg, 'No annual occupancy data'); return; }
+        var description = document.getElementById('dashboardOccupancyDescription');
+        if (description) description.textContent = 'Jan–Dec ' + yearlyChartYear + ' · monthly booked room-nights ÷ sellable room-nights · compared with ' + (yearlyChartYear - 1);
+        var dimensions = chartSize(svg);
+        var width = dimensions.width, height = dimensions.height;
         var plot = drawGrid(svg, width, height, 0, 100, function (v) { return Math.round(v) + '%'; });
-        var fullStep = rows.length <= 1 ? 0 : (plot.right - plot.left) / (rows.length - 1);
-        var actualPath = linePath(actual.map(function (x) { return Number(x.occupancyPercent || 0); }), plot.left, plot.left + fullStep * (actual.length - 1), plot.top, plot.bottom, 0, 100);
-        var forecastPath = linePath(forecast.map(function (x) { return Number(x.occupancyPercent || 0); }), plot.left + fullStep * 15, plot.right, plot.top, plot.bottom, 0, 100);
-        svg.appendChild(svgNode('path', { d: actualPath, fill: 'none', stroke: '#5f97c2', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-        svg.appendChild(svgNode('path', { d: forecastPath, fill: 'none', stroke: '#7f9ab2', 'stroke-width': 1.8, 'stroke-dasharray': '5 4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-        [0, 7, 15, 22, 29].forEach(function (idx) {
-            if (!rows[idx]) return;
-            addText(svg, plot.left + fullStep * idx, height - 6, shortDate(rows[idx].date), 'middle');
+        var spacing = buckets.length > 1 ? (plot.right - plot.left) / (buckets.length - 1) : plot.right - plot.left;
+        var barWidth = Math.max(1.6, Math.min(12, spacing * 0.3));
+        buckets.forEach(function (item, i) {
+            var x = buckets.length > 1 ? plot.left + i * spacing : (plot.left + plot.right) / 2;
+            [{ value: item.currentPercent, fill: '#376eaa', dx: -barWidth - 1.2 },
+             { value: item.lastYearPercent, fill: '#c4d5e7', dx: 1.2 }].forEach(function (bar) {
+                var clamped = Math.max(0, Math.min(100, bar.value));
+                var barHeight = clamped / 100 * (plot.bottom - plot.top);
+                svg.appendChild(svgNode('rect', {
+                    x: x + bar.dx, y: plot.bottom - barHeight,
+                    width: barWidth, height: Math.max(clamped > 0 ? 1 : 0, barHeight),
+                    rx: Math.min(2, barWidth / 3), fill: bar.fill
+                }));
+            });
+        });
+        chartXAxis(svg, buckets.map(function (item) { return item.label; }), plot, height);
+        attachChartHover(svg, buckets.map(function (b) { return b.label; }),
+            buckets.map(function (b) { return b.title; }), [
+                { label: 'Year ' + yearlyChartYear, values: buckets.map(function (b) { return b.currentPercent; }), color: '#376eaa', format: 'percent', marker: false },
+                { label: 'Year ' + (yearlyChartYear - 1), values: buckets.map(function (b) { return b.lastYearPercent; }), color: '#c4d5e7', format: 'percent', marker: false }
+            ], buckets.map(function (b) { return [
+                ['Booked / sellable room-nights', b.currentSold + ' / ' + b.currentSupply]
+            ]; }), plot, 0, 100, 'percent');
+    }
+
+    function chartXAxis(svg, labels, plot, height) {
+        if (!labels.length) return;
+        var monthChart = labels.length === 12 && labels.every(function (label) { return /^[A-Z][a-z]{2}$/.test(label); });
+        var indexes = monthChart ? labels.map(function (_, i) { return i; }).filter(function (i) { return plot.right - plot.left > 415 || i % 2 === 0; }) :
+            [0, Math.floor((labels.length - 1) / 3), Math.floor((labels.length - 1) * 2 / 3), labels.length - 1];
+        indexes.filter(function (v, i, a) { return a.indexOf(v) === i; }).forEach(function (index) {
+            var x = labels.length <= 1 ? (plot.left + plot.right) / 2 :
+                plot.left + index * (plot.right - plot.left) / (labels.length - 1);
+            addText(svg, x, height - 6, labels[index], 'middle');
         });
     }
 
+    function showEmptyChart(svg, message) {
+        var size = chartSize(svg);
+        var empty = svgNode('text', { x: size.width / 2, y: size.height / 2, 'text-anchor': 'middle', fill: '#788aa0', 'font-size': 12 });
+        empty.textContent = message;
+        svg.appendChild(empty);
+    }
+
+    // Chart 2: columns show revenue, the solid line shows profit, and the
+    // dashed line compares total revenue with last year on the same £ scale.
+    function drawRevenueTrend() {
+        var svg = document.getElementById('dashboardRevenueChart');
+        if (!svg) return;
+        svg.replaceChildren();
+        if (!yearlyCharts) { showEmptyChart(svg, 'Loading annual revenue…'); return; }
+        var buckets = (yearlyCharts.financialMonths || []).map(function (p) {
+            return {
+                label: p.label, title: p.label + ' ' + yearlyChartYear,
+                revenue: Number(p.revenue || 0), profit: Number(p.profit || 0),
+                lastYearRevenue: Number(p.lastYearRevenue || 0),
+                expense: Number(p.expense || 0), lastYearProfit: Number(p.lastYearProfit || 0)
+            };
+        });
+        if (!buckets.length) { showEmptyChart(svg, 'No annual revenue data'); return; }
+        var description = document.getElementById('dashboardRevenueDescription');
+        if (description) description.textContent = 'Jan–Dec ' + yearlyChartYear + ' · monthly revenue (blue), profit (green) and previous-year revenue (dashed)';
+        var all = [0];
+        buckets.forEach(function (b) { all.push(b.revenue, b.profit, b.lastYearRevenue); });
+        var min = Math.min.apply(null, all), max = Math.max.apply(null, all);
+        var range = max - min || 1;
+        if (max > 0) max += range * 0.09;
+        if (min < 0) min -= range * 0.08;
+        if (max <= min) max = min + 1;
+        var size = chartSize(svg), width = size.width, height = size.height;
+        var plot = drawGrid(svg, width, height, min, max, function (v) {
+            var abs = Math.abs(v);
+            return abs >= 1000 ? (v / 1000).toFixed(abs >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : Math.round(v);
+        });
+        var toY = function (v) { return plot.bottom - (v - min) / (max - min) * (plot.bottom - plot.top); };
+        var base = toY(0);
+        svg.appendChild(svgNode('line', { x1: plot.left, x2: plot.right, y1: base, y2: base, stroke: '#bbcbd9', 'stroke-width': 1 }));
+        var spacing = buckets.length <= 1 ? plot.right - plot.left : (plot.right - plot.left) / (buckets.length - 1);
+        var barWidth = Math.max(3, Math.min(22, spacing * 0.60));
+        buckets.forEach(function (b, i) {
+            var x = buckets.length <= 1 ? (plot.left + plot.right) / 2 : plot.left + i * spacing;
+            var valueY = toY(b.revenue);
+            svg.appendChild(svgNode('rect', {
+                x: x - barWidth / 2, y: Math.min(valueY, base), width: barWidth,
+                height: Math.max(Math.abs(base - valueY), Math.abs(b.revenue) > 0 ? 1 : 0),
+                rx: 2, fill: '#80a9d2', opacity: 0.85
+            }));
+        });
+        [{ key: 'profit', color: '#2d9470', width: 2.4 },
+         { key: 'lastYearRevenue', color: '#a4afbf', width: 1.8, dash: '5 4' }].forEach(function (series) {
+            var path = linePath(buckets.map(function (b) { return b[series.key]; }), plot.left, plot.right, plot.top, plot.bottom, min, max);
+            if (path) svg.appendChild(svgNode('path', {
+                d: path, fill: 'none', stroke: series.color, 'stroke-width': series.width,
+                'stroke-dasharray': series.dash || '', 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+            }));
+        });
+        if (buckets.length === 1) {
+            [{ key: 'profit', color: '#2d9470' }, { key: 'lastYearRevenue', color: '#a4afbf' }].forEach(function (series) {
+                svg.appendChild(svgNode('circle', {
+                    cx: (plot.left + plot.right) / 2, cy: toY(buckets[0][series.key]),
+                    r: 4.2, fill: '#fff', stroke: series.color, 'stroke-width': 2.2
+                }));
+            });
+        }
+        chartXAxis(svg, buckets.map(function (b) { return b.label; }), plot, height);
+        attachChartHover(svg, buckets.map(function (b) { return b.label; }), buckets.map(function (b) { return b.title; }), [
+            { label: 'Revenue', color: '#80a9d2', format: 'money', marker: false, values: buckets.map(function (b) { return b.revenue; }) },
+            { label: 'Profit', color: '#2d9470', format: 'money', values: buckets.map(function (b) { return b.profit; }) },
+            { label: 'Last year revenue', color: '#a4afbf', format: 'money', values: buckets.map(function (b) { return b.lastYearRevenue; }) }
+        ], buckets.map(function (b) { return [
+            ['Expenses', formatChartNumber(b.expense, 'money')],
+            ['Last year profit', formatChartNumber(b.lastYearProfit, 'money')]
+        ]; }), plot, min, max, 'money');
+    }
+
+    // Chart 3: this is not a statistical prediction. It visualizes booked
+    // occupancy by individual night, showing upcoming reservations separately
+    // from past dates. Calendar cells don't squeeze 90 nights into a line.
+    function drawOccupancyTrend() {
+        var element = document.getElementById('dashboardOccupancyTrendChart');
+        if (!element) return;
+        var period = selectedPeriod();
+        var rows = yearlyCharts ? (yearlyCharts.monthDaily || []).slice().sort(function (a, b) { return a.date.localeCompare(b.date); }) : [];
+        element.replaceChildren();
+        if (!rows.length) {
+            var empty = document.createElement('p');
+            empty.className = 'dashboard-heatmap-empty';
+            empty.textContent = yearlyCharts ? 'No occupancy data available for the current month.' : 'Loading the current-month calendar…';
+            element.appendChild(empty);
+            return;
+        }
+        var today = document.querySelector('.dashboard-page').getAttribute('data-hotel-today') || period.end;
+        var byDate = Object.create(null);
+        var scroll = document.createElement('div');
+        scroll.className = 'dashboard-heatmap-scroll';
+        var grid = document.createElement('div');
+        grid.className = 'dashboard-heatmap-grid';
+        var fragment = document.createDocumentFragment();
+        ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(function (day) {
+            var heading = document.createElement('span');
+            heading.className = 'dashboard-heatmap-weekday';
+            heading.textContent = day;
+            fragment.appendChild(heading);
+        });
+        var firstParts = rows[0].date.slice(0, 10).split('-').map(Number);
+        var first = new Date(firstParts[0], firstParts[1] - 1, firstParts[2]);
+        for (var p = 0; p < (first.getDay() + 6) % 7; p++) {
+            var blank = document.createElement('span');
+            blank.className = 'dashboard-heatmap-blank';
+            fragment.appendChild(blank);
+        }
+        var futureNights = 0;
+        rows.forEach(function (row) {
+            var iso = row.date.slice(0, 10);
+            var booked = Math.max(0, Math.min(100, Number(row.occupancyPercent || 0)));
+            byDate[iso] = { row: row, booked: booked };
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.date = iso;
+            button.className = 'dashboard-heatmap-day ' + (booked >= 90 ? 'dashboard-heatmap-critical' :
+                booked >= 75 ? 'dashboard-heatmap-high' : booked >= 50 ? 'dashboard-heatmap-medium' :
+                booked >= 25 ? 'dashboard-heatmap-moderate' : 'dashboard-heatmap-low');
+            if (iso > today) { button.classList.add('dashboard-heatmap-upcoming'); futureNights++; }
+            if (iso === today) button.classList.add('dashboard-heatmap-today');
+            button.setAttribute('aria-label', fullDate(iso) + ': ' + booked.toFixed(1) + '% occupied, ' +
+                Number(row.roomsSold || 0) + ' rooms booked of ' + Number(row.sellableInventory || 0) + ' sellable. ' +
+                (iso > today ? 'Upcoming reservations on the books.' : 'Past or current date.'));
+            var dateLabel = document.createElement('span');
+            dateLabel.className = 'dashboard-heatmap-date';
+            dateLabel.textContent = String(Number(iso.slice(-2)));
+            var percentLabel = document.createElement('strong');
+            percentLabel.className = 'dashboard-heatmap-percent';
+            percentLabel.textContent = booked.toFixed(0) + '%';
+            button.append(dateLabel, percentLabel);
+            fragment.appendChild(button);
+        });
+        grid.appendChild(fragment);
+        // One delegated set of hover/focus listeners for up to six months, instead of
+        // two closures and listeners per calendar cell on every data refresh.
+        var activeIso = '';
+        function showFor(target) {
+            if (!target || document.body.classList.contains('dashboard-calendar-open')) return;
+            var iso = target.dataset.date;
+            if (!iso || !byDate[iso]) return;
+            var data = byDate[iso], row = data.row, booked = data.booked;
+            var tip = chartTooltip();
+            if (activeIso !== iso || tip.hidden) {
+                tip.replaceChildren();
+                var title = document.createElement('strong');
+                title.className = 'dashboard-chart-tooltip-date';
+                title.textContent = fullDate(iso);
+                tip.appendChild(title);
+                [
+                    ['Booked occupancy', formatChartNumber(booked, 'percent')],
+                    ['Rooms sold / sellable', Number(row.roomsSold || 0) + ' / ' + Number(row.sellableInventory || 0)],
+                    ['Rooms still available', Math.max(0, Number(row.sellableInventory || 0) - Number(row.roomsSold || 0))],
+                    ['ADR', formatChartNumber(row.adr || 0, 'money')],
+                    ['Date type', iso > today ? 'Upcoming — booked so far' : 'Past / current']
+                ].forEach(function (item) {
+                    var r = document.createElement('div');
+                    r.className = 'dashboard-chart-tooltip-detail';
+                    var k = document.createElement('span'); k.textContent = item[0];
+                    var v = document.createElement('b'); v.textContent = item[1];
+                    r.append(k, v); tip.appendChild(r);
+                });
+                activeIso = iso;
+            }
+            tip.hidden = false;
+            var rect = target.getBoundingClientRect();
+            var box = tip.getBoundingClientRect();
+            var left = Math.max(8, Math.min(window.innerWidth - box.width - 8, rect.left + rect.width / 2 + 9));
+            var top = rect.bottom + 9;
+            if (top + box.height > window.innerHeight - 8) top = rect.top - box.height - 9;
+            tip.style.left = left + 'px'; tip.style.top = Math.max(8, top) + 'px';
+        }
+        function hide() { chartTooltip().hidden = true; activeIso = ''; }
+        function dayTarget(target) { return target && target.closest ? target.closest('button.dashboard-heatmap-day') : null; }
+        grid.addEventListener('pointerover', function (event) { showFor(dayTarget(event.target)); });
+        grid.addEventListener('pointerout', function (event) {
+            var before = dayTarget(event.target), after = dayTarget(event.relatedTarget);
+            if (before && before !== after) hide();
+        });
+        grid.addEventListener('focusin', function (event) { showFor(dayTarget(event.target)); });
+        grid.addEventListener('focusout', function (event) {
+            if (dayTarget(event.target) && dayTarget(event.target) !== dayTarget(event.relatedTarget)) hide();
+        });
+        scroll.appendChild(grid);
+        element.appendChild(scroll);
+        var futureCount = document.getElementById('dashboardFutureNightsCount');
+        if (futureCount) futureCount.textContent = futureNights + ' night' + (futureNights === 1 ? '' : 's');
+        var footer = document.createElement('div');
+        footer.className = 'dashboard-heatmap-legend';
+        [['0–24%', 'low'], ['25–49%', 'moderate'], ['50–74%', 'medium'],
+         ['75–89%', 'high'], ['90–100%', 'critical']].forEach(function (item) {
+            var label = document.createElement('span');
+            var swatch = document.createElement('i');
+            swatch.className = 'dashboard-heatmap-legend-' + item[1];
+            label.appendChild(swatch);
+            label.appendChild(document.createTextNode(item[0]));
+            footer.appendChild(label);
+        });
+        element.appendChild(footer);
+        if (rows.length > 42) {
+            var hint = document.createElement('p');
+            hint.className = 'dashboard-heatmap-scroll-hint';
+            hint.textContent = 'Scroll to review every date in this month.';
+            element.appendChild(hint);
+        }
+    }
+
     function drawExceptionChart() {
-        var rows = readJson('dashboardExceptionData');
+        var rows = yearlyCharts ? (yearlyCharts.exceptionMonths || []) : [];
         var svg = document.getElementById('dashboardExceptionChart');
         if (!svg || !rows.length) return;
         while (svg.firstChild) svg.removeChild(svg.firstChild);
-        var width = 420, height = 120, left = 26, right = 410, top = 8, bottom = 94;
+        var dimensions = chartSize(svg);
+        var width = dimensions.width, height = dimensions.height;
+        var left = 18, right = width - 18, top = 8, bottom = height - 25;
         var max = Math.max(1, Math.max.apply(null, rows.map(function (x) { return Math.max(Number(x.cancellations || 0), Number(x.noShows || 0)); })));
         for (var i = 0; i < 4; i++) {
             var y = top + i * ((bottom - top) / 3);
             svg.appendChild(svgNode('line', { x1: left, y1: y, x2: right, y2: y, stroke: '#edf2f6' }));
         }
-        var group = (right - left) / rows.length;
+        // Spread week groups from near the left edge to near the right edge,
+        // rather than leaving a half-group of blank space on both sides.
+        var inset = Math.min(44, Math.max(24, Math.round(width * 0.064)));
+        var spacing = rows.length > 1 ? (width - 2 * inset) / (rows.length - 1) : 0;
+        var w = Math.max(5, Math.min(32, (rows.length > 1 ? spacing : Math.min(width - 2 * inset, 140)) * 0.15));
         rows.forEach(function (row, idx) {
-            var x = left + idx * group + group * 0.18;
-            var w = Math.max(5, group * 0.24);
+            var center = rows.length > 1 ? inset + idx * spacing : width / 2;
+            var x = center - w - 2;
             var c = Number(row.cancellations || 0), n = Number(row.noShows || 0);
             var ch = c / max * (bottom - top), nh = n / max * (bottom - top);
             svg.appendChild(svgNode('rect', { x: x, y: bottom - ch, width: w, height: ch, rx: 2, fill: '#d4837d' }));
-            svg.appendChild(svgNode('rect', { x: x + w + 3, y: bottom - nh, width: w, height: nh, rx: 2, fill: '#d9ae5f' }));
-            addText(svg, x + w, height - 7, row.label || '', 'middle');
+            svg.appendChild(svgNode('rect', { x: center + 2, y: bottom - nh, width: w, height: nh, rx: 2, fill: '#d9ae5f' }));
+            addText(svg, center, height - 7, row.label || '', 'middle');
         });
+        attachChartHover(svg, rows.map(function (x) { return x.label || ''; }),
+            rows.map(function (x) { return x.label || ''; }),
+            [
+                { label: 'Cancellations', color: '#d4837d', values: rows.map(function (x) { return Number(x.cancellations || 0); }) },
+                { label: 'No-shows', color: '#d9ae5f', values: rows.map(function (x) { return Number(x.noShows || 0); }) }
+            ], rows.map(function (x) { return [['Month', (x.label || '') + ' ' + yearlyChartYear]]; }),
+            { left: rows.length > 1 ? inset : width / 2, right: rows.length > 1 ? width - inset : width / 2, top: top, bottom: bottom }, 0, max, 'number');
     }
 
     function normalizeRoomFilterState(value, isDirty) {
@@ -525,7 +1152,13 @@
 
         try {
             var dashboardDate = page.getAttribute('data-dashboard-date') || '';
-            var response = await fetch(url + '?type=' + encodeURIComponent(type) + '&date=' + encodeURIComponent(dashboardDate), {
+            if (['checkin', 'checkout', 'available', 'occupied', 'blocked', 'dirty'].indexOf(type) >= 0)
+                dashboardDate = page.getAttribute('data-hotel-today') || dashboardDate;
+            var period = selectedPeriod();
+            var response = await fetch(url + '?type=' + encodeURIComponent(type)
+                + '&date=' + encodeURIComponent(dashboardDate)
+                + '&startDate=' + encodeURIComponent(period.start)
+                + '&endDate=' + encodeURIComponent(period.end), {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
                 credentials: 'same-origin'
             });
@@ -542,7 +1175,67 @@
         }
     }
 
+    function wireStatisticInfo() {
+        var notes = Array.from(document.querySelectorAll('.dashboard-info-badge'));
+        // A body-level, fixed tooltip is not clipped by Dashboard cards (some
+        // have overflow:hidden), and is reliably above other cards / header.
+        var tip = document.createElement('div');
+        tip.className = 'dashboard-info-floating';
+        tip.setAttribute('role', 'tooltip');
+        tip.hidden = true;
+        document.body.appendChild(tip);
+        var active = null;
+        function hide() { tip.hidden = true; active = null; }
+        function position() {
+            if (!active || tip.hidden) return;
+            var r = active.getBoundingClientRect();
+            var w = tip.offsetWidth, h = tip.offsetHeight;
+            var left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+            var top = r.top - h - 10;
+            if (top < 8) top = r.bottom + 10;
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
+        }
+        function show(note) {
+            if (document.body.classList.contains('dashboard-calendar-open')) return;
+            var value = note.getAttribute('data-info');
+            if (!value) return;
+            active = note;
+            tip.textContent = value;
+            tip.hidden = false;
+            position();
+        }
+        function dismiss() {
+            notes.forEach(function (note) { note.classList.remove('is-open'); });
+            hide();
+        }
+        notes.forEach(function (note) {
+            note.addEventListener('mouseenter', function () { show(note); });
+            note.addEventListener('mouseleave', function () { if (!note.classList.contains('is-open')) hide(); });
+            note.addEventListener('focus', function () { show(note); });
+            note.addEventListener('blur', function () { if (!note.classList.contains('is-open')) hide(); });
+            note.addEventListener('click', function (event) {
+                event.preventDefault(); event.stopPropagation();
+                var wasOpen = note.classList.contains('is-open');
+                dismiss();
+                if (!wasOpen) { note.classList.add('is-open'); show(note); }
+            });
+            note.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault(); event.stopPropagation(); note.click();
+                }
+                if (event.key === 'Escape') { event.stopPropagation(); dismiss(); }
+            });
+        });
+        document.addEventListener('click', function (event) {
+            if (!event.target.closest('.dashboard-info-badge')) dismiss();
+        });
+        document.addEventListener('scroll', function () { if (active) position(); }, true);
+        window.addEventListener('resize', position);
+    }
+
     function wireStatisticDetails() {
+        wireStatisticInfo();
         document.querySelectorAll('[data-dashboard-statistic]').forEach(function (node) {
             node.addEventListener('click', function (event) {
                 event.preventDefault();
@@ -586,13 +1279,30 @@
         return td;
     }
 
+    function progressShareCell(value, tone) {
+        var pct = Math.max(0, Math.min(100, Number(value || 0)));
+        var td = document.createElement('td');
+        td.className = 'dashboard-right dashboard-share-cell';
+        var label = document.createElement('span');
+        label.className = 'dashboard-share-value';
+        label.textContent = pct.toFixed(1).replace(/\.0$/, '') + '%';
+        var track = document.createElement('span');
+        track.className = 'dashboard-share-track';
+        var fill = document.createElement('span');
+        fill.className = 'dashboard-share-fill ' + (tone || '');
+        fill.style.width = pct + '%';
+        track.appendChild(fill);
+        td.append(label, track);
+        return td;
+    }
+
     function renderRevenueSources(rows) {
         var body = document.getElementById('dashboardRevenueSourcesBody');
         if (!body) return;
         body.replaceChildren();
         if (!rows || !rows.length) {
             var emptyRow = document.createElement('tr');
-            var empty = createCell('No revenue on the books for this period.', false);
+            var empty = createCell('No revenue on the books for the selected dates.', false);
             empty.colSpan = 5;
             empty.className = 'dashboard-empty-cell';
             emptyRow.appendChild(empty);
@@ -605,7 +1315,7 @@
             tr.appendChild(createCell(item.roomNights || 0, true));
             tr.appendChild(createCell(money0(item.adr), true));
             tr.appendChild(createCell(money0(item.revenue), true));
-            tr.appendChild(createCell(Number(item.sharePercent || 0).toFixed(1).replace(/\.0$/, '') + '%', true));
+            tr.appendChild(progressShareCell(item.sharePercent, 'dashboard-share-revenue'));
             body.appendChild(tr);
         });
     }
@@ -613,17 +1323,22 @@
     function renderRoomTypes(rows) {
         var body = document.getElementById('dashboardRoomTypesBody');
         if (!body) return;
+        if (rows) roomTypeRows = rows.slice();
+        var ordered = roomTypeRows.slice();
+        ordered.sort(function (a, b) {
+            if (roomTypeSort === 'share') return Number(b.contributionPercent || 0) - Number(a.contributionPercent || 0);
+            if (roomTypeSort === 'name') return String(a.category || '').localeCompare(String(b.category || ''));
+            return Number(b.occupancyNext30 || 0) - Number(a.occupancyNext30 || 0);
+        });
         body.replaceChildren();
-        if (!rows || !rows.length) {
-            var emptyRow = document.createElement('tr');
+        if (!ordered.length) {
+            var tr = document.createElement('tr');
             var empty = createCell('No room-type performance data found.', false);
-            empty.colSpan = 8;
-            empty.className = 'dashboard-empty-cell';
-            emptyRow.appendChild(empty);
-            body.appendChild(emptyRow);
+            empty.colSpan = 7; empty.className = 'dashboard-empty-cell';
+            tr.appendChild(empty); body.appendChild(tr);
             return;
         }
-        rows.forEach(function (item) {
+        ordered.forEach(function (item) {
             var tr = document.createElement('tr');
             var name = createCell('', false);
             var strong = document.createElement('strong');
@@ -631,61 +1346,189 @@
             name.appendChild(strong);
             tr.appendChild(name);
             tr.appendChild(createCell(item.rooms || 0, true));
-
-            var tonight = document.createElement('td');
-            var progress = document.createElement('div');
-            progress.className = 'dashboard-progress';
-            var bar = document.createElement('span');
-            bar.style.width = Math.max(0, Math.min(100, Number(item.occupancyTonight || 0))) + '%';
-            progress.appendChild(bar);
-            var small = document.createElement('small');
-            small.textContent = Number(item.occupancyTonight || 0).toFixed(1).replace(/\.0$/, '') + '%';
-            tonight.appendChild(progress);
-            tonight.appendChild(small);
-            tr.appendChild(tonight);
-
-            tr.appendChild(createCell(Number(item.occupancyNext30 || 0).toFixed(1).replace(/\.0$/, '') + '%', true));
+            var occ = document.createElement('td');
+            var bar = document.createElement('div');
+            bar.className = 'dashboard-progress';
+            var fill = document.createElement('span');
+            fill.style.width = Math.max(0, Math.min(100, Number(item.occupancyNext30 || 0))) + '%';
+            bar.appendChild(fill);
+            var value = document.createElement('small');
+            value.textContent = Number(item.occupancyNext30 || 0).toFixed(1).replace(/\.0$/, '') + '%';
+            occ.append(bar, value); tr.appendChild(occ);
             tr.appendChild(createCell(money0(item.adr), true));
             tr.appendChild(createCell(money0(item.revPar), true));
             tr.appendChild(createCell(money0(item.revenue), true));
-            tr.appendChild(createCell(Number(item.contributionPercent || 0).toFixed(1).replace(/\.0$/, '') + '%', true));
-
+            tr.appendChild(progressShareCell(item.contributionPercent, 'dashboard-share-room'));
             body.appendChild(tr);
         });
     }
 
-    function renderPrices(rows) {
+    // Pricing recommendations are advisory, not automatically applied.
+    var pricingRows = [];
+    var pricingFilter = 'all';
+    var pricingSort = 'occupancy';
+    function pricingAction(item) {
+        var change = Number(item.changePercent || 0);
+        return change > 0 ? 'raise' : change < 0 ? 'reduce' : 'hold';
+    }
+    function pricingPercent(value) {
+        return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
+    }
+    function pricingMoney(value) {
+        var number = Number(value || 0);
+        // Preserve pennies in price proposals; round whole amounts for readability.
+        return pageCurrency() + number.toLocaleString(undefined, {
+            minimumFractionDigits: Math.abs(number - Math.round(number)) < 0.00001 ? 0 : 2,
+            maximumFractionDigits: 2
+        });
+    }
+    function pricingVisibleRows() {
+        var rows = pricingRows.filter(function (item) {
+            return pricingFilter === 'all' || pricingAction(item) === pricingFilter;
+        });
+        rows.sort(function (a, b) {
+            if (pricingSort === 'category') return String(a.category || '').localeCompare(String(b.category || ''));
+            if (pricingSort === 'change') return Math.abs(Number(b.changePercent || 0)) - Math.abs(Number(a.changePercent || 0));
+            return Number(b.occupancyNext30 || 0) - Number(a.occupancyNext30 || 0);
+        });
+        return rows;
+    }
+    function pricingElement(tag, className, content) {
+        var element = document.createElement(tag);
+        if (className) element.className = className;
+        if (content !== undefined) element.textContent = content;
+        return element;
+    }
+    function drawPricingCards() {
         var root = document.getElementById('dashboardPrices');
         if (!root) return;
         root.replaceChildren();
-        if (!rows || !rows.length) {
-            var empty = document.createElement('div');
-            empty.className = 'dashboard-empty-block';
-            empty.textContent = 'No active rate-plan data was found for today.';
-            root.appendChild(empty);
+        var rows = pricingVisibleRows();
+        var copy = document.getElementById('dashboardPricingCopy');
+        if (copy) copy.disabled = !rows.length;
+        var showing = document.getElementById('dashboardPricingShowing');
+        if (showing) showing.textContent = 'Showing ' + rows.length + ' of ' + pricingRows.length + ' rate plans';
+        if (!pricingRows.length || !rows.length) {
+            root.appendChild(pricingElement('div', 'dashboard-empty-block dashboard-pricing-empty',
+                pricingRows.length ? 'No suggestions match this filter.' : 'No active rate-plan data was found for the selected period.'));
             return;
         }
+        var fragment = document.createDocumentFragment();
         rows.forEach(function (item) {
-            var card = document.createElement('article');
-            card.className = 'dashboard-price-card';
-            var name = document.createElement('span');
-            name.textContent = item.category || '';
-            var rate = document.createElement('strong');
-            var oldRate = document.createElement('s');
-            oldRate.textContent = money0(item.currentRate);
-            var arrow = document.createElement('i');
-            arrow.className = 'fa-solid fa-arrow-right';
-            rate.appendChild(oldRate);
-            rate.appendChild(arrow);
-            rate.appendChild(document.createTextNode(' ' + money0(item.recommendedRate)));
-            var note = document.createElement('small');
+            var action = pricingAction(item);
             var change = Number(item.changePercent || 0);
-            note.className = change > 0 ? 'dashboard-positive-text' : change < 0 ? 'dashboard-negative-text' : '';
-            note.textContent = (change > 0 ? 'Raise ' : change < 0 ? 'Reduce ' : 'Hold ') + Math.abs(change).toFixed(1).replace(/\.0$/, '') + '% · ' + (item.reason || '');
-            card.appendChild(name);
-            card.appendChild(rate);
+            var occupancy = Math.max(0, Math.min(100, Number(item.occupancyNext30 || 0)));
+            var card = pricingElement('article', 'dashboard-price-card dashboard-pricing-item dashboard-pricing-' + action);
+            var header = pricingElement('div', 'dashboard-pricing-item-head');
+            var headingWrap = pricingElement('div', 'dashboard-pricing-item-name');
+            headingWrap.appendChild(pricingElement('strong', '', item.category || 'Room category'));
+            if (item.planName) headingWrap.appendChild(pricingElement('span', '', item.planName));
+            var status = pricingElement('span', 'dashboard-pricing-status dashboard-pricing-status-' + action,
+                action === 'raise' ? 'Raise ' + pricingPercent(Math.abs(change)) : action === 'reduce' ? 'Reduce ' + pricingPercent(Math.abs(change)) : 'Hold rate');
+            header.appendChild(headingWrap);
+            header.appendChild(status);
+            card.appendChild(header);
+
+            var rates = pricingElement('div', 'dashboard-pricing-rate-row');
+            var current = pricingElement('div', 'dashboard-pricing-rate-cell');
+            current.appendChild(pricingElement('span', '', 'Current rate'));
+            current.appendChild(pricingElement('strong', '', pricingMoney(item.currentRate)));
+            var arrow = pricingElement('span', 'dashboard-pricing-rate-arrow', '→');
+            arrow.setAttribute('aria-hidden', 'true');
+            var suggested = pricingElement('div', 'dashboard-pricing-rate-cell dashboard-pricing-rate-recommended');
+            suggested.appendChild(pricingElement('span', '', 'Suggested rate'));
+            suggested.appendChild(pricingElement('strong', '', pricingMoney(item.recommendedRate)));
+            rates.appendChild(current);
+            rates.appendChild(arrow);
+            rates.appendChild(suggested);
+            card.appendChild(rates);
+
+            var occupancyRow = pricingElement('div', 'dashboard-pricing-occupancy-meta');
+            occupancyRow.appendChild(pricingElement('span', '', 'Booked occupancy'));
+            occupancyRow.appendChild(pricingElement('strong', '', pricingPercent(occupancy)));
+            card.appendChild(occupancyRow);
+            var track = pricingElement('div', 'dashboard-pricing-meter');
+            track.setAttribute('role', 'progressbar');
+            track.setAttribute('aria-label', (item.category || 'Room category') + ' booked occupancy');
+            track.setAttribute('aria-valuenow', String(occupancy));
+            track.setAttribute('aria-valuemin', '0');
+            track.setAttribute('aria-valuemax', '100');
+            var fill = pricingElement('span', 'dashboard-pricing-meter-fill');
+            fill.style.width = occupancy + '%';
+            track.appendChild(fill);
+            card.appendChild(track);
+            var note = pricingElement('p', 'dashboard-pricing-reason', item.reason || item.demand || 'Based on occupancy in the selected period.');
+            note.title = note.textContent; // Full explanation remains available if the compact line is truncated.
             card.appendChild(note);
-            root.appendChild(card);
+            fragment.appendChild(card);
+        });
+        root.appendChild(fragment);
+    }
+    function renderPrices(rows) {
+        pricingRows = Array.isArray(rows) ? rows.slice() : [];
+        ['total', 'raise', 'reduce', 'hold'].forEach(function (category) {
+            var id = 'dashboardPricing' + category.charAt(0).toUpperCase() + category.slice(1);
+            var node = document.getElementById(id);
+            if (!node) return;
+            node.textContent = category === 'total' ? pricingRows.length : pricingRows.filter(function (item) { return pricingAction(item) === category; }).length;
+        });
+        drawPricingCards();
+    }
+    function wirePricingGuidance() {
+        var buttons = document.querySelectorAll('[data-price-filter]');
+        buttons.forEach(function (button) {
+            button.addEventListener('click', function () {
+                pricingFilter = button.getAttribute('data-price-filter') || 'all';
+                buttons.forEach(function (node) {
+                    var selected = node === button;
+                    node.classList.toggle('is-active', selected);
+                    node.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                });
+                drawPricingCards();
+            });
+        });
+        var sort = document.getElementById('dashboardPricingSort');
+        if (sort) sort.addEventListener('change', function () {
+            pricingSort = sort.value;
+            drawPricingCards();
+        });
+        var copy = document.getElementById('dashboardPricingCopy');
+        if (copy) copy.addEventListener('click', async function () {
+            var rows = pricingVisibleRows();
+            if (!rows.length) return;
+            var header = 'Room category\tRate plan\tCurrent rate\tSuggested rate\tChange\tBooked occupancy\tReason';
+            var text = [header].concat(rows.map(function (item) {
+                return [item.category || '', item.planName || '', pricingMoney(item.currentRate), pricingMoney(item.recommendedRate),
+                    pricingPercent(item.changePercent), pricingPercent(item.occupancyNext30), item.reason || '']
+                    .map(function (value) { return String(value).replace(/[\t\r\n]+/g, ' '); }).join('\t');
+            })).join('\n');
+            var successful = false;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                    successful = true;
+                } else {
+                    var input = document.createElement('textarea');
+                    input.value = text;
+                    input.style.position = 'fixed';
+                    input.style.left = '-9999px';
+                    document.body.appendChild(input);
+                    input.select();
+                    successful = document.execCommand('copy');
+                    input.remove();
+                }
+            } catch (error) { successful = false; }
+            var label = copy.querySelector('span');
+            if (!label) {
+                label = document.createElement('span');
+                label.textContent = 'Copy visible suggestions';
+                // The markup already contains text after the icon; replace that text once.
+                Array.from(copy.childNodes).forEach(function (node) { if (node.nodeType === 3) node.remove(); });
+                copy.appendChild(label);
+            }
+            label.textContent = successful ? 'Copied to clipboard' : 'Copy failed — try again';
+            copy.setAttribute('aria-label', label.textContent);
+            // Reset on the next user action instead of a timer.
         });
     }
 
@@ -720,7 +1563,7 @@
         ['dashboardRevenueSourcesBody', 'dashboardRoomTypesBody'].forEach(function (id) {
             var body = document.getElementById(id);
             if (!body) return;
-            var columns = id === 'dashboardRevenueSourcesBody' ? 5 : 8;
+            var columns = id === 'dashboardRevenueSourcesBody' ? 5 : 7;
             body.replaceChildren();
             var tr = document.createElement('tr');
             var td = createCell(message || 'Analytics could not be loaded.', false);
@@ -739,6 +1582,8 @@
         var page = document.querySelector('.dashboard-page');
         var url = page ? page.getAttribute('data-analytics-url') : '';
         if (!url) return;
+        var period = selectedPeriod();
+        url += '?startDate=' + encodeURIComponent(period.start) + '&endDate=' + encodeURIComponent(period.end);
         try {
             var response = await fetch(url, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -752,33 +1597,161 @@
             updateJsonNode('dashboardOccupancyLyData', data.occupancyLastYearSeries || []);
             updateJsonNode('dashboardFinancialData', data.financialSeries || []);
 
-            setHtmlText('dashboardOcc30', Number(data.occupancyNext30 || 0).toFixed(1).replace(/\.0$/, '') + '%');
+            // Annual occupancy footer is updated by the independent Yearly endpoint.
             setHtmlText('dashboardOcc60', Number(data.occupancyNext60 || 0).toFixed(1).replace(/\.0$/, '') + '%');
             setHtmlText('dashboardOcc90', Number(data.occupancyNext90 || 0).toFixed(1).replace(/\.0$/, '') + '%');
-            setHtmlText('dashboardForecast7', Number(data.forecastNext7 || 0).toFixed(1).replace(/\.0$/, '') + '%');
-            setHtmlText('dashboardForecastTrend7', Number(data.forecastNext7 || 0).toFixed(1).replace(/\.0$/, '') + '%');
 
-            var financial = data.financialSeries || [];
-            var revenue30 = financial.reduce(function (sum, x) { return sum + Number(x.revenue || 0); }, 0);
-            var profit30 = financial.reduce(function (sum, x) { return sum + Number(x.profit || 0); }, 0);
-            var margin = revenue30 > 0 ? profit30 * 100 / revenue30 : 0;
-            setHtmlText('dashboardRevenue30', money0(revenue30));
-            setHtmlText('dashboardProfit30', money0(profit30));
-            setHtmlText('dashboardProfitMargin30', margin.toFixed(1).replace(/\.0$/, '') + '%');
+
+            // The financial chart and its totals are annual; selected dates only
+            // drive revenue-source, room-type and pricing analytics.
 
             renderRevenueSources(data.revenueSources || []);
             renderRoomTypes(data.roomTypes || []);
             renderPrices(data.priceRecommendations || []);
             renderDecisions(data.decisions || []);
 
-            document.querySelectorAll('[data-occ-days]').forEach(function (button) { button.disabled = false; });
-            drawOccupancyOnBooks(30);
-            drawWhenVisible('dashboardRevenueChart', drawRevenueTrend);
-            drawWhenVisible('dashboardOccupancyTrendChart', drawOccupancyTrend);
+            // Annual charts and today's month calendar load independently.
         } catch (error) {
             console.warn(error);
             renderAnalyticsFailure(error && error.message ? error.message : 'Dashboard analytics could not be loaded.');
         }
+    }
+
+    var annualRequestGroup = null;
+    var annualRequestVersion = 0;
+
+    function annualChartPlaceholder(id, message) {
+        var svg = document.getElementById(id);
+        if (!svg) return;
+        svg.replaceChildren();
+        showEmptyChart(svg, message);
+    }
+
+    function setOccupancyBusy(isBusy, message) {
+        var shell = document.getElementById('dashboardOccupancyShell');
+        var loader = document.getElementById('dashboardOccupancyLoader');
+        if (!shell || !loader) return;
+        shell.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+        loader.hidden = !isBusy;
+        if (isBusy && message) {
+            var label = loader.querySelector('.dashboard-annual-loading-label');
+            if (label) label.textContent = message;
+        }
+    }
+
+    // Annual charts load as three independent requests. The original combined
+    // endpoint waited for all heavy queries before showing any chart.
+    function loadYearlyCharts(year) {
+        var page = document.querySelector('.dashboard-page');
+        var url = page && page.getAttribute('data-yearly-url');
+        if (!url) return;
+        var version = ++annualRequestVersion;
+        if (annualRequestGroup) annualRequestGroup.forEach(function (request) { request.abort(); });
+        annualRequestGroup = [];
+        yearlyChartYear = year;
+        yearlyCharts = { occupancyMonths: [], financialMonths: [], exceptionMonths: [], monthDaily: [] };
+        document.querySelectorAll('.dashboard-year-select').forEach(function (select) { select.value = String(year); });
+        setHtmlText('dashboardOccYear', String(year));
+        ['dashboardOcc30', 'dashboardOccYearLy', 'dashboardOccRoomNights',
+         'dashboardRevenue30', 'dashboardProfit30', 'dashboardProfitMargin30'].forEach(function (id) { setHtmlText(id, '—'); });
+        setOccupancyBusy(true, 'Loading ' + year + ' occupancy…');
+        annualChartPlaceholder('dashboardOccupancyChart', 'Loading ' + year + ' occupancy…');
+        annualChartPlaceholder('dashboardRevenueChart', 'Loading ' + year + ' revenue…');
+        annualChartPlaceholder('dashboardExceptionChart', 'Loading ' + year + ' exceptions…');
+        var monthCalendar = document.getElementById('dashboardOccupancyTrendChart');
+        if (monthCalendar) monthCalendar.textContent = 'Loading current-month occupancy…';
+
+        function loadSection(section, svgId, onSuccess) {
+            var controller = new AbortController();
+            annualRequestGroup.push(controller);
+            var timedOut = false;
+            var timeout = window.setTimeout(function () { timedOut = true; controller.abort(); }, 65000);
+            return fetch(url + '?year=' + encodeURIComponent(year) + '&section=' + encodeURIComponent(section), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin', signal: controller.signal
+            }).then(async function (response) {
+                var payload;
+                try { payload = await response.json(); }
+                catch (_) { throw new Error('Invalid response from annual chart endpoint (HTTP ' + response.status + ').'); }
+                if (!response.ok || !payload.ok || !payload.charts)
+                    throw new Error(payload.message || 'Annual ' + section + ' request failed (HTTP ' + response.status + ').');
+                if (version !== annualRequestVersion) return;
+                onSuccess(payload.charts);
+            }).catch(function (error) {
+                if (version !== annualRequestVersion) return;
+                console.warn('Dashboard ' + section + ' yearly data:', error);
+                var detail = timedOut ? 'Request timed out. Refresh to retry.' : 'Could not load. Refresh to retry.';
+                if (section === 'calendar') {
+                    if (monthCalendar) monthCalendar.textContent = 'Current-month occupancy could not be loaded. Refresh to retry.';
+                } else {
+                    annualChartPlaceholder(svgId, detail);
+                    if (section === 'occupancy') setOccupancyBusy(false);
+                }
+            }).finally(function () { window.clearTimeout(timeout); });
+        }
+
+        loadSection('occupancy', 'dashboardOccupancyChart', function (charts) {
+            yearlyCharts.occupancyMonths = charts.occupancyMonths || [];
+            var rows = yearlyCharts.occupancyMonths;
+            var supplied = rows.reduce(function (s, p) { return s + Number(p.supply || 0); }, 0);
+            var sold = rows.reduce(function (s, p) { return s + Number(p.sold || 0); }, 0);
+            var priorSupply = rows.reduce(function (s, p) { return s + Number(p.previousSupply || 0); }, 0);
+            var priorSold = rows.reduce(function (s, p) { return s + Number(p.previousSold || 0); }, 0);
+            setHtmlText('dashboardOcc30', (supplied ? 100 * sold / supplied : 0).toFixed(1) + '%');
+            setHtmlText('dashboardOccYearLy', (priorSupply ? 100 * priorSold / priorSupply : 0).toFixed(1) + '%');
+            setHtmlText('dashboardOccRoomNights', sold.toLocaleString());
+            drawOccupancyOnBooks();
+            // Keep the spinner until the SVG has been painted, not merely until
+            // the fetch resolves. Never let an old year hide the new loader.
+            window.requestAnimationFrame(function () {
+                window.requestAnimationFrame(function () {
+                    if (version === annualRequestVersion) setOccupancyBusy(false);
+                });
+            });
+        });
+        // The monthly calendar has its own request so it cannot hold the annual chart open.
+        loadSection('calendar', 'dashboardOccupancyChart', function (charts) {
+            yearlyCharts.monthDaily = charts.monthDaily || [];
+            drawOccupancyTrend();
+        });
+        loadSection('financial', 'dashboardRevenueChart', function (charts) {
+            yearlyCharts.financialMonths = charts.financialMonths || [];
+            var rows = yearlyCharts.financialMonths;
+            var revenue = rows.reduce(function (s, p) { return s + Number(p.revenue || 0); }, 0);
+            var profit = rows.reduce(function (s, p) { return s + Number(p.profit || 0); }, 0);
+            setHtmlText('dashboardRevenue30', money0(revenue));
+            setHtmlText('dashboardProfit30', money0(profit));
+            setHtmlText('dashboardProfitMargin30', (revenue ? 100 * profit / revenue : 0).toFixed(1) + '%');
+            drawRevenueTrend();
+        });
+        loadSection('exceptions', 'dashboardExceptionChart', function (charts) {
+            yearlyCharts.exceptionMonths = charts.exceptionMonths || [];
+            var rows = yearlyCharts.exceptionMonths;
+            var cancelled = rows.reduce(function (s, p) { return s + Number(p.cancellations || 0); }, 0);
+            var noShows = rows.reduce(function (s, p) { return s + Number(p.noShows || 0); }, 0);
+            document.querySelectorAll('[data-exception-annual]').forEach(function (tr) {
+                var isCancel = (tr.getAttribute('data-exception-annual') || '').toLowerCase().indexOf('cancel') >= 0;
+                var cells = tr.querySelectorAll('td');
+                if (cells.length >= 3) {
+                    var count = isCancel ? cancelled : noShows;
+                    cells[1].textContent = String(count);
+                    cells[2].textContent = (cancelled + noShows ? 100 * count / (cancelled + noShows) : 0).toFixed(1) + '%';
+                }
+            });
+            drawExceptionChart();
+        });
+    }
+
+    function wireYearlyCharts() {
+        var selects = document.querySelectorAll('.dashboard-year-select');
+        if (!selects.length) return;
+        selects.forEach(function (select) {
+            select.addEventListener('change', function () {
+                var year = Number(select.value);
+                if (year >= 2000 && year <= 2099) loadYearlyCharts(year);
+            });
+        });
+        var today = document.querySelector('.dashboard-page').getAttribute('data-hotel-today');
+        loadYearlyCharts(Number(String(today || '').slice(0,4)) || new Date().getFullYear());
     }
 
     function drawWhenVisible(elementId, draw) {
@@ -793,11 +1766,259 @@
         observer.observe(element);
     }
 
+    // WebForms Bookings graph, rewritten as responsive SVG so Dashboard does
+    // not need an additional Chart.js dependency. Calendar-year source counts
+    // are independent of the selected six-month occupancy/financial date range.
+    var bookingsChartData = null;
+    var bookingsHiddenSources = new Set();
+    var bookingsColors = ['#7FAEDB', '#9FD3F2', '#79CDB9', '#F1C77A', '#B9A4E6', '#F2A8B8', '#A7C7A0', '#C6CEDA'];
+
+    function bookingsVisibleSources(sources) {
+        sources = (sources || []).slice().sort(function (a, b) { return Number(b.total || 0) - Number(a.total || 0); });
+        if (sources.length <= 8) return sources;
+        var primary = sources.slice(0, 7);
+        var other = Array(12).fill(0);
+        sources.slice(7).forEach(function (source) {
+            (source.counts || []).forEach(function (value, i) { if (i < 12) other[i] += Number(value) || 0; });
+        });
+        primary.push({ source: 'Other sources', counts: other, total: other.reduce(function (a, b) { return a + b; }, 0) });
+        return primary;
+    }
+
+    function drawBookingsChart() {
+        var svg = document.getElementById('dashboardBookingsChart');
+        if (!svg || !bookingsChartData) return;
+        svg.replaceChildren();
+        var data = bookingsChartData;
+        var allSources = bookingsVisibleSources(data.sources);
+        var sources = allSources.filter(function (source) { return !bookingsHiddenSources.has(source.source); });
+        var labels = (data.months || []).slice(0, 12);
+        var values = Array.from({ length: 12 }, function (_, i) {
+            return sources.reduce(function (sum, source) { return sum + Number((source.counts || [])[i] || 0); }, 0);
+        });
+        var width = chartSize(svg).width, height = Number(svg.getAttribute('viewBox').split(' ')[3]);
+        var left = 37, right = width - 10, top = 15, bottom = height - 25;
+        var max = Math.max.apply(null, values.concat([1]));
+        var tickMax = Math.max(4, Math.ceil(max / 4) * 4);
+        for (var step = 0; step <= 4; step++) {
+            var tick = tickMax * step / 4;
+            var y = bottom - step / 4 * (bottom - top);
+            svg.appendChild(svgNode('line', { x1: left, x2: right, y1: y, y2: y, stroke: '#edf2f6', 'stroke-width': 1 }));
+            addText(svg, left - 7, y + 3, String(Math.round(tick)), 'end');
+        }
+        var slot = (right - left) / 12;
+        var barWidth = Math.max(7, Math.min(slot * .60, 35));
+        var tip = chartTooltip();
+        var activeMonth = 0;
+        function showTooltip(i, x, y) {
+            activeMonth = i;
+            tip.replaceChildren();
+            var h = document.createElement('strong');
+            h.className = 'dashboard-chart-tooltip-date';
+            h.textContent = (labels[i] || 'Month') + ' ' + data.year;
+            tip.appendChild(h);
+            sources.forEach(function (source, sourceIndex) {
+                var count = Number((source.counts || [])[i] || 0);
+                if (!count) return;
+                var row = document.createElement('div');
+                row.className = 'dashboard-chart-tooltip-row';
+                var label = document.createElement('span');
+                var dot = document.createElement('i');
+                dot.style.backgroundColor = bookingsColors[allSources.indexOf(source) % bookingsColors.length];
+                label.appendChild(dot);
+                label.appendChild(document.createTextNode(source.source));
+                var value = document.createElement('b');
+                value.textContent = count.toLocaleString();
+                row.appendChild(label); row.appendChild(value); tip.appendChild(row);
+            });
+            var line = document.createElement('div');
+            line.className = 'dashboard-chart-tooltip-separator';
+            tip.appendChild(line);
+            var total = document.createElement('div');
+            total.className = 'dashboard-chart-tooltip-detail';
+            var name = document.createElement('span'); name.textContent = 'Total bookings';
+            var count = document.createElement('b'); count.textContent = values[i].toLocaleString();
+            total.appendChild(name); total.appendChild(count); tip.appendChild(total);
+            tip.hidden = false;
+            var rect = tip.getBoundingClientRect();
+            tip.style.left = Math.max(8, Math.min(window.innerWidth - rect.width - 8, x + 14)) + 'px';
+            tip.style.top = Math.max(8, y + rect.height + 16 > window.innerHeight ? y - rect.height - 14 : y + 14) + 'px';
+        }
+        for (var i = 0; i < 12; i++) {
+            var x = left + slot * (i + 0.5);
+            var heightSoFar = 0;
+            sources.forEach(function (source, sourceIndex) {
+                var val = Number((source.counts || [])[i] || 0);
+                if (val <= 0) return;
+                var segmentHeight = val / tickMax * (bottom - top);
+                svg.appendChild(svgNode('rect', {
+                    x: (x - barWidth / 2).toFixed(1),
+                    y: (bottom - heightSoFar - segmentHeight).toFixed(1),
+                    width: barWidth.toFixed(1), height: Math.max(0.6, segmentHeight).toFixed(1),
+                    fill: bookingsColors[allSources.indexOf(source) % bookingsColors.length], rx: 1.5,
+                    'pointer-events': 'none'
+                }));
+                heightSoFar += segmentHeight;
+            });
+            addText(svg, x, height - 7, labels[i] || '', 'middle');
+            var hit = svgNode('rect', {
+                x: (x - slot / 2).toFixed(1), y: top, width: slot.toFixed(1), height: bottom - top,
+                fill: 'transparent', 'pointer-events': 'all', 'data-month-index': i
+            });
+            (function (index) {
+                hit.addEventListener('mousemove', function (e) { showTooltip(index, e.clientX, e.clientY); });
+                hit.addEventListener('mouseenter', function (e) { showTooltip(index, e.clientX, e.clientY); });
+            })(i);
+            svg.appendChild(hit);
+        }
+        if (!sources.length && allSources.length) {
+            addText(svg, (left + right) / 2, (top + bottom) / 2, 'All sources hidden — use legend to show bookings', 'middle');
+        }
+        svg.onmouseleave = function () { tip.hidden = true; };
+        svg.onblur = function () { tip.hidden = true; };
+        svg.onfocus = function () {
+            var rect = svg.getBoundingClientRect();
+            showTooltip(activeMonth, rect.left + rect.width / 2, rect.top + 15);
+        };
+        svg.onkeydown = function (e) {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            activeMonth = Math.max(0, Math.min(11, activeMonth + (e.key === 'ArrowRight' ? 1 : -1)));
+            var rect = svg.getBoundingClientRect();
+            showTooltip(activeMonth, rect.left + rect.width / 2, rect.top + 15);
+        };
+        var legend = document.getElementById('dashboardBookingsLegend');
+        if (legend) {
+            legend.replaceChildren();
+            allSources.forEach(function (source, index) {
+                var item = document.createElement('button');
+                var isVisible = !bookingsHiddenSources.has(source.source);
+                item.type = 'button';
+                item.className = 'dashboard-booking-legend-button' + (isVisible ? '' : ' is-hidden');
+                item.dataset.source = source.source;
+                item.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+                item.setAttribute('aria-label', (isVisible ? 'Hide ' : 'Show ') + source.source + ' bookings');
+                item.title = (isVisible ? 'Hide ' : 'Show ') + source.source;
+                var dot = document.createElement('i');
+                dot.style.backgroundColor = bookingsColors[index % bookingsColors.length];
+                item.appendChild(dot);
+                item.appendChild(document.createTextNode(source.source));
+                item.addEventListener('click', function () {
+                    if (bookingsHiddenSources.has(source.source)) bookingsHiddenSources.delete(source.source);
+                    else bookingsHiddenSources.add(source.source);
+                    var tip = document.getElementById('dashboardChartTooltip');
+                    if (tip) tip.hidden = true;
+                    drawBookingsChart();
+                    var buttons = legend.querySelectorAll('button');
+                    for (var k = 0; k < buttons.length; k++) {
+                        if (buttons[k].dataset.source === source.source) { buttons[k].focus(); break; }
+                    }
+                });
+                legend.appendChild(item);
+            });
+        }
+    }
+
+    async function loadBookingsChart() {
+        var selector = document.getElementById('dashboardBookingsYear');
+        var message = document.getElementById('dashboardBookingsMessage');
+        var svg = document.getElementById('dashboardBookingsChart');
+        if (!selector || !svg) return;
+        var year = Number(selector.value);
+        if (message) { message.hidden = false; message.textContent = 'Loading ' + year + ' bookings…'; }
+        selector.disabled = true;
+        try {
+            var url = selector.getAttribute('data-bookings-url') + '?year=' + encodeURIComponent(year);
+            var response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
+            var payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(payload.message || 'Unable to load bookings.');
+            if (Number(selector.value) !== year) return;
+            bookingsChartData = payload.bookings;
+            bookingsHiddenSources.clear();
+            setHtmlText('dashboardBookingsYearLabel', String(year));
+            setHtmlText('dashboardBookingsTotal', Number(bookingsChartData.totalBookings || 0).toLocaleString());
+            setHtmlText('dashboardBookingsTopSource', (bookingsChartData.sources || []).length ? bookingsChartData.sources[0].source : '—');
+            drawBookingsChart();
+            if (message) {
+                message.hidden = Number(bookingsChartData.totalBookings || 0) > 0;
+                if (!message.hidden) message.textContent = 'No booking records found for ' + year + '.';
+            }
+        } catch (error) {
+            bookingsChartData = null;
+            svg.replaceChildren();
+            var legend = document.getElementById('dashboardBookingsLegend');
+            if (legend) legend.replaceChildren();
+            if (message) { message.hidden = false; message.textContent = (error && error.message) || 'Bookings could not be loaded.'; }
+            setHtmlText('dashboardBookingsTotal', '—');
+            setHtmlText('dashboardBookingsTopSource', '—');
+        } finally {
+            selector.disabled = false;
+        }
+    }
+
+    function wireBookingsChart() {
+        var year = document.getElementById('dashboardBookingsYear');
+        if (!year) return;
+        year.addEventListener('change', loadBookingsChart);
+        loadBookingsChart();
+    }
+
+    function wireResponsiveCharts() {
+        var charts = [
+            ['dashboardOccupancyChart', drawOccupancyOnBooks],
+            ['dashboardRevenueChart', drawRevenueTrend],
+            ['dashboardExceptionChart', drawExceptionChart],
+            ['dashboardBookingsChart', drawBookingsChart],
+            // The occupancy calendar is an HTML/CSS grid and resizes natively.
+        ];
+        var observed = [];
+        var rafPending = false;
+        function redrawSizedCharts() {
+            rafPending = false;
+            observed.forEach(function (item) {
+                var rect = item.svg.getBoundingClientRect();
+                if (rect.width < 1 || rect.height < 1) return;
+                var width = Math.round(rect.width);
+                var height = Math.round(rect.height);
+                if (Math.abs(width - item.lastWidth) < 2 && Math.abs(height - item.lastHeight) < 2) return;
+                item.lastWidth = width;
+                item.lastHeight = height;
+                // Keep lazy charts lazy; do not force-fetch analytics or draw
+                // before their existing visibility/data workflow completes.
+                if (item.svg.childNodes.length) item.draw();
+            });
+        }
+        function scheduleRedraw() {
+            if (rafPending) return;
+            rafPending = true;
+            window.requestAnimationFrame(redrawSizedCharts);
+        }
+        var observer = ('ResizeObserver' in window) ? new ResizeObserver(scheduleRedraw) : null;
+        charts.forEach(function (entry) {
+            var svg = document.getElementById(entry[0]);
+            if (!svg) return;
+            var rect = svg.getBoundingClientRect();
+            observed.push({ svg: svg, draw: entry[1], lastWidth: Math.round(rect.width), lastHeight: Math.round(rect.height) });
+            // The card body changes width when its column or sidebar changes.
+            if (observer) observer.observe(svg.parentElement);
+        });
+        window.addEventListener('resize', scheduleRedraw, { passive: true });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         ensureRoomStatusTemplateControls();
         wireRoomControls();
+        wireDateRangeFilter();
+        wireBookingsChart();
+        wireYearlyCharts();
+        var roomTypeSortSelect = document.getElementById('dashboardRoomTypeSort');
+        if (roomTypeSortSelect) roomTypeSortSelect.addEventListener('change', function () {
+            roomTypeSort = roomTypeSortSelect.value;
+            renderRoomTypes();
+        });
+        wirePricingGuidance();
+        wireResponsiveCharts();
         wireGuestFilters();
-        wireOccupancyTabs();
         wireStatisticDetails();
         updateRoomLegend(Array.prototype.map.call(document.querySelectorAll('#dashboardRoomRack [data-room-state]'), function (node) {
             return {
@@ -805,7 +2026,7 @@
                 paymentState: node.getAttribute('data-room-payment') || ''
             };
         }));
-        drawWhenVisible('dashboardOccupancyChart', function () { drawOccupancyOnBooks(30); });
+        drawWhenVisible('dashboardOccupancyChart', drawOccupancyOnBooks);
         drawWhenVisible('dashboardExceptionChart', drawExceptionChart);
 
         // Let the live room/guest/financial headline render first, then retrieve

@@ -26,15 +26,28 @@ public sealed class DashboardService : IDashboardService
         _logger = logger;
     }
 
+    public Task<DashboardViewModel> GetAsync(string hotelId, CancellationToken cancellationToken = default)
+    {
+        var end = _hotelClock.GetHotelToday(hotelId).Date;
+        return GetAsync(hotelId, end.AddDays(-29), end, cancellationToken);
+    }
+
     public async Task<DashboardViewModel> GetAsync(
         string hotelId,
+        DateTime periodStart,
+        DateTime periodEnd,
         CancellationToken cancellationToken = default)
     {
         hotelId = Clean(hotelId, 50);
         if (string.IsNullOrWhiteSpace(hotelId))
             throw new UnauthorizedAccessException("Hotel context is missing.");
 
-        var today = _hotelClock.GetHotelToday(hotelId).Date;
+        var today = periodEnd.Date;  // Selected-range end used for KPI reports.
+        var businessToday = _hotelClock.GetHotelToday(hotelId).Date;
+        var rangeStart = periodStart.Date;
+        if (rangeStart > today || today >= rangeStart.AddMonths(6))
+            throw new ArgumentOutOfRangeException(nameof(periodStart), "Dashboard date range must be shorter than six calendar months.");
+        var rangeKey = $"{rangeStart:yyyyMMdd}:{today:yyyyMMdd}";
         var now = _hotelClock.GetHotelNow(hotelId);
 
         // Keep the first paint intentionally small. The expensive 60/90-day
@@ -51,43 +64,43 @@ public sealed class DashboardService : IDashboardService
 
         var roomTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:rooms:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:rooms:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(10),
-                () => LoadRoomStatusInternalAsync(hotelId, today, cancellationToken)),
+                () => LoadRoomStatusInternalAsync(hotelId, businessToday, cancellationToken)),
             new List<DashboardRoomStatusItem>(),
             "room status");
 
         var operationsTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:operations:v28:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:operations:v28:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(5),
-                () => LoadOperationsAsync(hotelId, today, cancellationToken)),
+                () => LoadOperationsAsync(hotelId, businessToday, cancellationToken)),
             new DashboardOperationsData(),
             "operations");
 
         var guestsTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:guests:v28:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:guests:v28:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(15),
-                () => LoadInHouseGuestsAsync(hotelId, today, cancellationToken)),
+                () => LoadInHouseGuestsAsync(hotelId, businessToday, cancellationToken)),
             new List<DashboardGuestItem>(),
             "in-house guests");
 
         var occupancy30Task = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:occupancy30:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:occupancy-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromSeconds(45),
-                () => LoadOccupancySeriesAsync(hotelId, today, today.AddDays(29), cancellationToken)),
+                () => LoadOccupancySeriesAsync(hotelId, rangeStart, today.AddDays(6), cancellationToken)),
             new List<DashboardDailyPoint>(),
-            "30-day occupancy");
+            "selected-period occupancy");
 
         var occupancy30LastYearTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:occupancy30-ly:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:occupancy-period-ly:{hotelId}:{rangeKey}",
                 TimeSpan.FromMinutes(2),
-                () => LoadOccupancySeriesAsync(hotelId, today.AddYears(-1), today.AddYears(-1).AddDays(29), cancellationToken)),
+                () => LoadOccupancySeriesAsync(hotelId, rangeStart.AddYears(-1), today.AddYears(-1).AddDays(6), cancellationToken)),
             new List<DashboardDailyPoint>(),
-            "30-day last-year occupancy");
+            "selected-period last-year occupancy");
 
         // Keep financial, receivable and exception formulas isolated. This is
         // faster in practice on the Dashboard and, more importantly, one slow
@@ -96,11 +109,26 @@ public sealed class DashboardService : IDashboardService
         // cached independently for a very short period.
         var financialTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:financial-snapshot:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:financial-snapshot-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromSeconds(5),
-                () => LoadFinancialSnapshotAsync(hotelId, today, cancellationToken)),
+                () => LoadFinancialSnapshotAsync(hotelId, today, cancellationToken, rangeStart)),
             new DashboardFinancialSnapshot(),
             "financial headline");
+
+        // Report_Occupany: non-room-rent extras and configured VAT/GST percentage.
+        // Cache separately; financial snapshots remain the authoritative collected revenue.
+        var reportExtrasTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:extras-tax:{hotelId}:{rangeKey}", TimeSpan.FromMinutes(2),
+                () => LoadReportExtrasAndTaxRateAsync(hotelId, rangeStart, today, cancellationToken)),
+            (Extras: 0m, TaxPercent: 0m), "occupancy report extras / VAT");
+
+        // Guest-night total follows Report_Occupany: count each guest for each
+        // occupied night, not distinct guests over the period. Cached by range.
+        var guestNightsTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:guest-nights:v1:{hotelId}:{rangeKey}",
+                TimeSpan.FromMinutes(3),
+                () => LoadSelectedGuestNightsAsync(hotelId, rangeStart, today, cancellationToken)),
+            0, "selected guest nights");
 
         var receivablesTask = SafeLoadAsync(
             () => CachedAsync(
@@ -112,11 +140,30 @@ public sealed class DashboardService : IDashboardService
 
         var exceptionsTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:exceptions:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:exceptions-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromSeconds(15),
-                () => LoadExceptionsAsync(hotelId, today, cancellationToken)),
+                () => LoadExceptionsAsync(hotelId, today, cancellationToken, rangeStart)),
             new DashboardExceptionData(),
             "exception headline");
+
+        // Real hotel-local business-day snapshot, independent of the reporting filter.
+        var todayOccupancyTask = businessToday >= rangeStart && businessToday <= today
+            ? occupancy30Task
+            : SafeLoadAsync(
+                () => CachedAsync($"dashboard:today-occupancy:{hotelId}:{businessToday:yyyyMMdd}",
+                    TimeSpan.FromSeconds(30),
+                    () => LoadOccupancySeriesAsync(hotelId, businessToday, businessToday, cancellationToken)),
+                new List<DashboardDailyPoint>(), "today occupancy");
+        var todayFinancialTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:today-financial:{hotelId}:{businessToday:yyyyMMdd}",
+                TimeSpan.FromSeconds(15),
+                () => LoadFinancialSnapshotAsync(hotelId, businessToday, cancellationToken, businessToday)),
+            new DashboardFinancialSnapshot(), "today revenue");
+        var periodReceivablesTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:receivables-period:{hotelId}:{rangeKey}",
+                TimeSpan.FromSeconds(20),
+                () => LoadReceivableArrivalRangeAsync(hotelId, rangeStart, today, cancellationToken)),
+            0m, "period receivables");
 
         await Task.WhenAll(
             hotelTask,
@@ -126,8 +173,13 @@ public sealed class DashboardService : IDashboardService
             occupancy30Task,
             occupancy30LastYearTask,
             financialTask,
+            reportExtrasTask,
+            guestNightsTask,
             receivablesTask,
-            exceptionsTask);
+            exceptionsTask,
+            todayOccupancyTask,
+            todayFinancialTask,
+            periodReceivablesTask);
 
         var hotel = await hotelTask;
         var rooms = await roomTask;
@@ -136,17 +188,24 @@ public sealed class DashboardService : IDashboardService
         var occupancy30 = await occupancy30Task;
         var occupancy30LastYear = await occupancy30LastYearTask;
         var financial = await financialTask;
+        var reportExtras = await reportExtrasTask;
+        var guestNights = await guestNightsTask;
         var receivables = await receivablesTask;
         var exceptions = await exceptionsTask;
-        var todayOcc = occupancy30.FirstOrDefault(x => x.Date.Date == today);
+        var todayOcc = (await todayOccupancyTask).FirstOrDefault(x => x.Date.Date == businessToday);
+        var todayFinancial = await todayFinancialTask;
+        var periodReceivables = await periodReceivablesTask;
 
         var model = new DashboardViewModel
         {
             HotelId = hotelId,
             HotelName = string.IsNullOrWhiteSpace(hotel.Name) ? "Hotel" : hotel.Name,
             CurrencySymbol = string.IsNullOrWhiteSpace(hotel.CurrencySymbol) ? "£" : hotel.CurrencySymbol,
-            HotelToday = today,
+            HotelToday = businessToday,
+            ActualHotelToday = businessToday,
             GeneratedAt = now,
+            FilterStartDate = rangeStart,
+            FilterEndDate = today,
             RoomStatus = rooms,
             InHouseGuestRows = guests,
             // The first 30 days are enough for the headline card and for the
@@ -163,7 +222,8 @@ public sealed class DashboardService : IDashboardService
             GuestsPerRoom = operations.GuestsPerRoom,
             ReceivablesToday = receivables.Today,
             ReceivablesLast30Arrivals = receivables.Last30Arrivals,
-            Receivables = receivables.Today,
+            Receivables = periodReceivables,
+            ReceivablesSelectedPeriod = periodReceivables,
             ReceivablesOver30Days = receivables.Over30Days,
             NoShowsToday = exceptions.NoShowsToday,
             NoShowsMonthToDate = exceptions.NoShowsMonthToDate,
@@ -196,18 +256,65 @@ public sealed class DashboardService : IDashboardService
         if (model.InHouseGuests > 0 && model.GuestsPerRoom <= 0m)
             model.GuestsPerRoom = 1m;
 
-        model.OccupancyNext30 = WeightedOccupancy(occupancy30, today, today.AddDays(29));
         model.OccupancyNext30LastYear = WeightedOccupancy(
             occupancy30LastYear,
-            today.AddYears(-1),
-            today.AddYears(-1).AddDays(29));
+            rangeStart.AddYears(-1),
+            today.AddYears(-1));
         model.ForecastNext7 = WeightedOccupancy(occupancy30, today, today.AddDays(6));
 
+        // IMPORTANT: For a single-date filter, the KPI room counts must be sourced
+        // from the SAME room-level snapshot used by Room Status and Operations.
+        // The financial/room-rent series is reservation-night based and can include
+        // more than one reservation against the same physical room on that date.
+        // Never treat those reservations as two occupied physical rooms.
+        var selectedNights = occupancy30.Where(p => p.Date.Date >= rangeStart && p.Date.Date <= today).ToList();
+        IReadOnlyList<DashboardRoomStatusItem>? selectedDayRooms = null;
+        if (rangeStart.Date == today.Date)
+        {
+            selectedDayRooms = today.Date == businessToday.Date
+                ? rooms
+                : await GetRoomStatusAsync(hotelId, today.Date, cancellationToken);
+        }
+
+        if (selectedDayRooms is not null)
+        {
+            model.SelectedTotalInventoryNights = selectedDayRooms.Count;
+            model.SelectedBlockedRoomNights = selectedDayRooms.Count(x => x.State == "ooo");
+            model.SelectedSellableRoomNights = Math.Max(0,
+                model.SelectedTotalInventoryNights - model.SelectedBlockedRoomNights);
+            model.SelectedSoldRoomNights = selectedDayRooms.Count(x => x.State is "checkin" or "reservation");
+            model.SelectedVacantRoomNights = Math.Max(0,
+                model.SelectedSellableRoomNights - model.SelectedSoldRoomNights);
+        }
+        else
+        {
+            // Longer periods are sums of one physical room per night.
+            model.SelectedTotalInventoryNights = selectedNights.Sum(p => p.Inventory);
+            model.SelectedBlockedRoomNights = selectedNights.Sum(p => p.OutOfInventory);
+            model.SelectedSellableRoomNights = selectedNights.Sum(p => p.SellableInventory);
+            model.SelectedSoldRoomNights = selectedNights.Sum(p => p.RoomsSold);
+            model.SelectedVacantRoomNights = selectedNights.Sum(p => Math.Max(0, p.SellableInventory - p.RoomsSold));
+        }
+
+        // Keep occupancy, ADR and RevPAR consistent with the SOLD and SELLABLE
+        // values shown beside them. The revenue calculation is unchanged.
+        model.OccupancyNext30 = Percent(model.SelectedSoldRoomNights, model.SelectedSellableRoomNights);
+        model.SelectedGuestNights = guestNights;
+        var selectedSoldNights = model.SelectedSoldRoomNights;
+        var selectedAvailableNights = model.SelectedSellableRoomNights;
+        var selectedAccommodationRevenue = selectedNights.Sum(p => p.AccommodationRevenue);
+        model.SelectedAccommodationRevenue = selectedAccommodationRevenue;
+        model.SelectedExtrasRevenue = reportExtras.Extras;
+        // The Occupancy Report derives VAT from the configured rate, not an invoice's tax lines.
+        model.SelectedReportTax = Math.Round(selectedAccommodationRevenue * reportExtras.TaxPercent / 100m, 2);
+        model.SelectedAdr = selectedSoldNights > 0 ? Math.Round(selectedAccommodationRevenue / selectedSoldNights, 2) : 0m;
+        model.SelectedRevPar = selectedAvailableNights > 0 ? Math.Round(selectedAccommodationRevenue / selectedAvailableNights, 2) : 0m;
+
         // Use the same WebForms sources for the visible headline values.
-        model.RevenueToday = financial.RevenueToday;
-        model.RevenueTodayLastYear = financial.RevenueTodayLastYear;
-        model.ExpensesToday = financial.ExpensesToday;
-        model.ProfitToday = financial.RevenueToday - financial.ExpensesToday;
+        model.RevenueToday = todayFinancial.RevenueToday;
+        model.RevenueTodayLastYear = todayFinancial.RevenueTodayLastYear;
+        model.ExpensesToday = todayFinancial.ExpensesToday;
+        model.ProfitToday = todayFinancial.RevenueToday - todayFinancial.ExpensesToday;
         model.RevenueLast30 = financial.RevenueLast30;
         model.RevenueLast30LastYear = financial.RevenueLast30LastYear;
         model.ExpensesLast30 = financial.ExpenseLast30;
@@ -227,55 +334,152 @@ public sealed class DashboardService : IDashboardService
         return model;
     }
 
+    // Port of WebForms Get_Reservation_Details_Graph.  Count each booking once
+    // in its arrival month; choose GuestInformationLogTB source over the old
+    // reservation row when both exist (for checked-in/out reservations).
+    // Unlike the legacy dynamic PIVOT, this returns ordinary source rows and
+    // keeps agency names as *data*, never as SQL identifiers.
+    public async Task<DashboardBookingsChartResult> GetBookingsChartAsync(
+        string hotelId, int year, CancellationToken cancellationToken = default)
+    {
+        hotelId = Clean(hotelId, 50);
+        if (string.IsNullOrWhiteSpace(hotelId))
+            throw new UnauthorizedAccessException("Hotel context is missing.");
+        if (year < 2000 || year > 2100)
+            throw new ArgumentOutOfRangeException(nameof(year));
+
+        var result = new DashboardBookingsChartResult
+        {
+            Year = year,
+            Months = CultureInfo.InvariantCulture.DateTimeFormat.AbbreviatedMonthNames.Take(12).ToList()
+        };
+        const string sql = @"
+WITH PaidBookings AS (
+    SELECT DISTINCT p.reg_id, TRY_CONVERT(date, p.ArrivalDate, 101) AS ArrivalDay
+    FROM dbo.payments p
+    WHERE p.hotel_id = @HotelId
+      AND LTRIM(RTRIM(ISNULL(p.descr, ''))) = 'Room Rent'
+      AND p.reg_id IS NOT NULL
+      AND TRY_CONVERT(date, p.ArrivalDate, 101) >= @YearStart
+      AND TRY_CONVERT(date, p.ArrivalDate, 101) < @YearEnd
+),
+Candidates AS (
+    SELECT p.reg_id, p.ArrivalDay, NULLIF(LTRIM(RTRIM(g.Agency)), '') AS Agency, 0 AS Priority
+    FROM PaidBookings p
+    INNER JOIN dbo.GuestInformationLogTB g ON g.reg_id = p.reg_id AND g.hotel_id = @HotelId
+    UNION ALL
+    SELECT p.reg_id, p.ArrivalDay, NULLIF(LTRIM(RTRIM(n.Agency)), '') AS Agency, 1 AS Priority
+    FROM PaidBookings p
+    INNER JOIN dbo.NewReservationsTB n ON n.reg_id = p.reg_id AND n.hotel_id = @HotelId
+),
+Ranked AS (
+    SELECT ArrivalDay, COALESCE(Agency, 'Unspecified') AS Source,
+           ROW_NUMBER() OVER (
+               PARTITION BY reg_id
+               ORDER BY CASE WHEN Agency IS NULL THEN 1 ELSE 0 END, Priority, ArrivalDay, Agency
+           ) AS rn
+    FROM Candidates
+)
+SELECT MONTH(ArrivalDay) AS MonthNumber, Source, COUNT(*) AS BookingCount
+FROM Ranked
+WHERE rn = 1
+GROUP BY MONTH(ArrivalDay), Source
+ORDER BY MonthNumber, Source;";
+
+        var bySource = new Dictionary<string, DashboardBookingSourceSeries>(StringComparer.OrdinalIgnoreCase);
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.CommandTimeout = 45;
+        command.Parameters.Add("@HotelId", SqlDbType.NVarChar, 50).Value = hotelId;
+        command.Parameters.Add("@YearStart", SqlDbType.Date).Value = new DateTime(year, 1, 1);
+        command.Parameters.Add("@YearEnd", SqlDbType.Date).Value = new DateTime(year + 1, 1, 1);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var month = reader.GetInt32(reader.GetOrdinal("MonthNumber"));
+            var source = Convert.ToString(reader["Source"])?.Trim() ?? "Unspecified";
+            var count = Convert.ToInt32(reader["BookingCount"]);
+            if (month is < 1 or > 12) continue;
+            if (!bySource.TryGetValue(source, out var series))
+            {
+                series = new DashboardBookingSourceSeries
+                {
+                    Source = source,
+                    Counts = Enumerable.Repeat(0, 12).ToList()
+                };
+                bySource.Add(source, series);
+            }
+            series.Counts[month - 1] += count;
+            series.Total += count;
+            result.TotalBookings += count;
+        }
+        result.Sources = bySource.Values.OrderByDescending(x => x.Total)
+            .ThenBy(x => x.Source, StringComparer.OrdinalIgnoreCase).ToList();
+        return result;
+    }
+
+    public Task<DashboardAnalyticsResult> GetAnalyticsAsync(string hotelId, CancellationToken cancellationToken = default)
+    {
+        var end = _hotelClock.GetHotelToday(hotelId).Date;
+        return GetAnalyticsAsync(hotelId, end.AddDays(-29), end, cancellationToken);
+    }
+
     public async Task<DashboardAnalyticsResult> GetAnalyticsAsync(
         string hotelId,
+        DateTime periodStart,
+        DateTime periodEnd,
         CancellationToken cancellationToken = default)
     {
         hotelId = Clean(hotelId, 50);
         if (string.IsNullOrWhiteSpace(hotelId))
             throw new UnauthorizedAccessException("Hotel context is missing.");
 
-        var today = _hotelClock.GetHotelToday(hotelId).Date;
+        var today = periodEnd.Date;
+        var rangeStart = periodStart.Date;
+        if (rangeStart > today || today >= rangeStart.AddMonths(6))
+            throw new ArgumentOutOfRangeException(nameof(periodStart), "Dashboard date range must be shorter than six calendar months.");
+        var rangeKey = $"{rangeStart:yyyyMMdd}:{today:yyyyMMdd}";
 
         // These are lower-page analytics. Loading them after first paint keeps
         // Dashboard interaction responsive even on hotels with a long history.
         var occupancyTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:analytics-occupancy:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:analytics-occupancy-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromMinutes(2),
-                () => LoadOccupancySeriesAsync(hotelId, today.AddDays(-15), today.AddDays(89), cancellationToken)),
+                () => LoadOccupancySeriesAsync(hotelId, rangeStart, today.AddDays(6), cancellationToken)),
             new List<DashboardDailyPoint>(),
             "analytics occupancy");
 
         var occupancyLastYearTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:analytics-occupancy-ly:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:analytics-occupancy-ly-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromMinutes(5),
-                () => LoadOccupancySeriesAsync(hotelId, today.AddYears(-1).AddDays(-15), today.AddYears(-1).AddDays(89), cancellationToken)),
+                () => LoadOccupancySeriesAsync(hotelId, rangeStart.AddYears(-1), today.AddYears(-1).AddDays(6), cancellationToken)),
             new List<DashboardDailyPoint>(),
             "analytics last-year occupancy");
 
         var financialTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:financial:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:financial-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromMinutes(2),
-                () => LoadFinancialSeriesAsync(hotelId, today, cancellationToken)),
+                () => LoadFinancialSeriesAsync(hotelId, today, cancellationToken, rangeStart)),
             new List<DashboardFinancialPoint>(),
             "financial trend");
 
         var revenueSourcesTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:revenue-sources:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:revenue-sources-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromMinutes(5),
-                () => LoadRevenueSourcesAsync(hotelId, today, today.AddDays(29), cancellationToken)),
+                () => LoadRevenueSourcesAsync(hotelId, rangeStart, today, cancellationToken)),
             new List<DashboardRevenueSourceItem>(),
             "revenue sources");
 
         var roomTypesTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:room-types:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:room-types-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromMinutes(5),
-                () => LoadRoomTypesAsync(hotelId, today, cancellationToken)),
+                () => LoadRoomTypesAsync(hotelId, today, cancellationToken, rangeStart)),
             new List<DashboardRoomTypeItem>(),
             "room type performance");
 
@@ -287,6 +491,13 @@ public sealed class DashboardService : IDashboardService
             new List<DashboardCurrentRate>(),
             "current rates");
 
+        // Report_Occupany: non-room-rent extras and configured VAT/GST percentage.
+        // Cache separately; financial snapshots remain the authoritative collected revenue.
+        var reportExtrasTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:extras-tax:{hotelId}:{rangeKey}", TimeSpan.FromMinutes(2),
+                () => LoadReportExtrasAndTaxRateAsync(hotelId, rangeStart, today, cancellationToken)),
+            (Extras: 0m, TaxPercent: 0m), "occupancy report extras / VAT");
+
         var receivablesTask = SafeLoadAsync(
             () => CachedAsync(
                 $"dashboard:receivables:{hotelId}:{today:yyyyMMdd}",
@@ -297,9 +508,9 @@ public sealed class DashboardService : IDashboardService
 
         var exceptionsTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:exceptions:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:exceptions-period:{hotelId}:{rangeKey}",
                 TimeSpan.FromSeconds(15),
-                () => LoadExceptionsAsync(hotelId, today, cancellationToken)),
+                () => LoadExceptionsAsync(hotelId, today, cancellationToken, rangeStart)),
             new DashboardExceptionData(),
             "analytics exceptions");
 
@@ -346,13 +557,13 @@ public sealed class DashboardService : IDashboardService
 
         return new DashboardAnalyticsResult
         {
-            OccupancyNext30 = WeightedOccupancy(occupancy, today, today.AddDays(29)),
-            OccupancyNext60 = WeightedOccupancy(occupancy, today, today.AddDays(59)),
-            OccupancyNext90 = WeightedOccupancy(occupancy, today, today.AddDays(89)),
+            OccupancyNext30 = WeightedOccupancy(occupancy, rangeStart, today),
+            OccupancyNext60 = WeightedOccupancy(occupancy, rangeStart, today),
+            OccupancyNext90 = WeightedOccupancy(occupancy, rangeStart, today),
             OccupancyNext30LastYear = WeightedOccupancy(
                 occupancyLastYear,
-                today.AddYears(-1),
-                today.AddYears(-1).AddDays(29)),
+                rangeStart.AddYears(-1),
+                today.AddYears(-1)),
             ForecastNext7 = WeightedOccupancy(occupancy, today, today.AddDays(6)),
             OccupancySeries = occupancy,
             OccupancyLastYearSeries = occupancyLastYear,
@@ -362,6 +573,438 @@ public sealed class DashboardService : IDashboardService
             PriceRecommendations = BuildPriceRecommendations(rates, roomTypes),
             Decisions = BuildDecisions(decisionModel)
         };
+    }
+
+    private async Task<(decimal Extras, decimal TaxPercent)> LoadReportExtrasAndTaxRateAsync(
+        string hotelId, DateTime start, DateTime end, CancellationToken ct)
+    {
+        // Uses the provided Report_Occupany.aspx.cs extras recognition rule:
+        // non-Room Rent payments where currentdate falls inside the period,
+        // excluding cancelled/no-show rows. VAT rate uses hotel's last configured
+        // VAT or GST + bedtax, exactly as the report's tax CTE does.
+        const string sql = @"
+SELECT COALESCE(SUM(TRY_CONVERT(decimal(18,2),
+    NULLIF(REPLACE(REPLACE(REPLACE(CONVERT(varchar(100),p.totalamount),',',''),'£',''),'$',''),''))),0) AS Extras
+FROM dbo.payments p
+CROSS APPLY (VALUES (COALESCE(
+    TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.currentdate)),''),103),
+    TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.currentdate)),''),110),
+    TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.currentdate)),''))))) dt(d)
+WHERE p.hotel_id=@hotel
+  AND NULLIF(LTRIM(RTRIM(p.descr)),'') IS NOT NULL
+  AND LTRIM(RTRIM(p.descr)) <> 'Room Rent'
+  AND dt.d BETWEEN @start AND @end
+  AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) NOT IN
+    ('cancel','cancelled','canceled','no show','noshow','no-show');
+SELECT TOP 1 CAST(CASE
+  WHEN TRY_CONVERT(decimal(9,4), NULLIF(LTRIM(RTRIM(t.vat)),'')) IS NULL
+    OR TRY_CONVERT(decimal(9,4), NULLIF(LTRIM(RTRIM(t.vat)),'')) = 0
+  THEN COALESCE(TRY_CONVERT(decimal(9,4),NULLIF(LTRIM(RTRIM(t.gst)),'')),0)
+     + COALESCE(TRY_CONVERT(decimal(9,4),NULLIF(LTRIM(RTRIM(t.bedtax)),'')),0)
+  ELSE TRY_CONVERT(decimal(9,4),NULLIF(LTRIM(RTRIM(t.vat)),'')) END AS decimal(9,4)) AS TaxPct
+FROM dbo.taxes t WHERE t.hotel_id=@hotel ORDER BY t.id DESC;";
+        await using var c = new SqlConnection(_connectionString);
+        await c.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, c) { CommandTimeout = 25 };
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
+        cmd.Parameters.Add("@end", SqlDbType.Date).Value = end.Date;
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var extras = await r.ReadAsync(ct) ? ToDecimal(r["Extras"]) : 0m;
+        var taxPercent = await r.NextResultAsync(ct) && await r.ReadAsync(ct)
+            ? ToDecimal(r["TaxPct"]) : 0m;
+        return (extras, taxPercent);
+    }
+
+    private async Task<int> LoadSelectedGuestNightsAsync(
+        string hotelId, DateTime start, DateTime end, CancellationToken ct)
+    {
+        // Mirrors the guest source precedence from Report_Occupany: prefer
+        // GuestInformationLogTB, then NewReservationsTB for still-pending stays.
+        // Reservation dates are clamped to the selected range; duplicates across
+        // multiple rooms of one reservation do not multiply guest counts.
+        const string sql = @"
+;WITH booking_stays AS (
+ SELECT DISTINCT p.reg_id,
+   COALESCE(TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.ArrivalDate)),''),110),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.ArrivalDate)),''),103),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.ArrivalDate)),''))) AS arrival,
+   COALESCE(TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.DepartureDate)),''),110),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.DepartureDate)),''),103),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.DepartureDate)),''))) AS departure
+ FROM dbo.payments p
+ WHERE p.hotel_id=@hotel AND p.reg_id IS NOT NULL
+   AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
+   AND NULLIF(LTRIM(RTRIM(p.room_no)),'') IS NOT NULL
+   AND UPPER(LTRIM(RTRIM(p.room_no))) <> 'UNASSIGNED'
+   AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) NOT IN
+      ('cancel','cancelled','canceled','no show','noshow','no-show')
+), relevant AS (
+ SELECT reg_id,
+   CASE WHEN arrival>@start THEN arrival ELSE @start END AS first_night,
+   CASE WHEN departure<@endExclusive THEN departure ELSE @endExclusive END AS last_night
+ FROM booking_stays
+ WHERE arrival<@endExclusive AND departure>@start AND departure>arrival
+), guest_base AS (
+ SELECT gl.reg_id,
+    COALESCE(TRY_CONVERT(int,gl.NumberOfAdults),0) AS adults,
+    COALESCE(TRY_CONVERT(int,gl.NumberOfMinors),0) AS minors
+ FROM dbo.GuestInformationLogTB gl WHERE gl.hotel_id=@hotel
+ UNION ALL
+ SELECT nr.reg_id,
+    COALESCE(TRY_CONVERT(int,nr.number_of_adult),0),
+    COALESCE(TRY_CONVERT(int,nr.number_of_minor),0)
+ FROM dbo.NewReservationsTB nr WHERE nr.hotel_id=@hotel
+   AND NOT EXISTS (SELECT 1 FROM dbo.GuestInformationLogTB gl
+                   WHERE gl.hotel_id=nr.hotel_id AND gl.reg_id=nr.reg_id)
+), guest_one AS (
+ SELECT reg_id, MAX(adults) AS adults, MAX(minors) AS minors
+ FROM guest_base GROUP BY reg_id
+)
+SELECT COALESCE(SUM(CONVERT(bigint,COALESCE(g.adults,0)+COALESCE(g.minors,0)) *
+       DATEDIFF(day,r.first_night,r.last_night)),0) AS guest_nights
+FROM relevant r LEFT JOIN guest_one g ON g.reg_id=r.reg_id;";
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(ct);
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
+        command.Parameters.Add("@endExclusive", SqlDbType.Date).Value = end.Date.AddDays(1);
+        var value = await command.ExecuteScalarAsync(ct);
+        return (int)Math.Min(int.MaxValue, Math.Max(0L, Convert.ToInt64(value is DBNull or null ? 0 : value, CultureInfo.InvariantCulture)));
+    }
+
+    private async Task<List<DashboardAnnualOccupancyMonth>> LoadAnnualOccupancyMonthsAsync(
+        string hotelId, int year, CancellationToken ct)
+    {
+        // Monthly overlap math is O(stays x 24 months), NOT O(stays x 730 nights).
+        // One query calculates this year and the previous year together.
+        const string sql = @"
+;WITH months AS (
+  SELECT DATEADD(month,v.n,CONVERT(date,@first)) AS month_start,
+         DATEADD(month,v.n+1,CONVERT(date,@first)) AS month_end
+  FROM (SELECT TOP (24) ROW_NUMBER() OVER(ORDER BY (SELECT NULL))-1 AS n
+        FROM sys.all_objects) v
+),
+reservations AS (
+ SELECT DISTINCT NULLIF(LTRIM(RTRIM(p.reg_id)),'') AS reg_id,
+   NULLIF(LTRIM(RTRIM(p.room_no)),'') AS room_no,
+   parsed.arrival, parsed.departure
+ FROM dbo.payments p
+ CROSS APPLY (VALUES (
+   COALESCE(TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.ArrivalDate)),''),110),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.ArrivalDate)),''),103),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.ArrivalDate)),''))),
+   COALESCE(TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.DepartureDate)),''),110),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.DepartureDate)),''),103),
+            TRY_CONVERT(date,NULLIF(LTRIM(RTRIM(p.DepartureDate)),'')))
+ )) parsed(arrival,departure)
+ WHERE p.hotel_id=@hotel AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
+   AND NULLIF(LTRIM(RTRIM(p.room_no)),'') IS NOT NULL
+   AND UPPER(LTRIM(RTRIM(p.room_no)))<>'UNASSIGNED'
+   AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) NOT IN
+      ('cancel','cancelled','canceled','no show','noshow','no-show')
+   -- Discard outside-year stays before the 24 monthly overlap joins.
+   AND parsed.arrival<DATEADD(month,24,@first)
+   AND parsed.departure>@first AND parsed.departure>parsed.arrival
+),
+
+sold AS (
+ SELECT m.month_start, SUM(DATEDIFF(day,
+     CASE WHEN r.arrival>m.month_start THEN r.arrival ELSE m.month_start END,
+     CASE WHEN r.departure<m.month_end THEN r.departure ELSE m.month_end END)) AS sold
+ FROM months m JOIN reservations r ON r.arrival<m.month_end AND r.departure>m.month_start
+ WHERE r.arrival IS NOT NULL AND r.departure>r.arrival
+ GROUP BY m.month_start
+),
+d AS (
+ SELECT @first AS d UNION ALL SELECT DATEADD(day,1,d) FROM d
+ WHERE d < DATEADD(day,-1,DATEADD(month,24,@first))
+),
+valid_blocks AS (
+ SELECT DISTINCT rb.RoomNo AS room_no,
+        TRY_CONVERT(date,rb.BlockStartDate) AS begins,
+        COALESCE(TRY_CONVERT(date,rb.BlockEndDate),CONVERT(date,'99991231',112)) AS ends
+ FROM dbo.RoomBlocksTB rb
+ INNER JOIN dbo.RoomsTB rt ON rt.Hotel_id=rb.HotelID AND rt.room_no=rb.RoomNo
+ WHERE rb.HotelID=@hotel AND rb.IsActive=1
+   AND TRY_CONVERT(date,rb.BlockStartDate)<DATEADD(month,24,@first)
+   AND (rb.BlockEndDate IS NULL OR TRY_CONVERT(date,rb.BlockEndDate)>=@first)
+),
+blocked AS (
+ SELECT d.d, COUNT(DISTINCT b.room_no) AS rooms
+ FROM valid_blocks b INNER JOIN d ON d.d>=b.begins AND d.d<=b.ends
+ GROUP BY d.d
+),
+capacity AS (
+ SELECT DATEFROMPARTS(YEAR(d.d),MONTH(d.d),1) AS month_start,
+       SUM(CASE WHEN (i.rooms-ISNULL(b.rooms,0))>0 THEN i.rooms-ISNULL(b.rooms,0) ELSE 0 END) AS supply
+ FROM d CROSS JOIN (SELECT COUNT(*) AS rooms FROM dbo.RoomsTB WHERE hotel_id=@hotel) i
+ LEFT JOIN blocked b ON b.d=d.d
+ GROUP BY YEAR(d.d),MONTH(d.d)
+)
+SELECT YEAR(m.month_start) AS yr, MONTH(m.month_start) AS mo,
+ ISNULL(s.sold,0) AS sold, ISNULL(c.supply,0) AS supply
+FROM months m LEFT JOIN sold s ON s.month_start=m.month_start
+LEFT JOIN capacity c ON c.month_start=m.month_start
+ORDER BY m.month_start OPTION (MAXRECURSION 0);";
+        var current = new Dictionary<int, (int sold, int supply)>();
+        var prior = new Dictionary<int, (int sold, int supply)>();
+        await using var c = new SqlConnection(_connectionString);
+        await c.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, c) { CommandTimeout = 45 };
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@first", SqlDbType.Date).Value = new DateTime(year - 1, 1, 1);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var y = ToInt(reader["yr"]); var m = ToInt(reader["mo"]);
+            var value = (ToInt(reader["sold"]), ToInt(reader["supply"]));
+            if (y == year) current[m] = value;
+            else if (y == year - 1) prior[m] = value;
+        }
+        return Enumerable.Range(1, 12).Select(m => {
+            var now = current.GetValueOrDefault(m); var ly = prior.GetValueOrDefault(m);
+            return new DashboardAnnualOccupancyMonth
+            {
+                Month = m,
+                Label = new DateTime(year, m, 1).ToString("MMM", CultureInfo.InvariantCulture),
+                Sold = now.sold,
+                Supply = now.supply,
+                PreviousSold = ly.sold,
+                PreviousSupply = ly.supply,
+                Occupancy = now.supply > 0 ? 100m * now.sold / now.supply : 0m,
+                PreviousOccupancy = ly.supply > 0 ? 100m * ly.sold / ly.supply : 0m
+            };
+        }).ToList();
+    }
+
+    private async Task<List<DashboardAnnualFinancialMonth>> LoadAnnualFinancialMonthsAsync(
+        string hotelId, int year, CancellationToken ct)
+    {
+        // Aggregate directly by month, without manufacturing a 365-row date
+        // calendar and joining each payment/expense to that calendar.
+        const string sql = @"
+DECLARE @isClosing bit=0;
+SELECT TOP 1 @isClosing=CASE WHEN TRY_CONVERT(int,ISNULL(isClosing,0))=1 THEN 1 ELSE 0 END
+ FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;
+;WITH events AS (
+ SELECT COALESCE(TRY_CONVERT(date,pl.currentdate,100),TRY_CONVERT(date,pl.currentdate,101),
+           TRY_CONVERT(date,pl.currentdate,103),TRY_CONVERT(date,pl.currentdate)) AS d,
+        COALESCE(TRY_CONVERT(decimal(18,2),NULLIF(REPLACE(REPLACE(REPLACE(CONVERT(varchar(100),pl.paid_amount),',',''),'£',''),'$',''),'')),0) AS revenue,
+        CONVERT(decimal(18,2),0) AS expense
+ FROM dbo.PaymentsLogTB pl WHERE pl.hotel_id=@hotel AND (@isClosing=0 OR LTRIM(RTRIM(CONVERT(varchar(20),pl.cb_status)))='2')
+ UNION ALL
+ SELECT COALESCE(TRY_CONVERT(date,e.currentdate,101),TRY_CONVERT(date,e.currentdate,103),TRY_CONVERT(date,e.currentdate)),
+        CONVERT(decimal(18,2),0),COALESCE(TRY_CONVERT(decimal(18,2),e.amount),0)
+ FROM dbo.ExpenseDetailTB e WHERE e.hotel_id=@hotel AND LTRIM(RTRIM(ISNULL(e.transaction_type,'')))='Credit'
+)
+SELECT YEAR(d) AS yr, MONTH(d) AS mo, SUM(revenue) AS revenue, SUM(expense) AS expense
+FROM events WHERE d>=@first AND d<@last GROUP BY YEAR(d),MONTH(d);";
+        var months = new Dictionary<(int year, int month), (decimal revenue, decimal expense)>();
+        await using var c = new SqlConnection(_connectionString);
+        await c.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, c) { CommandTimeout = 45 };
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@first", SqlDbType.Date).Value = new DateTime(year - 1, 1, 1);
+        cmd.Parameters.Add("@last", SqlDbType.Date).Value = new DateTime(year + 1, 1, 1);
+        await using var rdr = await cmd.ExecuteReaderAsync(ct);
+        while (await rdr.ReadAsync(ct))
+        {
+            months[(ToInt(rdr["yr"]), ToInt(rdr["mo"]))] = (ToDecimal(rdr["revenue"]), ToDecimal(rdr["expense"]));
+        }
+        return Enumerable.Range(1, 12).Select(m => {
+            var cur = months.GetValueOrDefault((year, m)); var prev = months.GetValueOrDefault((year - 1, m));
+            return new DashboardAnnualFinancialMonth
+            {
+                Month = m,
+                Label = new DateTime(year, m, 1).ToString("MMM", CultureInfo.InvariantCulture),
+                Revenue = cur.revenue,
+                Expense = cur.expense,
+                Profit = cur.revenue - cur.expense,
+                LastYearRevenue = prev.revenue,
+                LastYearProfit = prev.revenue - prev.expense
+            };
+        }).ToList();
+    }
+
+    // Section-specific requests prevent slow annual occupancy queries from blocking
+    // the revenue and cancellation charts. Failures are returned to the client,
+    // rather than silently converting SQL errors into empty/zero-value reports.
+    public async Task<object> GetYearlyChartSectionAsync(
+        string hotelId, int year, string section, CancellationToken cancellationToken = default)
+    {
+        hotelId = Clean(hotelId, 50);
+        if (string.IsNullOrWhiteSpace(hotelId))
+            throw new UnauthorizedAccessException("Hotel context is missing.");
+        if (year < 2000 || year > 2099)
+            throw new ArgumentOutOfRangeException(nameof(year));
+
+        var start = new DateTime(year, 1, 1);
+        var end = new DateTime(year, 12, 31);
+        switch (section?.Trim().ToLowerInvariant())
+        {
+            case "occupancy":
+                {
+                    // Monthly stay-overlap aggregation avoids the former 730-day
+                    // reservation-by-day expansion (and only reads stays once for both years).
+                    var monthly = await CachedAsync($"dashboard:year-occ-monthly:v3:{hotelId}:{year}",
+                        TimeSpan.FromMinutes(8),
+                        () => LoadAnnualOccupancyMonthsAsync(hotelId, year, cancellationToken));
+                    return new { Year = year, OccupancyMonths = monthly };
+                }
+            case "calendar":
+                {
+                    // Independent from annual chart: a slow current-month query must
+                    // not delay the annual occupancy chart.
+                    var hotelToday = _hotelClock.GetHotelToday(hotelId).Date;
+                    var monthStart = new DateTime(hotelToday.Year, hotelToday.Month, 1);
+                    var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+                    var days = await CachedAsync($"dashboard:month-occ:{hotelId}:{hotelToday:yyyyMM}",
+                        TimeSpan.FromMinutes(3),
+                        () => LoadOccupancySeriesAsync(hotelId, monthStart, monthEnd, cancellationToken));
+                    return new
+                    {
+                        Year = year,
+                        CurrentMonth = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                        MonthDaily = days.Where(d => d.Date >= monthStart && d.Date <= monthEnd).ToList()
+                    };
+                }
+            case "financial":
+                {
+                    var months = await CachedAsync($"dashboard:year-finance-monthly:v2:{hotelId}:{year}",
+                        TimeSpan.FromMinutes(5),
+                        () => LoadAnnualFinancialMonthsAsync(hotelId, year, cancellationToken));
+                    return new { Year = year, FinancialMonths = months };
+                }
+            case "exceptions":
+                {
+                    var months = await CachedAsync($"dashboard:year-exceptions:{hotelId}:{year}", TimeSpan.FromMinutes(5),
+                        () => LoadYearExceptionMonthsAsync(hotelId, year, cancellationToken));
+                    return new { Year = year, ExceptionMonths = months };
+                }
+            default:
+                throw new ArgumentException("Unknown annual chart section.", nameof(section));
+        }
+    }
+
+    // Calendar-year trend data, cached and loaded after the Dashboard's first paint.
+    public async Task<object> GetYearlyChartsAsync(string hotelId, int year, CancellationToken cancellationToken = default)
+    {
+        hotelId = Clean(hotelId, 50);
+        if (string.IsNullOrWhiteSpace(hotelId)) throw new UnauthorizedAccessException("Hotel context is missing.");
+        if (year < 2000 || year > 2099) throw new ArgumentOutOfRangeException(nameof(year));
+        var start = new DateTime(year, 1, 1);
+        var end = new DateTime(year, 12, 31);
+        var current = _hotelClock.GetHotelToday(hotelId).Date;
+        var monthStart = new DateTime(current.Year, current.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        var occupancyTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:year-occ:{hotelId}:{year}", TimeSpan.FromMinutes(5),
+                () => LoadOccupancySeriesAsync(hotelId, start, end, cancellationToken)),
+            new List<DashboardDailyPoint>(), "year occupancy");
+        var lastYearTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:year-occ:{hotelId}:{year - 1}", TimeSpan.FromMinutes(5),
+                () => LoadOccupancySeriesAsync(hotelId, start.AddYears(-1), end.AddYears(-1), cancellationToken)),
+            new List<DashboardDailyPoint>(), "last year occupancy");
+        var financialTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:year-finance:{hotelId}:{year}", TimeSpan.FromMinutes(5),
+                () => LoadFinancialSeriesAsync(hotelId, end, cancellationToken, start)),
+            new List<DashboardFinancialPoint>(), "year finance");
+        var exceptionTask = SafeLoadAsync(
+            () => CachedAsync($"dashboard:year-exceptions:{hotelId}:{year}", TimeSpan.FromMinutes(5),
+                () => LoadYearExceptionMonthsAsync(hotelId, year, cancellationToken)),
+            new List<DashboardExceptionPoint>(), "year exceptions");
+        var currentMonthTask = year == current.Year
+            ? occupancyTask
+            : SafeLoadAsync(
+                () => CachedAsync($"dashboard:month-occ:{hotelId}:{current:yyyyMM}", TimeSpan.FromMinutes(2),
+                    () => LoadOccupancySeriesAsync(hotelId, monthStart, monthEnd, cancellationToken)),
+                new List<DashboardDailyPoint>(), "current-month occupancy");
+        await Task.WhenAll(occupancyTask, lastYearTask, financialTask, exceptionTask, currentMonthTask);
+        var occupancy = await occupancyTask;
+        var previous = await lastYearTask;
+        var financial = await financialTask;
+        var exceptions = await exceptionTask;
+        var monthDaily = (await currentMonthTask)
+            .Where(p => p.Date.Date >= monthStart && p.Date.Date <= monthEnd).ToList();
+        var monthlyOcc = Enumerable.Range(1, 12).Select(month =>
+        {
+            var list = occupancy.Where(p => p.Date.Month == month).ToList();
+            var ly = previous.Where(p => p.Date.Month == month).ToList();
+            var totalSupply = list.Sum(p => p.SellableInventory);
+            var lastSupply = ly.Sum(p => p.SellableInventory);
+            return new
+            {
+                Month = month,
+                Label = start.AddMonths(month - 1).ToString("MMM", CultureInfo.InvariantCulture),
+                Occupancy = totalSupply > 0 ? 100m * list.Sum(p => p.RoomsSold) / totalSupply : 0m,
+                PreviousOccupancy = lastSupply > 0 ? 100m * ly.Sum(p => p.RoomsSold) / lastSupply : 0m,
+                Sold = list.Sum(p => p.RoomsSold),
+                Supply = totalSupply,
+                PreviousSold = ly.Sum(p => p.RoomsSold),
+                PreviousSupply = lastSupply
+            };
+        }).ToList();
+        var monthlyFinancial = Enumerable.Range(1, 12).Select(month =>
+        {
+            var list = financial.Where(p => p.Date.Month == month).ToList();
+            return new
+            {
+                Month = month,
+                Label = start.AddMonths(month - 1).ToString("MMM", CultureInfo.InvariantCulture),
+                Revenue = list.Sum(p => p.Revenue),
+                Profit = list.Sum(p => p.Profit),
+                Expense = list.Sum(p => p.Expense),
+                LastYearRevenue = list.Sum(p => p.LastYearRevenue),
+                LastYearProfit = list.Sum(p => p.LastYearProfit)
+            };
+        }).ToList();
+        return new
+        {
+            Year = year,
+            OccupancyMonths = monthlyOcc,
+            FinancialMonths = monthlyFinancial,
+            ExceptionMonths = exceptions,
+            CurrentMonth = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+            MonthDaily = monthDaily
+        };
+    }
+
+    private async Task<List<DashboardExceptionPoint>> LoadYearExceptionMonthsAsync(
+        string hotelId, int year, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT ExceptionType, MONTH(EventDate) AS MonthNo, COUNT(*) AS Total
+FROM (
+    SELECT 'cancel' AS ExceptionType, TRY_CONVERT(date, ArrivalDate) AS EventDate
+      FROM dbo.CancelledReservationsTB WHERE hotel_id=@hotel
+    UNION ALL
+    SELECT 'noshow', TRY_CONVERT(date, ArrivalDate)
+      FROM dbo.NoShowTB WHERE hotel_id=@hotel
+) AS source
+WHERE EventDate >= @start AND EventDate < @end
+GROUP BY ExceptionType, MONTH(EventDate);";
+        var results = Enumerable.Range(1, 12).Select(month => new DashboardExceptionPoint
+        {
+            Label = new DateTime(year, month, 1).ToString("MMM", CultureInfo.InvariantCulture)
+        }).ToList();
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 45 };
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@start", SqlDbType.Date).Value = new DateTime(year, 1, 1);
+        command.Parameters.Add("@end", SqlDbType.Date).Value = new DateTime(year + 1, 1, 1);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var idx = ToInt(reader["MonthNo"]) - 1;
+            if (idx < 0 || idx >= 12) continue;
+            if (string.Equals(Convert.ToString(reader["ExceptionType"]), "cancel", StringComparison.OrdinalIgnoreCase))
+                results[idx].Cancellations = ToInt(reader["Total"]);
+            else results[idx].NoShows = ToInt(reader["Total"]);
+        }
+        return results;
     }
 
     public async Task<IReadOnlyList<DashboardRoomStatusItem>> GetRoomStatusAsync(
@@ -383,7 +1026,8 @@ public sealed class DashboardService : IDashboardService
         string hotelId,
         string statistic,
         DateTime date,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateTime? periodStart = null)
     {
         hotelId = Clean(hotelId, 50);
         statistic = Clean(statistic, 30).ToLowerInvariant();
@@ -398,14 +1042,14 @@ public sealed class DashboardService : IDashboardService
 
         return statistic switch
         {
-            "revenue" => await LoadRevenueDetailsAsync(hotelId, date.Date, currency, cancellationToken),
-            "receivables" => await LoadReceivableDetailsAsync(hotelId, date.Date, currency, cancellationToken),
-            "expenses" => await LoadExpenseDetailsAsync(hotelId, date.Date, currency, cancellationToken),
-            "profit" => await LoadProfitDetailsAsync(hotelId, date.Date, currency, cancellationToken),
-            "noshow" => await LoadExceptionDetailsAsync(hotelId, date.Date, false, cancellationToken),
-            "cancellations" => await LoadExceptionDetailsAsync(hotelId, date.Date, true, cancellationToken),
-            "occupancy" => await LoadOccupancyDetailsAsync(hotelId, date.Date, cancellationToken),
-            "profitmargin" => await LoadProfitMarginDetailsAsync(hotelId, date.Date, currency, cancellationToken),
+            "revenue" => await LoadRevenueDetailsAsync(hotelId, date.Date, currency, cancellationToken, periodStart),
+            "receivables" => await LoadReceivableDetailsAsync(hotelId, date.Date, currency, cancellationToken, periodStart),
+            "expenses" => await LoadExpenseDetailsAsync(hotelId, date.Date, currency, cancellationToken, periodStart),
+            "profit" => await LoadProfitDetailsAsync(hotelId, date.Date, currency, cancellationToken, periodStart),
+            "noshow" => await LoadExceptionDetailsAsync(hotelId, date.Date, false, cancellationToken, periodStart),
+            "cancellations" => await LoadExceptionDetailsAsync(hotelId, date.Date, true, cancellationToken, periodStart),
+            "occupancy" => await LoadOccupancyDetailsAsync(hotelId, date.Date, cancellationToken, periodStart),
+            "profitmargin" => await LoadProfitMarginDetailsAsync(hotelId, date.Date, currency, cancellationToken, periodStart),
             "checkin" => await LoadMovementDetailsAsync(hotelId, date.Date, true, cancellationToken),
             "checkout" => await LoadMovementDetailsAsync(hotelId, date.Date, false, cancellationToken),
             "available" => await LoadRoomStateDetailsAsync(hotelId, date.Date, "vacant", cancellationToken),
@@ -426,7 +1070,8 @@ public sealed class DashboardService : IDashboardService
         string hotelId,
         DateTime date,
         string currency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         const string sql = @"
 DECLARE @isClosing bit = 0;
@@ -468,11 +1113,11 @@ WITH RevenueRows AS
 )
 SELECT transaction_date, [status], COALESCE(paid_amount,0) AS paid_amount
 FROM RevenueRows
-WHERE tx_date = @date
+WHERE tx_date BETWEEN @startdate AND @date
 ORDER BY ID DESC;";
 
         var result = NewDetail(
-            "Total revenue today",
+            "Revenue · selected period",
             date,
             "Total",
             string.Empty,
@@ -492,6 +1137,7 @@ ORDER BY ID DESC;";
 
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
         command.Parameters.Add("@date", SqlDbType.Date).Value = date.Date;
+        command.Parameters.Add("@startdate", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -507,6 +1153,8 @@ ORDER BY ID DESC;";
             });
         }
 
+        result.Subtitle = (periodStart?.Date ?? date.Date).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+            + " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
         result.SummaryValue = currency + total.ToString("N2", CultureInfo.InvariantCulture);
         return result;
     }
@@ -515,7 +1163,8 @@ ORDER BY ID DESC;";
         string hotelId,
         DateTime date,
         string currency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         const string sql = @"
 ;WITH Unified AS
@@ -598,9 +1247,9 @@ WHERE r.arr_date >= @startdate
   AND pu.remaining_dec > 0
 ORDER BY r.arr_date, r.reg_id;";
 
-        var result = NewDetail("Receivables", date, "Last 30-day arrivals", string.Empty,
+        var result = NewDetail("Receivables · selected period", date, "Outstanding for period arrivals", string.Empty,
             "Reservation", "Guest", "Arrival", "Departure", "Method", "Remaining");
-        result.Subtitle = date.AddDays(-29).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+        result.Subtitle = (periodStart?.Date ?? date.Date).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
             + " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
         decimal total = 0m;
         decimal todayTotal = 0m;
@@ -608,7 +1257,7 @@ ORDER BY r.arr_date, r.reg_id;";
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-        command.Parameters.Add("@startdate", SqlDbType.Date).Value = date.Date.AddDays(-29);
+        command.Parameters.Add("@startdate", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
         command.Parameters.Add("@enddate", SqlDbType.Date).Value = date.Date;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -617,6 +1266,7 @@ ORDER BY r.arr_date, r.reg_id;";
             total += remaining;
             if (reader["arr_date"] != DBNull.Value && Convert.ToDateTime(reader["arr_date"], CultureInfo.InvariantCulture).Date == date.Date)
                 todayTotal += remaining;
+            // Keep the 30-day comparison in the subtitle, not in the displayed rows.
             result.Rows.Add(new List<string>
             {
                 Convert.ToString(reader["reg_id"])?.Trim() ?? string.Empty,
@@ -627,8 +1277,8 @@ ORDER BY r.arr_date, r.reg_id;";
                 currency + remaining.ToString("N2", CultureInfo.InvariantCulture)
             });
         }
-        result.Subtitle = "Today arrivals outstanding: " + currency + todayTotal.ToString("N2", CultureInfo.InvariantCulture)
-            + " · Last 30-day arrivals outstanding: " + currency + total.ToString("N2", CultureInfo.InvariantCulture);
+        result.Subtitle = (periodStart?.Date ?? date.Date).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+            + " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + " · arrivals with outstanding balances";
         result.SummaryValue = currency + total.ToString("N2", CultureInfo.InvariantCulture);
         return result;
     }
@@ -637,7 +1287,8 @@ ORDER BY r.arr_date, r.reg_id;";
         string hotelId,
         DateTime date,
         string currency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         const string sql = @"
 SELECT
@@ -653,7 +1304,7 @@ WHERE CONVERT(varchar(50),e.hotel_id) = @hotel
         TRY_CONVERT(date, CONVERT(varchar(100),e.currentdate), 103),
         TRY_CONVERT(date, CONVERT(varchar(100),e.currentdate), 100),
         TRY_CONVERT(date, CONVERT(varchar(100),e.currentdate))
-      ) = @date
+      ) BETWEEN @startdate AND @date
   AND LTRIM(RTRIM(ISNULL(e.transaction_type,''))) = 'Credit'
 ORDER BY
     COALESCE(
@@ -664,7 +1315,7 @@ ORDER BY
     ) DESC;";
 
         var result = NewDetail(
-            "Total expenses today",
+            "Expenses · selected period",
             date,
             "Total",
             string.Empty,
@@ -686,6 +1337,7 @@ ORDER BY
 
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
         command.Parameters.Add("@date", SqlDbType.Date).Value = date.Date;
+        command.Parameters.Add("@startdate", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -703,6 +1355,8 @@ ORDER BY
             });
         }
 
+        result.Subtitle = (periodStart?.Date ?? date.Date).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+            + " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
         result.SummaryValue = currency + total.ToString("N2", CultureInfo.InvariantCulture);
         return result;
     }
@@ -711,19 +1365,21 @@ ORDER BY
         string hotelId,
         DateTime date,
         string currency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         var financial = await CachedAsync(
-            $"dashboard:financial-snapshot:{hotelId}:{date:yyyyMMdd}",
+            $"dashboard:financial-snapshot:{hotelId}:{periodStart?.Date:yyyyMMdd}:{date:yyyyMMdd}",
             TimeSpan.FromSeconds(5),
-            () => LoadFinancialSnapshotAsync(hotelId, date, cancellationToken));
-        var revenue = financial.RevenueToday;
-        var expense = financial.ExpensesToday;
+            () => LoadFinancialSnapshotAsync(hotelId, date, cancellationToken, periodStart));
+        var revenue = financial.RevenueLast30;
+        var expense = financial.ExpenseLast30;
         var profit = revenue - expense;
         return new DashboardStatisticDetailResult
         {
-            Title = "Profit / loss",
-            Subtitle = date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
+            Title = "Profit / loss · selected period",
+            Subtitle = (periodStart?.Date ?? date.Date).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+                + " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
             SummaryLabel = "Profit / loss",
             SummaryValue = currency + profit.ToString("N2", CultureInfo.InvariantCulture),
             Columns = new List<string> { "Component", "Amount" },
@@ -740,21 +1396,22 @@ ORDER BY
         string hotelId,
         DateTime date,
         bool cancellations,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         var sql = cancellations
             ? @"SELECT reg_id, ISNULL(GuestName,'') AS GuestName, TRY_CONVERT(date,ArrivalDate) AS ArrivalDate,
                        TRY_CONVERT(date,dept_date) AS DepartureDate, ISNULL(room_no,'') AS RoomNo
                 FROM dbo.CancelledReservationsTB
                 WHERE hotel_id=@hotel
-                  AND TRY_CONVERT(date,ArrivalDate) >= @day
+                  AND TRY_CONVERT(date,ArrivalDate) >= @start
                   AND TRY_CONVERT(date,ArrivalDate) < DATEADD(day,1,@day)
                 ORDER BY TRY_CONVERT(date,ArrivalDate) DESC;"
             : @"SELECT reg_id, ISNULL(GuestName,'') AS GuestName, TRY_CONVERT(date,ArrivalDate) AS ArrivalDate,
                        TRY_CONVERT(date,dept_date) AS DepartureDate, ISNULL(room_no,'') AS RoomNo
                 FROM dbo.NoShowTB
                 WHERE hotel_id=@hotel
-                  AND TRY_CONVERT(date,ArrivalDate) >= @day
+                  AND TRY_CONVERT(date,ArrivalDate) >= @start
                   AND TRY_CONVERT(date,ArrivalDate) < DATEADD(day,1,@day)
                 ORDER BY TRY_CONVERT(date,ArrivalDate) DESC;";
 
@@ -766,6 +1423,7 @@ ORDER BY
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 25 };
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         command.Parameters.Add("@day", SqlDbType.Date).Value = date.Date;
+        command.Parameters.Add("@start", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -778,33 +1436,36 @@ ORDER BY
                 FormatDate(reader["DepartureDate"])
             });
         }
+        result.Subtitle = (periodStart?.Date ?? date.Date).ToString("dd MMM yyyy", CultureInfo.InvariantCulture) +
+            " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
         result.SummaryValue = result.Rows.Count.ToString(CultureInfo.InvariantCulture);
         return result;
     }
 
     private async Task<DashboardStatisticDetailResult> LoadOccupancyDetailsAsync(
-        string hotelId,
-        DateTime date,
-        CancellationToken cancellationToken)
+        string hotelId, DateTime date, CancellationToken cancellationToken, DateTime? periodStart = null)
     {
-        var rooms = await GetRoomStatusAsync(hotelId, date, cancellationToken);
-        var blocked = rooms.Count(x => x.State == "ooo");
-        var sold = rooms.Count(x => x.State is "checkin" or "reservation");
-        var sellable = Math.Max(0, rooms.Count - blocked);
-        var occupancy = Percent(sold, sellable);
+        var start = periodStart?.Date ?? date.Date;
+        var nights = await CachedAsync(
+            $"dashboard:occupancy-detail:{hotelId}:{start:yyyyMMdd}:{date:yyyyMMdd}", TimeSpan.FromSeconds(45),
+            () => LoadOccupancySeriesAsync(hotelId, start, date.Date, cancellationToken));
+        var sold = nights.Sum(x => x.RoomsSold);
+        var available = nights.Sum(x => x.SellableInventory);
+        var occupancy = Percent(sold, available);
         return new DashboardStatisticDetailResult
         {
-            Title = "Occupancy",
-            Subtitle = date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
-            SummaryLabel = "Occupancy",
+            Title = "Occupancy · selected period",
+            Subtitle = start.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + " – " +
+                date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
+            SummaryLabel = "Room-night occupancy",
             SummaryValue = occupancy.ToString("0.#", CultureInfo.InvariantCulture) + "%",
-            Columns = new List<string> { "Metric", "Count" },
+            Columns = new List<string> { "Metric", "Total" },
             Rows = new List<List<string>>
             {
-                new() { "Total rooms", rooms.Count.ToString(CultureInfo.InvariantCulture) },
-                new() { "Sellable rooms", sellable.ToString(CultureInfo.InvariantCulture) },
-                new() { "Occupied / reserved", sold.ToString(CultureInfo.InvariantCulture) },
-                new() { "Blocked / OOO", blocked.ToString(CultureInfo.InvariantCulture) }
+                new() { "Rooms sold (room-nights)", sold.ToString(CultureInfo.InvariantCulture) },
+                new() { "Sellable room-nights", available.ToString(CultureInfo.InvariantCulture) },
+                new() { "Unbooked room-nights", Math.Max(0, available - sold).ToString(CultureInfo.InvariantCulture) },
+                new() { "Days in period", nights.Count.ToString(CultureInfo.InvariantCulture) }
             }
         };
     }
@@ -813,29 +1474,30 @@ ORDER BY
         string hotelId,
         DateTime date,
         string currency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         var financial = await CachedAsync(
-            $"dashboard:financial-snapshot:{hotelId}:{date:yyyyMMdd}",
+            $"dashboard:financial-snapshot:{hotelId}:{periodStart?.Date:yyyyMMdd}:{date:yyyyMMdd}",
             TimeSpan.FromSeconds(5),
-            () => LoadFinancialSnapshotAsync(hotelId, date, cancellationToken));
-        var revenue = financial.MonthRevenue;
-        var expense = financial.MonthExpense;
+            () => LoadFinancialSnapshotAsync(hotelId, date, cancellationToken, periodStart));
+        var revenue = financial.RevenueLast30;
+        var expense = financial.ExpenseLast30;
         var profit = revenue - expense;
         var margin = revenue <= 0m ? 0m : Math.Round(profit * 100m / revenue, 1);
         return new DashboardStatisticDetailResult
         {
-            Title = "Profit margin MTD",
-            Subtitle = new DateTime(date.Year, date.Month, 1).ToString("dd MMM", CultureInfo.InvariantCulture) +
-                " - " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
+            Title = "Profit margin · selected period",
+            Subtitle = (periodStart?.Date ?? date.Date).ToString("dd MMM yyyy", CultureInfo.InvariantCulture) +
+                " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
             SummaryLabel = "Margin",
             SummaryValue = margin.ToString("0.#", CultureInfo.InvariantCulture) + "%",
             Columns = new List<string> { "Metric", "Value" },
             Rows = new List<List<string>>
             {
-                new() { "Revenue MTD", currency + revenue.ToString("N2", CultureInfo.InvariantCulture) },
-                new() { "Expenses MTD", currency + expense.ToString("N2", CultureInfo.InvariantCulture) },
-                new() { "Profit MTD", currency + profit.ToString("N2", CultureInfo.InvariantCulture) }
+                new() { "Revenue", currency + revenue.ToString("N2", CultureInfo.InvariantCulture) },
+                new() { "Expenses", currency + expense.ToString("N2", CultureInfo.InvariantCulture) },
+                new() { "Profit", currency + profit.ToString("N2", CultureInfo.InvariantCulture) }
             }
         };
     }
@@ -1952,24 +2614,34 @@ ORDER BY rw.departure_date, TRY_CONVERT(int, rw.room_no), rw.room_no;";
     UNION ALL
     SELECT DATEADD(day, 1, d) FROM d WHERE d < @end
 ),
-inv AS
+-- One row per real, named room, exactly as the room-status snapshot.
+room_base AS
 (
-    SELECT COUNT(*) AS Inventory
+    SELECT DISTINCT LTRIM(RTRIM(room_no)) AS room_no
     FROM dbo.RoomsTB
     WHERE Hotel_id = @hotel
+      AND NULLIF(LTRIM(RTRIM(room_no)), '') IS NOT NULL
 ),
-ooo AS
+inv AS
 (
-    SELECT dd.d, COUNT(DISTINCT rt.room_no) AS OutOfInventory
+    SELECT COUNT(*) AS Inventory FROM room_base
+),
+blocked_room_days AS
+(
+    SELECT DISTINCT dd.d, r.room_no
     FROM d dd
-    INNER JOIN dbo.RoomsTB rt ON rt.Hotel_id = @hotel
     INNER JOIN dbo.RoomBlocksTB rb
-        ON rb.HotelID = rt.Hotel_id
-       AND rb.RoomNo = rt.room_no
+        ON rb.HotelID = @hotel
        AND rb.IsActive = 1
        AND CAST(rb.BlockStartDate AS date) <= dd.d
        AND dd.d < DATEADD(day, 1, CAST(ISNULL(rb.BlockEndDate, '9999-12-31') AS date))
-    GROUP BY dd.d
+    INNER JOIN room_base r ON r.room_no = LTRIM(RTRIM(rb.RoomNo))
+),
+ooo AS
+(
+    SELECT d, COUNT(*) AS OutOfInventory
+    FROM blocked_room_days
+    GROUP BY d
 ),
 p_clean AS
 (
@@ -2001,33 +2673,43 @@ p_clean AS
 room_stays AS
 (
     SELECT
-        reg_id,
-        room_no,
-        res_status,
-        arrival_date,
-        departure_date,
-        room_rate,
-        COALESCE(NULLIF(nights_raw, 0), NULLIF(DATEDIFF(day, arrival_date, departure_date), 0)) AS stay_nights
-    FROM p_clean
-    WHERE arrival_date IS NOT NULL
-      AND departure_date IS NOT NULL
-      AND departure_date > arrival_date
-      AND res_status NOT IN ('cancel','cancelled','canceled','no show','noshow','no-show')
+        p.reg_id,
+        p.room_no,
+        -- Only count this physical room if the reservation actually exists.
+        -- Keep *all* original room-rent rows for financial allocation below.
+        CASE WHEN r.room_no IS NOT NULL
+                  AND p.reg_id IS NOT NULL
+                  AND p.res_status IN ('check in','check-in','checked in','checked-in',
+                                       'reservation','check out','check-out','checked out','checked-out')
+                  AND (EXISTS (SELECT 1 FROM dbo.GuestInformationLogTB gi
+                           WHERE gi.hotel_id = @hotel AND gi.reg_id = p.reg_id)
+                   OR EXISTS (SELECT 1 FROM dbo.NewReservationsTB nr
+                              WHERE nr.hotel_id = @hotel AND nr.reg_id = p.reg_id))
+             THEN r.room_no ELSE NULL END AS counted_room_no,
+        p.res_status,
+        p.arrival_date,
+        p.departure_date,
+        p.room_rate,
+        COALESCE(NULLIF(p.nights_raw, 0), NULLIF(DATEDIFF(day, p.arrival_date, p.departure_date), 0)) AS stay_nights
+    FROM p_clean p
+    LEFT JOIN room_base r ON r.room_no = p.room_no
+    WHERE p.arrival_date IS NOT NULL
+      AND p.departure_date IS NOT NULL
+      AND p.departure_date > p.arrival_date
+      AND p.arrival_date <= @end
+      AND p.departure_date > @start
+      AND p.res_status NOT IN ('cancel','cancelled','canceled','no show','noshow','no-show')
 ),
-sold AS
+nightly AS
 (
     SELECT dd.d,
-        COUNT(DISTINCT ISNULL(rs.reg_id, '') + '|' + ISNULL(rs.room_no, '')) AS RoomsSold
-    FROM d dd
-    INNER JOIN room_stays rs ON rs.arrival_date <= dd.d AND dd.d < rs.departure_date
-    GROUP BY dd.d
-),
-revenue AS
-(
-    SELECT dd.d,
+        -- One room can only be sold once per night. A block takes priority.
+        COUNT(DISTINCT CASE WHEN blocked.room_no IS NULL THEN rs.counted_room_no END) AS RoomsSold,
+        -- Preserve pre-existing revenue allocation independently of room counting.
         SUM(rs.room_rate / NULLIF(rs.stay_nights, 0)) AS AccommodationRevenue
     FROM d dd
     INNER JOIN room_stays rs ON rs.arrival_date <= dd.d AND dd.d < rs.departure_date
+    LEFT JOIN blocked_room_days blocked ON blocked.d = dd.d AND blocked.room_no = rs.room_no
     GROUP BY dd.d
 )
 SELECT
@@ -2039,16 +2721,15 @@ SELECT
     ISNULL(s.RoomsSold, 0) AS RoomsSold,
     CAST(CASE WHEN ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0) <= 0 THEN 0
          ELSE 100.0 * ISNULL(s.RoomsSold,0) / NULLIF(ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0),0) END AS decimal(9,2)) AS OccupancyPercent,
-    CAST(ISNULL(r.AccommodationRevenue,0) AS decimal(18,2)) AS AccommodationRevenue,
+    CAST(ISNULL(s.AccommodationRevenue,0) AS decimal(18,2)) AS AccommodationRevenue,
     CAST(CASE WHEN ISNULL(s.RoomsSold,0) <= 0 THEN 0
-         ELSE ISNULL(r.AccommodationRevenue,0) / NULLIF(s.RoomsSold,0) END AS decimal(18,2)) AS ADR,
+         ELSE ISNULL(s.AccommodationRevenue,0) / NULLIF(s.RoomsSold,0) END AS decimal(18,2)) AS ADR,
     CAST(CASE WHEN ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0) <= 0 THEN 0
-         ELSE ISNULL(r.AccommodationRevenue,0) / NULLIF(ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0),0) END AS decimal(18,2)) AS RevPAR
+         ELSE ISNULL(s.AccommodationRevenue,0) / NULLIF(ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0),0) END AS decimal(18,2)) AS RevPAR
 FROM d dd
 CROSS JOIN inv i
 LEFT JOIN ooo o ON o.d = dd.d
-LEFT JOIN sold s ON s.d = dd.d
-LEFT JOIN revenue r ON r.d = dd.d
+LEFT JOIN nightly s ON s.d = dd.d
 ORDER BY dd.d
 OPTION (MAXRECURSION 0);";
 
@@ -2418,19 +3099,20 @@ SELECT
     private async Task<DashboardFinancialSnapshot> LoadFinancialSnapshotAsync(
         string hotelId,
         DateTime today,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         // Keep Revenue and Expense independent. The WebForms Dashboard calculates
         // them independently (GetRevenue / GetExpense), then Profit = Revenue - Expense.
         // Running both aggregates in parallel reduces first-paint time and prevents one
         // legacy data issue from zeroing every financial KPI.
         var revenueTask = SafeLoadAsync(
-            () => LoadRevenueSnapshotAsync(hotelId, today, cancellationToken),
+            () => LoadRevenueSnapshotAsync(hotelId, today, cancellationToken, periodStart),
             new DashboardFinancialSnapshot(),
             "revenue headline");
 
         var expenseTask = SafeLoadAsync(
-            () => LoadExpenseSnapshotAsync(hotelId, today, cancellationToken),
+            () => LoadExpenseSnapshotAsync(hotelId, today, cancellationToken, periodStart),
             new DashboardFinancialSnapshot(),
             "expense headline");
 
@@ -2460,11 +3142,12 @@ SELECT
     private async Task<DashboardFinancialSnapshot> LoadRevenueSnapshotAsync(
         string hotelId,
         DateTime today,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
-        var startDate = today.Date.AddDays(-29);
+        var startDate = periodStart?.Date ?? today.Date.AddDays(-29);
         var lastYearToday = today.Date.AddYears(-1);
-        var lastYearStartDate = lastYearToday.AddDays(-29);
+        var lastYearStartDate = startDate.AddYears(-1);
         var monthStart = new DateTime(today.Year, today.Month, 1);
         var lastYearMonthStart = new DateTime(lastYearToday.Year, lastYearToday.Month, 1);
 
@@ -2552,11 +3235,12 @@ FROM RevenueRows;";
     private async Task<DashboardFinancialSnapshot> LoadExpenseSnapshotAsync(
         string hotelId,
         DateTime today,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
-        var startDate = today.Date.AddDays(-29);
+        var startDate = periodStart?.Date ?? today.Date.AddDays(-29);
         var lastYearToday = today.Date.AddYears(-1);
-        var lastYearStartDate = lastYearToday.AddDays(-29);
+        var lastYearStartDate = startDate.AddYears(-1);
         var monthStart = new DateTime(today.Year, today.Month, 1);
         var lastYearMonthStart = new DateTime(lastYearToday.Year, lastYearToday.Month, 1);
 
@@ -2621,9 +3305,10 @@ FROM ExpenseRows;";
     private async Task<List<DashboardFinancialPoint>> LoadFinancialSeriesAsync(
         string hotelId,
         DateTime today,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
-        var start = today.AddDays(-29);
+        var start = periodStart?.Date ?? today.AddDays(-29);
         var lyStart = start.AddYears(-1);
         var lyEnd = today.AddYears(-1);
 
@@ -2695,7 +3380,7 @@ LEFT JOIN exp ec ON ec.tx_date = dd.d
 LEFT JOIN rev rl ON rl.tx_date = DATEADD(year,-1,dd.d)
 LEFT JOIN exp el ON el.tx_date = DATEADD(year,-1,dd.d)
 ORDER BY dd.d
-OPTION (MAXRECURSION 100);";
+OPTION (MAXRECURSION 0);";
 
         var result = new List<DashboardFinancialPoint>();
         await using var connection = new SqlConnection(_connectionString);
@@ -2991,7 +3676,7 @@ SELECT TOP (10)
 FROM daily
 GROUP BY AgencyName
 ORDER BY Revenue DESC, AgencyName
-OPTION (MAXRECURSION 100);";
+OPTION (MAXRECURSION 0);";
 
         var result = new List<DashboardRevenueSourceItem>();
         await using var connection = new SqlConnection(_connectionString);
@@ -3020,13 +3705,14 @@ OPTION (MAXRECURSION 100);";
     private async Task<List<DashboardRoomTypeItem>> LoadRoomTypesAsync(
         string hotelId,
         DateTime today,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
         const string sql = @"
 ;WITH d AS
 (
-    SELECT @today AS d
-    UNION ALL SELECT DATEADD(day,1,d) FROM d WHERE d < DATEADD(day,29,@today)
+    SELECT @start AS d
+    UNION ALL SELECT DATEADD(day,1,d) FROM d WHERE d < @today
 ),
 inv AS
 (
@@ -3112,7 +3798,7 @@ SELECT
     CAST(CASE WHEN SellableRoomNights<=0 THEN 0 ELSE Revenue/SellableRoomNights END AS decimal(18,2)) AS RevPAR
 FROM agg
 ORDER BY category
-OPTION (MAXRECURSION 100);";
+OPTION (MAXRECURSION 0);";
 
         var result = new List<DashboardRoomTypeItem>();
         await using var connection = new SqlConnection(_connectionString);
@@ -3120,6 +3806,7 @@ OPTION (MAXRECURSION 100);";
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
+        command.Parameters.Add("@start", SqlDbType.Date).Value = periodStart?.Date ?? today.Date.AddDays(-29);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -3144,9 +3831,10 @@ OPTION (MAXRECURSION 100);";
     private async Task<DashboardExceptionData> LoadExceptionsAsync(
         string hotelId,
         DateTime today,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? periodStart = null)
     {
-        var start = today.AddDays(-29);
+        var start = periodStart?.Date ?? today.AddDays(-29);
         const string sql = @"
 SELECT 'cancel' AS ExceptionType, TRY_CONVERT(date, ArrivalDate) AS EventDate
 FROM dbo.CancelledReservationsTB
@@ -3187,7 +3875,7 @@ WHERE hotel_id=@hotel
         var cancels = raw.Where(x => x.Type == "cancel").ToList();
         var noshows = raw.Where(x => x.Type == "noshow").ToList();
         var series = new List<DashboardExceptionPoint>();
-        for (var week = 0; week < 5; week++)
+        for (var week = 0; week < (today - start).Days / 7 + 1; week++)
         {
             var weekStart = start.AddDays(week * 7);
             var weekEnd = weekStart.AddDays(6);
@@ -3292,7 +3980,7 @@ ORDER BY CategoryName;";
         var noshows = raw.Where(x => string.Equals(x.Type, "noshow", StringComparison.OrdinalIgnoreCase)).ToList();
         var series = new List<DashboardExceptionPoint>();
 
-        for (var week = 0; week < 5; week++)
+        for (var week = 0; week < (today - start).Days / 7 + 1; week++)
         {
             var weekStart = start.AddDays(week * 7);
             var weekEnd = weekStart.AddDays(6);
@@ -3356,10 +4044,10 @@ ORDER BY CategoryName;";
                 : Math.Round(rate.Rate * (1m + change / 100m), 2, MidpointRounding.AwayFromZero);
             var demand = DemandLabel(occupancy);
             var reason = change > 0
-                ? $"{demand} demand · {occupancy:0.#}% sold for the next 30 days"
+                ? $"{demand} demand · {occupancy:0.#}% sold in the selected period"
                 : change < 0
-                    ? $"{demand} demand · {occupancy:0.#}% sold for the next 30 days"
-                    : $"Stable demand · {occupancy:0.#}% sold for the next 30 days";
+                    ? $"{demand} demand · {occupancy:0.#}% sold in the selected period"
+                    : $"Stable demand · {occupancy:0.#}% sold in the selected period";
 
             result.Add(new DashboardPriceRecommendation
             {
@@ -3389,7 +4077,7 @@ ORDER BY CategoryName;";
             {
                 Tone = "warning",
                 Title = $"{weak.Category} needs demand support",
-                Detail = $"Only {weak.OccupancyNext30:0.#}% is on the books for the next 30 days. Review price and direct-channel offers."
+                Detail = $"Only {weak.OccupancyNext30:0.#}% is on the books in the selected period. Review price and direct-channel offers."
             });
         }
         if (strong is not null && strong.OccupancyNext30 >= 75m)
@@ -3398,7 +4086,7 @@ ORDER BY CategoryName;";
             {
                 Tone = "positive",
                 Title = $"{strong.Category} is pacing strongly",
-                Detail = $"{strong.OccupancyNext30:0.#}% is already sold for the next 30 days. Consider protecting the remaining inventory with a higher rate."
+                Detail = $"{strong.OccupancyNext30:0.#}% is already sold in the selected period. Consider protecting the remaining inventory with a higher rate."
             });
         }
         if (model.ReceivablesOver30Days > 0m)
@@ -3415,7 +4103,7 @@ ORDER BY CategoryName;";
             result.Add(new DashboardDecisionItem
             {
                 Tone = "warning",
-                Title = $"{model.CancellationsLast30} cancellations in the last 30 days",
+                Title = $"{model.CancellationsLast30} cancellations in the selected period",
                 Detail = $"The cancellation rate is {model.CancellationRateLast30:0.#}%. Review cancellation terms on the highest-risk channels."
             });
         }
@@ -3425,7 +4113,7 @@ ORDER BY CategoryName;";
             {
                 Tone = "info",
                 Title = $"{source.Source} leads revenue on the books",
-                Detail = $"It represents {source.SharePercent:0.#}% of the next 30 days' accommodation revenue at an ADR of {model.CurrencySymbol}{source.Adr:N2}."
+                Detail = $"It represents {source.SharePercent:0.#}% of the selected period's accommodation revenue at an ADR of {model.CurrencySymbol}{source.Adr:N2}."
             });
         }
 
