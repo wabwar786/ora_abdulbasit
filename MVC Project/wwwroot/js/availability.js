@@ -9,6 +9,8 @@
     const gridUrl = page.dataset.gridUrl || '';
     const autoUpdateUrl = page.dataset.autoUpdateUrl || '';
     const logUrl = page.dataset.logUrl || '';
+    const rateLogUrl = page.dataset.rateLogUrl || '';
+    const restrictionLogUrl = page.dataset.restrictionLogUrl || ''; 
     const bulkPreviewUrl = page.dataset.bulkPreviewUrl || '';
     const bulkRateSaveUrl = page.dataset.bulkRateSaveUrl || '';
     const restrictionRangeUrl = page.dataset.restrictionRangeUrl || '';
@@ -25,6 +27,25 @@
     const toast = document.getElementById('availabilityToast');
     const gridHost = document.getElementById('inventoryGridHost');
     const hotelBaseRate = Number(page.dataset.hotelBaseRate || '0');
+    const minBulkBaseRate = Number.isFinite(hotelBaseRate) && hotelBaseRate > 0 ? hotelBaseRate : 0.01;
+
+    function bulkBaseRateValidationMessage(value) {
+        if (!Number.isFinite(value) || value <= 0) return 'Enter a valid Base Rate.';
+        if (value < minBulkBaseRate) {
+            return `Base Rate cannot be less than the hotel base rate ${minBulkBaseRate.toFixed(2)}.`;
+        }
+        return '';
+    }
+
+    function checkBulkBaseRateInput() {
+        const input = document.getElementById('bulkBaseRate');
+        if (!input) return '';
+        const message = bulkBaseRateValidationMessage(input.value.trim() === '' ? NaN : Number(input.value));
+        input.setCustomValidity(message);
+        if (message) input.setAttribute('aria-invalid', 'true');
+        else input.removeAttribute('aria-invalid');
+        return message;
+    }
     let gridRequestController = null;
     const restrictionRangeCache = new Map();
 
@@ -705,6 +726,13 @@
                     span.textContent = String(shown || '—');
                     button.appendChild(span);
                     td.appendChild(button);
+                    const historyButton = document.createElement('button');
+                    historyButton.type = 'button';
+                    historyButton.className = 'restriction-history-button';
+                    historyButton.setAttribute('aria-label', 'View restriction change history');
+                    historyButton.title = 'Restriction change history';
+                    historyButton.textContent = '↺';
+                    td.appendChild(historyButton);
                     tr.appendChild(td);
                 });
 
@@ -784,6 +812,7 @@
     // Availability change log drawer
     // =============================================================
     const logOverlay = document.getElementById('availabilityLogModal');
+    let currentLogRequest = 0;
     function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value == null || value === '' ? '—' : String(value); }
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
     function openLogDrawer() { logOverlay?.classList.add('is-open'); logOverlay?.setAttribute('aria-hidden', 'false'); document.body.classList.add('availability-log-open'); }
@@ -793,44 +822,209 @@
             const el = document.getElementById(id); if (el) el.hidden = id !== state;
         });
     }
-    function renderLogRows(rows) {
+    // All history drawers use the same compact, TWO-ROW record layout.
+    // Row 1: timestamp + actual changed value + change type.
+    // Row 2: user + readable source + stay dates + workstation.
+    // Full metadata is available through native hover tooltips / accessible labels.
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function prettyStayDate(value) {
+        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!match) return String(value || '—');
+        return Number(match[3]) + ' ' + (monthNames[Number(match[2]) - 1] || match[2]) + ' ' + match[1];
+    }
+    function formatStayRange(from, to) {
+        if (!from && !to) return '—';
+        if (!to || from === to) return prettyStayDate(from || to);
+        return prettyStayDate(from) + ' – ' + prettyStayDate(to);
+    }
+    function compactLogTime(value) {
+        const input = String(value || '').trim();
+        // Display exactly the server-provided time; do not convert it to a browser timezone.
+        const match = input.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
+        if (!match) return input || '—';
+        return Number(match[3]) + ' ' + (monthNames[Number(match[2]) - 1] || match[2]) + ' ' + match[1] + ', ' + match[4];
+    }
+    function friendlyRateSource(source) {
+        const parts = String(source || '').split('/').map(x => x.trim()).filter(Boolean);
+        const moduleName = {
+            RatePlans: 'Rate Plans', Availability: 'Availability', BulkRateUpdate: 'Bulk Rate Update',
+            YieldManagement: 'Yield Management', ReservationAPI: 'Reservation API', NewReservation: 'New Reservation'
+        }[parts[0]] || (parts[0] || 'Not recorded');
+        const derived = parts.some(x => /DerivedDailyRate/i.test(x));
+        let actionLabel = 'Rate update';
+        if (parts[0] === 'BulkRateUpdate') actionLabel = 'Bulk update';
+        else if (parts[0] === 'YieldManagement' && parts.includes('NewReservation')) actionLabel = 'New Reservation';
+        else if (parts[0] === 'YieldManagement' && parts.includes('ReservationAPI')) actionLabel = 'Reservation API';
+        else {
+            const actions = {
+                CellRateUpdate: 'Cell edit', BulkRateUpdate: 'Bulk update',
+                SimplePlanChange: 'Plan rate change', DerivedPlanChange: 'Derived rule change',
+                SimplePlanDefault: 'Plan default', BaseRateChange: 'Base rate change',
+                YieldRuleApplied: 'Yield rule applied', YieldRuleDisabled: 'Yield rule disabled'
+            };
+            const action = parts.slice(1).find(x => actions[x]);
+            if (action) actionLabel = actions[action];
+        }
+        return moduleName + ' · ' + actionLabel + (derived ? ' (derived)' : '');
+    }
+    function renderCompactLogItem({ createdAt, value, type, kind, user, source, stay, pc, ip, more }) {
+        const username = String(user || 'System');
+        const sourceText = String(source || 'Not recorded');
+        const stayText = String(stay || '—');
+        const pcText = String(pc || '').trim();
+        const ipText = String(ip || '').trim();
+        const valueText = String(value ?? '—');
+        const tooltip = [
+            'Changed: ' + String(createdAt || '—'), 'Value: ' + valueText,
+            'By: ' + username, 'Source: ' + sourceText,
+            'Stay: ' + stayText, pcText ? 'PC: ' + pcText : '',
+            ipText ? 'IP: ' + ipText : '', more || ''
+        ].filter(Boolean).join(' | ');
+        const deviceDisplay = pcText && !/^unknown web client$/i.test(pcText)
+            ? pcText : (ipText ? 'IP ' + ipText : '');
+        return '<article class="availability-log-item availability-log-compact availability-log-kind-' + escapeHtml(kind || 'rate') + '"' +
+            ' aria-label="' + escapeHtml(tooltip) + '" title="' + escapeHtml(tooltip) + '">' +
+            '<div class="availability-log-compact-row availability-log-compact-primary">' +
+              '<time class="availability-log-compact-time" title="' + escapeHtml(createdAt || '—') + '">' +
+                escapeHtml(compactLogTime(createdAt)) + '</time>' +
+              '<strong class="availability-log-compact-value" title="' + escapeHtml(valueText) + '">' + escapeHtml(valueText) + '</strong>' +
+              '<span class="availability-log-compact-type">' + escapeHtml(type || 'Change') + '</span>' +
+            '</div>' +
+            '<div class="availability-log-compact-row availability-log-compact-secondary">' +
+              '<span class="availability-log-compact-user" title="By ' + escapeHtml(username) + '">By ' + escapeHtml(username) + '</span>' +
+              '<span class="availability-log-compact-source" title="Source: ' + escapeHtml(sourceText) + '">' + escapeHtml(sourceText) + '</span>' +
+              '<span class="availability-log-compact-stay" title="Stay: ' + escapeHtml(stayText) + '">' + escapeHtml(stayText) + '</span>' +
+              (deviceDisplay ? '<span class="availability-log-compact-device" title="' + escapeHtml([pcText ? 'PC: ' + pcText : '', ipText ? 'IP: ' + ipText : ''].filter(Boolean).join(' · ')) + '">' + escapeHtml(deviceDisplay) + '</span>' : '') +
+            '</div>' +
+          '</article>';
+    }
+    function showCompactEntries(rows, mapper) {
         rows = Array.isArray(rows) ? rows : [];
         setText('availabilityLogCount', rows.length);
         if (!rows.length) { showLogState('availabilityLogEmpty'); return; }
         const timeline = document.getElementById('availabilityLogTimeline');
         if (!timeline) return;
-        timeline.innerHTML = rows.map(row => {
-            const changedOn = row.createdOn || ((row.logDate || '') + ' ' + (row.logTime || '')).trim() || '—';
-            const previous = String(row.previousAvailability ?? '').trim();
-            const current = row.availability ?? '—';
-            const user = row.username || row.userId || 'System';
-            const status = row.isSuccess ? 'Success' : 'Failed';
-            return '<article class="availability-log-item">' +
-                '<span class="availability-log-node ' + (row.isSuccess ? '' : 'failed') + '"></span>' +
-                '<div class="availability-log-card"><div class="availability-log-card-top"><strong>' + escapeHtml(changedOn) + '</strong>' +
-                '<span class="availability-log-badge ' + (row.isSuccess ? 'success' : 'failed') + '">' + status + '</span></div>' +
-                '<div class="availability-log-card-body">' +
-                (previous ? '<div class="availability-log-change"><span>' + escapeHtml(previous) + '</span><b>→</b><span class="current">' + escapeHtml(current) + '</span></div>' : '<div class="availability-log-change"><small>Set to</small><span class="current">' + escapeHtml(current) + '</span></div>') +
-                '<div class="availability-log-meta">Changed by <strong>' + escapeHtml(user) + '</strong> · HTTP <strong>' + escapeHtml(row.httpStatus || '—') + '</strong></div>' +
-                ((row.systemName || row.ipAddress) ? '<div class="availability-log-system">' + escapeHtml([row.systemName, row.ipAddress].filter(Boolean).join(' · ')) + '</div>' : '') +
-                '</div></div></article>';
-        }).join('');
+        timeline.innerHTML = rows.map(mapper).join('');
         showLogState('availabilityLogTimeline');
+    }
+    function renderLogRows(rows) {
+        const stay = document.getElementById('availabilityLogDate')?.textContent || '—';
+        showCompactEntries(rows, row => {
+            const prev = String(row.previousAvailability ?? '').trim();
+            const current = String(row.availability ?? '—');
+            return renderCompactLogItem({
+                kind: row.isSuccess ? 'availability' : 'failed',
+                createdAt: row.createdOn || ((row.logDate || '') + ' ' + (row.logTime || '')).trim(),
+                value: prev ? prev + ' → ' + current : 'Set to ' + current,
+                type: row.isSuccess ? 'Saved' : 'Failed',
+                user: row.username || row.userId || 'System',
+                source: 'Availability · Inventory', stay,
+                pc: row.systemName, ip: row.ipAddress,
+                more: row.httpStatus ? 'HTTP: ' + row.httpStatus : ''
+            });
+        });
+    }
+    function renderRateLogRows(rows) {
+        showCompactEntries(rows, row => {
+            const rate = row.rate == null ? '—' : Number(row.rate).toFixed(2);
+            return renderCompactLogItem({
+                kind: 'rate', createdAt: row.createdAt,
+                value: (row.currency ? row.currency + ' ' : '') + rate,
+                type: 'Rate', user: row.username || row.userId || 'System',
+                source: friendlyRateSource(row.source),
+                stay: formatStayRange(row.dateFrom, row.dateTo),
+                pc: row.pc, ip: row.ipAddress,
+                more: row.baseRate == null ? '' : 'Base rate: ' + row.baseRate
+            });
+        });
+    }
+    function renderRestrictionLogRows(rows) {
+        showCompactEntries(rows, row => {
+            const value = row.value == null || String(row.value) === '' ? '—' : String(row.value);
+            const restriction = String(row.restriction || 'Restriction');
+            return renderCompactLogItem({
+                kind: 'restriction', createdAt: row.createdAt,
+                value: restriction + ': ' + value,
+                type: 'Restriction', user: row.username || 'System',
+                source: 'Availability · Restriction',
+                stay: formatStayRange(row.dateFrom, row.dateTo),
+                pc: row.pc, ip: row.ipAddress,
+                more: row.daysText ? 'Selected weekdays: ' + row.daysText : ''
+            });
+        });
+    }
+    async function openRestrictionLog(cell) {
+        if (!restrictionLogUrl) return;
+        const { category: categoryId, plan: planId, key: restrictionKey, date } = cell.dataset;
+        if (!categoryId || !planId || !restrictionKey || !date) return;
+        const requestId = ++currentLogRequest;
+        setText('availabilityLogTitle', 'Restriction Change History');
+        setText('availabilityLogCategoryLabel', 'Room / Rate Plan');
+        setText('availabilityLogDate', prettyStayDate(date));
+        setText('availabilityLogCategory', (cell.dataset.categoryname || 'Room') + ' / ' + (cell.dataset.planname || 'Plan'));
+        setText('availabilityLogSubtitle', (cell.dataset.label || restrictionKey) + ' · ' + prettyStayDate(date));
+        showLogState('availabilityLogLoading');
+        openLogDrawer();
+        try {
+            const params = new URLSearchParams({ categoryId, planId, restrictionKey, date });
+            const response = await fetch(restrictionLogUrl + '?' + params.toString(), { credentials: 'same-origin' });
+            const data = await response.json();
+            if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Unable to load restriction history.');
+            if (requestId === currentLogRequest) renderRestrictionLogRows(data.rows || []);
+        } catch (error) {
+            if (requestId !== currentLogRequest) return;
+            const box = document.getElementById('availabilityLogError');
+            if (box) box.textContent = error.message || 'Unable to load restriction history.';
+            showLogState('availabilityLogError');
+        }
+    }
+    async function openRateLog(cell) {
+        const categoryId = cell.dataset.category || '';
+        const planId = cell.dataset.plan || '';
+        const categoryName = cell.dataset.categoryname || 'Room';
+        const planName = cell.dataset.planname || 'Rate Plan';
+        const date = cell.dataset.date || '';
+        if (!categoryId || !planId || !date || !rateLogUrl) return;
+        const requestId = ++currentLogRequest;
+        setText('availabilityLogTitle', 'Rate Change History');
+        setText('availabilityLogCategoryLabel', 'Room / Rate Plan');
+        setText('availabilityLogDate', prettyStayDate(date));
+        setText('availabilityLogCategory', categoryName + ' / ' + planName);
+        setText('availabilityLogSubtitle', prettyStayDate(date) + ' · ' + planName);
+        setText('availabilityLogCount', '—');
+        showLogState('availabilityLogLoading');
+        openLogDrawer();
+        try {
+            const params = new URLSearchParams({ categoryId, planId, date });
+            const response = await fetch(rateLogUrl + '?' + params.toString(), { credentials: 'same-origin' });
+            const data = await response.json();
+            if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Unable to load rate history.');
+            if (requestId === currentLogRequest) renderRateLogRows(data.rows || []);
+        } catch (error) {
+            if (requestId !== currentLogRequest) return;
+            const box = document.getElementById('availabilityLogError');
+            if (box) box.textContent = error.message || 'Unable to load rate history.';
+            showLogState('availabilityLogError');
+        }
     }
     async function openAvailabilityLog(cell) {
         const categoryId = cell.dataset.category || '';
         const categoryName = cell.dataset.categoryname || 'Availability';
         const date = cell.dataset.date || '';
         if (!categoryId || !date || !logUrl) return;
-        setText('availabilityLogDate', date); setText('availabilityLogCategory', categoryName);
-        setText('availabilityLogSubtitle', date + ' · ' + categoryName); setText('availabilityLogCount', '—');
+        const requestId = ++currentLogRequest;
+        setText('availabilityLogTitle', 'Availability Change Log');
+        setText('availabilityLogCategoryLabel', 'Category');
+        setText('availabilityLogDate', prettyStayDate(date)); setText('availabilityLogCategory', categoryName);
+        setText('availabilityLogSubtitle', prettyStayDate(date) + ' · ' + categoryName); setText('availabilityLogCount', '—');
         showLogState('availabilityLogLoading'); openLogDrawer();
         try {
             const response = await fetch(logUrl + '?categoryId=' + encodeURIComponent(categoryId) + '&date=' + encodeURIComponent(date), { credentials: 'same-origin' });
             const data = await response.json();
             if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Unable to load change log.');
-            renderLogRows(data.rows || []);
+            if (requestId === currentLogRequest) renderLogRows(data.rows || []);
         } catch (error) {
+            if (requestId !== currentLogRequest) return;
             const box = document.getElementById('availabilityLogError'); if (box) box.textContent = error.message || 'Unable to load availability change log.';
             showLogState('availabilityLogError');
         }
@@ -839,6 +1033,25 @@
         const cell = event.target.closest?.('.availability-log-cell');
         if (!cell) return;
         event.preventDefault(); event.stopPropagation(); openAvailabilityLog(cell);
+    });
+    page.addEventListener('click', event => {
+        const button = event.target.closest?.('.restriction-history-button');
+        if (!button) return;
+        const cell = button.closest('.restriction-cell');
+        if (!cell) return;
+        event.preventDefault(); event.stopPropagation();
+        openRestrictionLog(cell);
+    });
+    // A history icon is provided inside every rate cell so single-click
+    // rate editing and drag-to-bulk-edit continue to work unchanged.
+    page.addEventListener('click', event => {
+        const button = event.target.closest?.('.rate-history-button');
+        const cell = button?.closest('.rate-value-cell') ||
+            (!event.target.closest?.('.rate-cell-input') ? event.target.closest?.('.rate-value-cell') : null);
+        if (!cell || !rateLogUrl) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openRateLog(cell);
     });
     document.getElementById('availabilityLogClose')?.addEventListener('click', closeLogDrawer);
     logOverlay?.addEventListener('click', event => { if (event.target === logOverlay) closeLogDrawer(); });
@@ -957,7 +1170,16 @@
         const baseRate = Number(document.getElementById('bulkBaseRate')?.value || 0);
         const body = document.getElementById('bulkPreviewTbody');
         if (!body) return;
-        if (!(baseRate > 0)) { body.innerHTML = '<tr><td colspan="4">Enter Base Rate to preview.</td></tr>'; return; }
+        const input = document.getElementById('bulkBaseRate');
+        if (!input || !input.value.trim()) {
+            body.innerHTML = '<tr><td colspan="4">Enter Base Rate to preview.</td></tr>';
+            return;
+        }
+        const validationMessage = checkBulkBaseRateInput();
+        if (validationMessage) {
+            body.innerHTML = '<tr><td colspan="4" class="bulk-error">' + escapeHtml(validationMessage) + '</td></tr>';
+            return;
+        }
         body.innerHTML = '<tr><td colspan="4">Loading preview...</td></tr>';
         try {
             const data = await postJson(bulkPreviewUrl, {
@@ -975,7 +1197,11 @@
             }).join('') || '<tr><td colspan="4">No preview rows.</td></tr>';
         } catch (error) { body.innerHTML = '<tr><td colspan="4" class="bulk-error">' + escapeHtml(error.message) + '</td></tr>'; }
     }
-    document.getElementById('bulkBaseRate')?.addEventListener('input', function () { window.clearTimeout(previewTimer); previewTimer = window.setTimeout(previewBulkRate, 250); });
+    document.getElementById('bulkBaseRate')?.addEventListener('input', function () {
+        checkBulkBaseRateInput();
+        window.clearTimeout(previewTimer);
+        previewTimer = window.setTimeout(previewBulkRate, 250);
+    });
 
     async function openBulkEditor(cells) {
         if (!cells?.length) return;
@@ -999,7 +1225,11 @@
             if (title) title.textContent = 'Bulk Rate Update';
             document.getElementById('bulkRateEditor').hidden = false;
             document.getElementById('bulkRestrictionEditor').hidden = true;
-            document.getElementById('bulkBaseRate').value = '';
+            const baseInput = document.getElementById('bulkBaseRate');
+            baseInput.value = '';
+            baseInput.min = minBulkBaseRate.toFixed(2);
+            baseInput.setCustomValidity('');
+            baseInput.removeAttribute('aria-invalid');
             document.getElementById('bulkPreviewTbody').innerHTML = '<tr><td colspan="4">Enter Base Rate to preview.</td></tr>';
             if (bulkSaveButton) bulkSaveButton.textContent = 'Save Rates';
         } else {
@@ -1030,7 +1260,7 @@
     }
 
     page.addEventListener('mousedown', function (event) {
-        if (event.button !== 0 || event.target.closest?.('.restriction-toggle')) return;
+        if (event.button !== 0 || event.target.closest?.('.restriction-toggle') || event.target.closest?.('.rate-history-button') || event.target.closest?.('.restriction-history-button')) return;
         const cell = event.target.closest?.('.inventory-drag-cell');
         if (!cell || !canDragCell(cell)) return;
         drag.active = true; drag.moved = false; drag.start = cell; drag.current = cell; drag.cells = [cell];
@@ -1055,6 +1285,16 @@
         const endDate = document.getElementById('bulkEnd')?.value || '';
         const days = getBulkDays();
         if (!days.length) { showToast('Select at least one weekday.', 'warning'); return; }
+        if (type === 'rate') {
+            const validationMessage = checkBulkBaseRateInput();
+            const input = document.getElementById('bulkBaseRate');
+            if (validationMessage || !input?.checkValidity()) {
+                input?.focus();
+                input?.reportValidity();
+                showToast(validationMessage || 'Enter a valid Base Rate.', 'warning');
+                return;
+            }
+        }
         setLoading(bulkSaveButton, true, 'Saving');
         try {
             let data;

@@ -226,8 +226,16 @@
     const urls=optionsFor(current);
     const button=cleanMode==='hold'?els.onlineHold:els.onlineCharge;
 
-    // Generate the PayNow link only. Do not open or redirect automatically.
-    // Staff can copy the generated link for the guest or explicitly press Open.
+    // Open a tab during the user gesture (before fetch) so pop-up blockers do not
+    // prevent Charge Now from navigating straight to the hosted Stripe Checkout.
+    // Hold card retains its existing link-only behaviour; Copy/Open stay available.
+    let chargeWindow = null;
+    if(cleanMode==='charge'){
+      try{
+        chargeWindow = window.open('about:blank','_blank');
+        if(chargeWindow) chargeWindow.opener = null;
+      }catch(_){chargeWindow=null;}
+    }
     if(els.onlineLink) els.onlineLink.hidden=true;
     if(els.onlineLinkValue) els.onlineLinkValue.value='';
     if(els.onlineLinkHint) els.onlineLinkHint.textContent='';
@@ -263,8 +271,15 @@
         els.onlineLink.scrollIntoView({behavior:'smooth',block:'nearest'});
       }
 
-      showToast(cleanMode==='hold'?'Hold PayNow link generated.':'Charge PayNow link generated.');
+      if(cleanMode==='charge' && chargeWindow){
+        try{chargeWindow.location.replace(paymentUrl);chargeWindow.focus();}
+        catch(_){try{chargeWindow.location.href=paymentUrl;}catch(__){showToast('Use Open to continue to Stripe Checkout.',true);}}
+      }
+      showToast(cleanMode==='hold'?'Hold PayNow link generated.':
+        (chargeWindow?'Stripe Checkout opened. Copy link is also available.':'Payment link generated. Press Open to launch Stripe Checkout.'));
     }catch(e){
+      if(chargeWindow){try{chargeWindow.close();}catch(_){}}
+
       if(els.onlineLink) els.onlineLink.hidden=true;
       showToast(e.message||'Unable to prepare the PayNow link.',true);
     }finally{

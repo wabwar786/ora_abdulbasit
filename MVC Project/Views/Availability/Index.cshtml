@@ -20,6 +20,8 @@
      data-navigation-days="@navigationDays"
      data-auto-update-url="@Url.Action("AutoUpdate", "Availability")"
      data-log-url="@Url.Action("ChangeLog", "Availability")"
+     data-rate-log-url="@Url.Action("RateChangeLog", "Availability")"
+     data-restriction-log-url="@Url.Action("RestrictionChangeLog", "Availability")"
      data-bulk-preview-url="@Url.Action("PreviewBulkRate", "Availability")"
      data-bulk-rate-save-url="@Url.Action("SaveBulkRates", "Availability")"
      data-restriction-range-url="@Url.Action("RestrictionRange", "Availability")"
@@ -137,12 +139,12 @@
             <div class="availability-log-body">
                 <div class="availability-log-summary">
                     <div><span>Selected date</span><strong id="availabilityLogDate">—</strong></div>
-                    <div><span>Category</span><strong id="availabilityLogCategory">—</strong></div>
+                    <div><span id="availabilityLogCategoryLabel">Category</span><strong id="availabilityLogCategory">—</strong></div>
                     <div class="availability-log-count"><strong id="availabilityLogCount">—</strong><span>Changes</span></div>
                 </div>
                 <div id="availabilityLogLoading" class="availability-log-state"><span class="availability-log-spinner"></span>Loading availability changes...</div>
                 <div id="availabilityLogError" class="availability-log-state is-error" hidden></div>
-                <div id="availabilityLogEmpty" class="availability-log-state" hidden>No availability change was found for this date.</div>
+                <div id="availabilityLogEmpty" class="availability-log-state" hidden>No changes were found for this date.</div>
                 <div id="availabilityLogTimeline" class="availability-log-timeline" hidden></div>
             </div>
         </aside>
@@ -171,7 +173,17 @@
                 </div>
 
                 <section id="bulkRateEditor">
-                    <label class="bulk-field"><span>Base Rate</span><input type="number" id="bulkBaseRate" min="0.01" step="0.01" inputmode="decimal" /></label>
+                    <label class="bulk-field"><span>Base Rate</span><input type="number" id="bulkBaseRate" min="@(Math.Max(0.01m, Model.HotelBaseRate).ToString("0.00", CultureInfo.InvariantCulture))" step="0.01" inputmode="decimal" aria-describedby="bulkBaseRateMinimum" required /></label>
+                    <p class="bulk-hint" id="bulkBaseRateMinimum">
+                        @if (Model.HotelBaseRate > 0m)
+                        {
+                            <text>Minimum Base Rate: <strong>@Model.HotelBaseRate.ToString("0.00", CultureInfo.InvariantCulture)</strong> (hotel base rate).</text>
+                        }
+                        else
+                        {
+                            <text>Enter a positive Base Rate.</text>
+                        }
+                    </p>
                     <div class="bulk-preview-head"><strong>Rate Preview</strong><span>Parent and derived rate plans</span></div>
                     <div class="bulk-table-wrap">
                         <table class="bulk-preview-table"><thead><tr><th>Plan</th><th>Adjustment</th><th>Type</th><th>New Rate</th></tr></thead><tbody id="bulkPreviewTbody"><tr><td colspan="4">Enter Base Rate to preview.</td></tr></tbody></table>

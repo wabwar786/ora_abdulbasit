@@ -2500,3 +2500,237 @@ body.availability-log-open, body.inventory-modal-open {
     font-size: 11.5px !important;
 }
 
+
+/* ====================================================================
+   Availability bulk editor readability + rate cell history (Oct 2026)
+   Scoped overrides, do not change main Inventory grid typography.
+   ==================================================================== */
+.inventory-bulk-modal {
+    width: min(660px, calc(100vw - 28px)) !important;
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+}
+.inventory-bulk-modal header { height: 58px; padding-inline: 18px; }
+.inventory-bulk-modal header span { font-size: 11px !important; }
+.inventory-bulk-modal h3 { font-size: 17px !important; line-height: 1.25; }
+.inventory-bulk-modal .inventory-modal-body { padding: 17px 19px !important; }
+.inventory-bulk-modal .bulk-editor-summary span,
+.inventory-bulk-modal .bulk-editor-summary strong { font-size: 12px !important; }
+.inventory-bulk-modal .bulk-current-line { font-size: 12px !important; }
+.inventory-bulk-modal .bulk-weekdays { gap: 7px; }
+.inventory-bulk-modal .bulk-weekdays label { font-size: 12px !important; padding: 7px 9px; }
+.inventory-bulk-modal .bulk-weekdays input { width: 15px !important; height: 15px !important; }
+.inventory-bulk-modal .bulk-field > span,
+.inventory-bulk-modal .bulk-field label > span { font-size: 12px !important; }
+.inventory-bulk-modal .bulk-field input,
+.inventory-bulk-modal .bulk-field select { height: 42px !important; font-size: 14px !important; }
+.inventory-bulk-modal .bulk-hint { font-size: 11.5px !important; line-height: 1.35; }
+.inventory-bulk-modal .bulk-preview-head strong { font-size: 14px !important; }
+.inventory-bulk-modal .bulk-preview-head span { font-size: 11.5px !important; }
+.inventory-bulk-modal .bulk-preview-table { font-size: 12px !important; }
+.inventory-bulk-modal .bulk-preview-table th,
+.inventory-bulk-modal .bulk-preview-table td { padding: 10px 9px !important; }
+.inventory-bulk-modal .bulk-plan-badge { font-size: 10.5px !important; }
+.inventory-bulk-modal footer { padding: 12px 19px !important; }
+.inventory-bulk-modal footer button { font-size: 13px !important; min-height: 36px; }
+.inventory-bulk-modal #bulkBaseRate[aria-invalid="true"] { border-color: #c43e3e !important; box-shadow: 0 0 0 2px rgba(196,62,62,.12); }
+/* The clock button is visible on hover or keyboard focus, leaving the
+   editable rate field intact. Read-only cells also have history. */
+.rate-value-cell { position: relative; }
+.rate-history-button {
+    position: absolute;
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 21px;
+    height: 22px;
+    border: 1px solid #c6d6e8;
+    border-radius: 4px;
+    background: #fff;
+    color: #315a88;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    font-size: 11px;
+}
+.rate-value-cell:hover .rate-history-button,
+.rate-value-cell:focus-within .rate-history-button,
+.rate-history-button:focus-visible { opacity: 1; pointer-events: auto; }
+.rate-history-button:hover { background: #e9f2ff; }
+.rate-history-fallback { display: none; }
+.availability-log-source { margin-top: 6px; font-size: 12px; color: #4b6078; overflow-wrap: anywhere; }
+.availability-log-source strong { color: #163a61; }
+@media (max-width: 720px) {
+    .inventory-bulk-modal { width: calc(100vw - 12px) !important; }
+    .inventory-bulk-modal .inventory-modal-body { padding: 13px 12px !important; }
+    .rate-history-button { opacity: 1; pointer-events: auto; }
+}
+
+
+/* Audit drawer readability & compact history cards (rate, availability, restriction) */
+.availability-log-drawer { width: 540px; background: #fff; }
+.availability-log-header { min-height: 70px; padding: 15px 20px; }
+.availability-log-header h3 { font-size: 20px !important; }
+.availability-log-header p { font-size: 12px !important; }
+.availability-log-body { padding: 16px 18px 20px; }
+.availability-log-summary { font-size: 12px !important; margin-bottom: 14px; }
+.availability-log-summary > div { padding: 12px 13px; }
+.availability-log-summary span { font-size: 11px !important; }
+.availability-log-summary strong { font-size: 14px !important; margin-top: 5px; }
+.availability-log-summary .availability-log-count strong { font-size: 24px !important; }
+.availability-log-state { min-height: 105px; font-size: 14px !important; }
+.availability-log-timeline { padding-left: 25px; }
+.availability-log-timeline::before { left: 9px; }
+.availability-log-node { left: -22px; }
+.availability-log-item { margin-bottom: 9px; }
+.availability-log-card { border-radius: 10px; box-shadow: 0 1px 4px rgba(15,23,42,.04); }
+.availability-log-card-top { padding: 10px 13px 8px; font-size: 13px !important; }
+.availability-log-card-top strong { font-weight: 700; }
+.availability-log-badge { font-size: 11px !important; padding: 3px 8px; }
+.availability-log-card-body { padding: 10px 13px 12px; }
+.availability-log-change { font-size: 13px !important; margin-bottom: 7px; flex-wrap: wrap; }
+.availability-log-change small { font-size: 12px !important; }
+.availability-log-change span { font-size: 16px !important; padding: 5px 9px; }
+.availability-log-meta { font-size: 13px !important; line-height: 1.45; }
+.availability-log-system { margin-top: 5px; font-size: 12px !important; line-height: 1.35; }
+.availability-log-source { font-size: 13px !important; line-height: 1.4; margin-top: 5px; }
+.restriction-cell { position: relative; }
+.restriction-history-button {
+    position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; padding: 0; border: 1px solid #c5d7e8;
+    border-radius: 5px; background: #fff; color: #315a88;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 6; cursor: pointer; opacity: 0; pointer-events: none;
+    font-size: 14px; font-weight: 600;
+}
+.restriction-cell:hover .restriction-history-button,
+.restriction-cell:focus-within .restriction-history-button,
+.restriction-history-button:focus-visible { opacity: 1; pointer-events: auto; }
+.restriction-history-button:hover { background: #e9f2ff; }
+@media (max-width: 650px) {
+    .availability-log-drawer { width: min(540px, calc(100vw - 8px)); }
+    .availability-log-body { padding: 12px; }
+    .restriction-history-button { opacity: 1; pointer-events: auto; }
+}
+
+
+/* =======================================================================
+   Availability, rate and restriction history: TWO-ROW compact entries
+   UI-only override. Each complete history item has exactly two visible rows;
+   long fields are truncated with a tooltip containing the full metadata.
+   ======================================================================= */
+.availability-log-drawer { background: #f8fafc; }
+.availability-log-body { padding: 14px 16px 18px; }
+.availability-log-summary { margin-bottom: 12px; }
+.availability-log-summary > div { padding: 10px 12px; }
+.availability-log-timeline { padding-left: 0; }
+.availability-log-timeline::before { display: none; }
+.availability-log-item.availability-log-compact {
+    margin: 0 0 7px;
+    padding: 0;
+    min-width: 0;
+    border: 1px solid #dce5ef;
+    border-left: 3px solid #3577ba;
+    border-radius: 9px;
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(14,35,63,.045);
+}
+.availability-log-compact.availability-log-kind-availability { border-left-color: #16876b; }
+.availability-log-compact.availability-log-kind-failed { border-left-color: #cf3b3b; }
+.availability-log-compact.availability-log-kind-restriction { border-left-color: #8b63c8; }
+.availability-log-compact-row {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    gap: 9px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.availability-log-compact-primary {
+    height: 35px;
+    padding: 5px 11px 4px;
+    border-bottom: 1px solid #eef2f7;
+}
+.availability-log-compact-time {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12.5px;
+    font-weight: 650;
+    color: #36485e;
+    font-variant-numeric: tabular-nums;
+}
+.availability-log-compact-value {
+    flex: 0 1 auto;
+    max-width: 54%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 5px;
+    border: 1px solid #c6dbf2;
+    background: #edf5ff;
+    padding: 3px 8px;
+    color: #164e87;
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.availability-log-kind-restriction .availability-log-compact-value {
+    border-color: #e4d7f8; background: #f7f1ff; color: #663d93;
+    font-size: 12.5px;
+}
+.availability-log-kind-availability .availability-log-compact-value {
+    border-color: #c9ebdf; background: #ecf9f3; color: #146850;
+}
+.availability-log-compact-type {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #f0f4f9;
+    color: #637b93;
+    font-size: 10.5px;
+    font-weight: 700;
+}
+.availability-log-kind-failed .availability-log-compact-type { background: #fff0f0; color: #ae2c2c; }
+.availability-log-compact-secondary {
+    height: 30px;
+    padding: 4px 11px 5px;
+    gap: 7px;
+    color: #607489;
+    font-size: 11.5px;
+    font-weight: 500;
+}
+.availability-log-compact-secondary > span {
+    display: inline-block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.availability-log-compact-secondary > span + span::before {
+    content: '·';
+    color: #acb6c5;
+    padding-right: 7px;
+}
+.availability-log-compact-user { flex: 0 1 auto; max-width: 22%; font-weight: 700; color: #344b64; }
+.availability-log-compact-source { flex: 1 1 auto; color: #355a83; }
+.availability-log-compact-stay { flex: 0 1 auto; max-width: 32%; }
+.availability-log-compact-device { flex: 0 1 auto; max-width: 20%; color: #8a98a8; font-size: 10.5px; }
+@media (max-width: 540px) {
+    .availability-log-drawer { width: min(540px, calc(100vw - 8px)); }
+    .availability-log-body { padding: 11px 10px 16px; }
+    .availability-log-compact-primary { padding-left: 8px; padding-right: 8px; }
+    .availability-log-compact-secondary { gap: 5px; padding-left: 8px; padding-right: 8px; font-size: 11px; }
+    .availability-log-compact-device { max-width: 14%; }
+    .availability-log-compact-source { max-width: 42%; }
+    .availability-log-compact-time { font-size: 11.5px; }
+    .availability-log-compact-value { font-size: 12.5px; }
+}

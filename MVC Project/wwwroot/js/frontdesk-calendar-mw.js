@@ -492,11 +492,12 @@
 
       const cls=statusClass(item.statusCode||item.status);
       const roomClass=room==='UNASSIGNED'?' fdcmw-unassigned-booking':'';
+      const restaurantClass=item.hasRestaurantPendingBill?' fdcmw-restaurant-pending':'';
       const paymentStrip=buildMonthPaymentStrip(item);
       const monthEndDividers=buildReservationMonthDividers(item,bounds);
       row.insertAdjacentHTML('beforeend',
-        `<div class="fdcmw-fdc-bar ${cls}${roomClass}" draggable="${item.canDrag?'true':'false'}" `+
-        `style="left:${left};width:${width}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}">`+
+        `<div class="fdcmw-fdc-bar ${cls}${roomClass}${restaurantClass}" draggable="${item.canDrag?'true':'false'}" `+
+        `style="left:${left};width:${width}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}${item.hasRestaurantPendingBill?' · Restaurant bill pending':''}">`+
         `${paymentStrip}${monthEndDividers}<span class="fdcmw-name">${esc(item.guestName||item.regId)}</span>`+
         `${item.hasNote?'<span class="fdcmw-fdc-note-indicator" title="Notebook note" aria-label="Notebook note">★</span>':''}`+
         `${item.hasRoomChange?'<span class="fdcmw-fdc-room-change-indicator" title="Room changed" aria-label="Room changed">★</span>':''}`+
@@ -998,7 +999,7 @@
     if(action==='cancel'){ openCancelReservation(d); return; }
     if(action==='undo'){
       if(!confirm(`Undo check-in for ${d.guestName}?`))return;
-      await mutate(cfg.undoUrl,{regId:d.regId},'Undoing check-in…',button);closeDrawer();await loadCalendar(state.start,true);return;
+      await mutate(cfg.undoUrl,{regId:d.regId,paymentId:d.paymentId||0},'Undoing check-in…',button);closeDrawer();await loadCalendar(state.start,true);return;
     }
     if(action==='checkout'){openCheckout(d);return;}
   }
@@ -1378,13 +1379,13 @@ ${tag}`:tag;
     openModal(
       'Check-Out',
       `<div class="fdcmw-fdc-info">${balance>0.005
-        ? `Outstanding balance: <b>${money(balance)}</b>. Please record/settle the payment before checkout.`
+        ? `Reservation balance: <b>${money(balance)}</b>. Earlier rooms can check out with a balance; the last room requires settlement.`
         : `Confirm checkout for <b>${esc(d.guestName||'this guest')}</b>${d.roomNo?` · Room ${esc(d.roomNo)}`:''}.`}</div>`,
       `<button class="fdcmw-fdc-btn" data-close-modal>Cancel</button><button class="fdcmw-fdc-btn fdcmw-danger" id="confirmCheckout">Check-Out</button>`
     );
     $('confirmCheckout').onclick=async e=>{
       const btn=e.currentTarget;
-      await mutate(cfg.checkoutUrl,{regId:d.regId,paymentMethod:'',force:false},'Checking out…',btn);
+      await mutate(cfg.checkoutUrl,{regId:d.regId,paymentId:d.paymentId||0,paymentMethod:'',force:false},'Checking out…',btn);
       closeModal();closeDrawer();await loadCalendar(state.start,true);
     };
   }
@@ -1615,7 +1616,7 @@ ${tag}`:tag;
         deferredAction=()=>openCancelReservation(d);
       }
       else if(action==='undo'){
-        await mutate(cfg.undoUrl,{regId:item.regId},'Undoing…',null);
+        await mutate(cfg.undoUrl,{regId:item.regId,paymentId:item.paymentId||0},'Undoing…',null);
         await loadCalendar(state.start,true);
         closeAfter=true;
       }

@@ -1060,9 +1060,24 @@ WHERE hotel_id = @hotel_id AND reg_id = @reg_id;", conn, tx))
                                     try
                                     {
                                         var svc = new Orapmshms.Services.LegacyApi.YieldBackgroundService();
-                                        svc.RunYieldForDateRange(hotelid, DateTime.Parse(checkInDate), DateTime.Parse(checkOutDate), true, "Channex Reservation Api");
+                                        svc.RunYieldForDateRange(
+                                            hotelid,
+                                            DateTime.Parse(checkInDate),
+                                            DateTime.Parse(checkOutDate),
+                                            true,
+                                            "Channex Reservation Api",
+                                            initiatedByUserId: "channex",
+                                            initiatedByUserName: "Channex Reservation API",
+                                            clientIp: ip,
+                                            sourcePage: "ReservationAPI");
                                     }
-                                    catch { }
+                                    catch (Exception yieldError)
+                                    {
+                                        // Reservation may already be saved; retain a diagnostic
+                                        // instead of silently losing failed Yield/audit processing.
+                                        Log_helper.Log("Channex Reservation Api", "Yield Rate Audit Failed", hotelid,
+                                            "channex", yieldError.ToString());
+                                    }
                                     try
                                     {
                                         var svc = new AvailabilityBackgroundService(connectionString);

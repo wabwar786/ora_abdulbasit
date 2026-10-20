@@ -16,7 +16,7 @@ public interface IRatePlanService
         string userName,
         string ip,
         SaveBaseRateRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, string pcName = "");
 
     Task<RatePlanOperationResult> SaveDetailsAsync(
         string hotelId,
@@ -32,7 +32,7 @@ public interface IRatePlanService
         string userName,
         string ip,
         SaveRatePlanRatesRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, string pcName = "");
 
     Task<RatePlanOperationResult> DeleteAsync(
         string hotelId,

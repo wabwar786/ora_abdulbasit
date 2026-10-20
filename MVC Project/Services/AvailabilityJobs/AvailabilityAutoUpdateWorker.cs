@@ -1,6 +1,7 @@
-using System.Data;
+﻿using System.Data;
 using System.Threading.Channels;
 using Microsoft.Data.SqlClient;
+using Orapmshms.Services;
 
 namespace Orapmshms.Services.AvailabilityJobs;
 
@@ -12,7 +13,8 @@ public sealed record AvailabilityAutoUpdateJob(
     string ClientIp,
     DateTime StartDate,
     DateTime EndDate,
-    string CategoryId);
+    string CategoryId,
+    bool RunReservationYield = false);
 
 public interface IAvailabilityAutoUpdateQueue
 {
@@ -28,16 +30,22 @@ public sealed class AvailabilityAutoUpdateWorker : BackgroundService, IAvailabil
     private readonly Channel<AvailabilityAutoUpdateJob> _queue;
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;
+    private readonly YieldManagementService _yieldManagementService;
     private readonly ILogger<AvailabilityAutoUpdateWorker> _logger;
 
     public AvailabilityAutoUpdateWorker(
         IConfiguration configuration,
         IHotelClock hotelClock,
+        IAvailabilityChannelSyncQueue channelSyncQueue,
+        ILoggerFactory loggerFactory,
         ILogger<AvailabilityAutoUpdateWorker> logger)
     {
         _connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is missing from configuration.");
         _hotelClock = hotelClock;
+        _yieldManagementService = new YieldManagementService(
+            configuration, hotelClock, channelSyncQueue,
+            loggerFactory.CreateLogger<YieldManagementService>());
         _logger = logger;
 
         _queue = Channel.CreateBounded<AvailabilityAutoUpdateJob>(new BoundedChannelOptions(64)
@@ -60,6 +68,41 @@ public sealed class AvailabilityAutoUpdateWorker : BackgroundService, IAvailabil
         {
             try
             {
+                // Exactly ONE yield engine handles a reservation-triggered update:
+                // YieldManagementService (also used by the automatic sweep).
+                // It acquires the hotel lock internally. Do NOT run it inside
+                // HotelAvailabilityJobCoordinator.RunAsync: that would deadlock.
+                if (job.RunReservationYield)
+                {
+                    try
+                    {
+                        var audit = RateAuditMetadata.Create(
+                            job.HotelId,
+                            "YieldManagement/NewReservation",
+                            "ReservationCreated",
+                            job.UserId,
+                            job.UserName,
+                            job.ClientIp);
+
+                        var evaluation = await _yieldManagementService.EvaluateActiveRulesAsync(
+                            job.HotelId, stoppingToken, audit);
+                        _logger.LogInformation(
+                            "NewReservation Yield evaluation completed. Hotel={HotelId}, User={UserId}, Applied={Applied}, Restored={Restored}.",
+                            job.HotelId, job.UserId, evaluation.AppliedRows, evaluation.RestoredRows);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex,
+                            "New Reservation yield evaluation failed for hotel {HotelId}, range {Start:yyyy-MM-dd}-{End:yyyy-MM-dd}. Reservation remains committed; rate retry may be required.",
+                            job.HotelId, job.StartDate, job.EndDate);
+                    }
+                }
+
+                // Continue with the existing availability / Channex refresh.
                 await HotelAvailabilityJobCoordinator.RunAsync(
                     job.HotelId,
                     stoppingToken,
@@ -83,6 +126,9 @@ public sealed class AvailabilityAutoUpdateWorker : BackgroundService, IAvailabil
         var start = job.StartDate.Date;
         var end = job.EndDate.Date;
         if (end < start) (start, end) = (end, start);
+
+        // Yield has already been evaluated above, using YieldManagementService
+        // only. Keep this method dedicated to availability + channel updates.
 
         var categoryId = string.IsNullOrWhiteSpace(job.CategoryId) ? "0" : job.CategoryId.Trim();
         var selectedIndex = categoryId == "0" ? 0 : 1;

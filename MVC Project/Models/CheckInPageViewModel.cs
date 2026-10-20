@@ -482,6 +482,8 @@ public sealed class FbrPostRequest
 public sealed class CheckOutRequest
 {
     public string RegId { get; set; } = string.Empty;
+    // The selected dbo.payments Room Rent row. Zero is accepted only for a single checked-in room.
+    public int PaymentId { get; set; }
     public string PaymentMethod { get; set; } = string.Empty;
     public bool Force { get; set; }
 }

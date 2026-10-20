@@ -2111,39 +2111,69 @@ VALUES(@reg,@visit,@arrival,@departure,'1',@hotel,@systemUser,@systemName,@ip);"
     }
 
     public async Task<CheckInOperationResult> UndoCheckInAsync(
-        string hotelId, string userId, string userName, string ip, string regId, CancellationToken ct = default)
+        string hotelId, string userId, string userName, string ip, string regId, int paymentId = 0, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(regId)) return CheckInOperationResult.Fail("Reservation ID is required.");
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
-        var status = await GetReservationStatusAsync(cn, null, hotelId, regId, ct);
-        if (!IsCheckIn(status))
-            return CheckInOperationResult.Fail("Undo Check-In is available only for a guest who is currently checked in.");
-
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
         try
         {
-            // Intentionally matches WebForms: revert stay status only; payment amounts/security/rates/dates are untouched.
-            await using var cmd = new SqlCommand(@"
-UPDATE dbo.GuestInformationLogTB
-SET res_status='reservation'
-WHERE hotel_id=@hotel AND reg_id=@reg
-  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');
-UPDATE dbo.payments
-SET res_status='reservation'
+            // One reservation may contain multiple Room Rent rows. Never update all by reg_id.
+            var checkedInIds = new List<int>();
+            await using (var rows = new SqlCommand(@"
+SELECT ID FROM dbo.payments WITH (UPDLOCK, HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');", cn, tx))
+            {
+                rows.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                rows.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                await using var reader = await rows.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct)) checkedInIds.Add(reader.GetInt32(0));
+            }
+            if (checkedInIds.Count == 0)
+                return CheckInOperationResult.Fail("No checked-in room was found for this reservation.");
+            if (paymentId <= 0 && checkedInIds.Count != 1)
+                return CheckInOperationResult.Fail("Select the individual room to undo from the Front Desk Calendar.");
+            var targetId = paymentId > 0 ? paymentId : checkedInIds[0];
+            if (!checkedInIds.Contains(targetId))
+                return CheckInOperationResult.Fail("Selected room is no longer checked in.");
+
+            await using (var cmd = new SqlCommand(@"
+UPDATE dbo.payments SET res_status='reservation'
+WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@paymentId
+  AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');", cn, tx))
+            {
+                cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                cmd.Parameters.Add("@paymentId", SqlDbType.Int).Value = targetId;
+                if (await cmd.ExecuteNonQueryAsync(ct) != 1)
+                    return CheckInOperationResult.Fail("Selected room status changed. Refresh the calendar and retry.");
+            }
+
+            // The shared guest header remains checked in while ANY other room stays checked in.
+            if (checkedInIds.Count == 1)
+            {
+                await using var header = new SqlCommand(@"
+UPDATE dbo.GuestInformationLogTB SET res_status='reservation'
 WHERE hotel_id=@hotel AND reg_id=@reg
   AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');", cn, tx);
-            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
-            await cmd.ExecuteNonQueryAsync(ct);
-            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId, "UNDO CHECK IN", "Check-In status reverted to reservation.", ct);
+                header.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                header.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                await header.ExecuteNonQueryAsync(ct);
+            }
+            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
+                "UNDO CHECK IN", "Room payment ID: " + targetId + ". Other rooms unaffected.", ct);
             await tx.CommitAsync(ct);
-            return CheckInOperationResult.Ok("Check-In has been undone successfully.", regId);
+            return CheckInOperationResult.Ok("Selected room check-in has been undone.", regId,
+                data: new { paymentId = targetId, remainingCheckedInRooms = checkedInIds.Count - 1 });
         }
         catch (Exception ex)
         {
             await tx.RollbackAsync(ct);
-            return CheckInOperationResult.Fail("Unable to undo check-in. " + ex.Message);
+            _logger.LogError(ex, "Room undo check-in failed for {RegId} / {PaymentId}.", regId, paymentId);
+            return CheckInOperationResult.Fail("Unable to undo selected room check-in. " + ex.Message);
         }
     }
 
@@ -2156,10 +2186,8 @@ WHERE hotel_id=@hotel AND reg_id=@reg
 
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
-        var status = await GetReservationStatusAsync(cn, null, hotelId, request.RegId, ct);
-        if (IsReservation(status)) return CheckInOperationResult.Fail("Guest is not checked in yet.");
-        if (IsCheckedOut(status)) return CheckInOperationResult.Fail("Guest is already checked out.");
-        if (!IsCheckIn(status)) return CheckInOperationResult.Fail("Guest record not found in Check-In status.");
+        // Individual room payment rows are authoritative; the master guest status
+        // represents the entire reservation and must not block a partial checkout.
 
         var permissions = await LoadPermissionsAsync(cn, hotelId, userId, ct);
         var fbrEnabled = await ScalarBoolAsync(cn, "SELECT TOP 1 ISNULL(fbr_enabled,0) FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel", hotelId, ct);
@@ -2206,7 +2234,8 @@ ORDER BY currentdate DESC, source_order, id DESC;", cn);
         const string roomsSql = @"
 SELECT id,room_no,[Type],DepartureDate,ArrivalDate,res_status,descr
 FROM dbo.payments
-WHERE reg_id=@reg AND hotel_id=@hotel AND descr='Room Rent' AND res_status='check in'
+WHERE reg_id=@reg AND hotel_id=@hotel AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin')
 ORDER BY id;";
         await using (var cmd = new SqlCommand(roomsSql, cn))
         {
@@ -2222,6 +2251,14 @@ ORDER BY id;";
                 });
         }
         if (rooms.Count == 0) return CheckInOperationResult.Fail("No checked-in room was found for this guest.");
+        if (request.PaymentId <= 0 && rooms.Count != 1)
+            return CheckInOperationResult.Fail("Select the individual room to check out from the Front Desk Calendar.");
+        if (request.PaymentId > 0)
+        {
+            rooms = rooms.Where(r => r.Id == request.PaymentId).ToList();
+            if (rooms.Count == 0)
+                return CheckInOperationResult.Fail("Selected room is not checked in. Refresh the calendar and retry.");
+        }
 
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
         try
@@ -2230,12 +2267,14 @@ ORDER BY id;";
             {
                 await using var p = new SqlCommand(@"
 UPDATE dbo.payments SET res_status='check out',DepartureTime=@time
-WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent' AND res_status='check in';", cn, tx);
+WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');", cn, tx);
                 p.Parameters.Add("@time", SqlDbType.VarChar, 20).Value = hotelNow.ToString("hh:mm tt", CultureInfo.InvariantCulture);
                 p.Parameters.Add("@id", SqlDbType.Int).Value = row.Id;
                 p.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 p.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId;
-                await p.ExecuteNonQueryAsync(ct);
+                if (await p.ExecuteNonQueryAsync(ct) != 1)
+                    throw new InvalidOperationException("Selected room is no longer checked in. Please refresh.");
 
                 await using var r = new SqlCommand(@"
 UPDATE dbo.RoomsTB SET room_status=@roomStatus
@@ -2303,9 +2342,12 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
                 cmd.Parameters.Add("@name", SqlDbType.VarChar, 250).Value = guest?.Name ?? string.Empty;
                 cmd.Parameters.Add("@today", SqlDbType.VarChar, 50).Value = todayDb;
                 await cmd.ExecuteNonQueryAsync(ct);
-                await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "CHECK OUT", "All due rooms checked out.", ct);
+                await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "CHECK OUT", "Final room checked out; payment validation completed.", ct);
             }
 
+            if (!allRooms)
+                await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip,
+                    request.RegId, "CHECK OUT ROOM", "Room payment ID: " + rooms[0].Id + ". Other rooms remain open.", ct);
             await tx.CommitAsync(ct);
             foreach (var row in rooms)
             {
@@ -2341,7 +2383,7 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
                 : BuildInvoiceUrl(request.RegId, gsum?.VisitId ?? string.Empty, hotelId, userId, userName,
                     effectivePaymentMethod, "CHECK-OUT", summary.RoomSecurity, 0);
 
-            var checkoutMessage = "Checkout completed for checked-in room(s).";
+            var checkoutMessage = allRooms ? "Final room checked out successfully." : "Selected room checked out. The reservation balance will be checked on the final room.";
             if (fbrWarning.Length > 0) checkoutMessage += " FBR warning: " + fbrWarning;
             return CheckInOperationResult.Ok(checkoutMessage, request.RegId,
                 redirectUrl: invoiceUrl,

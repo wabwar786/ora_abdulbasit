@@ -214,7 +214,7 @@ public sealed class CheckInController : Controller
     [HttpPost("UndoCheckIn")]
     [ValidateAntiForgeryToken]
     public Task<IActionResult> UndoCheckIn([FromBody] RegRequest request, CancellationToken ct)
-        => Run(() => _service.UndoCheckInAsync(HotelId, UserId, UserName, ClientIp(), request.RegId, ct));
+        => Run(() => _service.UndoCheckInAsync(HotelId, UserId, UserName, ClientIp(), request.RegId, request.PaymentId, ct));
 
     [HttpPost("CheckOut")]
     [ValidateAntiForgeryToken]
@@ -395,6 +395,6 @@ try {{ if (window.opener) window.opener.postMessage({{ type:'ora-stripe-checkout
 
     public sealed class DeleteChargeRequest { public string RegId { get; set; } = string.Empty; public int PaymentId { get; set; } }
     public sealed class DeleteLaundryRequest { public string RegId { get; set; } = string.Empty; public int Id { get; set; } }
-    public sealed class RegRequest { public string RegId { get; set; } = string.Empty; }
+    public sealed class RegRequest { public string RegId { get; set; } = string.Empty; public int PaymentId { get; set; } }
     public sealed class ValueRequest { public string Value { get; set; } = string.Empty; }
 }

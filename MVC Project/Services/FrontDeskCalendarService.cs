@@ -446,12 +446,14 @@ ORDER BY BlockStartDate, BlockID;";
         {
             var noteRegIds = await LoadNotebookIndicatorRegIdsAsync(hotelId, visibleRegIds, ct);
             var roomChangedRegIds = await LoadRoomChangedIndicatorRegIdsAsync(hotelId, visibleRegIds, ct);
+            var restaurantPendingRegIds = await LoadRestaurantPendingRegIdsAsync(hotelId, ct);
 
             foreach (var booking in bookings)
             {
                 var normalizedRegId = NormalizeRegId(booking.RegId);
                 booking.HasNote = noteRegIds.Contains(normalizedRegId);
                 booking.HasRoomChange = roomChangedRegIds.Contains(normalizedRegId);
+                booking.HasRestaurantPendingBill = restaurantPendingRegIds.Contains(normalizedRegId);
             }
         }
 
@@ -469,6 +471,38 @@ ORDER BY BlockStartDate, BlockID;";
             Blocks = blocks,
             Permissions = permissions
         };
+    }
+
+    // Legacy FrontDeskCalender.aspx: restaurant-enabled reservations blink while
+    // POSstockout.bill_status = 1. Keep this optional lookup isolated so a
+    // restaurant table issue never prevents other calendar information loading.
+    private async Task<HashSet<string>> LoadRestaurantPendingRegIdsAsync(string hotelId, CancellationToken ct)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await using var cn = new SqlConnection(_connectionString);
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(@"
+SELECT DISTINCT LTRIM(RTRIM(CONVERT(varchar(100),pos.regid))) AS regid
+FROM dbo.POSstockout pos WITH (READPAST)
+WHERE pos.hotel_id=@hotel AND pos.bill_status=1
+  AND NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),pos.regid))),'') IS NOT NULL
+  AND EXISTS (SELECT 1 FROM dbo.HotelsSignUpTB hs WITH (READPAST)
+              WHERE hs.hotel_id=@hotel AND ISNULL(hs.isResturant,0)=1);", cn);
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var regId = NormalizeRegId(reader.GetString(0));
+                if (!string.IsNullOrWhiteSpace(regId)) result.Add(regId);
+            }
+        }
+        catch (SqlException ex)
+        {
+            _logger.Error(ex, "Restaurant pending-bill indicator unavailable for {HotelId}", hotelId);
+        }
+        return result;
     }
 
     public async Task<FrontDeskBookingDetailsDto?> GetBookingDetailsAsync(

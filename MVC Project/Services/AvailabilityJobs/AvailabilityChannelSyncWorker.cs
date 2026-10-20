@@ -6,6 +6,7 @@ namespace Orapmshms.Services.AvailabilityJobs;
 public enum AvailabilityChannelSyncKind
 {
     Rates,
+    PlanDefaults,
     YieldRates,
 
     Restrictions,
@@ -18,7 +19,8 @@ public sealed record AvailabilityChannelSyncJob(
     DateTime FromDate,
     DateTime ToDate,
     IReadOnlyCollection<string> PlanIds,
-    IReadOnlyCollection<string> CategoryIds);
+    IReadOnlyCollection<string> CategoryIds,
+    RateAuditMetadata? Audit = null);
 
 public interface IAvailabilityChannelSyncQueue
 {
@@ -86,7 +88,8 @@ public sealed class AvailabilityChannelSyncWorker : BackgroundService, IAvailabi
                         job.ToDate,
                         job.PlanIds,
                         job.CategoryIds,
-                        stoppingToken);
+                        stoppingToken,
+                        job.Audit);
                 }
                 else if (job.Kind == AvailabilityChannelSyncKind.Restrictions)
                 {
@@ -114,7 +117,13 @@ public sealed class AvailabilityChannelSyncWorker : BackgroundService, IAvailabi
                     job.CategoryIds,
                     stoppingToken);
 
-                if (job.Kind == AvailabilityChannelSyncKind.Rates ||
+                if (job.Kind == AvailabilityChannelSyncKind.PlanDefaults)
+                {
+                    // Direct one-year rate ranges from category_plan; no datesrates rows created.
+                    await service.UploadPlanDefaultsAsync(job.HotelId, job.FromDate, job.ToDate,
+                        job.PlanIds, job.CategoryIds, stoppingToken);
+                }
+                else if (job.Kind == AvailabilityChannelSyncKind.Rates ||
                     job.Kind == AvailabilityChannelSyncKind.YieldRates)
                 {
                     await service.UploadRatesAsync(

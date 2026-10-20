@@ -268,7 +268,7 @@ public sealed class AvailabilityService : IAvailabilityService
         string role,
         string ip,
         AvailabilitySaveRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string pcName = "")
     {
         EnsureConfigured();
         if (request?.Changes == null || request.Changes.Count == 0)
@@ -298,13 +298,23 @@ public sealed class AvailabilityService : IAvailabilityService
             .ToList();
 
         var planCache = new Dictionary<string, List<AvailabilityDbPlan>>(StringComparer.OrdinalIgnoreCase);
-        var rateHistory = new List<(string CategoryId, string PlanId, string PlanName, string Currency, DateTime Date, decimal EnteredRate)>();
         var rateSyncJobs = new List<(string CategoryId, DateTime Date, List<string> PlanIds)>();
         var saved = 0;
         var skippedBelowBase = 0;
+        var audit = RateAuditMetadata.Create(hotelId, "Availability", "CellRateUpdate", userId, userName, ip, pcName);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            var auditDates = normalized
+                .Where(x => string.Equals(x.RowType, "rate", StringComparison.OrdinalIgnoreCase))
+                .Select(x => DateTime.TryParseExact(x.Date?.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var d) ? (DateTime?)d.Date : null)
+                .Where(x => x.HasValue).Select(x => x!.Value).ToList();
+            var auditCategories = normalized.Select(x => x.CategoryId?.Trim() ?? "")
+                .Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (auditDates.Count > 0)
+                await RateAuditContext.CaptureDailyAsync(connection, audit, auditDates.Min(), auditDates.Max(),
+                    cancellationToken, transaction, categoryIds: auditCategories);
             foreach (var change in normalized)
             {
                 if (string.IsNullOrWhiteSpace(change.CategoryId) ||
@@ -397,23 +407,18 @@ public sealed class AvailabilityService : IAvailabilityService
                         ip,
                         cancellationToken);
                 }
-                rateHistory.Add((change.CategoryId.Trim(), selected.PlanId, selected.PlanName, selected.Currency, date.Date, enteredRate));
                 rateSyncJobs.Add((change.CategoryId.Trim(), date.Date, calculatedRates.Select(x => x.Plan.PlanId).Distinct(StringComparer.OrdinalIgnoreCase).ToList()));
                 saved++;
             }
 
+            if (auditDates.Count > 0)
+                await RateAuditContext.WriteDailyAsync(connection, audit, auditDates.Min(), auditDates.Max(),
+                    cancellationToken, transaction, categoryIds: auditCategories);
             await transaction.CommitAsync(cancellationToken);
             foreach (var job in rateSyncJobs)
             {
                 _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
-                    AvailabilityChannelSyncKind.Rates, hotelId, job.Date, job.Date, job.PlanIds, new[] { job.CategoryId }));
-            }
-            foreach (var item in rateHistory)
-            {
-                await TryInsertRateUploadHistoryAsync(
-                    hotelId, userId, userName, systemName, ip, item.CategoryId, item.PlanId,
-                    item.PlanName, item.Currency, item.Date, item.Date,
-                    new HashSet<int> { (int)item.Date.DayOfWeek }, item.EnteredRate, cancellationToken);
+                    AvailabilityChannelSyncKind.Rates, hotelId, job.Date, job.Date, job.PlanIds, new[] { job.CategoryId }, audit));
             }
             if (saved == 0 && skippedBelowBase > 0)
             {
@@ -539,6 +544,133 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
         return result;
     }
 
+    // Read-only rate history for an individual Inventory rate cell.
+    // Uses the existing RateUploadHistoryTB; no additional audit tables.
+    public async Task<IReadOnlyList<AvailabilityRateChangeLogItem>> GetRateChangeLogAsync(
+        string hotelId, string categoryId, string planId, DateTime date,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        var result = new List<AvailabilityRateChangeLogItem>();
+        if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(categoryId)
+            || string.IsNullOrWhiteSpace(planId))
+            return result;
+
+        const string sql = @"
+SELECT TOP (100) id, created_at, user_id, updated_by, pc, ip,
+       date_from, date_to, base_rate_set, currency, rate, [source]
+FROM dbo.RateUploadHistoryTB
+WHERE CONVERT(nvarchar(50),hotel_id)=@hotel
+  AND CONVERT(nvarchar(100),category_id)=@category
+  AND CONVERT(nvarchar(50),plan_id)=@plan
+  AND TRY_CONVERT(date,date_from)<=@selectedDate
+  AND TRY_CONVERT(date,date_to)>=@selectedDate
+  AND rate IS NOT NULL
+  AND (NULLIF(LTRIM(RTRIM(days_text)), '') IS NULL OR days_text='All'
+       OR CHARINDEX(','+@day+',', ','+REPLACE(days_text,' ','')+',')>0 OR CHARINDEX('/',days_text)>0)
+ORDER BY created_at DESC, id DESC;";
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@category", SqlDbType.NVarChar, 100).Value = categoryId.Trim();
+        command.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId.Trim();
+        command.Parameters.Add("@selectedDate", SqlDbType.Date).Value = date.Date;
+        command.Parameters.Add("@day", SqlDbType.NVarChar, 3).Value = date.ToString("ddd", CultureInfo.InvariantCulture);
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new AvailabilityRateChangeLogItem
+            {
+                LogId = reader["id"] == DBNull.Value ? 0 : Convert.ToInt64(reader["id"], CultureInfo.InvariantCulture),
+                CreatedAt = FormatDbDateTime(reader["created_at"]),
+                DateFrom = FormatDbDate(reader["date_from"]),
+                DateTo = FormatDbDate(reader["date_to"]),
+                UserId = DbText(reader["user_id"]),
+                Username = DbText(reader["updated_by"]),
+                Pc = DbText(reader["pc"]),
+                IpAddress = DbText(reader["ip"]),
+                Source = DbText(reader["source"]),
+                Currency = DbText(reader["currency"]),
+                Rate = reader["rate"] == DBNull.Value ? null : Convert.ToDecimal(reader["rate"], CultureInfo.InvariantCulture),
+                BaseRate = reader["base_rate_set"] == DBNull.Value ? null : Convert.ToDecimal(reader["base_rate_set"], CultureInfo.InvariantCulture)
+            });
+        }
+        return result;
+    }
+
+    // Uses the existing RestrictionUploadHistoryTB, including cell/range and bulk updates.
+    // A strict whitelist prevents client-provided column names being inserted into SQL.
+    public async Task<IReadOnlyList<AvailabilityRestrictionChangeLogItem>> GetRestrictionChangeLogAsync(
+        string hotelId, string categoryId, string planId, string restrictionKey, DateTime date,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        var columns = new Dictionary<string, (string Column, string Label, bool Boolean)>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["min_stay_arrival"] = ("min_los", "Minimum stay on arrival", false),
+            ["min_stay_through"] = ("min_stay_through", "Minimum stay through", false),
+            ["max_stay"] = ("max_los", "Maximum stay", false),
+            ["booking_cutoff"] = ("cutoff_days", "Booking cutoff", false),
+            ["closed_to_arrival"] = ("closed_to_arrival", "Closed to arrival", true),
+            ["closed_to_departure"] = ("closed_to_departure", "Closed to departure", true),
+            ["stop_sell"] = ("stop_sell", "Stop sell", true)
+        };
+        if (!columns.TryGetValue(restrictionKey ?? string.Empty, out var restriction) ||
+            string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(categoryId) ||
+            string.IsNullOrWhiteSpace(planId))
+            return Array.Empty<AvailabilityRestrictionChangeLogItem>();
+
+        // Column is selected from the constant dictionary above, never from user input.
+        var sql = $@"
+SELECT TOP (100) created_at, updated_by, pc, ip, date_from, date_to, days_text,
+       [{restriction.Column}] AS changed_value, ISNULL(clear_all,0) AS cleared
+FROM dbo.RestrictionUploadHistoryTB
+WHERE CONVERT(nvarchar(50),hotel_id)=@hotel
+  AND CONVERT(nvarchar(100),category_id)=@category
+  AND CONVERT(nvarchar(50),plan_id)=@plan
+  AND TRY_CONVERT(date,date_from)<=@selected
+  AND TRY_CONVERT(date,date_to)>=@selected
+  AND ([{restriction.Column}] IS NOT NULL OR ISNULL(clear_all,0)=1)
+  AND (NULLIF(LTRIM(RTRIM(days_text)), '') IS NULL OR days_text='All'
+       OR CHARINDEX(','+@day+',', ','+REPLACE(days_text,' ','')+',')>0 OR CHARINDEX('/',days_text)>0)
+ORDER BY created_at DESC;";
+        var rows = new List<AvailabilityRestrictionChangeLogItem>();
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@category", SqlDbType.NVarChar, 100).Value = categoryId.Trim();
+        command.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId.Trim();
+        command.Parameters.Add("@selected", SqlDbType.Date).Value = date.Date;
+        command.Parameters.Add("@day", SqlDbType.NVarChar, 3).Value = date.ToString("ddd", CultureInfo.InvariantCulture);
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var cleared = reader["cleared"] != DBNull.Value && Convert.ToBoolean(reader["cleared"], CultureInfo.InvariantCulture);
+            var rawValue = reader["changed_value"];
+            var value = cleared ? "Restrictions cleared"
+                : rawValue == DBNull.Value ? "Default"
+                : restriction.Column == "cutoff_days" && Convert.ToInt32(rawValue, CultureInfo.InvariantCulture) == -1
+                    ? "Plan default"
+                : restriction.Boolean ? (Convert.ToBoolean(rawValue, CultureInfo.InvariantCulture) ? "Closed" : "Open")
+                : DbText(rawValue) + (restriction.Column == "cutoff_days" ? " days" : " nights");
+            rows.Add(new AvailabilityRestrictionChangeLogItem
+            {
+                CreatedAt = FormatDbDateTime(reader["created_at"]),
+                DateFrom = FormatDbDate(reader["date_from"]),
+                DateTo = FormatDbDate(reader["date_to"]),
+                Username = DbText(reader["updated_by"]),
+                Pc = DbText(reader["pc"]),
+                IpAddress = DbText(reader["ip"]),
+                Restriction = restriction.Label,
+                Value = value,
+                DaysText = DbText(reader["days_text"])
+            });
+        }
+        return rows;
+    }
+
     public async Task<AvailabilityBulkRatePreviewResult> PreviewBulkRateAsync(
         string hotelId,
         string userId,
@@ -557,6 +689,10 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
         if (!permissions.HasAction("BulkRateUpdate"))
             return new(false, "You do not have permission to bulk update rates.", new());
 
+        var hotelBaseRate = await GetHotelBaseRateAsync(connection, hotelId, cancellationToken);
+        if (hotelBaseRate > 0m && request.BaseRate < hotelBaseRate)
+            return new(false, $"Base Rate cannot be less than the hotel base rate {hotelBaseRate:0.00}.", new());
+
         var plans = await LoadPlansAsync(connection, hotelId, new[] { request.CategoryId.Trim() }, cancellationToken);
         var selected = plans.FirstOrDefault(x => x.PlanId.Equals(request.PlanId.Trim(), StringComparison.OrdinalIgnoreCase));
         if (selected == null)
@@ -566,7 +702,9 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
         if (selected.IsDerived && !allowDerived)
             return new(false, $"{selected.PlanName} is a derived rate plan and is read-only for this hotel.", new());
 
-        var selectedFinalRate = ApplyAdjustment(request.BaseRate, selected.Adjustment, selected.ChangeType);
+        // Only the entered Base Rate has a minimum. Calculated simple/derived
+        // rates may legitimately be lower due to percentage/value discounts.
+        var selectedFinalRate = Math.Round(ApplyAdjustment(request.BaseRate, selected.Adjustment, selected.ChangeType), 2, MidpointRounding.AwayFromZero);
         var affected = BuildAffectedRates(plans, selected, selectedFinalRate);
         var rows = affected.Select(x => new AvailabilityBulkRatePreviewRow
         {
@@ -589,7 +727,7 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
         string role,
         string ip,
         AvailabilityBulkRateRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string pcName = "")
     {
         EnsureConfigured();
         if (request == null)
@@ -625,15 +763,19 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
             return new(false, $"{selected.PlanName} is a derived rate plan and is read-only for this hotel.");
 
         var hotelBaseRate = await GetHotelBaseRateAsync(connection, hotelId, cancellationToken);
+        if (hotelBaseRate > 0m && request.BaseRate < hotelBaseRate)
+            return new(false, $"Base Rate cannot be less than the hotel base rate {hotelBaseRate:0.00}.");
+        // Validate only the Base Rate input, not the calculated selling rate.
         var selectedFinalRate = Math.Round(ApplyAdjustment(request.BaseRate, selected.Adjustment, selected.ChangeType), 2, MidpointRounding.AwayFromZero);
-        if (hotelBaseRate > 0m && selectedFinalRate < hotelBaseRate)
-            return new(false, $"Rate cannot be less than the base rate {hotelBaseRate:0.00}.");
 
         var calculated = BuildAffectedRates(plans, selected, selectedFinalRate);
         var systemName = Environment.MachineName;
+        var audit = RateAuditMetadata.Create(hotelId, "Availability", "BulkRateUpdate", userId, userName, ip, pcName);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            await RateAuditContext.CaptureDailyAsync(connection, audit, dates.Min(), dates.Max(),
+                cancellationToken, transaction, categoryIds: new[] { request.CategoryId.Trim() });
             foreach (var date in dates)
             {
                 foreach (var item in calculated)
@@ -642,6 +784,14 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
                         date, item.Rate, request.BaseRate, userName, systemName, ip, cancellationToken);
                 }
             }
+            // Save selected weekdays on the actual changed-rate log, not on a duplicate summary.
+            string[] dayNames = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+            var daysText = daySet.Count == 7
+                ? "All"
+                : string.Join(",", daySet.OrderBy(x => x).Select(x => dayNames[x]));
+            await RateAuditContext.WriteDailyAsync(connection, audit, dates.Min(), dates.Max(),
+                cancellationToken, transaction, categoryIds: new[] { request.CategoryId.Trim() },
+                selectedDaysText: daysText);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (Exception ex)
@@ -651,14 +801,10 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
             return new(false, ex.Message);
         }
 
-        await TryInsertRateUploadHistoryAsync(hotelId, userId, userName, systemName, ip,
-            request.CategoryId.Trim(), request.PlanId.Trim(), selected.PlanName, selected.Currency,
-            start, end, daySet, request.BaseRate, cancellationToken);
-
         _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
             AvailabilityChannelSyncKind.Rates, hotelId, dates.Min(), dates.Max(),
             calculated.Select(x => x.Plan.PlanId).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-            new[] { request.CategoryId.Trim() }));
+            new[] { request.CategoryId.Trim() }, audit));
 
         return new(true, $"Rates saved for {dates.Count} day(s) and queued for channel upload.", dates.Count);
     }
@@ -877,18 +1023,22 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
                         date, date, today, boolValue.GetValueOrDefault(), userName, cancellationToken);
                 }
             }
+            // The restriction and its history are one atomic operation. Previously the
+            // history insert happened after Commit and silently swallowed SQL errors,
+            // leaving a saved restriction with no audit record.
+            await InsertRestrictionHistoryAsync(connection, transaction, hotelId, userId, userName, systemName, ip,
+                request.CategoryId.Trim(), request.PlanId.Trim(), dates.Min(), dates.Max(), daySet,
+                definition.Value, intValue, boolValue,
+                definition.Value.Key == "booking_cutoff" && dbValue == DBNull.Value,
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (Exception ex)
         {
             await transaction.RollbackAsync(CancellationToken.None);
-            _logger.LogWarning(ex, "Bulk restriction save failed for hotel {HotelId}.", hotelId);
-            return new(false, ex.Message);
+            _logger.LogError(ex, "Restriction save and audit failed for hotel {HotelId}; both were rolled back.", hotelId);
+            return new(false, "Restriction save failed; neither the change nor its history was committed. " + ex.Message);
         }
-
-        await TryInsertRestrictionHistoryAsync(hotelId, userId, userName, systemName, ip,
-            request.CategoryId.Trim(), request.PlanId.Trim(), start, end, daySet, definition.Value,
-            intValue, boolValue, cancellationToken);
 
         _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
             AvailabilityChannelSyncKind.Restrictions, hotelId, dates.Min(), dates.Max(),
@@ -1646,6 +1796,48 @@ WHERE rn=1;";
                 ClosedToDeparture = includeRestrictionDetails ? ToNullableBool(reader["closed_to_departure"]) : null
             };
         }
+        // Uniform Rate Plans intentionally have no datesrates rows. Use category_plan
+        // as the effective default for every missing date; explicit daily/Yield/stop-sell
+        // records read above always win.
+        await reader.DisposeAsync();
+        await using (var defaultsCommand = new SqlCommand($@"
+SELECT CONVERT(nvarchar(100),category_id) AS category_id,
+       CONVERT(nvarchar(50),localplanid) AS planid,
+       TRY_CONVERT(decimal(18,2),rate) AS rate,
+       TRY_CONVERT(decimal(18,2),baserate) AS baserate,
+       ISNULL(TRY_CONVERT(int,stopsell),0) AS stopsell
+FROM dbo.category_plan
+WHERE hotel_id=@hotel
+  AND TRY_CONVERT(decimal(18,2),rate) IS NOT NULL
+  AND CONVERT(nvarchar(100),category_id) IN ({inClause});", connection))
+        {
+            defaultsCommand.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            for (var i = 0; i < categoryIds.Count; i++)
+                defaultsCommand.Parameters.Add("@ratecat" + i, SqlDbType.VarChar, 50).Value = categoryIds[i];
+            await using var defaultsReader = await defaultsCommand.ExecuteReaderAsync(cancellationToken);
+            while (await defaultsReader.ReadAsync(cancellationToken))
+            {
+                var cat = Convert.ToString(defaultsReader["category_id"]) ?? string.Empty;
+                var plan = Convert.ToString(defaultsReader["planid"]) ?? string.Empty;
+                if (cat.Length == 0 || plan.Length == 0) continue;
+                var defaultRate = ToDecimal(defaultsReader["rate"]);
+                var baseRate = ToDecimal(defaultsReader["baserate"]);
+                var stopped = ToBool(defaultsReader["stopsell"]);
+                for (var day = start.Date; day <= end.Date; day = day.AddDays(1))
+                {
+                    var key = (cat, plan, day);
+                    if (!result.ContainsKey(key))
+                        result.Add(key, new AvailabilityDbRate
+                        {
+                            Rate = defaultRate,
+                            BaseRate = baseRate,
+                            Upload = "1",
+                            UploadFrom = "0",
+                            StopSell = stopped
+                        });
+                }
+            }
+        }
         return result;
     }
 
@@ -1737,6 +1929,42 @@ ORDER BY [date];";
             }
         }
 
+        // A uniform Rate Plan is not materialized in datesrates. Fill missing
+        // calendar cells from its category_plan default without overriding dated
+        // prices or restriction-specific records.
+        await reader.DisposeAsync();
+        await using (var defaults = new SqlCommand(@"
+SELECT TOP (1) TRY_CONVERT(decimal(18,2),rate) AS rate,
+       TRY_CONVERT(decimal(18,2),baserate) AS baserate,
+       ISNULL(TRY_CONVERT(int,stopsell),0) AS stopsell
+FROM dbo.category_plan
+WHERE hotel_id=@hotel AND CONVERT(nvarchar(100),category_id)=@category
+  AND CONVERT(nvarchar(50),localplanid)=@plan
+ORDER BY id DESC;", connection))
+        {
+            defaults.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            defaults.Parameters.Add("@category", SqlDbType.VarChar, 50).Value = categoryId;
+            defaults.Parameters.Add("@plan", SqlDbType.VarChar, 50).Value = planId;
+            await using var defaultReader = await defaults.ExecuteReaderAsync(cancellationToken);
+            if (await defaultReader.ReadAsync(cancellationToken) && defaultReader["rate"] != DBNull.Value)
+            {
+                var rate = ToDecimal(defaultReader["rate"]);
+                var baseRate = ToDecimal(defaultReader["baserate"]);
+                var stopSell = ToBool(defaultReader["stopsell"]);
+                for (var day = start.Date; day <= end.Date; day = day.AddDays(1))
+                {
+                    var key = (categoryId, planId, day);
+                    if (!rates.ContainsKey(key)) rates.Add(key, new AvailabilityDbRate
+                    {
+                        Rate = rate,
+                        BaseRate = baseRate,
+                        StopSell = stopSell,
+                        Upload = "1",
+                        UploadFrom = "0"
+                    });
+                }
+            }
+        }
         return new RestrictionPlanRangeData(rates, cutoff);
     }
 
@@ -2288,16 +2516,20 @@ WHEN NOT MATCHED THEN
         string ip,
         CancellationToken cancellationToken)
     {
+        // Explicit daily rates set in Availability (cell save or Availability bulk update)
+        // are user overrides. Mark uploadfrom=1 so the background Rate Plans
+        // preparation does not replace them with category_plan defaults.
+        // upload=0 still queues the changed date for Channex synchronization.
         const string sql = @"
 MERGE dbo.datesrates WITH (HOLDLOCK) AS T
 USING (SELECT @hotel AS hotel_id,@category AS category_id,@plan AS planid,@date AS [date]) AS S
 ON T.hotel_id=S.hotel_id AND T.category_id=S.category_id AND T.planid=S.planid AND T.[date]=S.[date]
 WHEN MATCHED THEN
     UPDATE SET rate=@rate,baserate=@baserate,ip=@ip,systemName=@system,username=@username,
-               currentdate=GETDATE(),upload='0',uploadfrom='0'
+               currentdate=GETDATE(),upload='0',uploadfrom='1',yeildruleid=''
 WHEN NOT MATCHED THEN
-    INSERT ([date],rate,baserate,ip,systemName,username,category_id,hotel_id,currentdate,planid,upload,uploadfrom)
-    VALUES (@date,@rate,@baserate,@ip,@system,@username,@category,@hotel,GETDATE(),@plan,'0','0');";
+    INSERT ([date],rate,baserate,ip,systemName,username,category_id,hotel_id,currentdate,planid,upload,uploadfrom,yeildruleid)
+    VALUES (@date,@rate,@baserate,@ip,@system,@username,@category,@hotel,GETDATE(),@plan,'0','1','');";
 
         await using var command = new SqlCommand(sql, connection, transaction);
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
@@ -2540,69 +2772,11 @@ WHERE dr.hotel_id=@hotel AND CONVERT(nvarchar(50),dr.category_id)=@category AND 
         return distinct.Count == 1 ? distinct[0] : "Mixed";
     }
 
-    private async Task TryInsertRateUploadHistoryAsync(
-        string hotelId,
-        string userId,
-        string userName,
-        string systemName,
-        string ip,
-        string categoryId,
-        string planId,
-        string planName,
-        string currency,
-        DateTime start,
-        DateTime end,
-        ISet<int> days,
-        decimal baseRate,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
-            string roomName = categoryId;
-            await using (var nameCommand = new SqlCommand(@"
-SELECT TOP 1 ISNULL(NULLIF(description,''),@category)
-FROM dbo.create_room
-WHERE hotel_id=@hotel AND localcategoryid=@category;", connection))
-            {
-                nameCommand.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-                nameCommand.Parameters.Add("@category", SqlDbType.NVarChar, 50).Value = categoryId;
-                var value = await nameCommand.ExecuteScalarAsync(cancellationToken);
-                if (value != null && value != DBNull.Value) roomName = Convert.ToString(value) ?? categoryId;
-            }
-
-            string[] names = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-            var daysText = days.Count == 7 ? "All" : string.Join(",", days.OrderBy(x => x).Select(x => names[x]));
-            await using var command = new SqlCommand(@"
-INSERT INTO dbo.RateUploadHistoryTB
-(hotel_id,batch_id,created_at,user_id,updated_by,pc,ip,plan_id,plan_name,category_id,room_type,days_text,date_from,date_to,base_rate_set,currency)
-VALUES
-(@hotel,NEWID(),GETDATE(),@user,@updatedBy,@pc,@ip,@plan,@planName,@category,@room,@days,@from,@to,@baseRate,@currency);", connection);
-            command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-            command.Parameters.Add("@user", SqlDbType.NVarChar, 50).Value = userId ?? string.Empty;
-            command.Parameters.Add("@updatedBy", SqlDbType.NVarChar, 200).Value = userName ?? string.Empty;
-            command.Parameters.Add("@pc", SqlDbType.NVarChar, 200).Value = systemName ?? string.Empty;
-            command.Parameters.Add("@ip", SqlDbType.NVarChar, 100).Value = ip ?? string.Empty;
-            command.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId;
-            command.Parameters.Add("@planName", SqlDbType.NVarChar, 200).Value = planName ?? string.Empty;
-            command.Parameters.Add("@category", SqlDbType.NVarChar, 50).Value = categoryId;
-            command.Parameters.Add("@room", SqlDbType.NVarChar, 200).Value = roomName;
-            command.Parameters.Add("@days", SqlDbType.NVarChar, 100).Value = daysText;
-            command.Parameters.Add("@from", SqlDbType.Date).Value = start.Date;
-            command.Parameters.Add("@to", SqlDbType.Date).Value = end.Date;
-            var baseParameter = command.Parameters.Add("@baseRate", SqlDbType.Decimal);
-            baseParameter.Precision = 18; baseParameter.Scale = 2; baseParameter.Value = baseRate;
-            command.Parameters.Add("@currency", SqlDbType.NVarChar, 20).Value = currency ?? string.Empty;
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-        catch (SqlException ex)
-        {
-            _logger.LogWarning(ex, "RateUploadHistoryTB history could not be written for hotel {HotelId}.", hotelId);
-        }
-    }
-
-    private async Task TryInsertRestrictionHistoryAsync(
+    // Single-cell and Availability drag-range restrictions share this transactional
+    // logger. No new tables, procedures, or triggers are required.
+    private static async Task InsertRestrictionHistoryAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
         string hotelId,
         string userId,
         string userName,
@@ -2616,64 +2790,60 @@ VALUES
         RestrictionDefinition definition,
         int? intValue,
         bool? boolValue,
+        bool bookingCutoffPlanDefault,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
-            var planName = planId;
-            var roomName = categoryId;
-            await using (var lookup = new SqlCommand(@"
+        var planName = planId;
+        var roomName = categoryId;
+        await using (var lookup = new SqlCommand(@"
 SELECT TOP 1 cp.planname,cp.category
 FROM dbo.category_plan cp
-WHERE cp.hotel_id=@hotel AND cp.category_id=@category AND cp.localplanid=@plan;", connection))
+WHERE cp.hotel_id=@hotel AND cp.category_id=@category AND cp.localplanid=@plan;", connection, transaction))
+        {
+            lookup.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+            lookup.Parameters.Add("@category", SqlDbType.NVarChar, 50).Value = categoryId;
+            lookup.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId;
+            await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
             {
-                lookup.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-                lookup.Parameters.Add("@category", SqlDbType.NVarChar, 50).Value = categoryId;
-                lookup.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId;
-                await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
-                if (await reader.ReadAsync(cancellationToken))
-                {
-                    planName = Convert.ToString(reader["planname"]) ?? planId;
-                    roomName = Convert.ToString(reader["category"]) ?? categoryId;
-                }
+                planName = Convert.ToString(reader["planname"]) ?? planId;
+                roomName = Convert.ToString(reader["category"]) ?? categoryId;
             }
+        }
 
-            string[] names = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-            var daysText = days.Count == 7 ? "All" : string.Join(",", days.OrderBy(x => x).Select(x => names[x]));
-            await using var command = new SqlCommand(@"
+        string[] names = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        var daysText = days.Count == 7 ? "All" : string.Join(",", days.OrderBy(x => x).Select(x => names[x]));
+        await using var command = new SqlCommand(@"
 INSERT INTO dbo.RestrictionUploadHistoryTB
 (hotel_id,batch_id,created_at,user_id,updated_by,pc,ip,plan_id,plan_name,category_id,room_type,days_text,date_from,date_to,
  min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure,stop_sell,clear_all)
 VALUES
-(@hotel,NEWID(),GETDATE(),@user,@updatedBy,@pc,@ip,@plan,@planName,@category,@room,@days,@from,@to,
- @minLos,@minThrough,@maxLos,@cutoff,@cta,@ctd,@stopSell,0);", connection);
-            command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-            command.Parameters.Add("@user", SqlDbType.NVarChar, 50).Value = userId ?? string.Empty;
-            command.Parameters.Add("@updatedBy", SqlDbType.NVarChar, 200).Value = userName ?? string.Empty;
-            command.Parameters.Add("@pc", SqlDbType.NVarChar, 200).Value = systemName ?? string.Empty;
-            command.Parameters.Add("@ip", SqlDbType.NVarChar, 100).Value = ip ?? string.Empty;
-            command.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId;
-            command.Parameters.Add("@planName", SqlDbType.NVarChar, 200).Value = planName;
-            command.Parameters.Add("@category", SqlDbType.NVarChar, 50).Value = categoryId;
-            command.Parameters.Add("@room", SqlDbType.NVarChar, 200).Value = roomName;
-            command.Parameters.Add("@days", SqlDbType.NVarChar, 100).Value = daysText;
-            command.Parameters.Add("@from", SqlDbType.Date).Value = start.Date;
-            command.Parameters.Add("@to", SqlDbType.Date).Value = end.Date;
-            command.Parameters.Add("@minLos", SqlDbType.Int).Value = (object?)(definition.Key == "min_stay_arrival" ? intValue : null) ?? DBNull.Value;
-            command.Parameters.Add("@minThrough", SqlDbType.Int).Value = (object?)(definition.Key == "min_stay_through" ? intValue : null) ?? DBNull.Value;
-            command.Parameters.Add("@maxLos", SqlDbType.Int).Value = (object?)(definition.Key == "max_stay" ? intValue : null) ?? DBNull.Value;
-            command.Parameters.Add("@cutoff", SqlDbType.Int).Value = (object?)(definition.Key == "booking_cutoff" ? intValue : null) ?? DBNull.Value;
-            command.Parameters.Add("@cta", SqlDbType.Bit).Value = (object?)(definition.Key == "closed_to_arrival" ? boolValue : null) ?? DBNull.Value;
-            command.Parameters.Add("@ctd", SqlDbType.Bit).Value = (object?)(definition.Key == "closed_to_departure" ? boolValue : null) ?? DBNull.Value;
-            command.Parameters.Add("@stopSell", SqlDbType.Bit).Value = (object?)(definition.Key == "stop_sell" ? boolValue : null) ?? DBNull.Value;
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-        catch (SqlException ex)
-        {
-            _logger.LogWarning(ex, "RestrictionUploadHistoryTB history could not be written for hotel {HotelId}.", hotelId);
-        }
+(@hotel,@batch,GETDATE(),@user,@updatedBy,@pc,@ip,@plan,@planName,@category,@room,@days,@from,@to,
+ @minLos,@minThrough,@maxLos,@cutoff,@cta,@ctd,@stopSell,0);", connection, transaction);
+        command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+        command.Parameters.Add("@batch", SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+        command.Parameters.Add("@user", SqlDbType.NVarChar, 50).Value = userId ?? string.Empty;
+        command.Parameters.Add("@updatedBy", SqlDbType.NVarChar, 200).Value = userName ?? string.Empty;
+        command.Parameters.Add("@pc", SqlDbType.NVarChar, 200).Value = systemName ?? string.Empty;
+        command.Parameters.Add("@ip", SqlDbType.NVarChar, 100).Value = ip ?? string.Empty;
+        command.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId;
+        command.Parameters.Add("@planName", SqlDbType.NVarChar, 200).Value = planName;
+        command.Parameters.Add("@category", SqlDbType.NVarChar, 50).Value = categoryId;
+        command.Parameters.Add("@room", SqlDbType.NVarChar, 200).Value = roomName;
+        command.Parameters.Add("@days", SqlDbType.NVarChar, 100).Value = daysText;
+        command.Parameters.Add("@from", SqlDbType.Date).Value = start.Date;
+        command.Parameters.Add("@to", SqlDbType.Date).Value = end.Date;
+        command.Parameters.Add("@minLos", SqlDbType.Int).Value = (object?)(definition.Key == "min_stay_arrival" ? intValue : null) ?? DBNull.Value;
+        command.Parameters.Add("@minThrough", SqlDbType.Int).Value = (object?)(definition.Key == "min_stay_through" ? intValue : null) ?? DBNull.Value;
+        command.Parameters.Add("@maxLos", SqlDbType.Int).Value = (object?)(definition.Key == "max_stay" ? intValue : null) ?? DBNull.Value;
+        // NULL means "Plan Default" in datesrates. Store -1 ONLY in the history
+        // table so the event remains queryable and can be displayed distinctly.
+        command.Parameters.Add("@cutoff", SqlDbType.Int).Value = bookingCutoffPlanDefault
+            ? -1 : (object?)(definition.Key == "booking_cutoff" ? intValue : null) ?? DBNull.Value;
+        command.Parameters.Add("@cta", SqlDbType.Bit).Value = (object?)(definition.Key == "closed_to_arrival" ? boolValue : null) ?? DBNull.Value;
+        command.Parameters.Add("@ctd", SqlDbType.Bit).Value = (object?)(definition.Key == "closed_to_departure" ? boolValue : null) ?? DBNull.Value;
+        command.Parameters.Add("@stopSell", SqlDbType.Bit).Value = (object?)(definition.Key == "stop_sell" ? boolValue : null) ?? DBNull.Value;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string? ValidateBulkRestrictionRequest(
@@ -3159,7 +3329,9 @@ VALUES
                     command.Parameters["@minLos"].Value = updateMinArrival ? (object?)minArrival ?? DBNull.Value : DBNull.Value;
                     command.Parameters["@minThrough"].Value = updateMinThrough ? (object?)minThrough ?? DBNull.Value : DBNull.Value;
                     command.Parameters["@maxLos"].Value = updateMaxStay ? (object?)maxStay ?? DBNull.Value : DBNull.Value;
-                    command.Parameters["@cutoff"].Value = updateCutoff ? (object?)cutoffDays ?? DBNull.Value : DBNull.Value;
+                    command.Parameters["@cutoff"].Value = updateCutoff
+                        ? (object?)cutoffDays ?? -1 // Plan default; marker only in history
+                        : DBNull.Value;
                     command.Parameters["@cta"].Value = updateCta ? (object?)cta ?? DBNull.Value : DBNull.Value;
                     command.Parameters["@ctd"].Value = updateCtd ? (object?)ctd ?? DBNull.Value : DBNull.Value;
                     command.Parameters["@stopSell"].Value = updateStopSell ? (object?)stopSell ?? DBNull.Value : DBNull.Value;
@@ -3229,7 +3401,8 @@ VALUES
         if (reader["cutoff_days"] != DBNull.Value)
         {
             var cutoff = Convert.ToInt32(reader["cutoff_days"], CultureInfo.InvariantCulture);
-            parts.Add(cutoff == 0 ? "Cutoff Disabled" : "Cutoff " + cutoff.ToString(CultureInfo.InvariantCulture) + "d");
+            parts.Add(cutoff == -1 ? "Cutoff Plan Default"
+                : cutoff == 0 ? "Cutoff Disabled" : "Cutoff " + cutoff.ToString(CultureInfo.InvariantCulture) + "d");
         }
         if (reader["closed_to_arrival"] != DBNull.Value)
             parts.Add(Convert.ToBoolean(reader["closed_to_arrival"], CultureInfo.InvariantCulture) ? "CTA Closed" : "CTA Open");

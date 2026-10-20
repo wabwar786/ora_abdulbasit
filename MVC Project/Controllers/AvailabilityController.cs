@@ -136,6 +136,59 @@ public sealed class AvailabilityController : Controller
         }
     }
 
+    [HttpGet("RateChangeLog")]
+    public async Task<IActionResult> RateChangeLog(
+        string categoryId, string planId, string date,
+        CancellationToken cancellationToken)
+    {
+        var hotelId = SessionValue("hotel");
+        var userId = SessionValue("UserId");
+        if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { ok = false, message = "Your login session is missing. Please sign in again." });
+
+        var selectedDate = ParseDate(date);
+        if (selectedDate == null || string.IsNullOrWhiteSpace(categoryId) || string.IsNullOrWhiteSpace(planId))
+            return BadRequest(new { ok = false, message = "Category, rate plan and date are required." });
+
+        try
+        {
+            var rows = await _availabilityService.GetRateChangeLogAsync(
+                hotelId, categoryId.Trim(), planId.Trim(), selectedDate.Value, cancellationToken);
+            return Json(new { ok = true, rows });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Rate change log failed for hotel {HotelId}, plan {PlanId}.", hotelId, planId);
+            return StatusCode(500, new { ok = false, message = "Unable to load rate change history." });
+        }
+    }
+
+    [HttpGet("RestrictionChangeLog")]
+    public async Task<IActionResult> RestrictionChangeLog(
+        string categoryId, string planId, string restrictionKey, string date,
+        CancellationToken cancellationToken)
+    {
+        var hotelId = SessionValue("hotel");
+        var userId = SessionValue("UserId");
+        if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { ok = false, message = "Please sign in again." });
+        var selectedDate = ParseDate(date);
+        if (selectedDate == null || string.IsNullOrWhiteSpace(categoryId) ||
+            string.IsNullOrWhiteSpace(planId) || string.IsNullOrWhiteSpace(restrictionKey))
+            return BadRequest(new { ok = false, message = "Room, plan, restriction and date are required." });
+        try
+        {
+            var rows = await _availabilityService.GetRestrictionChangeLogAsync(
+                hotelId, categoryId.Trim(), planId.Trim(), restrictionKey.Trim(), selectedDate.Value, cancellationToken);
+            return Json(new { ok = true, rows });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Restriction change log failed for hotel {HotelId} plan {PlanId}.", hotelId, planId);
+            return StatusCode(500, new { ok = false, message = "Unable to load restriction history." });
+        }
+    }
+
     [HttpPost("AutoUpdate")]
     [ValidateAntiForgeryToken]
     public IActionResult AutoUpdate([FromBody] AutoUpdateRequest request)
@@ -185,7 +238,7 @@ public sealed class AvailabilityController : Controller
         var result = await _availabilityService.SaveChangesAsync(
             SessionValue("hotel"), SessionValue("UserId"), SessionValue("UserName"), SessionValue("Role"),
             HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
-            request, cancellationToken);
+            request, cancellationToken, RateAuditClientInfo.ResolvePc(HttpContext));
 
         return Json(new { ok = result.Success, message = result.Message, saved = result.Saved });
     }
@@ -210,7 +263,7 @@ public sealed class AvailabilityController : Controller
         var result = await _availabilityService.SaveBulkRatesAsync(
             SessionValue("hotel"), SessionValue("UserId"), SessionValue("UserName"), SessionValue("Role"),
             HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
-            request, cancellationToken);
+            request, cancellationToken, RateAuditClientInfo.ResolvePc(HttpContext));
         return Json(new { ok = result.Success, message = result.Message, saved = result.Saved });
     }
 

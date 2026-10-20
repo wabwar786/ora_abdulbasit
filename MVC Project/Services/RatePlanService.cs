@@ -87,7 +87,7 @@ public sealed class RatePlanService : IRatePlanService
         string userName,
         string ip,
         SaveBaseRateRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string pcName = "")
     {
         if (string.IsNullOrWhiteSpace(hotelId))
             return RatePlanOperationResult.Fail("Hotel is missing.");
@@ -103,9 +103,20 @@ public sealed class RatePlanService : IRatePlanService
         if (delta == 0m)
             return RatePlanOperationResult.Ok("No change in base rate.");
 
+        var audit = RateAuditMetadata.Create(hotelId, "RatePlans", "BaseRateChange", userId, userName, ip, pcName);
         if (!request.ApplyToAllRatePlans)
         {
-            await SaveBaseRateOnlyAsync(connection, hotelId, request.NewBaseRate, cancellationToken);
+            await using (var tx = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken))
+            {
+                try
+                {
+                    await UpsertBaseRateAsync(connection, tx, hotelId, request.NewBaseRate, cancellationToken);
+                    await RateAuditContext.WriteBaseAsync(connection, audit, request.NewBaseRate, _hotelClock.GetHotelToday(hotelId).Date,
+                        _hotelClock.GetHotelToday(hotelId).Date.AddYears(1).AddDays(-1), cancellationToken, tx);
+                    await tx.CommitAsync(cancellationToken);
+                }
+                catch { await tx.RollbackAsync(CancellationToken.None); throw; }
+            }
             await WriteAuditAsync(hotelId, userName, ip,
                 $"Rates | Change Base Rate | Base rate updated from {oldBase:0.##} to {request.NewBaseRate:0.##}; rate plans unchanged.",
                 cancellationToken);
@@ -121,6 +132,8 @@ public sealed class RatePlanService : IRatePlanService
         {
             try
             {
+                await RateAuditContext.CapturePlansAsync(connection, audit, cancellationToken, transaction);
+                await RateAuditContext.CaptureDailyAsync(connection, audit, today, toDate, cancellationToken, transaction);
                 await UpsertBaseRateAsync(connection, transaction, hotelId, request.NewBaseRate, cancellationToken);
 
                 await using (var command = new SqlCommand(@"
@@ -152,6 +165,9 @@ WHERE cp.hotel_id=@hotel
                     await SyncDerivedDatesRatesFromParentAsync(
                         connection, transaction, hotelId, derived.LocalPlanId, today, cancellationToken);
 
+                await RateAuditContext.WritePlansAsync(connection, audit, today, toDate, cancellationToken, transaction);
+                await RateAuditContext.WriteDailyAsync(connection, audit, today, toDate, cancellationToken, transaction);
+                await RateAuditContext.WriteBaseAsync(connection, audit, request.NewBaseRate, today, toDate, cancellationToken, transaction);
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -166,7 +182,7 @@ WHERE cp.hotel_id=@hotel
         // Channex work is handled by the existing background channel-sync worker.
         // This keeps the request fast and lets the worker retry/pacing logic create
         // every missing Channex rate plan before uploading rates.
-        QueueRateUpload(hotelId, today, toDate, planIds, Array.Empty<string>());
+        QueueRateUpload(hotelId, today, toDate, planIds, Array.Empty<string>(), audit);
 
         await WriteAuditAsync(hotelId, userName, ip,
             $"Rates | Change Base Rate | Base rate updated from {oldBase:0.##} to {request.NewBaseRate:0.##} (delta {delta:+0.##;-0.##}); applied to all rate plans.",
@@ -309,7 +325,7 @@ WHEN NOT MATCHED THEN
         string userName,
         string ip,
         SaveRatePlanRatesRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string pcName = "")
     {
         var planName = (request.PlanName ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(planName))
@@ -348,6 +364,8 @@ WHEN NOT MATCHED THEN
         var endDate = today.AddYears(1).AddDays(-1);
         var touchedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         HashSet<int> idsToPush = new() { meta.LocalPlanId };
+        var audit = RateAuditMetadata.Create(hotelId, "RatePlans", request.Derive ? "DerivedPlanChange" : "SimplePlanChange", userId, userName, ip, pcName);
+        var useDefaultOnlyUpload = false;
 
         // IMPORTANT: keep this transaction deliberately small. Only category_plan metadata/defaults
         // are changed here. The much larger datesrates rebuild is done after commit in short,
@@ -356,6 +374,7 @@ WHEN NOT MATCHED THEN
         {
             try
             {
+                await RateAuditContext.CapturePlansAsync(connection, audit, cancellationToken, transaction);
                 if (!request.Derive)
                 {
                     var globalBase = await GetBaseRateAsync(connection, hotelId, transaction, cancellationToken);
@@ -422,6 +441,28 @@ WHEN NOT MATCHED THEN
 
                 var graph = await LoadPlanGraphAsync(connection, transaction, hotelId, cancellationToken);
                 idsToPush = GetPlanAndDescendantIds(graph, meta.LocalPlanId, planName);
+                // Remove only legacy, automatically generated simple-plan daily prices
+                // that still exactly match the PREVIOUS category_plan defaults. Preserve
+                // manual/Yield changes and all restriction metadata. This avoids retaining
+                // stale prices when switching an existing simple plan to default-only rates.
+                await RemoveRedundantSimpleDefaultsAsync(connection, transaction, hotelId,
+                    today, endDate, meta.LocalPlanId, cancellationToken);
+
+                // A derived plan's category_plan value is the default calculated from the
+                // parent's rate TODAY, not necessarily the effective rate on every date.
+                // If parent/child daily prices require materialisation, WriteDailyAsync in
+                // PrepareRateRowsAsync records the real date-specific derived rates instead.
+                // Do not write a misleading second one-year DerivedPlanDefault entry.
+                if (request.Derive)
+                {
+                    useDefaultOnlyUpload = await CanUploadPlanDefaultsWithoutDailyRowsAsync(
+                        connection, hotelId, today, endDate, idsToPush, cancellationToken, transaction);
+                }
+                if (!request.Derive || useDefaultOnlyUpload)
+                {
+                    await RateAuditContext.WritePlansAsync(
+                        connection, audit, today, endDate, cancellationToken, transaction);
+                }
 
                 await transaction.CommitAsync(cancellationToken);
             }
@@ -435,11 +476,21 @@ WHEN NOT MATCHED THEN
         var bookingCutoff = await LoadBookingCutoffSnapshotAsync(
             connection, hotelId, planName, cancellationToken);
 
+        // Keep the original simple-plan path unchanged. Derived plans make the
+        // decision inside their transaction so their audit and upload agree.
+        if (!request.Derive)
+        {
+            useDefaultOnlyUpload = await CanUploadPlanDefaultsWithoutDailyRowsAsync(
+                connection, hotelId, today, endDate, idsToPush, cancellationToken);
+        }
+
         // Prime the next month immediately so Inventory shows the correct derived values as soon as
         // Save Rates returns. This runs OUTSIDE the transaction and is a few set-based statements,
         // so it does not hold a long transaction over datesrates or block Inventory like before.
         // If this plan has Booking Cutoff enabled, apply only the small cutoff window here; the
         // background worker independently completes/retries the Channex restriction sync.
+        if (!useDefaultOnlyUpload)
+        {
         try
         {
             var immediateEnd = today.AddDays(30);
@@ -454,7 +505,8 @@ WHEN NOT MATCHED THEN
                 immediateEnd,
                 idsToPush.Select(x => x.ToString(CultureInfo.InvariantCulture)),
                 touchedCategories,
-                cancellationToken);
+                cancellationToken,
+                audit);
 
             if (bookingCutoff.Enabled && bookingCutoff.Days.GetValueOrDefault() > 0)
             {
@@ -476,6 +528,28 @@ WHEN NOT MATCHED THEN
             _logger.LogWarning(ex,
                 "Immediate Rate Plan preparation failed; background sync will retry. Hotel={HotelId}, Plan={PlanName}",
                 hotelId, planName);
+        }
+        }
+        else if (bookingCutoff.Enabled && bookingCutoff.Days.GetValueOrDefault() > 0)
+        {
+            // Cutoff restrictions still require exceptional dated rows, even when rates
+            // are uniform and uploaded directly from category_plan.
+            try
+            {
+                var ratePreparation = new AvailabilityChannexUploadService(
+                    _configuration, _httpClientFactory.CreateClient("ChannelManager"), _logger);
+                var cutoffEnd = today.AddDays(Math.Max(1, bookingCutoff.Days.GetValueOrDefault()) - 1);
+                await ratePreparation.PrepareBookingCutoffRowsAsync(
+                    hotelId, today, cutoffEnd,
+                    new[] { meta.LocalPlanId.ToString(CultureInfo.InvariantCulture) },
+                    touchedCategories, userName, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex,
+                    "Default-rate plan cutoff preparation will retry in background. Hotel={HotelId} Plan={PlanName}",
+                    hotelId, planName);
+            }
         }
 
         // BOOKING CUTOFF MUST GO FIRST.
@@ -511,7 +585,9 @@ WHEN NOT MATCHED THEN
             today,
             endDate,
             idsToPush,
-            touchedCategories);
+            touchedCategories,
+            audit,
+            useDefaultOnlyUpload);
 
         await WriteAuditAsync(hotelId, userName, ip,
             request.Derive
@@ -540,18 +616,23 @@ WHEN NOT MATCHED THEN
             return RatePlanOperationResult.Fail("HotelId or PlanId missing.");
 
         var channexIds = await GetChannexPlanIdsAsync(hotelId, localPlanId, cancellationToken);
-        var channexErrors = await DeleteChannexRatePlansBestEffortAsync(hotelId, channexIds, cancellationToken);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            var deleteAudit = RateAuditMetadata.Create(hotelId, "RatePlans", "DeletePlan", userId, userName, ip);
+            await RateAuditContext.CapturePlansAsync(connection, deleteAudit, cancellationToken, transaction);
+            var deleteStart = _hotelClock.GetHotelToday(hotelId).Date;
+            await RateAuditContext.CaptureDailyAsync(connection, deleteAudit,
+                deleteStart, deleteStart.AddYears(1).AddDays(-1), cancellationToken, transaction,
+                new[] { localPlanId.ToString(CultureInfo.InvariantCulture) });
             foreach (var sql in new[]
             {
-                "DELETE FROM dbo.datesrates WHERE hotel_id=@h AND planid=@planid;",
-                "DELETE FROM dbo.category_plan WHERE hotel_id=@h AND localplanid=@planid;",
-                "DELETE FROM dbo.plans WHERE hotel_id=@h AND localplanid=@planid;"
+                "DELETE FROM dbo.datesrates WHERE hotel_id=@h AND CONVERT(nvarchar(50),planid)=CONVERT(nvarchar(50),@planid);",
+                "DELETE FROM dbo.category_plan WHERE hotel_id=@h AND CONVERT(nvarchar(50),localplanid)=CONVERT(nvarchar(50),@planid);",
+                "DELETE FROM dbo.plans WHERE hotel_id=@h AND CONVERT(nvarchar(50),localplanid)=CONVERT(nvarchar(50),@planid);"
             })
             {
                 await using var command = new SqlCommand(sql, connection, transaction);
@@ -559,6 +640,10 @@ WHEN NOT MATCHED THEN
                 command.Parameters.Add("@planid", SqlDbType.Int).Value = localPlanId;
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
+            await RateAuditContext.WriteDailyAsync(connection, deleteAudit,
+                deleteStart, deleteStart.AddYears(1).AddDays(-1), cancellationToken, transaction,
+                new[] { localPlanId.ToString(CultureInfo.InvariantCulture) });
+            await RateAuditContext.WritePlansAsync(connection, deleteAudit, _hotelClock.GetHotelToday(hotelId).Date, _hotelClock.GetHotelToday(hotelId).Date, cancellationToken, transaction);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -567,6 +652,8 @@ WHEN NOT MATCHED THEN
             throw;
         }
 
+        // Only remove mapped Channex plans after the database delete committed.
+        var channexErrors = await DeleteChannexRatePlansBestEffortAsync(hotelId, channexIds, cancellationToken);
         var planLabel = !string.IsNullOrWhiteSpace(displayName) ? displayName.Trim() : $"localPlanId={localPlanId}";
         var channelInfo = channexIds.Count == 0
             ? "No Channex plan IDs found."
@@ -1312,8 +1399,35 @@ FROM dbo.category_plan
 WHERE hotel_id=@hotel AND planname=@parentPlanName AND localplanid IS NOT NULL;
 IF (@parentLocalPlanId IS NULL) RETURN;
 
-DELETE FROM dbo.datesrates
-WHERE hotel_id=@hotel AND planid=@child AND [date]>=@today;
+-- Preserve explicit (uploadfrom=1) Availability overrides and all restriction metadata.
+-- Generated derived dates are marked uploadfrom=0 so they can be recalculated.
+UPDATE dr
+SET dr.baserate=CONVERT(varchar(32),TRY_CONVERT(decimal(18,2),drP.rate)),
+    dr.rate=CONVERT(varchar(32),CAST(
+        TRY_CONVERT(decimal(18,2),drP.rate)+
+        CASE WHEN cpC.changetype='Percentage'
+             THEN TRY_CONVERT(decimal(18,2),drP.rate)*(cpC.percentage/100.0)
+             ELSE cpC.percentage END AS decimal(18,2))),
+    dr.upload=0,
+    dr.uploadfrom=0
+FROM dbo.datesrates dr
+JOIN dbo.datesrates drP
+  ON drP.hotel_id=dr.hotel_id
+ AND CONVERT(nvarchar(100),drP.category_id)=CONVERT(nvarchar(100),dr.category_id)
+ AND drP.[date]=dr.[date]
+ AND CONVERT(nvarchar(50),drP.planid)=CONVERT(nvarchar(50),@parentLocalPlanId)
+JOIN dbo.category_plan cpC
+  ON cpC.hotel_id=dr.hotel_id
+ AND CONVERT(nvarchar(100),cpC.category_id)=CONVERT(nvarchar(100),dr.category_id)
+ AND cpC.localplanid=@child
+ AND cpC.parent_planid=@parentPlanName
+WHERE dr.hotel_id=@hotel
+  AND CONVERT(nvarchar(50),dr.planid)=CONVERT(nvarchar(50),@child)
+  AND dr.[date]>=@today
+  AND (ISNULL(dr.uploadfrom,0)<>1
+       OR (NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.username))), '') IS NULL
+           AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.systemName))), '') IS NULL))
+  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL;
 
 INSERT INTO dbo.datesrates
 (hotel_id,planid,category_id,[date],baserate,rate,upload,uploadfrom,restr_upload,restr_uploadfrom)
@@ -1324,7 +1438,7 @@ SELECT drP.hotel_id,@child,drP.category_id,drP.[date],
            CASE WHEN cpC.changetype='Percentage'
                 THEN TRY_CONVERT(decimal(18,2),drP.rate)*(cpC.percentage/100.0)
                 ELSE cpC.percentage END AS decimal(18,2))),
-       0,1,0,0
+       0,0,0,0
 FROM dbo.datesrates drP
 JOIN dbo.category_plan cpC
   ON cpC.hotel_id=drP.hotel_id
@@ -1333,7 +1447,14 @@ JOIN dbo.category_plan cpC
  AND cpC.parent_planid=@parentPlanName
 WHERE drP.hotel_id=@hotel
   AND CONVERT(nvarchar(50),drP.planid)=CONVERT(nvarchar(50),@parentLocalPlanId)
-  AND drP.[date]>=@today;", connection, transaction) { CommandTimeout = 120 };
+  AND drP.[date]>=@today
+  AND NOT EXISTS (
+     SELECT 1 FROM dbo.datesrates existing
+     WHERE existing.hotel_id=drP.hotel_id
+       AND CONVERT(nvarchar(50),existing.planid)=CONVERT(nvarchar(50),@child)
+       AND CONVERT(nvarchar(100),existing.category_id)=CONVERT(nvarchar(100),drP.category_id)
+       AND existing.[date]=drP.[date]
+  );", connection, transaction) { CommandTimeout = 120 };
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
         command.Parameters.Add("@child", SqlDbType.Int).Value = childLocalPlanId;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
@@ -1669,12 +1790,115 @@ WHERE hotel_id=@hotel;", connection))
         }
     }
 
+    private static async Task RemoveRedundantSimpleDefaultsAsync(
+        SqlConnection connection, SqlTransaction transaction, string hotelId,
+        DateTime fromDate, DateTime toDate, int localPlanId, CancellationToken cancellationToken)
+    {
+        // #ORA_PreviousPlans was created by CapturePlansAsync in this transaction.
+        // Do not delete date-specific edits or any restriction/stop-sell records.
+        await using var command = new SqlCommand(@"
+DELETE dr
+FROM dbo.datesrates dr
+JOIN #ORA_PreviousPlans oldcp
+  ON oldcp.PlanId=CONVERT(nvarchar(50),dr.planid)
+ AND oldcp.CategoryId=CONVERT(nvarchar(100),dr.category_id)
+WHERE dr.hotel_id=@hotel
+  AND TRY_CONVERT(int,dr.planid)=@plan
+  AND dr.[date]>=@from AND dr.[date]<=@to
+  AND NULLIF(LTRIM(RTRIM(oldcp.ParentName)),N'') IS NULL
+  AND TRY_CONVERT(decimal(18,4),dr.rate)=oldcp.Rate
+  AND TRY_CONVERT(decimal(18,4),dr.baserate)=oldcp.BaseRate
+  AND ISNULL(dr.uploadfrom,0)=0
+  AND ISNULL(dr.restr_uploadfrom,0)=0
+  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NULL
+  AND ISNULL(dr.stop_sell,0)=0
+  AND ISNULL(dr.cutoff_stop_sell,0)=0
+  AND (dr.min_los IS NULL OR dr.min_los=0)
+  AND (dr.min_stay_through IS NULL OR dr.min_stay_through=0)
+  AND (dr.max_los IS NULL OR dr.max_los=0)
+  AND (dr.cutoff_days IS NULL OR dr.cutoff_days=0)
+  AND (dr.closed_to_arrival IS NULL OR dr.closed_to_arrival=0)
+  AND (dr.closed_to_departure IS NULL OR dr.closed_to_departure=0);", connection, transaction) { CommandTimeout = 120 };
+        command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+        command.Parameters.Add("@plan", SqlDbType.Int).Value = localPlanId;
+        command.Parameters.Add("@from", SqlDbType.Date).Value = fromDate.Date;
+        command.Parameters.Add("@to", SqlDbType.Date).Value = toDate.Date;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Uniform plans can be sent directly from category_plan only if the affected plans
+    /// have no daily rows, and ancestors have no effective day-specific pricing. Ordinary
+    /// legacy rows in an ancestor are acceptable when identical to its category_plan
+    /// default; intentional override rows, Yield rules and stale prices are not.
+    /// </summary>
+    private static async Task<bool> CanUploadPlanDefaultsWithoutDailyRowsAsync(
+        SqlConnection connection, string hotelId, DateTime fromDate, DateTime toDate,
+        IReadOnlyCollection<int> affectedPlanIds, CancellationToken cancellationToken,
+        SqlTransaction? transaction = null)
+    {
+        if (affectedPlanIds.Count == 0) return false;
+        var graph = await LoadPlanGraphAsync(connection, transaction, hotelId, cancellationToken);
+        var nodes = graph.Where(p => !string.IsNullOrWhiteSpace(p.PlanName))
+            .ToDictionary(p => p.PlanName, StringComparer.OrdinalIgnoreCase);
+        var affected = graph.Where(p => affectedPlanIds.Contains(p.LocalPlanId)).ToArray();
+        if (affected.Length == 0) return false;
+        var ancestors = new HashSet<int>();
+        foreach (var node in affected)
+        {
+            var parentName = node.ParentPlanName;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (!string.IsNullOrWhiteSpace(parentName) && seen.Add(parentName))
+            {
+                if (!nodes.TryGetValue(parentName, out var parent)) return false;
+                if (!affectedPlanIds.Contains(parent.LocalPlanId)) ancestors.Add(parent.LocalPlanId);
+                parentName = parent.ParentPlanName;
+            }
+            if (!string.IsNullOrWhiteSpace(parentName)) return false; // cycle
+        }
+        async Task<bool> HasRowsAsync(IReadOnlyCollection<int> ids, bool onlyExceptional)
+        {
+            if (ids.Count == 0) return false;
+            if (ids.Count > 400) return true;
+            var sorted = ids.OrderBy(id => id).ToArray();
+            var list = string.Join(",", sorted.Select((_, i) => "@p" + i));
+            var exceptional = onlyExceptional ? @"
+AND (
+   ISNULL(dr.uploadfrom,0)=1
+   OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NOT NULL
+   OR cp.id IS NULL
+   OR TRY_CONVERT(decimal(18,4),dr.rate) IS NULL
+   OR TRY_CONVERT(decimal(18,4),cp.rate) IS NULL
+   OR TRY_CONVERT(decimal(18,4),dr.rate)<>TRY_CONVERT(decimal(18,4),cp.rate)
+)" : string.Empty;
+            await using var cmd = new SqlCommand(@"
+SELECT TOP (1) 1
+FROM dbo.datesrates dr
+LEFT JOIN dbo.category_plan cp
+  ON cp.hotel_id=dr.hotel_id
+ AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
+ AND CONVERT(nvarchar(100),cp.category_id)=CONVERT(nvarchar(100),dr.category_id)
+WHERE dr.hotel_id=@hotel AND dr.[date]>=@from AND dr.[date]<=@to
+AND TRY_CONVERT(int,dr.planid) IN (" + list + ")" + exceptional, connection, transaction);
+            cmd.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@from", SqlDbType.Date).Value = fromDate.Date;
+            cmd.Parameters.Add("@to", SqlDbType.Date).Value = toDate.Date;
+            for (var i = 0; i < sorted.Length; i++)
+                cmd.Parameters.Add("@p" + i, SqlDbType.Int).Value = sorted[i];
+            return await cmd.ExecuteScalarAsync(cancellationToken) != null;
+        }
+        return !await HasRowsAsync(affectedPlanIds, false)
+            && !await HasRowsAsync(ancestors, true);
+    }
+
     private void QueueRateUpload(
         string hotelId,
         DateTime start,
         DateTime end,
         IEnumerable<int> planIds,
-        IEnumerable<string> categoryIds)
+        IEnumerable<string> categoryIds,
+        RateAuditMetadata? audit = null,
+        bool usePlanDefaults = false)
     {
         var plans = planIds.Where(x => x > 0)
             .Select(x => x.ToString(CultureInfo.InvariantCulture))
@@ -1686,12 +1910,13 @@ WHERE hotel_id=@hotel;", connection))
         if (plans.Length == 0) return;
 
         _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
-            AvailabilityChannelSyncKind.Rates,
+            usePlanDefaults ? AvailabilityChannelSyncKind.PlanDefaults : AvailabilityChannelSyncKind.Rates,
             hotelId,
             start.Date,
             end.Date,
             plans,
-            categories));
+            categories,
+            audit));
     }
 
     private bool QueueRatePlanMappingRepair(

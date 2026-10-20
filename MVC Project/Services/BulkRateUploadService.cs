@@ -190,6 +190,7 @@ ORDER BY id DESC;";
 
         try
         {
+            // BatchId is carried into each direct history INSERT; no SQL session-context call.
             // Re-read the property's current minimum immediately before saving.
             // This protects queued jobs if the hotel base rate changed after submission.
             var propertyBaseRate = await GetPropertyBaseRateAsync(
@@ -197,18 +198,12 @@ ORDER BY id DESC;";
             EnsureBaseRatesMeetPropertyMinimum(normalized, propertyBaseRate);
 
             var save = await SaveRatesAsync(
-                job, hotelId, normalized, workflowConnection, cancellationToken);
+                job, hotelId, normalized, workflowConnection, batchId, cancellationToken);
 
-            try
-            {
-                await InsertHistoryAsync(job, hotelId, normalized, batchId, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Bulk rate upload history insert failed. Job={JobId}, Batch={BatchId}, Hotel={HotelId}",
-                    job.JobId, batchId, hotelId);
-            }
+            // A single authoritative history writer runs transactionally inside
+            // FlushRateBatchAsync -> RateAuditContext.WriteDailyAsync().
+            // Do NOT insert legacy rate=NULL summary rows here: they duplicate
+            // each change already recorded with its final calculated rate.
 
             BulkRateChannelUploadResult channelResult;
             try
@@ -292,6 +287,22 @@ SELECT COUNT(1) OVER() AS total_count,
        h.currency
 FROM dbo.RateUploadHistoryTB h
 WHERE h.hotel_id=@hotel
+  -- Show new detailed Bulk Update records. Include historic summaries only
+  -- when no detailed rate-change record exists for that batch/room/plan.
+  AND (
+       (h.rate IS NOT NULL AND h.[source] LIKE N'BulkRateUpdate /%')
+       OR
+       (h.rate IS NULL AND h.[source] = N'BulkRateUpdate'
+        AND NOT EXISTS (
+            SELECT 1 FROM dbo.RateUploadHistoryTB d
+            WHERE d.hotel_id = h.hotel_id
+              AND d.batch_id = h.batch_id
+              AND d.plan_id = h.plan_id
+              AND d.category_id = h.category_id
+              AND d.rate IS NOT NULL
+              AND d.[source] LIKE N'BulkRateUpdate /%'
+        ))
+      )
   AND (@from IS NULL OR h.created_at >= @from)
   AND (@to IS NULL OR h.created_at < DATEADD(DAY,1,@to))
   AND (@search='' OR h.plan_name LIKE '%'+@search+'%'
@@ -341,6 +352,7 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
         string hotelId,
         NormalizedRequest request,
         SqlConnection connection,
+        Guid batchId,
         CancellationToken cancellationToken)
     {
         // Load the plan graph once for the whole job. No query is executed inside
@@ -426,7 +438,9 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
                                 connection,
                                 hotelId,
                                 job,
+                                batchId,
                                 pending.Values,
+                                BuildDaysText(request.Days),
                                 cancellationToken);
                             pending.Clear();
                         }
@@ -441,7 +455,9 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
                 connection,
                 hotelId,
                 job,
+                batchId,
                 pending.Values,
+                BuildDaysText(request.Days),
                 cancellationToken);
             pending.Clear();
         }
@@ -461,7 +477,9 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
         SqlConnection connection,
         string hotelId,
         BulkRateUploadJob job,
+        Guid batchId,
         IEnumerable<PendingRateRow> rows,
+        string selectedDaysText,
         CancellationToken cancellationToken)
     {
         var tvp = CreateRateTvp();
@@ -485,7 +503,19 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
 
         if (tvp.Rows.Count == 0) return 0;
 
-        await using (var command = new SqlCommand("dbo.UpsertDateRatesBulk", connection)
+        var audit = new RateAuditMetadata(batchId,
+            hotelId, "BulkRateUpdate", "BulkRateUpdate", job.UserId, job.UserName, job.ClientIp, job.SystemName);
+        var actualRows = rows.ToList();
+        var firstDate = actualRows.Min(x => x.Date);
+        var lastDate = actualRows.Max(x => x.Date);
+        var plans = actualRows.Select(x => x.PlanId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var categories = actualRows.Select(x => x.CategoryId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        await using var auditTx = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await RateAuditContext.CaptureDailyAsync(connection, audit, firstDate, lastDate,
+                cancellationToken, auditTx, plans, categories);
+        await using (var command = new SqlCommand("dbo.UpsertDateRatesBulk", connection, auditTx)
         {
             CommandType = CommandType.StoredProcedure,
             CommandTimeout = SaveCommandTimeoutSeconds
@@ -519,7 +549,7 @@ INNER JOIN @Rows AS src
        AND dr.[date] = src.[date]
 WHERE dr.hotel_id = @hotel;";
 
-        await using (var reset = new SqlCommand(resetPendingSql, connection)
+        await using (var reset = new SqlCommand(resetPendingSql, connection, auditTx)
         {
             CommandType = CommandType.Text,
             CommandTimeout = SaveCommandTimeoutSeconds
@@ -532,67 +562,16 @@ WHERE dr.hotel_id = @hotel;";
             await reset.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        return tvp.Rows.Count;
-    }
-
-    private async Task InsertHistoryAsync(
-        BulkRateUploadJob job,
-        string hotelId,
-        NormalizedRequest request,
-        Guid batchId,
-        CancellationToken cancellationToken)
-    {
-        var metadata = await LoadHistoryMetadataAsync(hotelId, request.Rooms, cancellationToken);
-        var table = CreateHistoryTable();
-        var daysText = BuildDaysText(request.Days);
-
-        foreach (var range in request.Ranges)
-        {
-            foreach (var roomId in request.Rooms)
-            {
-                metadata.RoomNames.TryGetValue(roomId, out var roomName);
-                foreach (var planId in request.Plans)
-                {
-                    metadata.PlanNames.TryGetValue(planId, out var planName);
-                    metadata.CurrencyByCategoryPlan.TryGetValue(PlanKey(roomId, planId), out var currency);
-
-                    var row = table.NewRow();
-                    row["hotel_id"] = hotelId;
-                    row["batch_id"] = batchId;
-                    row["created_at"] = DateTime.Now;
-                    row["user_id"] = job.UserId ?? string.Empty;
-                    row["updated_by"] = job.UserName ?? string.Empty;
-                    row["pc"] = job.SystemName ?? string.Empty;
-                    row["ip"] = job.ClientIp ?? string.Empty;
-                    row["plan_id"] = planId;
-                    row["plan_name"] = string.IsNullOrWhiteSpace(planName) ? planId : planName;
-                    row["category_id"] = roomId;
-                    row["room_type"] = string.IsNullOrWhiteSpace(roomName) ? roomId : roomName;
-                    row["days_text"] = daysText;
-                    row["date_from"] = range.Start;
-                    row["date_to"] = range.End;
-                    row["base_rate_set"] = range.BaseRate;
-                    row["currency"] = currency ?? string.Empty;
-                    table.Rows.Add(row);
-                }
-            }
+            await RateAuditContext.WriteDailyAsync(connection, audit, firstDate, lastDate,
+                cancellationToken, auditTx, plans, categories, selectedDaysText);
+            await auditTx.CommitAsync(cancellationToken);
         }
-
-        if (table.Rows.Count == 0) return;
-
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        using var bulk = new SqlBulkCopy(connection, SqlBulkCopyOptions.CheckConstraints, null)
+        catch
         {
-            DestinationTableName = "dbo.RateUploadHistoryTB",
-            BatchSize = Math.Min(1000, table.Rows.Count),
-            BulkCopyTimeout = 60
-        };
-
-        foreach (DataColumn column in table.Columns)
-            bulk.ColumnMappings.Add(column.ColumnName, column.ColumnName);
-
-        await bulk.WriteToServerAsync(table, cancellationToken);
+            await auditTx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        return tvp.Rows.Count;
     }
 
     private async Task<List<PlanDefinition>> LoadPlanDefinitionsAsync(
@@ -714,58 +693,6 @@ ORDER BY category_id, ID;";
         }
 
         return result;
-    }
-
-    private async Task<HistoryMetadata> LoadHistoryMetadataAsync(
-        string hotelId,
-        IReadOnlyList<string> roomIds,
-        CancellationToken cancellationToken)
-    {
-        var roomSet = new HashSet<string>(roomIds, StringComparer.OrdinalIgnoreCase);
-        var roomNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var planNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var currencyMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        const string sql = @"
-SELECT CONVERT(varchar(50),localplanid) AS localplanid, name
-FROM dbo.plans
-WHERE hotel_id=@hotel AND ISNULL(inactive,0)=0;
-
-SELECT CONVERT(varchar(50),category_id) AS category_id,
-       category,
-       CONVERT(varchar(50),localplanid) AS localplanid,
-       currency
-FROM dbo.category_plan
-WHERE hotel_id=@hotel;";
-
-        await using var connection = new SqlConnection(_connectionString);
-        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-
-        await connection.OpenAsync(cancellationToken);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            var plan = Convert.ToString(reader["localplanid"], CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(plan))
-                planNames[plan] = Convert.ToString(reader["name"], CultureInfo.InvariantCulture)?.Trim() ?? plan;
-        }
-
-        if (await reader.NextResultAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var room = Convert.ToString(reader["category_id"], CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
-                if (!roomSet.Contains(room)) continue;
-
-                var plan = Convert.ToString(reader["localplanid"], CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
-                roomNames[room] = Convert.ToString(reader["category"], CultureInfo.InvariantCulture)?.Trim() ?? room;
-                if (!string.IsNullOrWhiteSpace(plan))
-                    currencyMap[PlanKey(room, plan)] = Convert.ToString(reader["currency"], CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
-            }
-        }
-
-        return new HistoryMetadata(roomNames, planNames, currencyMap);
     }
 
     private static NormalizedRequest NormalizeRequest(BulkRateUploadModel request)
@@ -893,28 +820,6 @@ ORDER BY id DESC;";
         return table;
     }
 
-    private static DataTable CreateHistoryTable()
-    {
-        var table = new DataTable();
-        table.Columns.Add("hotel_id", typeof(string));
-        table.Columns.Add("batch_id", typeof(Guid));
-        table.Columns.Add("created_at", typeof(DateTime));
-        table.Columns.Add("user_id", typeof(string));
-        table.Columns.Add("updated_by", typeof(string));
-        table.Columns.Add("pc", typeof(string));
-        table.Columns.Add("ip", typeof(string));
-        table.Columns.Add("plan_id", typeof(string));
-        table.Columns.Add("plan_name", typeof(string));
-        table.Columns.Add("category_id", typeof(string));
-        table.Columns.Add("room_type", typeof(string));
-        table.Columns.Add("days_text", typeof(string));
-        table.Columns.Add("date_from", typeof(DateTime));
-        table.Columns.Add("date_to", typeof(DateTime));
-        table.Columns.Add("base_rate_set", typeof(decimal));
-        table.Columns.Add("currency", typeof(string));
-        return table;
-    }
-
     private static string BuildDaysText(IReadOnlyCollection<int> days)
     {
         if (days.Count == 7) return "All";
@@ -982,5 +887,4 @@ SELECT @result;";
     }
 
     private sealed record SaveOutcome(DateTime MinDate, DateTime MaxDate, int ProcessedRows, HashSet<string> AffectedPlanIds, HashSet<string> AffectedCategoryIds);
-    private sealed record HistoryMetadata(Dictionary<string, string> RoomNames, Dictionary<string, string> PlanNames, Dictionary<string, string> CurrencyByCategoryPlan);
 }

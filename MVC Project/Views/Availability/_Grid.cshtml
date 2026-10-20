@@ -111,6 +111,10 @@ else
                                                data-rowtype="rate" data-date="@cell.Date.ToString("yyyy-MM-dd")"
                                                aria-label="@row.PlanName rate @cell.Date.ToString("dd MMM yyyy")"
                                                disabled="@(editable ? null : "disabled")" />
+                                        <button type="button" class="rate-history-button" aria-label="View rate change history for @row.PlanName on @cell.Date.ToString("dd MMM yyyy")"
+                                                title="Rate history · Username and source" tabindex="0">
+                                            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span class="rate-history-fallback">↺</span>
+                                        </button>
                                     </td>
                                 }
                             </tr>

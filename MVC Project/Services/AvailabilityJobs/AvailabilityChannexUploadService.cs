@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
+using Orapmshms.Services;
 
 namespace Orapmshms.Services.AvailabilityJobs;
 
@@ -68,7 +69,8 @@ internal sealed class AvailabilityChannexUploadService
         DateTime toDate,
         IEnumerable<string> planIds,
         IEnumerable<string> categoryIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RateAuditMetadata? audit = null)
     {
         if (string.IsNullOrWhiteSpace(hotelId)) return;
         fromDate = fromDate.Date;
@@ -165,12 +167,12 @@ WHERE p.hotel_id=@hotel AND TRY_CONVERT(int,p.localplanid)>0;", connection))
             if (string.IsNullOrWhiteSpace(plan.ParentPlanName))
             {
                 await PrepareManualRateRowsForPlanAsync(
-                    hotelId, plan.LocalPlanId, fromDate, toDate, requestedCategories, cancellationToken);
+                    hotelId, plan.LocalPlanId, fromDate, toDate, requestedCategories, cancellationToken, audit);
             }
             else
             {
                 await PrepareDerivedRateRowsForPlanAsync(
-                    hotelId, plan.LocalPlanId, fromDate, toDate, requestedCategories, cancellationToken);
+                    hotelId, plan.LocalPlanId, fromDate, toDate, requestedCategories, cancellationToken, audit);
             }
         }
     }
@@ -363,7 +365,8 @@ SELECT @updatedRows AS UpdatedRows, @insertedRows AS InsertedRows;";
         DateTime fromDate,
         DateTime toDate,
         IReadOnlyCollection<string> categoryIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RateAuditMetadata? audit)
     {
         var categories = categoryIds.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var categoryFilter = categories.Length == 0
@@ -426,7 +429,22 @@ WHERE cp.hotel_id=@hotel
         for (var i = 0; i < categories.Length; i++)
             command.Parameters.Add("@c" + i, SqlDbType.NVarChar, 100).Value = categories[i];
         await connection.OpenAsync(cancellationToken);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        command.Transaction = tx;
+        try
+        {
+            if (audit != null)
+                await RateAuditContext.CaptureDailyAsync(connection, audit, fromDate, toDate,
+                    cancellationToken, tx,
+                    new[] { localPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            if (audit != null)
+                await RateAuditContext.WriteDailyAsync(connection, audit, fromDate, toDate,
+                    cancellationToken, tx,
+                    new[] { localPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch { await tx.RollbackAsync(CancellationToken.None); throw; }
     }
 
     private async Task PrepareDerivedRateRowsForPlanAsync(
@@ -435,7 +453,8 @@ WHERE cp.hotel_id=@hotel
         DateTime fromDate,
         DateTime toDate,
         IReadOnlyCollection<string> categoryIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RateAuditMetadata? audit)
     {
         var categories = categoryIds.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var categoryFilter = categories.Length == 0
@@ -500,14 +519,17 @@ SET dr.baserate=CONVERT(varchar(32),e.parent_rate),
                              ELSE e.adjustment END
         AS decimal(18,2))),
     dr.upload=0,
-    dr.uploadfrom=1
+    dr.uploadfrom=0
 FROM dbo.datesrates dr
 JOIN #EffectiveDerived e
   ON CONVERT(nvarchar(100),e.category_id)=CONVERT(nvarchar(100),dr.category_id)
  AND e.[date]=dr.[date]
 WHERE dr.hotel_id=@hotel
   AND CONVERT(nvarchar(50),dr.planid)=CONVERT(nvarchar(50),@child)
-  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL;
+  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL
+  AND (ISNULL(dr.uploadfrom,0)<>1
+       OR (NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.username))), '') IS NULL
+           AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.systemName))), '') IS NULL));
 
 INSERT INTO dbo.datesrates
 (hotel_id,planid,category_id,[date],baserate,rate,upload,uploadfrom,restr_upload,restr_uploadfrom,currentdate)
@@ -518,7 +540,7 @@ SELECT @hotel,@child,e.category_id,e.[date],
                                 THEN e.parent_rate*(e.adjustment/100.0)
                                 ELSE e.adjustment END
            AS decimal(18,2))),
-       0,1,0,0,GETDATE()
+       0,0,0,0,GETDATE()
 FROM #EffectiveDerived e
 WHERE NOT EXISTS
 (
@@ -541,7 +563,22 @@ DROP TABLE #EffectiveDerived;";
         for (var i = 0; i < categories.Length; i++)
             command.Parameters.Add("@c" + i, SqlDbType.NVarChar, 100).Value = categories[i];
         await connection.OpenAsync(cancellationToken);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        command.Transaction = tx;
+        try
+        {
+            if (audit != null)
+                await RateAuditContext.CaptureDailyAsync(connection, audit, fromDate, toDate,
+                    cancellationToken, tx,
+                    new[] { childLocalPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            if (audit != null)
+                await RateAuditContext.WriteDailyAsync(connection, audit, fromDate, toDate,
+                    cancellationToken, tx,
+                    new[] { childLocalPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch { await tx.RollbackAsync(CancellationToken.None); throw; }
     }
 
     /// <summary>
@@ -809,6 +846,92 @@ WHERE cp.hotel_id=@hotel;", connection))
             _logger.LogInformation(
                 "Channex rate-plan reconciliation completed and verified for all requested categories. Hotel={HotelId}",
                 hotelId);
+        }
+    }
+
+    /// <summary>
+    /// Upload one full date range for each uniform category_plan price. Called only after
+    /// RatePlanService confirms there are no dated rate/restriction/override rows in
+    /// the affected plans or their parent hierarchy. Does not create datesrates rows.
+    /// A successful HTTP call does not prove the OTA has applied the price; reconciliation
+    /// and subsequent channel checks remain operational responsibilities.
+    /// </summary>
+    public async Task UploadPlanDefaultsAsync(
+        string hotelId,
+        DateTime fromDate,
+        DateTime toDate,
+        IEnumerable<string> planIds,
+        IEnumerable<string> categoryIds,
+        CancellationToken cancellationToken)
+    {
+        var context = await LoadContextAsync(hotelId, cancellationToken);
+        if (context == null) return;
+        var requestedPlans = new HashSet<string>(planIds ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        var requestedCategories = new HashSet<string>(categoryIds ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        var rows = new List<(string PlanId, string CategoryId, decimal Rate)>();
+        await using (var connection = new SqlConnection(_connectionString))
+        await using (var command = new SqlCommand(@"
+SELECT CONVERT(nvarchar(50),localplanid) AS planid,
+       CONVERT(nvarchar(100),category_id) AS category_id,
+       TRY_CONVERT(decimal(18,2),rate) AS rate
+FROM dbo.category_plan
+WHERE hotel_id=@hotel AND TRY_CONVERT(decimal(18,2),rate) IS NOT NULL;", connection))
+        {
+            command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+            await connection.OpenAsync(cancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var plan = Convert.ToString(reader["planid"])?.Trim() ?? string.Empty;
+                var category = Convert.ToString(reader["category_id"])?.Trim() ?? string.Empty;
+                if (requestedPlans.Count > 0 && !requestedPlans.Contains(plan)) continue;
+                if (requestedCategories.Count > 0 && !requestedCategories.Contains(category)) continue;
+                if (reader["rate"] == DBNull.Value) continue;
+                rows.Add((plan, category, Convert.ToDecimal(reader["rate"], CultureInfo.InvariantCulture)));
+            }
+        }
+        foreach (var row in rows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var roomType = ResolveRoomType(context.RoomMap, row.CategoryId);
+            var ratePlanId = string.IsNullOrWhiteSpace(roomType) ? null :
+                ResolvePlan(context.PlanMap, row.PlanId, roomType, row.CategoryId);
+            if (string.IsNullOrWhiteSpace(ratePlanId))
+            {
+                var refreshed = await LoadContextAsync(hotelId, cancellationToken);
+                if (refreshed != null)
+                {
+                    context = refreshed;
+                    roomType = ResolveRoomType(context.RoomMap, row.CategoryId);
+                    ratePlanId = string.IsNullOrWhiteSpace(roomType) ? null :
+                        ResolvePlan(context.PlanMap, row.PlanId, roomType, row.CategoryId);
+                }
+            }
+            if (string.IsNullOrWhiteSpace(ratePlanId) || string.IsNullOrWhiteSpace(roomType))
+            {
+                _logger.LogWarning("Cannot directly upload rate: remote mapping missing. Hotel={Hotel} Plan={Plan} Category={Category}",
+                    hotelId, row.PlanId, row.CategoryId);
+                continue;
+            }
+            try
+            {
+                await UploadBatchAsync(context, new List<object> { new
+                {
+                    property_id = context.PropertyId,
+                    rate_plan_id = ratePlanId,
+                    room_type_id = roomType,
+                    date_from = fromDate.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    date_to = toDate.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    rate = Math.Round(row.Rate, 2).ToString("0.##", CultureInfo.InvariantCulture)
+                } }, cancellationToken);
+                _logger.LogInformation("Direct category_plan rate uploaded. Hotel={Hotel} Plan={Plan} Category={Category} From={From} To={To} Rate={Rate}",
+                    hotelId, row.PlanId, row.CategoryId, fromDate.Date, toDate.Date, row.Rate);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex,"Direct rate-plan upload failed. Hotel={Hotel} Plan={Plan} Category={Category}",
+                    hotelId, row.PlanId, row.CategoryId);
+            }
         }
     }
 

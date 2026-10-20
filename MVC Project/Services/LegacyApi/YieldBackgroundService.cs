@@ -1,4 +1,6 @@
 using Orapmshms.Services.LegacyApi;
+using Orapmshms.Services;
+using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
@@ -26,7 +28,12 @@ namespace Orapmshms.Services.LegacyApi
     DateTime fromDate,
     DateTime toDate,
     bool uploadToChannex,
-    string uploadFromTag)
+    string uploadFromTag,
+    string? initiatedByUserId = null,
+    string? initiatedByUserName = null,
+    string? clientIp = null,
+    string? clientPc = null,
+    string? sourcePage = null)
         {
             var affectedPlanIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var affectedCategoryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -83,7 +90,9 @@ namespace Orapmshms.Services.LegacyApi
                                     rt.localcategoryId,
                                     plan.PlanId,
                                     d,
-                                    ruleId));
+                                    ruleId,
+                                    decision.FinalRate,
+                                    baseRate));
 
                             if (!canApply)
                                 continue;
@@ -108,11 +117,46 @@ namespace Orapmshms.Services.LegacyApi
                 if (map.Count == 0)
                     return;
 
-                ExecuteWithReconnect(cn, () =>
+                // All reservation entry points use this same Yield processor and audit.
+                // Capture the rows before the bulk procedure changes them, then write the
+                // final effective daily prices to the existing RateUploadHistoryTB.
+                // Both writes are in the SAME transaction as the rate update so an audit
+                // failure cannot silently leave modified datesrates rows without history.
+                var audit = RateAuditMetadata.Create(
+                    hotelId,
+                    "YieldManagement",
+                    sourcePage == "NewReservation" ? "NewReservation" : "ReservationAPI",
+                    initiatedByUserId ?? string.Empty,
+                    initiatedByUserName ?? "System / Reservation API",
+                    clientIp ?? string.Empty,
+                    clientPc ?? string.Empty);
+
+                var firstChangedDate = map.Values.Min(r => r.Date).Date;
+                var lastChangedDate = map.Values.Max(r => r.Date).Date;
+                using (var transaction = cn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
                 {
-                    BulkUpsertYieldRates(cn, map);
-                    return true;
-                });
+                    try
+                    {
+                        RateAuditContext.CaptureDailyAsync(cn, audit,
+                            firstChangedDate, lastChangedDate, CancellationToken.None,
+                            transaction, affectedPlanIds, affectedCategoryIds)
+                            .GetAwaiter().GetResult();
+
+                        BulkUpsertYieldRates(cn, map, transaction);
+
+                        RateAuditContext.WriteDailyAsync(cn, audit,
+                            firstChangedDate, lastChangedDate, CancellationToken.None,
+                            transaction, affectedPlanIds, affectedCategoryIds)
+                            .GetAwaiter().GetResult();
+
+                        transaction.Commit();
+                    }
+                    catch
+                    {
+                        try { transaction.Rollback(); } catch { }
+                        throw;
+                    }
+                }
             }
 
             if (uploadToChannex)
@@ -344,20 +388,23 @@ ORDER BY cp.localplanid;";
       string planId,
       DateTime date)
         {
-            string formattedDate = date.ToString("yyyy-MM-dd");
+            // 1) First check datesrates for this stay date, regardless of whether
+            // the database stores a datetime with a non-midnight time component.
 
             // 1) First check datesrates for this exact date
             const string sqlDateRate = @"
 SELECT TOP 1
        ISNULL(rate, 0) AS rate,
        ISNULL(baserate, 0) AS baserate,
-       ISNULL(uploadfrom, '') AS uploadfrom
+       ISNULL(uploadfrom, '') AS uploadfrom,
+       ISNULL(yeildruleid, '') AS yeildruleid
 FROM dbo.datesrates
 WHERE hotel_id = @HotelID
   AND category_id = @RoomTypeID
   AND planid = @PlanID
-  AND [date] = @D
-ORDER BY currentdate DESC;";
+  AND TRY_CONVERT(date, [date]) = @D
+ORDER BY CASE WHEN TRY_CONVERT(int, uploadfrom) = 1 THEN 0 ELSE 1 END,
+         TRY_CONVERT(datetime, currentdate) DESC;";
 
             using (var cmd = new SqlCommand(sqlDateRate, cn))
             {
@@ -365,7 +412,7 @@ ORDER BY currentdate DESC;";
                 cmd.Parameters.AddWithValue("@HotelID", hotelId);
                 cmd.Parameters.AddWithValue("@RoomTypeID", roomTypeId);
                 cmd.Parameters.AddWithValue("@PlanID", planId);
-                cmd.Parameters.AddWithValue("@D", formattedDate);
+                cmd.Parameters.Add("@D", SqlDbType.Date).Value = date.Date;
 
                 using (var r = cmd.ExecuteReader())
                 {
@@ -373,8 +420,15 @@ ORDER BY currentdate DESC;";
                     {
                         decimal rate = Convert.ToDecimal(r["rate"]);
                         decimal baseRate = Convert.ToDecimal(r["baserate"]);
-                        string uploadFrom = (r["uploadfrom"] ?? "").ToString().Trim();
-                        if (rate > 0)
+                        string yieldRuleId = (r["yeildruleid"] ?? "").ToString().Trim();
+                        // If an earlier Yield pass already changed this row,
+                        // baserate holds the selling rate BEFORE Yield. Never
+                        // compound the percentage on an already-yielded rate.
+                        if (!string.IsNullOrWhiteSpace(yieldRuleId) && baseRate > 0m)
+                            return baseRate;
+                        // Otherwise this is a normal/manual daily rate. Its
+                        // rate (not category_plan) is the appropriate baseline.
+                        if (rate > 0m)
                             return rate;
                     }
                 }
@@ -896,33 +950,48 @@ VALUES
             string categoryId,
             string planId,
             DateTime date,
-            string newYieldRuleId)
+            string newYieldRuleId,
+            decimal expectedRate,
+            decimal expectedBaseRate)
         {
+            // The old version tested only the Yield rule ID. This left stale
+            // selling rates in place when the user's manual rate changed but
+            // the same Yield rule still applied. Compare the effective rate
+            // and its pre-Yield baseline as well.
             const string sql = @"
-SELECT TOP 1 ISNULL(yeildruleid, '') AS yeildruleid
+SELECT TOP (1)
+       ISNULL(CONVERT(nvarchar(50),yeildruleid),'') AS yeildruleid,
+       TRY_CONVERT(decimal(18,4),rate) AS rate,
+       TRY_CONVERT(decimal(18,4),baserate) AS baserate
 FROM dbo.datesrates
 WHERE hotel_id=@HotelID
-  AND category_id=@CategoryID
-  AND planid=@PlanID
-  AND [date]=@D;";
+  AND CONVERT(nvarchar(100),category_id)=@CategoryID
+  AND CONVERT(nvarchar(50),planid)=@PlanID
+  AND TRY_CONVERT(date,[date])=@D
+ORDER BY CASE WHEN TRY_CONVERT(int,uploadfrom)=1 THEN 0 ELSE 1 END,
+         TRY_CONVERT(datetime,currentdate) DESC;";
 
             using (var cmd = new SqlCommand(sql, cn))
             {
                 cmd.Parameters.AddWithValue("@HotelID", hotelId);
                 cmd.Parameters.AddWithValue("@CategoryID", categoryId);
                 cmd.Parameters.AddWithValue("@PlanID", planId);
-                cmd.Parameters.AddWithValue("@D", date.ToString("yyyy-MM-dd"));
+                cmd.Parameters.Add("@D", SqlDbType.Date).Value = date.Date;
 
-                string oldRuleId = Convert.ToString(cmd.ExecuteScalar()) ?? "";
-
-                return !string.Equals(
-                    oldRuleId.Trim(),
-                    (newYieldRuleId ?? "").Trim(),
-                    StringComparison.OrdinalIgnoreCase);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (!reader.Read()) return true;
+                    string oldRuleId = Convert.ToString(reader["yeildruleid"])?.Trim() ?? "";
+                    decimal oldRate = reader["rate"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["rate"]);
+                    decimal oldBase = reader["baserate"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["baserate"]);
+                    return !string.Equals(oldRuleId, (newYieldRuleId ?? "").Trim(), StringComparison.OrdinalIgnoreCase)
+                        || Math.Round(oldRate, 2) != Math.Round(expectedRate, 2)
+                        || Math.Round(oldBase, 2) != Math.Round(expectedBaseRate, 2);
+                }
             }
         }
 
-        private void BulkUpsertYieldRates(SqlConnection cn, Dictionary<string, YieldBulkRow> map)
+        private void BulkUpsertYieldRates(SqlConnection cn, Dictionary<string, YieldBulkRow> map, SqlTransaction transaction)
         {
             var tvp = BuildYieldBulkTable();
 
@@ -944,7 +1013,7 @@ WHERE hotel_id=@HotelID
                 tvp.Rows.Add(dr);
             }
 
-            using (var cmd = new SqlCommand("dbo.UpsertDateRatesBulk", cn))
+            using (var cmd = new SqlCommand("dbo.UpsertDateRatesBulk", cn, transaction))
             {
                 cmd.CommandType = CommandType.StoredProcedure;
 

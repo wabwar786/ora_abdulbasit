@@ -877,7 +877,6 @@ VALUES
         CancellationToken cancellationToken)
     {
         var table = source == "GI" ? "GuestInformationLogTB" : "NewReservationsTB";
-
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(cancellationToken);
 

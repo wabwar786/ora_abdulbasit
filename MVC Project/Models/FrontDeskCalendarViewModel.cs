@@ -125,6 +125,7 @@ public sealed class FrontDeskBookingDto
     // small markers rendered on the booking bar.
     public bool HasNote { get; set; }
     public bool HasRoomChange { get; set; }
+    public bool HasRestaurantPendingBill { get; set; }
 }
 
 public sealed class FrontDeskBlockDto

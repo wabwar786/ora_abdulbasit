@@ -235,3 +235,34 @@ public sealed class AvailabilityBulkRestrictionSaveRequest
     public string Value { get; set; } = string.Empty;
     public List<int> Days { get; set; } = new();
 }
+
+// Read-only timeline values from RateUploadHistoryTB for Inventory rate cells.
+public sealed class AvailabilityRateChangeLogItem
+{
+    public long LogId { get; set; }
+    public string CreatedAt { get; set; } = string.Empty;
+    public string DateFrom { get; set; } = string.Empty;
+    public string DateTo { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Pc { get; set; } = string.Empty;
+    public string IpAddress { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public string Currency { get; set; } = string.Empty;
+    public decimal? Rate { get; set; }
+    public decimal? BaseRate { get; set; }
+}
+
+// History from the existing dbo.RestrictionUploadHistoryTB (no schema changes).
+public sealed class AvailabilityRestrictionChangeLogItem
+{
+    public string CreatedAt { get; set; } = string.Empty;
+    public string DateFrom { get; set; } = string.Empty;
+    public string DateTo { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Pc { get; set; } = string.Empty;
+    public string IpAddress { get; set; } = string.Empty;
+    public string Restriction { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string DaysText { get; set; } = string.Empty;
+}

@@ -817,7 +817,7 @@
     }
 
 .dashboard-roomtype-table small {
-    font-size: 7.6px;
+    font-size: 10.6px;
     color: #66788d
 }
 
@@ -3055,7 +3055,6 @@ body.dashboard-modal-open {
 
 .dashboard-room-status-card {
     position: relative !important;
-    z-index: 1100 !important;
     overflow: visible !important;
 }
 
@@ -3497,3 +3496,745 @@ body.dashboard-modal-open {
     .dashboard-page .dashboard-roomtype-table td {
         color: #385168 !important;
     }
+
+/* Reuse Availability's dual-month date-range calendar on the Dashboard.
+   Class names and dimensions deliberately match availability.css. */
+.dashboard-hero {
+    grid-template-columns: minmax(200px, 1fr) minmax(0, auto) minmax(245px, auto);
+    overflow: visible;
+    z-index: 2;
+}
+.dashboard-date-filter {
+    --inv-blue: #2c5788;
+    --inv-blue-dark: #214368;
+    min-width: 245px;
+    max-width: 270px;
+    position: relative;
+    padding: 10px 11px;
+    color: #f1f7fe;
+    background: rgba(255,255,255,.105);
+    border: 1px solid rgba(232,244,255,.25);
+    border-radius: 11px;
+}
+.dashboard-filter-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 7px;
+    font-size: 10px;
+    font-weight: 600;
+}
+.dashboard-date-filter .inventory-range-picker {
+    position: relative;
+    width: 230px;
+    min-width: 230px;
+    height: 36px;
+    max-width: 100%;
+}
+.dashboard-date-filter .inventory-range-display {
+    width: 100%;
+    height: 36px;
+    padding: 0 0 0 11px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #334155;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    overflow: hidden;
+    font: 500 10.5px/1 'Montserrat',sans-serif;
+    text-align: left;
+    cursor: pointer;
+}
+.dashboard-date-filter .inventory-range-display:focus-visible,
+.dashboard-date-filter .inventory-calendar-nav:focus-visible,
+.dashboard-date-filter .inventory-calendar-day:focus-visible,
+.dashboard-date-filter .inventory-calendar-close:focus-visible,
+.dashboard-date-filter .inventory-range-apply:focus-visible,
+.dashboard-date-filter .inventory-range-clear:focus-visible,
+.dashboard-chart:focus-visible {
+    outline: 2px solid #95d9ff;
+    outline-offset: 2px;
+}
+.dashboard-date-filter .inventory-calendar-icon {
+    width: 38px;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    background: var(--inv-blue);
+    color: #fff;
+    font-size: 14px;
+    flex: none;
+}
+.dashboard-date-filter .inventory-range-popover.inventory-calendar-popover {
+    position: absolute;
+    right: 0;
+    left: auto;
+    top: 43px;
+    z-index: 120;
+    width: 640px;
+    max-width: calc(100vw - 28px);
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #d8e2ec;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 18px 45px rgba(22,32,46,.18);
+    color: #25364a;
+}
+.dashboard-date-filter .inventory-range-popover[hidden] { display: none; }
+.dashboard-date-filter .inventory-calendar-popover-head {
+    min-height: 58px;
+    padding: 10px 12px 9px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid #edf1f6;
+}
+.dashboard-date-filter .inventory-calendar-popover-head > div { display: grid; gap: 3px; }
+.dashboard-date-filter .inventory-calendar-popover-head strong { color: #25364a; font-size: 12px; font-weight: 600; }
+.dashboard-date-filter .inventory-calendar-popover-head span { color: #7a8797; font-size: 9.5px; font-weight: 400; }
+.dashboard-date-filter .inventory-calendar-close {
+    width: 29px; height: 29px; flex: none; border: 1px solid #dce4ed;
+    border-radius: 7px; background: #fff; color: #7a8797;
+    font-size: 17px; line-height: 1; cursor: pointer;
+}
+.dashboard-date-filter .inventory-calendar-close:hover { background: #f6f8fb; color: #33425a; }
+.dashboard-date-filter .inventory-calendar-months {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 11px 14px 8px;
+}
+.dashboard-date-filter .inventory-calendar-month { min-width: 0; }
+.dashboard-date-filter .inventory-calendar-month-head {
+    height: 30px; display: grid; grid-template-columns: 30px 1fr 30px;
+    align-items: center; gap: 5px; margin-bottom: 6px;
+}
+.dashboard-date-filter .inventory-calendar-month-head strong {
+    text-align: center; color: #405570; font-size: 11px; font-weight: 600;
+}
+.dashboard-date-filter .inventory-calendar-nav {
+    width: 27px; height: 27px; border: 1px solid #d9e3ed;
+    border-radius: 6px; background: #fff; color: #57708d;
+    display: grid; place-items: center; font-size: 15px; cursor: pointer;
+}
+.dashboard-date-filter .inventory-calendar-nav:hover {
+    background: #edf3fa; border-color: #c9d7e5; color: var(--inv-blue);
+}
+.dashboard-date-filter .inventory-calendar-weekdays,
+.dashboard-date-filter .inventory-calendar-grid {
+    display: grid; grid-template-columns: repeat(7,1fr); gap: 3px;
+}
+.dashboard-date-filter .inventory-calendar-weekdays { margin-bottom: 3px; }
+.dashboard-date-filter .inventory-calendar-weekdays span {
+    height: 25px; display: grid; place-items: center; border-radius: 4px;
+    background: #f5f7fa; color: #738196; font-size: 8.5px; font-weight: 600;
+}
+.dashboard-date-filter .inventory-calendar-day {
+    position: relative; height: 31px; min-width: 0; border: 0; border-radius: 5px;
+    background: #fff; color: #34475d;
+    font: 500 9.5px/1 'Montserrat',sans-serif; cursor: pointer;
+}
+.dashboard-date-filter .inventory-calendar-day:hover { background: #edf3fa; color: #24384f; }
+.dashboard-date-filter .inventory-calendar-day.outside-month { color: #c0c8d3; }
+.dashboard-date-filter .inventory-calendar-day.range-fill,
+.dashboard-date-filter .inventory-calendar-day.in-range {
+    background: #e7f0fa; color: #4f7198; border-radius: 4px;
+}
+.dashboard-date-filter .inventory-calendar-day.range-start,
+.dashboard-date-filter .inventory-calendar-day.range-end {
+    background: var(--inv-blue) !important; color: #fff !important; font-weight: 600;
+}
+.dashboard-date-filter .inventory-calendar-day.today::after {
+    content: ""; position: absolute; left: 50%; bottom: 3px;
+    width: 3px; height: 3px; transform: translateX(-50%);
+    border-radius: 50%; background: #4d79a8;
+}
+.dashboard-date-filter .inventory-calendar-day.range-start.today::after,
+.dashboard-date-filter .inventory-calendar-day.range-end.today::after { background: #fff; }
+.dashboard-date-filter .inventory-calendar-footer {
+    min-height: 55px; padding: 9px 13px; border-top: 1px solid #edf1f6;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.dashboard-date-filter .inventory-calendar-footer > span { color: #66778a; font-size: 9.5px; font-weight: 400; }
+.dashboard-date-filter .inventory-calendar-footer > div { display: flex; gap: 7px; }
+.dashboard-date-filter .inventory-range-clear,
+.dashboard-date-filter .inventory-range-apply {
+    height: 32px; padding: 0 13px; border-radius: 6px;
+    font: 500 10px/1 'Montserrat',sans-serif; cursor: pointer;
+}
+.dashboard-date-filter .inventory-range-clear { border: 1px solid #d5dee8; background: #fff; color: #5f6f82; }
+.dashboard-date-filter .inventory-range-clear:hover { background: #f7f9fc; }
+.dashboard-date-filter .inventory-range-apply { border: 1px solid var(--inv-blue); background: var(--inv-blue); color: #fff; }
+.dashboard-date-filter .inventory-range-apply:hover { background: var(--inv-blue-dark); border-color: var(--inv-blue-dark); }
+.dashboard-filter-error {
+    display: block; padding-top: 5px; font-size: 9px; color: #ffe39d;
+}
+.dashboard-filter-error[hidden] { display: none; }
+
+* Shared rich hover details for occupancy, financial, exception and trend graphs. */
+.dashboard-chart { cursor: crosshair; }
+.dashboard-chart-tooltip {
+    position: fixed;
+    z-index: 11000;
+    pointer-events: none;
+    width: max-content;
+    max-width: min(310px, calc(100vw - 16px));
+    padding: 11px 12px;
+    border: 1px solid #cbd7e5;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .985);
+    box-shadow: 0 9px 30px rgba(23, 43, 69, .23);
+    color: #20344d;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 11px;
+    line-height: 1.55;
+}
+.dashboard-chart-tooltip[hidden] { display: none; }
+.dashboard-chart-tooltip-date {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 11px;
+    font-weight: 650;
+    color: #17365d;
+}
+.dashboard-chart-tooltip-row,
+.dashboard-chart-tooltip-detail {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 2px 0;
+    white-space: nowrap;
+}
+.dashboard-chart-tooltip-row > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.dashboard-chart-tooltip-row i {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+}
+.dashboard-chart-tooltip b { font-weight: 600; color: #17365d; }
+.dashboard-chart-tooltip-detail { color: #64748b; font-size: 10px; }
+.dashboard-chart-tooltip-separator {
+    margin: 6px 0;
+    border-top: 1px solid #edf0f5;
+}
+@media (max-width: 1150px) {
+    .dashboard-hero { grid-template-columns: minmax(220px, 1fr) minmax(288px, auto); }
+    .dashboard-hero-metrics { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; flex-wrap: wrap; }
+    .dashboard-date-filter { grid-column: 2; grid-row: 1; }
+}
+@media (max-width: 760px) {
+    .dashboard-hero { display: flex; flex-direction: column; align-items: stretch; }
+    .dashboard-hero-metrics { gap: 12px; }
+    .dashboard-date-filter { width: 100%; max-width: none; min-width: 0; }
+    .dashboard-date-filter .inventory-range-picker { width: 230px; }
+}
+
+@media (max-width: 760px) {
+    .dashboard-date-filter .inventory-range-popover.inventory-calendar-popover {
+        position: fixed;
+        top: 76px;
+        right: 14px;
+        left: auto;
+    }
+}
+@media (max-width: 720px) {
+    .dashboard-date-filter .inventory-calendar-months {
+        grid-template-columns: 1fr;
+        gap: 9px;
+        max-height: 62vh;
+        overflow: auto;
+    }
+    .dashboard-date-filter .inventory-calendar-month:nth-child(2) { display: none; }
+    .dashboard-date-filter .inventory-range-popover.inventory-calendar-popover { width: 390px; max-width: calc(100vw - 24px); }
+}
+@media (max-width: 650px) {
+    .dashboard-date-filter .inventory-range-popover.inventory-calendar-popover {
+        position: fixed;
+        top: 70px;
+        right: 8px;
+        left: 8px;
+        width: auto;
+        max-width: none;
+    }
+    .dashboard-date-filter .inventory-calendar-popover-head { min-height: 54px; }
+    .dashboard-date-filter .inventory-calendar-footer { align-items: flex-start; flex-direction: column; }
+    .dashboard-date-filter .inventory-calendar-footer > div { width: 100%; justify-content: flex-end; }
+}
+
+/* Dashboard date calendar must render above the elevated Room Status rack.
+   The room card already uses z-index: 1100; the calendar's z-index: 120
+   was trapped inside the hero's lower stacking context (z-index: 2). */
+body.dashboard-calendar-open .dashboard-page .dashboard-hero {
+    z-index: 13000 !important;
+}
+
+/* Prevent stale room and chart hover details from covering the open calendar,
+   including tooltips still displayed because the underlying room has focus. */
+body.dashboard-calendar-open .dashboard-page .dashboard-room-status-card .dashboard-room .dashboard-room-tip {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    transition: none !important;
+}
+body.dashboard-calendar-open .dashboard-chart-tooltip {
+    visibility: hidden !important;
+}
+
+
+/* Dashboard chart clarity redesign — compare occupancy, financial combo,
+   and day-by-day room availability using three different chart forms. */
+.dashboard-page .dashboard-card-head:has(.dashboard-comparison-key),
+.dashboard-page .dashboard-card-head:has(.dashboard-key-column),
+.dashboard-page .dashboard-card-head:has(.dashboard-key-future) {
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.dashboard-page .dashboard-card-head p {
+    line-height: 1.5;
+}
+.dashboard-page .dashboard-chart-key {
+    font-size: 9px;
+    gap: 10px;
+    white-space: nowrap;
+}
+.dashboard-page .dashboard-chart-key span { gap: 5px; }
+.dashboard-key-current, .dashboard-key-previous, .dashboard-key-column,
+.dashboard-key-profit, .dashboard-key-future, .dashboard-key-today {
+    display: inline-block; width: 11px; height: 8px; border-radius: 2px;
+    border: 1px solid transparent;
+}
+.dashboard-page .dashboard-chart-key .dashboard-key-current { background: #376eaa; }
+.dashboard-page .dashboard-chart-key .dashboard-key-previous { background: #c4d5e7; }
+.dashboard-page .dashboard-chart-key .dashboard-key-column { background: #80a9d2; }
+.dashboard-page .dashboard-chart-key .dashboard-key-profit { background: #2d9470; height: 3px; }
+.dashboard-page .dashboard-chart-key .dashboard-key-future { background: #e0efff; border-color: #4c88c3; border-style: dashed; }
+.dashboard-page .dashboard-chart-key .dashboard-key-today { background: #fff; border: 2px solid #244f7e; }
+.dashboard-page .dashboard-occupancy-heatmap { width: 100%; min-height: 182px; font-family: 'Montserrat', sans-serif; }
+.dashboard-page .dashboard-heatmap-scroll {
+    overflow-y: auto;
+    max-height: 346px;
+    padding: 1px 4px 4px 1px;
+    scrollbar-width: thin;
+    scrollbar-color: #ccdae8 transparent;
+}
+.dashboard-page .dashboard-heatmap-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 5px;
+    min-width: 0;
+}
+.dashboard-page .dashboard-heatmap-weekday {
+    padding: 3px 0 5px;
+    text-align: center;
+    font-size: 9px;
+    font-weight: 600;
+    color: #687a8f;
+}
+.dashboard-page .dashboard-heatmap-blank { min-height: 40px; }
+.dashboard-page .dashboard-heatmap-day {
+    border-radius: 6px;
+    min-height: 43px;
+    padding: 4px 2px 3px;
+    border: 1px solid #d4e2f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: box-shadow .14s ease, transform .14s ease;
+    font-size: 10px;
+    line-height: 1.2;
+}
+.dashboard-page .dashboard-heatmap-day:hover,
+.dashboard-page .dashboard-heatmap-day:focus-visible {
+    outline: none; position: relative; z-index: 1;
+    box-shadow: 0 0 0 2px #315c87, 0 4px 10px rgba(29,66,106,.16);
+    transform: translateY(-1px);
+}
+.dashboard-page .dashboard-heatmap-day.dashboard-heatmap-upcoming { border: 2px dashed #397bb9; }
+.dashboard-page .dashboard-heatmap-day.dashboard-heatmap-today { outline: 2px solid #183d69; outline-offset: 0; }
+.dashboard-page .dashboard-heatmap-date { font-size: 8px; font-weight: 500; white-space: nowrap; }
+.dashboard-page .dashboard-heatmap-percent { font-size: 12px; font-weight: 650; }
+.dashboard-page .dashboard-heatmap-low { background: #f0f5fb; color: #516a86; }
+.dashboard-page .dashboard-heatmap-moderate { background: #d7e8f9; color: #26567f; }
+.dashboard-page .dashboard-heatmap-medium { background: #a6cee8; color: #143f63; }
+.dashboard-page .dashboard-heatmap-high { background: #4282ae; color: #fff; border-color: #4282ae; }
+.dashboard-page .dashboard-heatmap-critical { background: #164c79; color: #fff; border-color: #164c79; }
+.dashboard-page .dashboard-heatmap-legend {
+    display: flex; flex-wrap: wrap; gap: 5px 12px;
+    margin-top: 8px; margin-bottom: 4px;
+    font-size: 9px; color: #5a6e83; align-items: center;
+}
+.dashboard-page .dashboard-heatmap-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.dashboard-page .dashboard-heatmap-legend i { width: 9px; height: 9px; border-radius: 2px; }
+.dashboard-page .dashboard-heatmap-legend-low { background: #f0f5fb; border: 1px solid #d4e2f0; }
+.dashboard-page .dashboard-heatmap-legend-moderate { background: #d7e8f9; }
+.dashboard-page .dashboard-heatmap-legend-medium { background: #a6cee8; }
+.dashboard-page .dashboard-heatmap-legend-high { background: #4282ae; }
+.dashboard-page .dashboard-heatmap-legend-critical { background: #164c79; }
+.dashboard-page .dashboard-heatmap-empty { text-align: center; padding: 55px 8px; color: #778ba1; font-size: 11px; }
+@media (max-width: 550px) {
+    .dashboard-page .dashboard-heatmap-grid { gap: 3px; }
+    .dashboard-page .dashboard-heatmap-day { min-height: 40px; padding: 3px 1px; }
+    .dashboard-page .dashboard-heatmap-percent { font-size: 10px; }
+    .dashboard-page .dashboard-heatmap-date { font-size: 7px; }
+    .dashboard-page .dashboard-chart-key { gap: 7px; }
+}
+
+.dashboard-page .dashboard-heatmap-scroll-hint {
+    margin: 2px 0 5px;
+    color: #6c8098;
+    font-size: 9px;
+}
+
+/* Dashboard Bookings chart — port of the WebForms monthly booking-source chart. */
+.dashboard-page .dashboard-bookings-head { gap: 12px; align-items: center; }
+.dashboard-page .dashboard-bookings-year-label { margin-left: auto; display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 10px; flex: 0 0 auto; }
+.dashboard-page .dashboard-bookings-year-label select { min-width: 82px; height: 30px; border: 1px solid #d7e1eb; border-radius: 6px; background: #fff; padding: 0 7px; color: #17365d; font: inherit; font-size: 11px; cursor: pointer; }
+.dashboard-page .dashboard-bookings-chart { height: 210px; min-height: 180px; width: 100%; overflow: visible; }
+.dashboard-page .dashboard-bookings-message { padding: 8px 5px; color: #64748b; font-size: 11px; }
+.dashboard-page .dashboard-bookings-message[hidden] { display: none; }
+.dashboard-page .dashboard-bookings-legend { display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; padding: 5px 0 8px; min-height: 24px; }
+.dashboard-page .dashboard-bookings-legend span { display: inline-flex; align-items: center; gap: 5px; color: #5b6f84; font-size: 9px; line-height: 1.4; }
+.dashboard-page .dashboard-bookings-legend i { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
+.dashboard-page .dashboard-bookings-summary { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+.dashboard-page .dashboard-bookings-summary strong { overflow-wrap: anywhere; }
+@media (max-width: 550px) {
+    .dashboard-page .dashboard-bookings-chart { height: 185px; }
+    .dashboard-page .dashboard-bookings-year-label span { display: none; }
+}
+@media (max-width: 550px) {
+    .dashboard-page .dashboard-bookings-head {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        text-align: left !important;
+    }
+}
+
+
+/* Operations cards: approved subtle, pastel visual emphasis (no layout changes). */
+.dashboard-page .dashboard-operations-card > .dashboard-card-head {
+    background: #f2f7f2;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation {
+    background: #edf4fc;
+    border-color: #cbdff6;
+    transition: border-color 120ms ease, filter 120ms ease;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation-available {
+    background: #eef8f4;
+    border-color: #cce6df;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation-occupied {
+    background: #eef2f9;
+    border-color: #cdd9ed;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation-danger {
+    background: #fff0f1;
+    border-color: #edcfd4;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation-warning {
+    background: #fff8e9;
+    border-color: #f0dfbd;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation:hover {
+    filter: brightness(.982);
+    border-color: #a6bed7;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation:focus-visible {
+    outline: 2px solid #386eac;
+    outline-offset: 1px;
+}
+.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div {
+    background: #f7f8fa;
+    border-color: #dee5ed;
+}
+.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(2) {
+    background: #eef5ff;
+    border-color: #ccdef9;
+}
+.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(3) {
+    background: #eaf8fa;
+    border-color: #bfe3ec;
+}
+
+
+/* ORA PMS — Pricing guidance V3: actionable advisory cards, no automatic rate changes. */
+.dashboard-page .dashboard-pricing-card { overflow: hidden; }
+.dashboard-page .dashboard-pricing-head { align-items: center; gap: 12px; }
+.dashboard-page .dashboard-pricing-head .dashboard-link-pill { white-space: nowrap; }
+.dashboard-page .dashboard-pricing-body { padding: 12px; }
+.dashboard-page .dashboard-pricing-summary {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-bottom: 12px;
+}
+.dashboard-page .dashboard-pricing-summary > div {
+    border: 1px solid #e0e8f0; border-radius: 9px; background: #f7faff;
+    padding: 8px 10px; min-width: 0;
+}
+.dashboard-page .dashboard-pricing-summary > div:nth-child(2) { background: #f0faf6; border-color: #daeee2; }
+.dashboard-page .dashboard-pricing-summary > div:nth-child(3) { background: #fff8f4; border-color: #f6e5d9; }
+.dashboard-page .dashboard-pricing-summary > div:nth-child(4) { background: #f5f7fa; }
+.dashboard-page .dashboard-pricing-summary span { display: block; color: #66778a; font-size: 9px; font-weight: 500; }
+.dashboard-page .dashboard-pricing-summary strong { display: block; margin-top: 3px; color: #203d5e; font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.dashboard-page .dashboard-pricing-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 9px; margin-bottom: 10px; }
+.dashboard-page .dashboard-pricing-filters { display: flex; flex-wrap: wrap; gap: 5px; }
+.dashboard-page .dashboard-pricing-filter {
+    height: 29px; border: 1px solid #d6e2ed; background: #fff; color: #587189;
+    border-radius: 7px; padding: 0 11px; cursor: pointer; font: inherit; font-size: 10px; font-weight: 550;
+    transition: background .14s ease, border-color .14s ease;
+}
+.dashboard-page .dashboard-pricing-filter:hover { background: #eef5fc; border-color: #aac8e3; }
+.dashboard-page .dashboard-pricing-filter.is-active { background: #244f7e; color: #fff; border-color: #244f7e; }
+.dashboard-page .dashboard-pricing-sort { display: flex; align-items: center; gap: 7px; color: #64778a; font-size: 10px; white-space: nowrap; }
+.dashboard-page .dashboard-pricing-sort select { border: 1px solid #d6e2ed; border-radius: 7px; height: 29px; color: #234563; padding: 0 7px; background: #fff; font: inherit; font-size: 10px; cursor: pointer; }
+.dashboard-page .dashboard-pricing-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.dashboard-page .dashboard-pricing-list .dashboard-pricing-item {
+    min-width: 0; background: #fff; border: 1px solid #dfe7f0; border-radius: 11px;
+    padding: 12px; box-shadow: 0 2px 8px rgba(21, 57, 91, .03);
+}
+.dashboard-page .dashboard-pricing-list .dashboard-pricing-item:hover { border-color: #b9d3e9; box-shadow: 0 3px 13px rgba(24, 66, 103, .06); }
+.dashboard-page .dashboard-pricing-item-head { display: flex; justify-content: space-between; align-items: start; gap: 7px; min-width: 0; }
+.dashboard-page .dashboard-pricing-item-name { min-width: 0; display: grid; gap: 2px; }
+.dashboard-page .dashboard-pricing-item-name strong { color: #1d3e5f; font-size: 11px; font-weight: 650; overflow-wrap: anywhere; }
+.dashboard-page .dashboard-pricing-item-name span { font-size: 9px; color: #718196; overflow-wrap: anywhere; }
+.dashboard-page .dashboard-pricing-status { border: 1px solid; padding: 4px 7px; border-radius: 20px; font-size: 9px; font-weight: 650; white-space: nowrap; flex: 0 0 auto; }
+.dashboard-page .dashboard-pricing-status-raise { background: #eaf8f0; color: #267751; border-color: #cbe9d8; }
+.dashboard-page .dashboard-pricing-status-reduce { background: #fff3ed; color: #ac693e; border-color: #f0d7c8; }
+.dashboard-page .dashboard-pricing-status-hold { background: #f0f4f9; color: #62748b; border-color: #dce5ef; }
+.dashboard-page .dashboard-pricing-rate-row { display: flex; gap: 8px; align-items: center; margin: 10px 0 11px; border-radius: 8px; background: #f7f9fc; padding: 8px 10px; }
+.dashboard-page .dashboard-pricing-rate-cell { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.dashboard-page .dashboard-pricing-rate-cell > span { color: #74879a; font-size: 8px; font-weight: 500; }
+.dashboard-page .dashboard-pricing-rate-cell > strong { color: #536a80; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dashboard-page .dashboard-pricing-rate-recommended > strong { color: #214e7c; font-size: 16px; font-weight: 700; }
+.dashboard-page .dashboard-pricing-rate-arrow { color: #91a5b9; font-size: 17px; }
+.dashboard-page .dashboard-pricing-occupancy-meta { display: flex; align-items: center; justify-content: space-between; color: #60768b; font-size: 9px; gap: 8px; }
+.dashboard-page .dashboard-pricing-occupancy-meta strong { color: #254b70; font-size: 10px; font-weight: 650; }
+.dashboard-page .dashboard-pricing-meter { background: #eaf0f6; height: 6px; border-radius: 999px; margin-top: 5px; overflow: hidden; }
+.dashboard-page .dashboard-pricing-meter-fill { display: block; background: #79a9d1; height: 100%; border-radius: inherit; }
+.dashboard-page .dashboard-pricing-raise .dashboard-pricing-meter-fill { background: #72bb9e; }
+.dashboard-page .dashboard-pricing-reduce .dashboard-pricing-meter-fill { background: #e3ae83; }
+.dashboard-page .dashboard-pricing-reason { margin: 8px 0 0; font-size: 9px; line-height: 1.45; color: #6c7e90; }
+.dashboard-page .dashboard-pricing-empty { grid-column: 1 / -1; }
+.dashboard-page .dashboard-pricing-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 11px; flex-wrap: wrap; }
+.dashboard-page .dashboard-pricing-showing { color: #728497; font-size: 9px; }
+.dashboard-page .dashboard-pricing-copy { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid #bcd1e5; border-radius: 7px; font: inherit; font-size: 10px; font-weight: 550; color: #2b537d; background: #f3f8fd; cursor: pointer; }
+.dashboard-page .dashboard-pricing-copy:hover:not(:disabled) { background: #e8f2fb; }
+.dashboard-page .dashboard-pricing-copy:disabled { opacity: .55; cursor: default; }
+.dashboard-page .dashboard-pricing-disclaimer { display: flex; gap: 7px; margin-top: 11px; padding: 9px; background: #f5f8fc; color: #5e758b; border-radius: 8px; font-size: 9px; line-height: 1.5; }
+.dashboard-page .dashboard-pricing-disclaimer i { color: #749bbd; margin-top: 1px; }
+.dashboard-page .dashboard-pricing-method { margin-top: 9px; padding: 0 3px; color: #62768b; font-size: 9px; }
+.dashboard-page .dashboard-pricing-method summary { cursor: pointer; color: #315f8a; font-weight: 600; }
+.dashboard-page .dashboard-pricing-method p { margin: 7px 0 3px; line-height: 1.6; }
+.dashboard-page .dashboard-pricing-filter:focus-visible, .dashboard-page .dashboard-pricing-copy:focus-visible, .dashboard-page .dashboard-pricing-sort select:focus-visible { outline: 2px solid #2866a1; outline-offset: 2px; }
+/* Pricing guidance V4 — compact cards; desktop 3-column layout.
+   Size breakpoints are based on the card width, not the browser viewport,
+   because Pricing Guidance sits inside the narrower dashboard left column. */
+.dashboard-page .dashboard-pricing-body { padding: 10px; container-type: inline-size; }
+.dashboard-page .dashboard-pricing-summary { gap: 6px; margin-bottom: 9px; }
+.dashboard-page .dashboard-pricing-summary > div { padding: 7px 8px; }
+.dashboard-page .dashboard-pricing-summary strong { margin-top: 1px; font-size: 15px; }
+.dashboard-page .dashboard-pricing-toolbar { gap: 6px; margin-bottom: 8px; }
+.dashboard-page .dashboard-pricing-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.dashboard-page .dashboard-pricing-list .dashboard-pricing-item { padding: 9px 10px; border-radius: 9px; }
+.dashboard-page .dashboard-pricing-item-head { gap: 5px; }
+.dashboard-page .dashboard-pricing-item-name { gap: 1px; }
+.dashboard-page .dashboard-pricing-item-name strong { font-size: 10.5px; line-height: 1.25; }
+.dashboard-page .dashboard-pricing-item-name span { font-size: 8.5px; }
+.dashboard-page .dashboard-pricing-status { padding: 3px 6px; font-size: 8px; }
+.dashboard-page .dashboard-pricing-rate-row { margin: 7px 0; gap: 5px; padding: 6px 7px; border-radius: 6px; }
+.dashboard-page .dashboard-pricing-rate-cell { gap: 1px; }
+.dashboard-page .dashboard-pricing-rate-cell > span { font-size: 8px; }
+.dashboard-page .dashboard-pricing-rate-cell > strong { font-size: 13px; }
+.dashboard-page .dashboard-pricing-rate-recommended > strong { font-size: 14px; }
+.dashboard-page .dashboard-pricing-rate-arrow { font-size: 13px; }
+.dashboard-page .dashboard-pricing-meter { margin-top: 4px; height: 5px; }
+.dashboard-page .dashboard-pricing-reason {
+    margin: 5px 0 0; font-size: 8.5px; line-height: 1.35;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dashboard-page .dashboard-pricing-footer { margin-top: 8px; }
+.dashboard-page .dashboard-pricing-disclaimer { margin-top: 8px; padding: 7px 8px; }
+.dashboard-page .dashboard-pricing-method { margin-top: 7px; }
+
+/* The internal space available to the card determines the column count. */
+@container (max-width: 700px) {
+    .dashboard-page .dashboard-pricing-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 450px) {
+    .dashboard-page .dashboard-pricing-list { grid-template-columns: minmax(0, 1fr); }
+    .dashboard-page .dashboard-pricing-summary { gap: 5px; }
+    .dashboard-page .dashboard-pricing-summary > div { padding: 7px 5px; }
+    .dashboard-page .dashboard-pricing-sort { width: 100%; justify-content: space-between; }
+}
+
+/* Fit the page (including its padding) within the viewport. */
+.dashboard-page { box-sizing: border-box; }
+
+/* KPI / operations glossary: non-disruptive info hints, mouse, keyboard and touch. */
+.dashboard-page .dashboard-kpi-label, .dashboard-page .dashboard-operation > span,
+.dashboard-page .dashboard-mini-stats > div > span { overflow: visible; }
+.dashboard-page .dashboard-info-badge {
+    position: relative; display: inline-flex; vertical-align: middle; align-items: center;
+    justify-content: center; margin-left: 5px; font-size: 12px; line-height: 1;
+    width: 17px; height: 17px; border-radius: 50%; color: #708ba5; cursor: help;
+    opacity: .9; outline-offset: 2px; z-index: 1;
+}
+.dashboard-page .dashboard-info-inverse { color: #d2e7fb; }
+.dashboard-page .dashboard-kpi:has(.dashboard-info-badge:hover),
+.dashboard-page .dashboard-kpi:has(.dashboard-info-badge:focus),
+.dashboard-page .dashboard-kpi:has(.dashboard-info-badge.is-open),
+.dashboard-page .dashboard-operation:has(.dashboard-info-badge:hover),
+.dashboard-page .dashboard-operation:has(.dashboard-info-badge:focus),
+.dashboard-page .dashboard-operation:has(.dashboard-info-badge.is-open) {
+    position: relative; z-index: 30;
+}
+.dashboard-page .dashboard-info-badge:hover, .dashboard-page .dashboard-info-badge:focus-visible,
+.dashboard-page .dashboard-info-badge.is-open { color: #245b91; opacity: 1; }
+.dashboard-page .dashboard-info-badge::after {
+    content: attr(data-info); display: none; position: absolute; bottom: calc(100% + 9px);
+    left: 50%; transform: translateX(-50%); width: max-content; max-width: min(275px, calc(100vw - 40px));
+    white-space: normal; background: #173351; color: #fff; font-size: 11px; font-weight: 450;
+    line-height: 1.5; padding: 9px 11px; border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(18,42,70,.2); text-align: left; pointer-events: none;
+    z-index: 1000;
+}
+.dashboard-page .dashboard-info-badge:hover::after,
+.dashboard-page .dashboard-info-badge:focus-visible::after,
+.dashboard-page .dashboard-info-badge.is-open::after { display: block; }
+.dashboard-page .dashboard-operations-card .dashboard-info-badge { font-size: 10px; width: 12px; height: 12px; margin-left: 2px; }
+.dashboard-page .dashboard-mini-stats .dashboard-info-badge { width: 13px; height: 13px; font-size: 10px; }
+.dashboard-page .dashboard-hero-stat .dashboard-info-badge::after { left: auto; right: -8px; transform: none; }
+@media (max-width: 680px) {
+    .dashboard-page .dashboard-info-badge::after { left: 0; transform: none; max-width: 205px; }
+}
+/* Interactive legend, original color order maintained while any source is hidden. */
+.dashboard-page .dashboard-bookings-legend { gap: 5px 7px; }
+.dashboard-page .dashboard-bookings-legend .dashboard-booking-legend-button {
+    appearance: none; display: inline-flex; gap: 5px; align-items: center;
+    padding: 3px 6px; background: #f8fafc; border: 1px solid transparent;
+    border-radius: 5px; font: inherit; font-size: 9px; font-weight: 500;
+    color: #485e77; cursor: pointer; transition: background .12s, opacity .12s;
+}
+.dashboard-page .dashboard-bookings-legend .dashboard-booking-legend-button:hover,
+.dashboard-page .dashboard-bookings-legend .dashboard-booking-legend-button:focus-visible {
+    background: #eef5fc; border-color: #c3d9ee; outline-offset: 2px;
+}
+.dashboard-page .dashboard-bookings-legend .dashboard-booking-legend-button.is-hidden {
+    opacity: .45; text-decoration: line-through; background: transparent;
+}
+.dashboard-page .dashboard-bookings-legend .dashboard-booking-legend-button i {
+    width: 10px; height: 10px; display: inline-block; border-radius: 2px; flex: none;
+}
+.dashboard-page .dashboard-bookings-help { font-size: 9px; color: #7b8ba0; margin: -1px 0 6px; }
+
+/* Dashboard Oct 2026: five compact KPI columns, annual charts, readable calendar */
+.dashboard-page .dashboard-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.dashboard-page .dashboard-kpi { min-height: 67px; padding: 11px 12px; }
+.dashboard-page .dashboard-kpi-value { margin-top: 6px; }
+.dashboard-page .dashboard-kpi-foot { display: none; }
+.dashboard-page .dashboard-hero-copy p { line-height: 1.45; }
+.dashboard-page .dashboard-year-selector { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 11px; color: #637a92; }
+.dashboard-page .dashboard-year-selector select, .dashboard-page #dashboardRoomTypeSort { border: 1px solid #d4e0ec; border-radius: 7px; color: #2b4e74; padding: 5px 7px; background: white; font: inherit; min-width: 88px; }
+.dashboard-page .dashboard-share-cell { min-width: 84px; }
+.dashboard-page .dashboard-share-value { display: block; font-variant-numeric: tabular-nums; color: #203956; font-weight: 650; }
+.dashboard-page .dashboard-share-track { display: block; height: 5px; margin-top: 5px; background: #eaf0f6; border-radius: 8px; overflow: hidden; }
+.dashboard-page .dashboard-share-fill { display: block; height: 100%; background: #83add6; border-radius: inherit; }
+.dashboard-page .dashboard-share-revenue { background: #74b9b3; }
+.dashboard-page .dashboard-roomtype-table .dashboard-progress { min-width: 52px; }
+.dashboard-page .dashboard-heatmap-scroll { max-height: none; overflow: visible; padding: 3px 0 5px; }
+.dashboard-page .dashboard-heatmap-grid { gap: 5px; }
+.dashboard-page .dashboard-heatmap-day { border: 1px solid #d8e4f0; border-radius: 9px; min-height: 59px; padding: 5px 3px; gap: 5px; }
+.dashboard-page .dashboard-heatmap-day.dashboard-heatmap-upcoming { border: 1px solid #a8c9e7; box-shadow: inset 0 0 0 1px rgba(69,131,183,.12); }
+.dashboard-page .dashboard-heatmap-day.dashboard-heatmap-today { outline: 2px solid #2d608f; outline-offset: -2px; }
+.dashboard-page .dashboard-heatmap-date { font-size: 12px; font-weight: 650; line-height: 1.25; }
+.dashboard-page .dashboard-heatmap-percent { font-size: 14px; font-weight: 700; line-height: 1.25; }
+.dashboard-page .dashboard-heatmap-weekday { font-size: 11px; font-weight: 650; }
+.dashboard-page .dashboard-heatmap-blank { min-height: 59px; }
+.dashboard-page .dashboard-chart-foot { grid-template-columns: repeat(4, minmax(0,1fr)); }
+@media (max-width: 1380px) { .dashboard-page .dashboard-kpis { grid-template-columns: repeat(5,minmax(0,1fr)); } }
+@media (max-width: 1100px) { .dashboard-page .dashboard-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (max-width: 660px) {
+    .dashboard-page .dashboard-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .dashboard-page .dashboard-chart-foot { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .dashboard-page .dashboard-heatmap-grid { gap: 3px; }
+    .dashboard-page .dashboard-heatmap-day { min-height: 52px; padding: 3px 1px; }
+    .dashboard-page .dashboard-heatmap-date { font-size: 11px; }
+    .dashboard-page .dashboard-heatmap-percent { font-size: 12px; }
+}
+
+.dashboard-page .dashboard-annual-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; font-size: 10px; color: #667b92; }
+.dashboard-page .dashboard-annual-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.dashboard-page .dashboard-annual-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
+@media (max-width: 760px) { .dashboard-page .dashboard-annual-legend { gap: 5px; font-size: 9px; } }
+
+/* October 16: six compact KPI cards per row on wide desktop displays. */
+.dashboard-page .dashboard-kpis { grid-template-columns: repeat(6, minmax(0,1fr)); gap: 8px; }
+.dashboard-page .dashboard-kpis .dashboard-kpi { min-width: 0; min-height: 77px; padding: 9px 9px; }
+.dashboard-page .dashboard-kpi-label { overflow-wrap: anywhere; }
+/* Tooltip must sit above the neighbouring KPI row and operation cards, including
+   when parent cards establish stacking contexts. Calendar modal remains highest. */
+.dashboard-page .dashboard-kpis, .dashboard-page .dashboard-overview-columns { overflow: visible; }
+.dashboard-page .dashboard-kpi:has(.dashboard-info-badge:hover),
+.dashboard-page .dashboard-kpi:has(.dashboard-info-badge:focus),
+.dashboard-page .dashboard-kpi:has(.dashboard-info-badge.is-open),
+.dashboard-page .dashboard-operation:has(.dashboard-info-badge:hover),
+.dashboard-page .dashboard-operation:has(.dashboard-info-badge:focus),
+.dashboard-page .dashboard-operation:has(.dashboard-info-badge.is-open) { position: relative; z-index: 500; }
+.dashboard-page .dashboard-info-badge { z-index: 501; }
+.dashboard-page .dashboard-info-badge::after { z-index: 502; }
+.dashboard-page:has(.dashboard-info-badge:hover) .dashboard-hero { z-index: auto; }
+@media (max-width: 1390px) { .dashboard-page .dashboard-kpis { grid-template-columns: repeat(6,minmax(0,1fr)); } }
+@media (max-width: 1180px) { .dashboard-page .dashboard-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (max-width: 680px) { .dashboard-page .dashboard-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
+/* Tooltips render at document level, so the header and overflow-hidden
+   Dashboard cards cannot clip them. */
+.dashboard-page .dashboard-info-badge::after { display: none !important; }
+.dashboard-info-floating {
+    position: fixed; z-index: 2147482000; pointer-events: none;
+    width: max-content; max-width: min(290px, calc(100vw - 20px));
+    padding: 9px 11px; border-radius: 8px;
+    color: white; background: #173351; font-family: inherit; font-weight: 500;
+    font-size: 11px; line-height: 1.5;
+    box-shadow: 0 12px 30px rgba(18,42,70,.24);
+    white-space: normal; text-align: left;
+}
+.dashboard-info-floating[hidden] { display: none; }
+
+/* Dashboard KPI inventory row and annual occupancy loading state (Oct 16). */
+.dashboard-page .dashboard-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.dashboard-page .dashboard-kpi-label { font-size: 10.5px; }
+.dashboard-page .dashboard-kpi-value { font-variant-numeric: tabular-nums; }
+.dashboard-page .dashboard-annual-chart-shell { position: relative; min-height: 175px; }
+.dashboard-page .dashboard-annual-loading {
+    position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 9px;
+    background: rgba(255,255,255,.94); color: #50718f;
+    font-size: 12px; font-weight: 550;
+}
+.dashboard-page .dashboard-annual-loading[hidden] { display: none !important; }
+.dashboard-page .dashboard-annual-spinner {
+    width: 25px; height: 25px; border: 3px solid #d9e9f6;
+    border-top-color: #3c79ae; border-radius: 50%;
+    animation: dashboard-annual-spin .75s linear infinite;
+}
+@keyframes dashboard-annual-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-page .dashboard-annual-spinner { animation-duration: 2s; }
+}
+@media (max-width: 1180px) {
+    .dashboard-page .dashboard-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+@media (max-width: 680px) {
+    .dashboard-page .dashboard-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

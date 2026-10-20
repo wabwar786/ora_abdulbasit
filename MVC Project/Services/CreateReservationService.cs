@@ -574,18 +574,32 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
             return FailCreate("Reservation could not be created. " + ex.Message);
         }
 
-        // The MVC project already owns a safe background queue for availability + channel sync.
+        // Yield, its RateUploadHistoryTB audit, and channel/availability synchronization
+        // must run outside the HTTP request. The already-registered hosted worker
+        // executes Yield first, then the existing availability refresh, in job order.
+        // Do not call YieldBackgroundService.RunYieldForDateRange() directly here:
+        // that blocks the success response even though the reservation was committed.
         var minRoomArrival = validatedRooms.Min(x => x.ArrivalDate).Date;
         var maxRoomDeparture = validatedRooms.Max(x => x.DepartureDate).Date;
         try
         {
-            _availabilityQueue.Queue(new AvailabilityAutoUpdateJob(
+            var queued = _availabilityQueue.Queue(new AvailabilityAutoUpdateJob(
                 hotelId, hotelName ?? string.Empty, userId, userName ?? string.Empty,
-                clientIp ?? string.Empty, minRoomArrival, maxRoomDeparture, "0"));
+                clientIp ?? string.Empty, minRoomArrival, maxRoomDeparture, "0",
+                RunReservationYield: true));
+            if (!queued)
+            {
+                // Reservation is already committed. Do not tell the user to resubmit
+                // the booking: that could create a duplicate reservation.
+                _logger.LogError(
+                    "Reservation {RegId} created for hotel {HotelId}, but the post-booking Yield/Availability queue is full. Manual retry of Yield and channel update is required.",
+                    regId, hotelId);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Reservation {RegId} saved, but availability refresh could not be queued.", regId);
+            _logger.LogError(ex,
+                "Reservation {RegId} saved, but Yield/Availability processing could not be queued. Manual retry is required.", regId);
         }
 
         return new CreateReservationResult

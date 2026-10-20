@@ -20,7 +20,7 @@ public interface IYieldManagementService
         string userName,
         string ip,
         YieldRuleEditorModel request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, string pcName = "");
 
     Task<YieldOperationResult> ToggleRuleAsync(
         string hotelId,
@@ -28,7 +28,7 @@ public interface IYieldManagementService
         string userName,
         string ip,
         int ruleId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, string pcName = "");
 
     Task<YieldOperationResult> DeleteRuleAsync(
         string hotelId,
@@ -40,5 +40,5 @@ public interface IYieldManagementService
 
     Task<YieldEvaluationResult> EvaluateActiveRulesAsync(
         string hotelId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, RateAuditMetadata? originatingAudit = null);
 }

@@ -1,5 +1,4 @@
 namespace Orapmshms.Models;
-
 public sealed class ChannexReviewsViewModel
 {
     public string HotelId { get; set; } = string.Empty;

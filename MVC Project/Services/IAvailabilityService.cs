@@ -21,7 +21,7 @@ public interface IAvailabilityService
         string role,
         string ip,
         AvailabilitySaveRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, string pcName = "");
 
     Task<AvailabilitySaveResult> SaveRestrictionAsync(
         string hotelId,
@@ -38,6 +38,21 @@ public interface IAvailabilityService
         DateTime date,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<AvailabilityRestrictionChangeLogItem>> GetRestrictionChangeLogAsync(
+        string hotelId,
+        string categoryId,
+        string planId,
+        string restrictionKey,
+        DateTime date,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AvailabilityRateChangeLogItem>> GetRateChangeLogAsync(
+        string hotelId,
+        string categoryId,
+        string planId,
+        DateTime date,
+        CancellationToken cancellationToken = default);
+
     Task<AvailabilityBulkRatePreviewResult> PreviewBulkRateAsync(
         string hotelId,
         string userId,
@@ -51,7 +66,7 @@ public interface IAvailabilityService
         string role,
         string ip,
         AvailabilityBulkRateRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, string pcName = "");
 
     Task<AvailabilityRestrictionRangeResult> LoadRestrictionRangeAsync(
         string hotelId,

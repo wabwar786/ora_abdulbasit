@@ -1157,3 +1157,13 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
 .fdc-bar .fdc-note-indicator{color:#fff}
 .fdc-bar .fdc-room-change-indicator{color:#000}
 
+
+/* Legacy POS bill_status=1: make the affected reservation visibly blink. */
+@keyframes oraRestaurantBillBlink {
+  0%, 100% { opacity: 1; filter: brightness(1); }
+  50% { opacity: .38; filter: brightness(1.25); }
+}
+.fdc-restaurant-pending { animation: oraRestaurantBillBlink 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .fdc-restaurant-pending { animation: none; outline: 2px solid #dc2626; outline-offset: -2px; }
+}
