@@ -781,7 +781,7 @@ ORDER BY created_at DESC;";
                 foreach (var item in calculated)
                 {
                     await UpsertRateAsync(connection, transaction, hotelId, request.CategoryId.Trim(), item.Plan.PlanId,
-                        date, item.Rate, request.BaseRate, userName, systemName, ip, cancellationToken);
+                        date, item.Rate, request.BaseRate, userName, systemName, ip, cancellationToken, "BulkUpdate");
                 }
             }
             // Save selected weekdays on the actual changed-rate log, not on a duplicate summary.
@@ -1753,7 +1753,7 @@ WHERE hotel_id=@hotel
            ROW_NUMBER() OVER
            (
                PARTITION BY hotel_id,CONVERT(nvarchar(100),category_id),CONVERT(nvarchar(50),planid),[date]
-               ORDER BY CASE WHEN ISNULL(uploadfrom,0)=1 THEN 0 ELSE 1 END,
+               ORDER BY CASE WHEN TRY_CONVERT(int,uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
                         CASE WHEN ISNULL(upload,0)=0 THEN 0 ELSE 1 END
            ) AS rn
     FROM dbo.datesrates
@@ -1873,7 +1873,7 @@ ORDER BY id DESC;
            ROW_NUMBER() OVER
            (
                PARTITION BY hotel_id,CONVERT(nvarchar(100),category_id),CONVERT(nvarchar(50),planid),[date]
-               ORDER BY CASE WHEN ISNULL(uploadfrom,0)=1 THEN 0 ELSE 1 END,
+               ORDER BY CASE WHEN TRY_CONVERT(int,uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
                         CASE WHEN ISNULL(upload,0)=0 THEN 0 ELSE 1 END
            ) AS rn
     FROM dbo.datesrates
@@ -2514,22 +2514,38 @@ WHEN NOT MATCHED THEN
         string userName,
         string systemName,
         string ip,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string rateSource = "CellEdit")
     {
-        // Explicit daily rates set in Availability (cell save or Availability bulk update)
-        // are user overrides. Mark uploadfrom=1 so the background Rate Plans
-        // preparation does not replace them with category_plan defaults.
-        // upload=0 still queues the changed date for Channex synchronization.
+        // Source codes: 1=BulkUpdate, 2=Yield, 3=CellEdit, 0=rate-plan default.
+        // Any genuine manual price change clears the previous Yield rule marker,
+        // allowing exactly one new application when that source is enabled in the rule.
+        // A same-price resave keeps the previous marker and pre-Yield baseline.
         const string sql = @"
 MERGE dbo.datesrates WITH (HOLDLOCK) AS T
 USING (SELECT @hotel AS hotel_id,@category AS category_id,@plan AS planid,@date AS [date]) AS S
 ON T.hotel_id=S.hotel_id AND T.category_id=S.category_id AND T.planid=S.planid AND T.[date]=S.[date]
-WHEN MATCHED THEN
-    UPDATE SET rate=@rate,baserate=@baserate,ip=@ip,systemName=@system,username=@username,
-               currentdate=GETDATE(),upload='0',uploadfrom='1',yeildruleid=''
+WHEN MATCHED AND (
+       TRY_CONVERT(decimal(18,4),T.rate) IS NULL
+       OR TRY_CONVERT(decimal(18,4),T.rate) <> @rate
+       OR ISNULL(TRY_CONVERT(int,T.uploadfrom),0) <> @uploadFrom
+    ) THEN
+    UPDATE SET rate=@rate,
+               -- A same-price resave must not replace the pre-Yield baseline;
+               -- that baseline is needed to restore the price on rule disable.
+               baserate=CASE WHEN TRY_CONVERT(decimal(18,4),T.rate)=@rate
+                                      AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),T.yeildruleid))), '') IS NOT NULL
+                             THEN T.baserate ELSE @baserate END,
+               ip=@ip,systemName=@system,username=@username,
+               currentdate=GETDATE(),upload='0',uploadfrom=CONVERT(varchar(2),@uploadFrom),
+               -- A genuine USER price change is a new Yield application cycle.
+               -- The next evaluator may apply ONE eligible rule to @rate.
+               yeildruleid=CASE WHEN TRY_CONVERT(decimal(18,4),T.rate) <> @rate
+                                    OR TRY_CONVERT(decimal(18,4),T.rate) IS NULL
+                               THEN '' ELSE T.yeildruleid END
 WHEN NOT MATCHED THEN
     INSERT ([date],rate,baserate,ip,systemName,username,category_id,hotel_id,currentdate,planid,upload,uploadfrom,yeildruleid)
-    VALUES (@date,@rate,@baserate,@ip,@system,@username,@category,@hotel,GETDATE(),@plan,'0','1','');";
+    VALUES (@date,@rate,@baserate,@ip,@system,@username,@category,@hotel,GETDATE(),@plan,'0',CONVERT(varchar(2),@uploadFrom),'');";
 
         await using var command = new SqlCommand(sql, connection, transaction);
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
@@ -2543,6 +2559,8 @@ WHEN NOT MATCHED THEN
         command.Parameters.Add("@ip", SqlDbType.VarChar, 100).Value = ip ?? string.Empty;
         command.Parameters.Add("@system", SqlDbType.VarChar, 200).Value = systemName ?? string.Empty;
         command.Parameters.Add("@username", SqlDbType.VarChar, 200).Value = userName ?? string.Empty;
+        command.Parameters.Add("@uploadFrom", SqlDbType.Int).Value =
+            string.Equals(rateSource, "BulkUpdate", StringComparison.OrdinalIgnoreCase) ? 1 : 3;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

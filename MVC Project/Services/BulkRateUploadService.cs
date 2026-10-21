@@ -515,6 +515,25 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
         {
             await RateAuditContext.CaptureDailyAsync(connection, audit, firstDate, lastDate,
                 cancellationToken, auditTx, plans, categories);
+            // Snapshot prior price and Yield state so a changed Bulk rate can start a NEW one-time cycle.
+            await using (var prior = new SqlCommand(@"
+SELECT dr.hotel_id,dr.category_id,dr.planid,CAST(dr.[date] AS date) AS staydate,
+       CONVERT(nvarchar(50),dr.yeildruleid) AS applied_rule,
+       TRY_CONVERT(decimal(18,4),dr.rate) AS previous_rate,
+       TRY_CONVERT(decimal(18,4),dr.baserate) AS previous_baseline
+INTO #ORA_BulkPriorYield
+FROM dbo.datesrates dr
+JOIN @Rows src ON src.hotel_id=dr.hotel_id AND src.category_id=dr.category_id
+              AND src.planid=dr.planid AND CAST(src.[date] AS date)=CAST(dr.[date] AS date)
+WHERE dr.hotel_id=@hotel;", connection, auditTx))
+            {
+                prior.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+                var priorRows = prior.Parameters.Add("@Rows", SqlDbType.Structured);
+                priorRows.TypeName = "dbo.DateRateBulkType";
+                priorRows.Value = tvp;
+                await prior.ExecuteNonQueryAsync(cancellationToken);
+            }
+
         await using (var command = new SqlCommand("dbo.UpsertDateRatesBulk", connection, auditTx)
         {
             CommandType = CommandType.StoredProcedure,
@@ -540,13 +559,27 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
         const string resetPendingSql = @"
 UPDATE dr
 SET dr.upload = src.upload,
-    dr.uploadfrom = src.uploadfrom
+    dr.uploadfrom = src.uploadfrom,
+    -- Keep one-time application state only if the user saved the SAME price.
+    -- A different bulk price starts a new eligible Yield cycle.
+    dr.yeildruleid = CASE WHEN prior.previous_rate = TRY_CONVERT(decimal(18,4),src.rate)
+                         THEN ISNULL(prior.applied_rule,'') ELSE '' END,
+    -- Existing TVP upsert may replace baserate even when rate did not change.
+    -- Preserve the previous pre-Yield baseline in that case, so disable restores it.
+    dr.baserate = CASE WHEN prior.previous_rate = TRY_CONVERT(decimal(18,4),src.rate)
+                              AND NULLIF(LTRIM(RTRIM(ISNULL(prior.applied_rule,''))), '') IS NOT NULL
+                              AND prior.previous_baseline IS NOT NULL
+                        THEN CONVERT(varchar(32),prior.previous_baseline)
+                        ELSE dr.baserate END
 FROM dbo.datesrates AS dr
 INNER JOIN @Rows AS src
         ON dr.hotel_id = src.hotel_id
        AND dr.category_id = src.category_id
        AND dr.planid = src.planid
        AND dr.[date] = src.[date]
+LEFT JOIN #ORA_BulkPriorYield prior
+       ON prior.hotel_id=dr.hotel_id AND prior.category_id=dr.category_id
+      AND prior.planid=dr.planid AND prior.staydate=CAST(dr.[date] AS date)
 WHERE dr.hotel_id = @hotel;";
 
         await using (var reset = new SqlCommand(resetPendingSql, connection, auditTx)

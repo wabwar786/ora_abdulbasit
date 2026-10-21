@@ -100,6 +100,10 @@ public sealed class YieldRuleEditorModel
     public string TimeFrom { get; set; } = string.Empty;
     public string TimeTo { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+    // Which price origin is eligible for its FIRST yield application.
+    public bool ApplyToRatePlan { get; set; } = true;
+    public bool ApplyToBulkUpdate { get; set; }
+    public bool ApplyToCellEdit { get; set; }
 }
 
 public sealed record YieldOperationResult(

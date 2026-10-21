@@ -1059,17 +1059,24 @@ WHERE hotel_id = @hotel_id AND reg_id = @reg_id;", conn, tx))
                                     Log_helper.InsertReservLog(regId, "Booking created through Channex with OTA Booking #:" + otabookingid, "Channex", currentUser, hotelid, "Reservation Created", ip, systemName);
                                     try
                                     {
-                                        var svc = new Orapmshms.Services.LegacyApi.YieldBackgroundService();
-                                        svc.RunYieldForDateRange(
+                                        // Use the SAME Yield evaluator as the New Reservation form.
+                                        // The booking has already been saved. Enqueue rather than run
+                                        // a second, synchronous calculation engine inside this request.
+                                        var yieldQueue = HttpContext.RequestServices.GetRequiredService<IAvailabilityAutoUpdateQueue>();
+                                        var accepted = yieldQueue.Queue(new AvailabilityAutoUpdateJob(
                                             hotelid,
+                                            "",
+                                            "channex",
+                                            "Channex Reservation API",
+                                            ip ?? string.Empty,
                                             DateTime.Parse(checkInDate),
                                             DateTime.Parse(checkOutDate),
-                                            true,
-                                            "Channex Reservation Api",
-                                            initiatedByUserId: "channex",
-                                            initiatedByUserName: "Channex Reservation API",
-                                            clientIp: ip,
-                                            sourcePage: "ReservationAPI");
+                                            "0",
+                                            RunReservationYield: true,
+                                            YieldOnly: true,
+                                            YieldSource: "ReservationAPI"));
+                                        if (!accepted)
+                                            throw new InvalidOperationException("Reservation saved, but the Yield queue is full; retry the Yield evaluation.");
                                     }
                                     catch (Exception yieldError)
                                     {

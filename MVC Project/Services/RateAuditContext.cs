@@ -146,7 +146,7 @@ SELECT CONVERT(nvarchar(50),dr.planid) AS PlanId,
        CONVERT(date,dr.[date]) AS StayDate,
        TRY_CONVERT(decimal(18,4),dr.rate) AS Rate
 FROM dbo.datesrates dr
-WHERE dr.hotel_id=@auditHotel AND dr.[date] BETWEEN @auditFrom AND @auditTo" + filter + ";";
+WHERE dr.hotel_id=@auditHotel AND dr.[date]>=@auditFrom AND dr.[date]<DATEADD(day,1,@auditTo)" + filter + ";";
         await command.ExecuteNonQueryAsync(token);
     }
 
@@ -173,7 +173,7 @@ WHERE dr.hotel_id=@auditHotel AND dr.[date] BETWEEN @auditFrom AND @auditTo" + f
            TRY_CONVERT(decimal(18,4),dr.rate) Rate,
            TRY_CONVERT(decimal(18,4),dr.baserate) BaseRate
     FROM dbo.datesrates dr
-    WHERE dr.hotel_id=@auditHotel AND dr.[date] BETWEEN @auditFrom AND @auditTo" + filter + @"
+    WHERE dr.hotel_id=@auditHotel AND dr.[date]>=@auditFrom AND dr.[date]<DATEADD(day,1,@auditTo)" + filter + @"
 ), Changed AS
 (
     SELECT COALESCE(c.PlanId,p.PlanId) PlanId,

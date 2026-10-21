@@ -6,8 +6,13 @@ using Orapmshms.Services.AvailabilityJobs;
 
 namespace Orapmshms.Services;
 
+// SERVER TEST BUILD: YieldRulesTB.IsActive controls the rule lifecycle and evaluation.
+// Stop earlier application instances before starting this build against the same database.
 public sealed class YieldManagementService : IYieldManagementService
 {
+    // SERVER TEST BUILD: yield channel uploads use the existing queue.
+    // Deploy first to a staging server/channel to avoid publishing unverified rates.
+    private const bool DisableYieldChannelSync = false;
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;
     private readonly IAvailabilityChannelSyncQueue _channelQueue;
@@ -72,6 +77,9 @@ SELECT
     y.TimeFrom,
     y.TimeTo,
     ISNULL(y.IsActive,0) AS IsActive,
+    ISNULL(y.ApplyToRatePlan,1) AS ApplyToRatePlan,
+    ISNULL(y.ApplyToBulkUpdate,0) AS ApplyToBulkUpdate,
+    ISNULL(y.ApplyToCellEdit,0) AS ApplyToCellEdit,
     (SELECT COUNT(*) FROM dbo.YieldRuleRatePlansTB rp WHERE rp.RuleID=y.ID) AS RatePlanCount,
     (SELECT COUNT(*) FROM dbo.YieldRuleRoomTypesTB rt WHERE rt.RuleID=y.ID) AS RoomTypeCount
 FROM dbo.YieldRulesTB y
@@ -128,7 +136,10 @@ SELECT ID,ISNULL(Priority,0) AS Priority,ISNULL(RuleName,'') AS RuleName,
        StayFrom,StayTo,ISNULL(ApplicableDaysCsv,'') AS ApplicableDaysCsv,
        ISNULL(RuleType,'') AS RuleType,ISNULL(ChangeType,'') AS ChangeType,
        ChangeValue,ISNULL(ChangeUnit,'') AS ChangeUnit,ThresholdMin,ThresholdMax,
-       OccupancyMin,OccupancyMax,TimeFrom,TimeTo,ISNULL(IsActive,0) AS IsActive
+       OccupancyMin,OccupancyMax,TimeFrom,TimeTo,ISNULL(IsActive,0) AS IsActive,
+       ISNULL(ApplyToRatePlan,1) AS ApplyToRatePlan,
+       ISNULL(ApplyToBulkUpdate,0) AS ApplyToBulkUpdate,
+       ISNULL(ApplyToCellEdit,0) AS ApplyToCellEdit
 FROM dbo.YieldRulesTB
 WHERE ID=@id AND hotel_id=@hotel;
 
@@ -167,7 +178,10 @@ FROM dbo.YieldRuleRoomTypesTB WHERE RuleID=@id;";
             OccupancyMax = ToNullableDecimal(reader["OccupancyMax"]),
             TimeFrom = ToTimeText(reader["TimeFrom"]),
             TimeTo = ToTimeText(reader["TimeTo"]),
-            IsActive = ToBool(reader["IsActive"])
+            IsActive = ToBool(reader["IsActive"]),
+            ApplyToRatePlan = ToBool(reader["ApplyToRatePlan"]),
+            ApplyToBulkUpdate = ToBool(reader["ApplyToBulkUpdate"]),
+            ApplyToCellEdit = ToBool(reader["ApplyToCellEdit"])
         };
 
         await reader.NextResultAsync(cancellationToken);
@@ -229,11 +243,13 @@ FROM dbo.YieldRuleRoomTypesTB WHERE RuleID=@id;";
 INSERT INTO dbo.YieldRulesTB
 (hotel_id,Priority,RuleName,StayFrom,StayTo,ApplicableDaysCsv,RuleType,
  ChangeType,ChangeValue,ChangeUnit,ThresholdMin,ThresholdMax,
- OccupancyMin,OccupancyMax,TimeFrom,TimeTo,IsActive,CreatedBy)
+ OccupancyMin,OccupancyMax,TimeFrom,TimeTo,IsActive,
+ ApplyToRatePlan,ApplyToBulkUpdate,ApplyToCellEdit,CreatedBy)
 VALUES
 (@hotel,@priority,@name,@from,@to,@days,@ruleType,
  @changeType,@changeValue,@changeUnit,@thMin,@thMax,
- @occMin,@occMax,@timeFrom,@timeTo,@active,@createdBy);
+ @occMin,@occMax,@timeFrom,@timeTo,@active,
+ @applyPlan,@applyBulk,@applyCell,@createdBy);
 SELECT CAST(SCOPE_IDENTITY() AS int);";
 
                 await using var command = new SqlCommand(insertSql, connection, transaction);
@@ -248,7 +264,9 @@ SET Priority=@priority,RuleName=@name,StayFrom=@from,StayTo=@to,
     ApplicableDaysCsv=@days,RuleType=@ruleType,ChangeType=@changeType,
     ChangeValue=@changeValue,ChangeUnit=@changeUnit,ThresholdMin=@thMin,
     ThresholdMax=@thMax,OccupancyMin=@occMin,OccupancyMax=@occMax,
-    TimeFrom=@timeFrom,TimeTo=@timeTo,IsActive=@active
+    TimeFrom=@timeFrom,TimeTo=@timeTo,IsActive=@active,
+    ApplyToRatePlan=@applyPlan,ApplyToBulkUpdate=@applyBulk,
+    ApplyToCellEdit=@applyCell
 WHERE ID=@id AND hotel_id=@hotel;
 SELECT @@ROWCOUNT;";
 
@@ -259,7 +277,8 @@ SELECT @@ROWCOUNT;";
                 if (affected <= 0)
                 {
                     await transaction.RollbackAsync(cancellationToken);
-                    return new YieldOperationResult(false, "Yield rule was not found.", request.Id);
+                    return new YieldOperationResult(false,
+                        "Yield rule was not found for this hotel.", request.Id);
                 }
 
                 savedId = request.Id;
@@ -283,16 +302,30 @@ IF OBJECT_ID('dbo.YieldRuleExcludedRangesTB','U') IS NOT NULL
             await transaction.CommitAsync(cancellationToken);
 
             YieldEvaluationResult? evaluation = null;
-            if (request.IsActive)
+            // Evaluate after every save, even when an existing rule becomes inactive.
+            // This restores the pre-Yield base or activates the next eligible rule.
+            try
+            {
+                evaluation = await EvaluateActiveRulesAsync(hotelId, cancellationToken,
+                    RateAuditMetadata.Create(hotelId, "YieldManagement", "YieldRuleSaved", userId, userName, ip, pcName));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Yield rule {RuleId} was saved but immediate evaluation failed for hotel {HotelId}.", savedId, hotelId);
+            }
+
+            if (request.Id > 0 && !request.IsActive)
             {
                 try
                 {
-                    evaluation = await EvaluateActiveRulesAsync(hotelId, cancellationToken,
-                        RateAuditMetadata.Create(hotelId, "YieldManagement", "YieldRuleSaved", userId, userName, ip, pcName));
+                    await RestoreDisabledRuleAsync(hotelId, savedId,
+                        RateAuditMetadata.Create(hotelId,"YieldManagement","YieldRuleSavedInactive",
+                            userId,userName,ip,pcName),cancellationToken);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Yield rule {RuleId} was saved but immediate evaluation failed for hotel {HotelId}.", savedId, hotelId);
+                    _logger.LogError(ex,"Yield rule saved inactive but restoration failed; hotel={HotelId}, rule={RuleId}",hotelId,savedId);
+                    throw;
                 }
             }
 
@@ -327,14 +360,9 @@ IF OBJECT_ID('dbo.YieldRuleExcludedRangesTB','U') IS NOT NULL
         if (ruleId <= 0)
             return new YieldOperationResult(false, "Invalid yield rule.");
 
-        var today = _hotelClock.GetHotelToday(hotelId).Date;
         bool newStatus;
         string ruleName;
         int restoredRows = 0;
-        DateTime? restoreFrom = null;
-        DateTime? restoreTo = null;
-        var planIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var categoryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -369,74 +397,8 @@ UPDATE dbo.YieldRulesTB SET IsActive=@active WHERE ID=@id AND hotel_id=@hotel;",
                 await update.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            // Preserve the WebForms behaviour, but make the restore set-based and keep
-            // Channex communication out of the request transaction.
-            if (!newStatus)
-            {
-                await using (var scope = new SqlCommand(@"
-SELECT CONVERT(nvarchar(50),dr.planid) AS planid,
-       CONVERT(nvarchar(50),dr.category_id) AS category_id,
-       MIN(CAST(dr.[date] AS date)) AS FromDate,
-       MAX(CAST(dr.[date] AS date)) AS ToDate
-FROM dbo.datesrates dr
-WHERE dr.hotel_id=@hotel
-  AND CONVERT(nvarchar(50),dr.yeildruleid)=CONVERT(nvarchar(50),@id)
-  AND CAST(dr.[date] AS date)>=@today
-GROUP BY CONVERT(nvarchar(50),dr.planid),CONVERT(nvarchar(50),dr.category_id);", connection, transaction))
-                {
-                    scope.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-                    scope.Parameters.Add("@id", SqlDbType.Int).Value = ruleId;
-                    scope.Parameters.Add("@today", SqlDbType.Date).Value = today;
-                    await using var reader = await scope.ExecuteReaderAsync(cancellationToken);
-                    while (await reader.ReadAsync(cancellationToken))
-                    {
-                        var plan = DbText(reader["planid"]);
-                        var category = DbText(reader["category_id"]);
-                        if (plan.Length > 0) planIds.Add(plan);
-                        if (category.Length > 0) categoryIds.Add(category);
-                        var from = ToDate(reader["FromDate"]);
-                        var to = ToDate(reader["ToDate"]);
-                        if (from.HasValue && (!restoreFrom.HasValue || from.Value < restoreFrom.Value)) restoreFrom = from.Value;
-                        if (to.HasValue && (!restoreTo.HasValue || to.Value > restoreTo.Value)) restoreTo = to.Value;
-                    }
-                }
-
-                var restoreAudit = RateAuditMetadata.Create(hotelId, "YieldManagement",
-                    "YieldRuleDisabled", userId, userName, ip, pcName);
-                if (restoreFrom.HasValue && restoreTo.HasValue)
-                    await RateAuditContext.CaptureDailyAsync(connection, restoreAudit,
-                        restoreFrom.Value, restoreTo.Value, cancellationToken, transaction, planIds, categoryIds);
-
-                await using var restore = new SqlCommand(@"
-UPDATE dr
-SET dr.rate=CONVERT(varchar(32),COALESCE(NULLIF(TRY_CONVERT(decimal(18,2),dr.baserate),0),
-                                             TRY_CONVERT(decimal(18,2),cp.rate),0)),
-    dr.baserate=CONVERT(varchar(32),COALESCE(NULLIF(TRY_CONVERT(decimal(18,2),dr.baserate),0),
-                                                 TRY_CONVERT(decimal(18,2),cp.rate),0)),
-    dr.upload=0,
-    dr.uploadfrom=CASE WHEN NULLIF(TRY_CONVERT(decimal(18,2),dr.baserate),0) IS NOT NULL
-                           AND TRY_CONVERT(decimal(18,2),dr.baserate)<>TRY_CONVERT(decimal(18,2),cp.rate)
-                       THEN 1 ELSE 0 END,
-    dr.yeildruleid=''
-FROM dbo.datesrates dr
-INNER JOIN dbo.category_plan cp
-    ON cp.hotel_id=dr.hotel_id
-   AND CONVERT(nvarchar(50),cp.category_id)=CONVERT(nvarchar(50),dr.category_id)
-   AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
-WHERE dr.hotel_id=@hotel
-  AND CONVERT(nvarchar(50),dr.yeildruleid)=CONVERT(nvarchar(50),@id)
-  AND CAST(dr.[date] AS date)>=@today;", connection, transaction)
-                {
-                    CommandTimeout = 120
-                };
-                restore.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-                restore.Parameters.Add("@id", SqlDbType.Int).Value = ruleId;
-                restore.Parameters.Add("@today", SqlDbType.Date).Value = today;
-                restoredRows = await restore.ExecuteNonQueryAsync(cancellationToken);
-                if (restoreFrom.HasValue && restoreTo.HasValue)
-                    await RateAuditContext.WriteDailyAsync(connection, restoreAudit,
-                        restoreFrom.Value, restoreTo.Value, cancellationToken, transaction, planIds, categoryIds);
-            }
+            // Reevaluate through the unified Yield engine after saving IsActive.
+            // Disable restores still-owned rows via the existing one-time restoration path.
 
             await TryInsertLogAsync(connection, transaction, hotelId, userName, ip,
                 $"TOGGLE YieldRule | id={ruleId} | name={ruleName} | new={(newStatus ? "Active" : "Inactive")} | restoredRows={restoredRows}",
@@ -453,30 +415,25 @@ WHERE dr.hotel_id=@hotel
         var queued = false;
         var appliedRows = 0;
 
-        if (newStatus)
+        try
         {
-            try
-            {
-                var evaluation = await EvaluateActiveRulesAsync(hotelId, cancellationToken,
-                    RateAuditMetadata.Create(hotelId, "YieldManagement", "YieldRuleEnabled", userId, userName, ip, pcName));
-                appliedRows = evaluation.AppliedRows;
-                restoredRows += evaluation.RestoredRows;
-                queued = evaluation.ChannelUploadQueued;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Yield rule {RuleId} was activated but immediate evaluation failed for hotel {HotelId}.", ruleId, hotelId);
-            }
+            var evaluation = await EvaluateActiveRulesAsync(hotelId, cancellationToken,
+                RateAuditMetadata.Create(hotelId, "YieldManagement",
+                    newStatus ? "YieldRuleEnabled" : "YieldRuleDisabled", userId, userName, ip, pcName));
+            appliedRows = evaluation.AppliedRows;
+            restoredRows = evaluation.RestoredRows;
+            queued = evaluation.ChannelUploadQueued;
         }
-        else if (restoredRows > 0 && restoreFrom.HasValue && restoreTo.HasValue && planIds.Count > 0 && categoryIds.Count > 0)
+        catch (Exception ex)
         {
-            queued = _channelQueue.Queue(new AvailabilityChannelSyncJob(
-                AvailabilityChannelSyncKind.YieldRates,
-                hotelId,
-                restoreFrom.Value,
-                restoreTo.Value,
-                planIds.ToArray(),
-                categoryIds.ToArray()));
+            _logger.LogWarning(ex, "Yield rule {RuleId} status saved but evaluation failed for hotel {HotelId}.", ruleId, hotelId);
+        }
+
+        if (!newStatus)
+        {
+            restoredRows = await RestoreDisabledRuleAsync(hotelId,ruleId,
+                RateAuditMetadata.Create(hotelId,"YieldManagement","YieldRuleDisabled",
+                    userId,userName,ip,pcName),cancellationToken);
         }
 
         var message = newStatus
@@ -484,8 +441,8 @@ WHERE dr.hotel_id=@hotel
                 ? $"Yield rule activated. {appliedRows} rate row(s) recalculated and queued for channel sync."
                 : "Yield rule activated. It is being monitored and will apply automatically when its trigger is met."
             : restoredRows > 0
-                ? $"Yield rule deactivated. {restoredRows} future rate row(s) restored to default rates{(queued ? " and queued for channel upload." : ".")}"
-                : "Yield rule deactivated. No future applied rates required restoration.";
+                ? $"Yield rule deactivated. {restoredRows} future rate row(s) restored to their pre-Yield rates{(queued ? " and queued for channel upload." : ".")}"
+                : "Yield rule deactivated. Remaining eligible rules were evaluated.";
 
         return new YieldOperationResult(true, message, ruleId, newStatus, restoredRows, queued);
     }
@@ -510,7 +467,8 @@ WHERE dr.hotel_id=@hotel
         {
             string ruleName;
             await using (var read = new SqlCommand(@"
-SELECT ISNULL(RuleName,'') FROM dbo.YieldRulesTB WHERE ID=@id AND hotel_id=@hotel;", connection, transaction))
+SELECT ISNULL(RuleName,'') FROM dbo.YieldRulesTB
+WHERE ID=@id AND hotel_id=@hotel;", connection, transaction))
             {
                 read.Parameters.Add("@id", SqlDbType.Int).Value = ruleId;
                 read.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
@@ -538,7 +496,22 @@ DELETE FROM dbo.YieldRulesTB WHERE ID=@id AND hotel_id=@hotel;", connection, tra
             await TryInsertLogAsync(connection, transaction, hotelId, userName, ip,
                 $"DELETE YieldRule | id={ruleId} | name={ruleName}", cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new YieldOperationResult(true, "Yield rule deleted.", ruleId);
+            try
+            {
+                await EvaluateActiveRulesAsync(hotelId, cancellationToken,
+                    RateAuditMetadata.Create(hotelId, "YieldManagement", "YieldRuleDeleted",
+                        userId, userName, ip));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Yield rule {RuleId} deleted for hotel {HotelId}; price reconciliation must be retried.",
+                    ruleId, hotelId);
+            }
+            await RestoreDisabledRuleAsync(hotelId,ruleId,
+                RateAuditMetadata.Create(hotelId,"YieldManagement","YieldRuleDeleted",
+                    userId,userName,ip),cancellationToken);
+            return new YieldOperationResult(true, "Yield rule deleted; applicable rates reevaluated or queued for retry.", ruleId);
         }
         catch
         {
@@ -547,10 +520,72 @@ DELETE FROM dbo.YieldRulesTB WHERE ID=@id AND hotel_id=@hotel;", connection, tra
         }
     }
 
+    // Disable/delete restores the pre-Yield base only for rows still owned by
+    // that applied rule. Keep the marker as a historical one-time guard: simply
+    // enabling the rule again must NOT adjust that rate a second time.
+    // A genuine manual edit starts the next application cycle by clearing it.
+    private async Task<int> RestoreDisabledRuleAsync(string hotelId, int ruleId,
+        RateAuditMetadata audit, CancellationToken cancellationToken)
+    {
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            DateTime today = _hotelClock.GetHotelToday(hotelId).Date;
+            DateTime? last = null;
+            await using (var scope = new SqlCommand(@"
+SELECT MAX(CAST([date] AS date)) FROM dbo.datesrates
+WHERE hotel_id=@hotel AND TRY_CONVERT(int,yeildruleid)=@id
+  AND TRY_CONVERT(int,uploadfrom)=2 AND [date]>=@today;",conn,tx))
+            {
+                scope.Parameters.Add("@hotel",SqlDbType.NVarChar,50).Value=hotelId;
+                scope.Parameters.Add("@id",SqlDbType.Int).Value=ruleId;
+                scope.Parameters.Add("@today",SqlDbType.Date).Value=today;
+                var val=await scope.ExecuteScalarAsync(cancellationToken);
+                if (val != null && val != DBNull.Value) last=Convert.ToDateTime(val);
+            }
+            if (!last.HasValue)
+            {
+                await tx.CommitAsync(cancellationToken);
+                return 0;
+            }
+            await RateAuditContext.CaptureDailyAsync(conn,audit,today,last.Value,cancellationToken,tx);
+            await using var cmd = new SqlCommand(@"
+UPDATE dr SET dr.rate=CONVERT(varchar(32),TRY_CONVERT(decimal(18,2),dr.baserate)),
+              -- Keep yeildruleid so this rule cannot apply again until
+              -- a user genuinely changes the daily rate.
+              dr.upload=0,dr.currentdate=GETDATE()
+FROM dbo.datesrates dr
+WHERE dr.hotel_id=@hotel AND TRY_CONVERT(int,dr.yeildruleid)=@id
+  AND TRY_CONVERT(int,dr.uploadfrom)=2
+  AND dr.[date]>=@today
+  AND TRY_CONVERT(decimal(18,2),dr.baserate) IS NOT NULL
+  -- Idempotence: no redundant UPDATE and no phantom audit for equal values.
+  AND (TRY_CONVERT(decimal(18,2),dr.rate) IS NULL
+       OR TRY_CONVERT(decimal(18,2),dr.rate) <> TRY_CONVERT(decimal(18,2),dr.baserate));",conn,tx) {CommandTimeout=120};
+            cmd.Parameters.Add("@hotel",SqlDbType.NVarChar,50).Value=hotelId;
+            cmd.Parameters.Add("@id",SqlDbType.Int).Value=ruleId;
+            cmd.Parameters.Add("@today",SqlDbType.Date).Value=today;
+            var affected=await cmd.ExecuteNonQueryAsync(cancellationToken);
+            await RateAuditContext.WriteDailyAsync(conn,audit,today,last.Value,cancellationToken,tx);
+            await tx.CommitAsync(cancellationToken);
+            return affected;
+        }
+        catch
+        {
+            try {await tx.RollbackAsync(CancellationToken.None);} catch {}
+            throw;
+        }
+    }
+
     private sealed class ActiveYieldRule
     {
         public int Id { get; init; }
         public int Priority { get; init; }
+        public bool ApplyToRatePlan { get; init; }
+        public bool ApplyToBulkUpdate { get; init; }
+        public bool ApplyToCellEdit { get; init; }
         public DateTime StayFrom { get; init; }
         public DateTime StayTo { get; init; }
         public HashSet<int> Days { get; init; } = new();
@@ -573,9 +608,8 @@ DELETE FROM dbo.YieldRulesTB WHERE ID=@id AND hotel_id=@hotel;", connection, tra
     private sealed record YieldDesiredRate(DateTime Date, string CategoryId, string PlanId, int RuleId, decimal BaseRate, decimal Rate);
 
     /// <summary>
-    /// Finds properties that either have an active yield rule or still have a future
-    /// datesrates row marked by a yield rule. The latter makes the sweep self-healing:
-    /// stale yield rates are restored even if a rule was deleted outside this page.
+    /// Monitor hotels with active Yield rules. Rule disable/delete paths
+    /// handle restoration for previously applied future rates.
     /// </summary>
     public async Task<IReadOnlyList<string>> GetHotelsNeedingEvaluationAsync(
         CancellationToken cancellationToken = default)
@@ -585,12 +619,7 @@ SELECT DISTINCT LTRIM(RTRIM(CONVERT(nvarchar(50),hotel_id))) AS hotel_id
 FROM dbo.YieldRulesTB
 WHERE ISNULL(IsActive,0)=1
   AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),hotel_id))), '') IS NOT NULL
-UNION
-SELECT DISTINCT LTRIM(RTRIM(CONVERT(nvarchar(50),hotel_id))) AS hotel_id
-FROM dbo.datesrates
-WHERE NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),yeildruleid))), '') IS NOT NULL
-  AND CAST([date] AS date)>=CAST(GETDATE() AS date)
-  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),hotel_id))), '') IS NOT NULL;";
+;";
 
         var hotels = new List<string>();
         await using var connection = new SqlConnection(_connectionString);
@@ -609,8 +638,8 @@ WHERE NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),yeildruleid))), '') IS NOT NULL
     /// <summary>
     /// Evaluates active yield rules against live reservation occupancy for every stay date.
     /// The lowest Priority number wins when multiple rules target the same date/room/plan.
-    /// Matching rows are written to datesrates with yeildruleid, while previously applied
-    /// yield rows that no longer match are restored to category_plan.
+    /// Each date/plan is eligible once. Later sweeps never recalculate marked rows.
+    /// Rule disable/delete explicitly restores untouched Yield rows only.
     /// </summary>
     public async Task<YieldEvaluationResult> EvaluateActiveRulesAsync(
         string hotelId,
@@ -640,7 +669,7 @@ WHERE NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),yeildruleid))), '') IS NOT NULL
         var appliedScope = await LoadAppliedScopeAsync(connection, hotelId, today, cancellationToken);
 
         // Nothing active and nothing previously applied means there is no work at all.
-        if (rules.Count == 0 && !appliedScope.FromDate.HasValue)
+        if (rules.Count == 0)
             return new YieldEvaluationResult(0, 0, false);
 
         var evaluationFrom = today;
@@ -663,6 +692,10 @@ WHERE NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),yeildruleid))), '') IS NOT NULL
         // Each saved Availability rate is the base for this stay date. If Yield has
         // already run, its stored baserate is the pre-Yield rate (not the adjusted rate).
         var dateBaseRates = await LoadDateSpecificBaseRatesAsync(
+            connection, hotelId, evaluationFrom, evaluationTo, cancellationToken);
+        // Source and existing Yield marker are read separately. The SQL MERGE below
+        // checks them again under HOLDLOCK to protect against concurrent saves.
+        var originStates = await LoadYieldOriginsAsync(
             connection, hotelId, evaluationFrom, evaluationTo, cancellationToken);
 
         var desiredByKey = new Dictionary<string, YieldDesiredRate>(StringComparer.OrdinalIgnoreCase);
@@ -690,12 +723,33 @@ WHERE NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),yeildruleid))), '') IS NOT NULL
                         if (desiredByKey.ContainsKey(targetKey))
                             continue; // lower Priority number already won this target
 
-                        // A manual cell edit always wins over category_plan defaults.
-                        // Once Yield is applied, use the saved pre-Yield baseline to avoid
-                        // compounding the percentage every ten seconds.
-                        if (!dateBaseRates.TryGetValue(targetKey, out var baseRate) &&
-                            !baseRates.TryGetValue(CategoryPlanKey(categoryId, planId), out baseRate))
+                        // ONE application per saved rate version. A real manual Cell/Bulk
+                        // price change clears the marker, allowing this rule to apply once
+                        // to the NEW manual rate. Unchanged 10-second sweeps skip it.
+                        originStates.TryGetValue(targetKey, out var state);
+                        if (state != null && (state.AppliedRule || state.Source == "YieldApplied")) continue;
+                        var origin = state?.Source ?? "RatePlan";
+                        var allowed = origin switch
+                        {
+                            "RatePlan" => rule.ApplyToRatePlan,
+                            "BulkUpdate" => rule.ApplyToBulkUpdate,
+                            "CellEdit" => rule.ApplyToCellEdit,
+                            _ => false  // Old unknown manual-origin rows stay protected.
+                        };
+                        if (!allowed) continue;
+                        decimal baseRate;
+                        if (state != null)
+                        {
+                            // A datesrates row is authoritative. Never silently fall back
+                            // to category_plan for an existing (possibly invalid) daily row.
+                            if (!dateBaseRates.TryGetValue(targetKey, out baseRate))
+                                continue;
+                        }
+                        else if (!baseRates.TryGetValue(CategoryPlanKey(categoryId, planId), out baseRate))
+                        {
+                            // ONLY when the date has no stored row use its plan default.
                             continue;
+                        }
                         if (baseRate <= 0m) continue;
 
                         var newRate = CalculateYieldRate(baseRate, rule.ChangeType, rule.ChangeValue, rule.ChangeUnit);
@@ -706,25 +760,14 @@ WHERE NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),yeildruleid))), '') IS NOT NULL
             }
         }
 
-        // Limit audit snapshots to the plans/categories participating in the yield cycle.
-        var yieldAuditPlans = new HashSet<string>(appliedScope.PlanIds, StringComparer.OrdinalIgnoreCase);
-        var yieldAuditCategories = new HashSet<string>(appliedScope.CategoryIds, StringComparer.OrdinalIgnoreCase);
-        foreach (var rule in rules)
-        {
-            yieldAuditPlans.UnionWith(rule.PlanIds);
-            yieldAuditCategories.UnionWith(rule.CategoryIds);
-        }
-
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
             var audit = originatingAudit ?? RateAuditMetadata.Create(
                 hotelId, "YieldManagement/Automatic", "YieldAutoEvaluation",
                 "SYSTEM", "Yield Engine", "", Environment.MachineName);
-            // Snapshot effective rates in the same transaction as the yield MERGE / restore.
-            await RateAuditContext.CaptureDailyAsync(connection, audit,
-                evaluationFrom, evaluationTo, cancellationToken, transaction,
-                yieldAuditPlans, yieldAuditCategories);
+            var appliedAudit = audit with { ActionType = audit.ActionType + "/ApplyRule" };
+            var restoredAudit = audit with { ActionType = audit.ActionType + "/RestoreNoMatchingRule" };
             await using (var createTemp = new SqlCommand(@"
 CREATE TABLE #YieldDesired
 (
@@ -735,6 +778,18 @@ CREATE TABLE #YieldDesired
     base_rate decimal(18,2) NOT NULL,
     new_rate decimal(18,2) NOT NULL,
     PRIMARY KEY ([date],category_id,planid)
+);
+-- Scoped to this SQL connection and the current transaction. Captures exactly
+-- the rows changed by the Yield MERGE, never a broad unrelated date snapshot.
+CREATE TABLE #YieldAppliedWrites
+(
+    [Action] nvarchar(10) NOT NULL,
+    planid nvarchar(50) NOT NULL,
+    category_id nvarchar(100) NOT NULL,
+    [date] date NOT NULL,
+    previous_rate nvarchar(64) NULL,
+    new_rate nvarchar(64) NULL,
+    base_rate nvarchar(64) NULL
 );", connection, transaction))
             {
                 await createTemp.ExecuteNonQueryAsync(cancellationToken);
@@ -768,93 +823,75 @@ CREATE TABLE #YieldDesired
                 await bulk.WriteToServerAsync(table, cancellationToken);
             }
 
+            // Two distinct transactional rate-change audits: exact source is visible
+            // in RateUploadHistoryTB.source if this evaluator changes a rate.
             const string applySql = @"
-DECLARE @Applied int=0, @Restored int=0;
-
-MERGE dbo.datesrates AS T
+MERGE dbo.datesrates WITH (HOLDLOCK) AS T
 USING #YieldDesired AS S
    ON T.hotel_id=@hotel
   AND CAST(T.[date] AS date)=S.[date]
   AND CONVERT(nvarchar(100),T.category_id)=S.category_id
   AND CONVERT(nvarchar(50),T.planid)=S.planid
 WHEN MATCHED AND
-     -- Do not overwrite a manual cell edit that happened after the scheduled
-     -- evaluator read its snapshot. The next evaluation picks up that new base.
-     ISNULL(CASE WHEN NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),T.yeildruleid))), '') IS NOT NULL
-                 THEN TRY_CONVERT(decimal(18,2),T.baserate)
-                 ELSE TRY_CONVERT(decimal(18,2),T.rate) END,-1)=S.base_rate
+     -- Do not process any row already touched by Yield.
+     NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),T.yeildruleid))), '') IS NULL
+     AND ISNULL(TRY_CONVERT(int,T.uploadfrom),0) <> 2
+     -- Source is checked here, not only in C#, to avoid stale snapshot races.
      AND (
-        ISNULL(TRY_CONVERT(decimal(18,2),T.rate),-1)<>S.new_rate
-        OR ISNULL(CONVERT(nvarchar(50),T.yeildruleid),'')<>CONVERT(nvarchar(50),S.rule_id)
+         (ISNULL(TRY_CONVERT(int,T.uploadfrom),0)=0
+          AND EXISTS (SELECT 1 FROM dbo.YieldRulesTB y
+                      WHERE y.ID=S.rule_id AND y.hotel_id=@hotel AND ISNULL(y.IsActive,0)=1
+                        AND ISNULL(y.ApplyToRatePlan,1)=1))
+      OR (TRY_CONVERT(int,T.uploadfrom)=1
+          AND EXISTS (SELECT 1 FROM dbo.YieldRulesTB y
+                      WHERE y.ID=S.rule_id AND y.hotel_id=@hotel AND ISNULL(y.IsActive,0)=1
+                        AND ISNULL(y.ApplyToBulkUpdate,0)=1))
+      OR (TRY_CONVERT(int,T.uploadfrom)=3
+          AND EXISTS (SELECT 1 FROM dbo.YieldRulesTB y
+                      WHERE y.ID=S.rule_id AND y.hotel_id=@hotel AND ISNULL(y.IsActive,0)=1
+                        AND ISNULL(y.ApplyToCellEdit,0)=1))
      )
+     AND ISNULL(TRY_CONVERT(decimal(18,2),T.rate),-1)=S.base_rate
 THEN UPDATE SET
      T.rate=CONVERT(varchar(32),S.new_rate),
      T.baserate=CONVERT(varchar(32),S.base_rate),
      T.upload=0,
+     T.uploadfrom='2', -- Yield owns the stored price until an actual manual edit
      T.yeildruleid=CONVERT(nvarchar(50),S.rule_id),
      T.currentdate=GETDATE()
-WHEN NOT MATCHED BY TARGET THEN
-INSERT (hotel_id,category_id,planid,[date],rate,baserate,upload,uploadfrom,yeildruleid,currentdate)
-VALUES (@hotel,S.category_id,S.planid,S.[date],CONVERT(varchar(32),S.new_rate),CONVERT(varchar(32),S.base_rate),0,0,CONVERT(nvarchar(50),S.rule_id),GETDATE());
-
-SET @Applied=@@ROWCOUNT;
-
-UPDATE dr
-SET dr.rate=CONVERT(varchar(32),COALESCE(NULLIF(TRY_CONVERT(decimal(18,2),dr.baserate),0),
-                                             TRY_CONVERT(decimal(18,2),cp.rate),0)),
-    dr.baserate=CONVERT(varchar(32),COALESCE(NULLIF(TRY_CONVERT(decimal(18,2),dr.baserate),0),
-                                                 TRY_CONVERT(decimal(18,2),cp.rate),0)),
-    dr.upload=0,
-    dr.uploadfrom=CASE WHEN NULLIF(TRY_CONVERT(decimal(18,2),dr.baserate),0) IS NOT NULL
-                           AND TRY_CONVERT(decimal(18,2),dr.baserate)<>TRY_CONVERT(decimal(18,2),cp.rate)
-                       THEN 1 ELSE 0 END,
-    dr.yeildruleid='',
-    dr.currentdate=GETDATE()
-FROM dbo.datesrates dr
-INNER JOIN dbo.category_plan cp
-    ON cp.hotel_id=dr.hotel_id
-   AND CONVERT(nvarchar(100),cp.category_id)=CONVERT(nvarchar(100),dr.category_id)
-   AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
-WHERE dr.hotel_id=@hotel
-  AND CAST(dr.[date] AS date)>=@today
-  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NOT NULL
-  AND NOT EXISTS
-  (
-      SELECT 1
-      FROM #YieldDesired d
-      WHERE d.[date]=CAST(dr.[date] AS date)
-        AND d.category_id=CONVERT(nvarchar(100),dr.category_id)
-        AND d.planid=CONVERT(nvarchar(50),dr.planid)
-  );
-
-SET @Restored=@@ROWCOUNT;
-SELECT @Applied AS AppliedRows,@Restored AS RestoredRows;";
+WHEN NOT MATCHED BY TARGET AND EXISTS (
+  SELECT 1 FROM dbo.YieldRulesTB y
+  WHERE y.ID=S.rule_id AND y.hotel_id=@hotel AND ISNULL(y.IsActive,0)=1
+    AND ISNULL(y.ApplyToRatePlan,1)=1)
+THEN INSERT (hotel_id,category_id,planid,[date],rate,baserate,upload,uploadfrom,yeildruleid,currentdate)
+VALUES (@hotel,S.category_id,S.planid,S.[date],CONVERT(varchar(32),S.new_rate),CONVERT(varchar(32),S.base_rate),0,'2',CONVERT(nvarchar(50),S.rule_id),GETDATE())
+OUTPUT $action, inserted.planid, inserted.category_id, inserted.[date],
+       deleted.rate, inserted.rate, inserted.baserate
+INTO #YieldAppliedWrites ([Action],planid,category_id,[date],previous_rate,new_rate,base_rate);
+-- Count only actual rate inserts or changes, not metadata-only updates.
+SELECT COUNT(*) FROM #YieldAppliedWrites
+WHERE [Action]=N'INSERT'
+   OR TRY_CONVERT(decimal(18,4),previous_rate) IS NULL
+   OR TRY_CONVERT(decimal(18,4),new_rate) IS NULL
+   OR TRY_CONVERT(decimal(18,4),previous_rate) <> TRY_CONVERT(decimal(18,4),new_rate);";
 
             int appliedRows;
-            int restoredRows;
             await using (var apply = new SqlCommand(applySql, connection, transaction) { CommandTimeout = 120 })
             {
                 apply.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-                apply.Parameters.Add("@today", SqlDbType.Date).Value = today;
-                await using var reader = await apply.ExecuteReaderAsync(cancellationToken);
-                if (await reader.ReadAsync(cancellationToken))
-                {
-                    appliedRows = ToInt(reader["AppliedRows"]);
-                    restoredRows = ToInt(reader["RestoredRows"]);
-                }
-                else
-                {
-                    appliedRows = 0;
-                    restoredRows = 0;
-                }
+                appliedRows = Convert.ToInt32(await apply.ExecuteScalarAsync(cancellationToken));
             }
+            // Audit only the MERGE OUTPUT, transactionally. Unchanged prices (including
+            // metadata-only writes) are excluded even if another service wrote to a
+            // different date in the evaluation window between snapshot and save.
+            if (appliedRows > 0)
+                await WriteAppliedYieldChangesAsync(connection, transaction, appliedAudit, cancellationToken);
 
-            await RateAuditContext.WriteDailyAsync(connection, audit,
-                evaluationFrom, evaluationTo, cancellationToken, transaction,
-                yieldAuditPlans, yieldAuditCategories);
+            // One-time policy: subsequent automatic sweeps never restore a rate merely
+            // because occupancy/time conditions changed. Disable/delete is explicit.
+            int restoredRows = 0;
 
-            // Verify that the same transaction produced audit entries for the
-            // price changes. No extra permanent tables or stored procedures.
+            // The audit inserts only actual database price inserts/changes.
             long auditCount;
             await using (var auditCountCommand = new SqlCommand(@"
 SELECT COUNT_BIG(1)
@@ -889,7 +926,7 @@ WHERE hotel_id=@hotel AND batch_id=@batch AND rate IS NOT NULL;", connection, tr
                 foreach (var plan in rule.PlanIds) planIds.Add(plan);
                 foreach (var category in rule.CategoryIds) categoryIds.Add(category);
             }
-            var queued = planIds.Count > 0 && categoryIds.Count > 0 && _channelQueue.Queue(
+            var queued = !DisableYieldChannelSync && planIds.Count > 0 && categoryIds.Count > 0 && _channelQueue.Queue(
                 new AvailabilityChannelSyncJob(
                     AvailabilityChannelSyncKind.YieldRates,
                     hotelId,
@@ -910,6 +947,83 @@ WHERE hotel_id=@hotel AND batch_id=@batch AND rate IS NOT NULL;", connection, tr
             throw;
         }
     }
+    /// <summary>
+    /// Writes Yield price history solely from SQL MERGE OUTPUT rows. This never
+    /// logs an unchanged selling rate or a row changed by another rate writer.
+    /// The temporary table and the audit insert share the same SQL transaction.
+    /// Consecutive dates with identical prices are grouped into one history row.
+    /// </summary>
+    private static async Task WriteAppliedYieldChangesAsync(
+        SqlConnection connection, SqlTransaction transaction, RateAuditMetadata audit,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+;WITH ChangedPrices AS
+(
+    SELECT DISTINCT planid,category_id,[date] AS StayDate,
+           TRY_CONVERT(decimal(18,4),new_rate) AS Rate,
+           TRY_CONVERT(decimal(18,4),base_rate) AS BaseRate
+    FROM #YieldAppliedWrites
+    WHERE ([Action]=N'INSERT'
+           OR TRY_CONVERT(decimal(18,4),previous_rate) IS NULL
+           OR TRY_CONVERT(decimal(18,4),new_rate) IS NULL
+           OR TRY_CONVERT(decimal(18,4),previous_rate) <> TRY_CONVERT(decimal(18,4),new_rate))
+      AND TRY_CONVERT(decimal(18,4),new_rate) IS NOT NULL
+), ConsecutiveDates AS
+(
+    SELECT *, DATEDIFF(day,CONVERT(date,'20000101'),StayDate) -
+              ROW_NUMBER() OVER
+                (PARTITION BY planid,category_id,Rate,BaseRate ORDER BY StayDate) AS grp
+    FROM ChangedPrices
+), Grouped AS
+(
+    SELECT planid,category_id,Rate,BaseRate,
+           MIN(StayDate) AS date_from, MAX(StayDate) AS date_to
+    FROM ConsecutiveDates
+    GROUP BY planid,category_id,Rate,BaseRate,grp
+)
+INSERT INTO dbo.RateUploadHistoryTB
+ (hotel_id,batch_id,created_at,user_id,updated_by,pc,ip,
+  plan_id,plan_name,category_id,room_type,days_text,[source],date_from,date_to,
+  base_rate_set,currency,rate)
+SELECT @hotel,@batch,GETDATE(),@userId,@userName,@pc,@ip,
+       g.planid,ISNULL(cp.planname,N''),g.category_id,
+       ISNULL(cr.description,ISNULL(cp.category,N'')),N'',
+       LEFT(@source+N' / '+@action+N' / '+
+            CASE WHEN NULLIF(LTRIM(RTRIM(cp.parent_planid)),N'') IS NULL
+                 THEN N'SimpleDailyRate' ELSE N'DerivedDailyRate' END,200),
+       g.date_from,g.date_to,g.BaseRate,ISNULL(cp.currency,N''),g.Rate
+FROM Grouped g
+OUTER APPLY
+(
+    SELECT TOP(1) cp.planname,cp.category,cp.currency,cp.parent_planid
+    FROM dbo.category_plan cp
+    WHERE cp.hotel_id=@hotel
+      AND CONVERT(nvarchar(50),cp.localplanid)=g.planid
+      AND CONVERT(nvarchar(100),cp.category_id)=g.category_id
+    ORDER BY cp.id DESC
+) cp
+OUTER APPLY
+(
+    SELECT TOP(1) r.description
+    FROM dbo.create_room r
+    WHERE r.hotel_id=@hotel
+      AND CONVERT(nvarchar(100),r.localcategoryid)=g.category_id
+) cr;";
+
+        await using var cmd = new SqlCommand(sql, connection, transaction) { CommandTimeout = 180 };
+        cmd.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = audit.HotelId;
+        cmd.Parameters.Add("@batch", SqlDbType.UniqueIdentifier).Value = audit.BatchId;
+        cmd.Parameters.Add("@userId", SqlDbType.NVarChar, 50).Value = audit.UserId ?? "";
+        cmd.Parameters.Add("@userName", SqlDbType.NVarChar, 200).Value = audit.UserName ?? "";
+        cmd.Parameters.Add("@pc", SqlDbType.NVarChar, 200).Value =
+            RateAuditClientInfo.NormalizePc(audit.ClientIp, audit.PcName);
+        cmd.Parameters.Add("@ip", SqlDbType.NVarChar, 100).Value = audit.ClientIp ?? "";
+        cmd.Parameters.Add("@source", SqlDbType.NVarChar, 60).Value = audit.SourcePage ?? "YieldManagement";
+        cmd.Parameters.Add("@action", SqlDbType.NVarChar, 60).Value = audit.ActionType ?? "ApplyRule";
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<List<ActiveYieldRule>> LoadActiveRulesAsync(
         SqlConnection connection,
         string hotelId,
@@ -919,7 +1033,10 @@ WHERE hotel_id=@hotel AND batch_id=@batch AND rate IS NOT NULL;", connection, tr
         const string sql = @"
 SELECT ID,ISNULL(Priority,0) AS Priority,StayFrom,StayTo,ISNULL(ApplicableDaysCsv,'') AS ApplicableDaysCsv,
        ISNULL(RuleType,'') AS RuleType,ISNULL(ChangeType,'') AS ChangeType,ISNULL(ChangeValue,0) AS ChangeValue,
-       ISNULL(ChangeUnit,'') AS ChangeUnit,ThresholdMin,ThresholdMax,OccupancyMin,OccupancyMax,TimeFrom,TimeTo
+       ISNULL(ChangeUnit,'') AS ChangeUnit,ThresholdMin,ThresholdMax,OccupancyMin,OccupancyMax,TimeFrom,TimeTo,
+       ISNULL(ApplyToRatePlan,1) AS ApplyToRatePlan,
+       ISNULL(ApplyToBulkUpdate,0) AS ApplyToBulkUpdate,
+       ISNULL(ApplyToCellEdit,0) AS ApplyToCellEdit
 FROM dbo.YieldRulesTB
 WHERE hotel_id=@hotel AND ISNULL(IsActive,0)=1 AND CAST(StayTo AS date)>=@today
 ORDER BY ISNULL(Priority,0),ID;
@@ -949,6 +1066,9 @@ WHERE y.hotel_id=@hotel AND ISNULL(y.IsActive,0)=1;";
             {
                 Id = ToInt(reader["ID"]),
                 Priority = ToInt(reader["Priority"]),
+                ApplyToRatePlan = ToBool(reader["ApplyToRatePlan"]),
+                ApplyToBulkUpdate = ToBool(reader["ApplyToBulkUpdate"]),
+                ApplyToCellEdit = ToBool(reader["ApplyToCellEdit"]),
                 StayFrom = stayFrom.Value,
                 StayTo = stayTo.Value,
                 Days = ParseDays(DbText(reader["ApplicableDaysCsv"])).ToHashSet(),
@@ -1199,9 +1319,51 @@ ORDER BY yd.d,ci.localcategoryid;";
         return new YieldOccupancyPoint(sellable, sold, percent);
     }
 
+    private sealed record YieldOriginState(string Source, bool AppliedRule);
+
+    private static async Task<Dictionary<string, YieldOriginState>> LoadYieldOriginsAsync(
+        SqlConnection connection, string hotelId, DateTime from, DateTime to,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+;WITH x AS (
+ SELECT CAST(dr.[date] AS date) AS StayDate,
+        CONVERT(nvarchar(100),dr.category_id) AS CategoryId,
+        CONVERT(nvarchar(50),dr.planid) AS PlanId,
+        CASE WHEN NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL
+             THEN 0 ELSE 1 END AS AppliedRule,
+        CASE TRY_CONVERT(int,dr.uploadfrom)
+             WHEN 0 THEN N'RatePlan'
+             WHEN 1 THEN N'BulkUpdate'
+             WHEN 2 THEN N'YieldApplied'
+             WHEN 3 THEN N'CellEdit'
+             ELSE N'Unknown'
+        END AS RateSource,
+        ROW_NUMBER() OVER (PARTITION BY CAST(dr.[date] AS date),dr.category_id,dr.planid
+                           ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
+                                    TRY_CONVERT(datetime,dr.currentdate) DESC,dr.id DESC) AS rn
+ FROM dbo.datesrates dr
+ WHERE dr.hotel_id=@hotel AND dr.[date]>=@from AND dr.[date]<DATEADD(day,1,@to)
+)
+SELECT StayDate,CategoryId,PlanId,AppliedRule,RateSource FROM x WHERE rn=1;";
+        var result = new Dictionary<string, YieldOriginState>(StringComparer.OrdinalIgnoreCase);
+        await using var cmd = new SqlCommand(sql, connection) { CommandTimeout = 60 };
+        cmd.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@from", SqlDbType.Date).Value = from.Date;
+        cmd.Parameters.Add("@to", SqlDbType.Date).Value = to.Date;
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var key = RateTargetKey(Convert.ToDateTime(reader["StayDate"]),
+                DbText(reader["CategoryId"]), DbText(reader["PlanId"]));
+            result[key] = new YieldOriginState(DbText(reader["RateSource"]), ToInt(reader["AppliedRule"]) != 0);
+        }
+        return result;
+    }
+
     // Read the actual pre-Yield selling price for each stay date, room category,
-    // and rate plan. A manual Availability override has uploadfrom=1 but all
-    // valid existing daily rates (including bulk) must beat the plan default.
+    // and rate plan. Any existing daily rate (source 0, 1, 2 or 3)
+    // wins over category_plan; category_plan is only used for missing rows.
     // Once Yield was applied, baserate was saved as the pre-Yield selling price.
     private static async Task<Dictionary<string, decimal>> LoadDateSpecificBaseRatesAsync(
         SqlConnection connection,
@@ -1224,8 +1386,8 @@ ORDER BY yd.d,ci.localcategoryid;";
                PARTITION BY CAST(dr.[date] AS date),
                             CONVERT(nvarchar(100),dr.category_id),
                             CONVERT(nvarchar(50),dr.planid)
-               ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom)=1 THEN 0 ELSE 1 END,
-                        TRY_CONVERT(datetime,dr.currentdate) DESC
+               ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
+                        TRY_CONVERT(datetime,dr.currentdate) DESC,dr.id DESC
            ) AS rn
     FROM dbo.datesrates dr
     WHERE dr.hotel_id=@hotel
@@ -1233,7 +1395,8 @@ ORDER BY yd.d,ci.localcategoryid;";
       AND dr.[date]<DATEADD(day,1,@to)
 )
 SELECT stay_date,category_id,planid,
-       CASE WHEN active_yield_rule IS NOT NULL THEN NULLIF(original_base_rate,0)
+       CASE WHEN active_yield_rule IS NOT NULL
+                 THEN COALESCE(NULLIF(original_base_rate,0), daily_rate)
             ELSE daily_rate END AS pre_yield_rate
 FROM Rates
 WHERE rn=1;";
@@ -1398,6 +1561,8 @@ SELECT category_id,planid,effective_rate FROM x WHERE rn=1;";
         if (string.IsNullOrWhiteSpace(request.RuleName)) return "Rule name is required.";
         if (request.RuleName.Trim().Length > 50) return "Rule name cannot exceed 50 characters.";
         if (request.Priority < 0 || request.Priority > 999) return "Priority must be between 0 and 999.";
+        if (!request.ApplyToRatePlan && !request.ApplyToBulkUpdate && !request.ApplyToCellEdit)
+            return "Select at least one rate source for Yield.";
 
         if (!DateTime.TryParseExact(request.StayFrom, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out stayFrom) ||
             !DateTime.TryParseExact(request.StayTo, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out stayTo))
@@ -1484,6 +1649,9 @@ SELECT category_id,planid,effective_rate FROM x WHERE rn=1;";
         command.Parameters.Add("@timeFrom", SqlDbType.Time).Value = timeFrom.HasValue ? (object)timeFrom.Value : DBNull.Value;
         command.Parameters.Add("@timeTo", SqlDbType.Time).Value = timeTo.HasValue ? (object)timeTo.Value : DBNull.Value;
         command.Parameters.Add("@active", SqlDbType.Bit).Value = request.IsActive;
+        command.Parameters.Add("@applyPlan", SqlDbType.Bit).Value = request.ApplyToRatePlan;
+        command.Parameters.Add("@applyBulk", SqlDbType.Bit).Value = request.ApplyToBulkUpdate;
+        command.Parameters.Add("@applyCell", SqlDbType.Bit).Value = request.ApplyToCellEdit;
         command.Parameters.Add("@createdBy", SqlDbType.NVarChar, 100).Value = createdBy ?? string.Empty;
     }
 

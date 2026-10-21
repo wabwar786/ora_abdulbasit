@@ -330,6 +330,9 @@
         setValue("#yield-time-from", "");
         setValue("#yield-time-to", "");
         setChecked("#yieldIsActive", true);
+        setChecked("#yieldApplyRatePlan", true);
+        setChecked("#yieldApplyBulk", false);
+        setChecked("#yieldApplyCell", false);
         qa("#yieldDays input").forEach(x => { x.checked = true; });
         qa(".yield-plan-choice,.yield-room-choice").forEach(x => { x.checked = false; });
         setText("#yieldEditorMode", "NEW RULE");
@@ -458,6 +461,9 @@
             setValue("#yield-time-from", r.timeFrom ?? r.TimeFrom ?? "");
             setValue("#yield-time-to", r.timeTo ?? r.TimeTo ?? "");
             setChecked("#yieldIsActive", r.isActive ?? r.IsActive);
+            setChecked("#yieldApplyRatePlan", r.applyToRatePlan ?? r.ApplyToRatePlan ?? true);
+            setChecked("#yieldApplyBulk", r.applyToBulkUpdate ?? r.ApplyToBulkUpdate ?? false);
+            setChecked("#yieldApplyCell", r.applyToCellEdit ?? r.ApplyToCellEdit ?? false);
             setCheckedValues("#yieldDays input", r.days ?? r.Days ?? []);
             setCheckedValues(".yield-plan-choice", r.ratePlanIds ?? r.RatePlanIds ?? []);
             setCheckedValues(".yield-room-choice", r.roomTypeIds ?? r.RoomTypeIds ?? []);
@@ -530,7 +536,10 @@
             occupancyMax: nullableNumber("#yieldOccMax"),
             timeFrom: q("#yield-time-from").value,
             timeTo: q("#yield-time-to").value,
-            isActive: q("#yieldIsActive").checked
+            isActive: q("#yieldIsActive").checked,
+            applyToRatePlan: q("#yieldApplyRatePlan").checked,
+            applyToBulkUpdate: q("#yieldApplyBulk").checked,
+            applyToCellEdit: q("#yieldApplyCell").checked
         };
     }
 
@@ -543,6 +552,8 @@
         if (!request.days.length) return showFormMessage("Select at least one applicable day.");
         if (!request.ratePlanIds.length) return showFormMessage("Select at least one rate plan.");
         if (!request.roomTypeIds.length) return showFormMessage("Select at least one room type.");
+        if (!request.applyToRatePlan && !request.applyToBulkUpdate && !request.applyToCellEdit)
+            return showFormMessage("Select at least one rate source for Yield.");
         if (["OCC_PCT_PROPERTY", "OCC_PCT_ROOMTYPE", "CLOSE_AT_OCCUPANCY"].includes(request.ruleType) &&
             (request.occupancyMin === null || request.occupancyMax === null))
             return showFormMessage("Enter both occupancy percentage values.");

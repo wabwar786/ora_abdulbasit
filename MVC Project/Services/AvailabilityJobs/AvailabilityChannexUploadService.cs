@@ -60,7 +60,7 @@ internal sealed class AvailabilityChannexUploadService
     /// Materialises the effective rate calendar used by Inventory and Channex.
     /// This intentionally runs without a long explicit SQL transaction: each set-based
     /// statement commits quickly, so Inventory reads are not held behind Save Rates.
-    /// Manual plans keep date-specific uploadfrom=1 overrides. Derived plans always follow
+    /// Manual plans preserve uploadfrom=1 (Bulk), 2 (Yield), 3 (Cell) overrides. Derived plans always follow
     /// the effective parent daily rate, falling back to the parent's category_plan rate.
     /// </summary>
     public async Task PrepareRateRowsAsync(
@@ -386,7 +386,7 @@ JOIN dbo.category_plan cp
 WHERE dr.hotel_id=@hotel
   AND CONVERT(nvarchar(50),dr.planid)=@plan
   AND dr.[date] BETWEEN @from AND @to
-  AND ISNULL(dr.uploadfrom,0)<>1
+  AND ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
   AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL
   {categoryFilter};
 
@@ -433,15 +433,17 @@ WHERE cp.hotel_id=@hotel
         command.Transaction = tx;
         try
         {
-            if (audit != null)
-                await RateAuditContext.CaptureDailyAsync(connection, audit, fromDate, toDate,
-                    cancellationToken, tx,
-                    new[] { localPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            // Background jobs must ALWAYS identify their write in rate history.
+            var effectiveAudit = audit ?? RateAuditMetadata.Create(
+                hotelId, "RatePreparation", "ManualPlanDefaultRefresh",
+                "SYSTEM", "Rate Preparation", "", Environment.MachineName);
+            await RateAuditContext.CaptureDailyAsync(connection, effectiveAudit, fromDate, toDate,
+                cancellationToken, tx,
+                new[] { localPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
             await command.ExecuteNonQueryAsync(cancellationToken);
-            if (audit != null)
-                await RateAuditContext.WriteDailyAsync(connection, audit, fromDate, toDate,
-                    cancellationToken, tx,
-                    new[] { localPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            await RateAuditContext.WriteDailyAsync(connection, effectiveAudit, fromDate, toDate,
+                cancellationToken, tx,
+                new[] { localPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
             await tx.CommitAsync(cancellationToken);
         }
         catch { await tx.RollbackAsync(CancellationToken.None); throw; }
@@ -503,7 +505,7 @@ OUTER APPLY
       AND CONVERT(nvarchar(100),drP.category_id)=CONVERT(nvarchar(100),child.category_id)
       AND drP.[date]=D.[date]
       AND TRY_CONVERT(decimal(18,2),drP.rate) IS NOT NULL
-    ORDER BY CASE WHEN ISNULL(drP.uploadfrom,0)=1 THEN 0 ELSE 1 END,
+    ORDER BY CASE WHEN TRY_CONVERT(int,drP.uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
              CASE WHEN ISNULL(drP.upload,0)=0 THEN 0 ELSE 1 END
 ) ParentDaily
 WHERE child.hotel_id=@hotel
@@ -527,9 +529,8 @@ JOIN #EffectiveDerived e
 WHERE dr.hotel_id=@hotel
   AND CONVERT(nvarchar(50),dr.planid)=CONVERT(nvarchar(50),@child)
   AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL
-  AND (ISNULL(dr.uploadfrom,0)<>1
-       OR (NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.username))), '') IS NULL
-           AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.systemName))), '') IS NULL));
+  -- Preserve every explicit date override, including derived-plan cells.
+  AND ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0;
 
 INSERT INTO dbo.datesrates
 (hotel_id,planid,category_id,[date],baserate,rate,upload,uploadfrom,restr_upload,restr_uploadfrom,currentdate)
@@ -567,15 +568,16 @@ DROP TABLE #EffectiveDerived;";
         command.Transaction = tx;
         try
         {
-            if (audit != null)
-                await RateAuditContext.CaptureDailyAsync(connection, audit, fromDate, toDate,
-                    cancellationToken, tx,
-                    new[] { childLocalPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            var effectiveAudit = audit ?? RateAuditMetadata.Create(
+                hotelId, "RatePreparation", "DerivedPlanRefresh",
+                "SYSTEM", "Rate Preparation", "", Environment.MachineName);
+            await RateAuditContext.CaptureDailyAsync(connection, effectiveAudit, fromDate, toDate,
+                cancellationToken, tx,
+                new[] { childLocalPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
             await command.ExecuteNonQueryAsync(cancellationToken);
-            if (audit != null)
-                await RateAuditContext.WriteDailyAsync(connection, audit, fromDate, toDate,
-                    cancellationToken, tx,
-                    new[] { childLocalPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
+            await RateAuditContext.WriteDailyAsync(connection, effectiveAudit, fromDate, toDate,
+                cancellationToken, tx,
+                new[] { childLocalPlanId.ToString(CultureInfo.InvariantCulture) }, categories);
             await tx.CommitAsync(cancellationToken);
         }
         catch { await tx.RollbackAsync(CancellationToken.None); throw; }

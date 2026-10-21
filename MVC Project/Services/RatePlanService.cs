@@ -1130,7 +1130,7 @@ OUTER APPLY
       AND CONVERT(nvarchar(100),dr.category_id)=CONVERT(nvarchar(100),cp.category_id)
       AND dr.[date]=@date
       AND TRY_CONVERT(decimal(18,2),dr.rate) IS NOT NULL
-    ORDER BY CASE WHEN ISNULL(dr.uploadfrom,0)=1 THEN 0 ELSE 1 END,
+    ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
              CASE WHEN ISNULL(dr.upload,0)=0 THEN 0 ELSE 1 END
 ) DailyRate
 WHERE cp.hotel_id=@hotel AND cp.planname=@plan;", connection, transaction);
@@ -1345,7 +1345,9 @@ JOIN dbo.category_plan cp
 WHERE dr.hotel_id=@hotel
   AND dr.[date]>=@today
   AND cp.parent_planid IS NULL
-  AND ISNULL(dr.uploadfrom,0)<>1;", connection, transaction);
+  AND ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
+  -- Do not overwrite a one-time Yield adjusted row (even after rule disable).
+  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL;", connection, transaction);
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1372,7 +1374,9 @@ JOIN dbo.category_plan cp
 WHERE dr.hotel_id=@hotel
   AND CONVERT(nvarchar(50),dr.planid)=@plan
   AND dr.[date]>=@today
-  AND ISNULL(dr.uploadfrom,0)<>1;", connection, transaction);
+  AND ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
+  -- Do not overwrite a one-time Yield adjusted row (even after rule disable).
+  AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL;", connection, transaction);
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
         command.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = localPlanId.ToString(CultureInfo.InvariantCulture);
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
@@ -1399,7 +1403,7 @@ FROM dbo.category_plan
 WHERE hotel_id=@hotel AND planname=@parentPlanName AND localplanid IS NOT NULL;
 IF (@parentLocalPlanId IS NULL) RETURN;
 
--- Preserve explicit (uploadfrom=1) Availability overrides and all restriction metadata.
+-- Preserve explicit (uploadfrom IN (1,2,3)) Bulk, Yield, Cell overrides and all restriction metadata.
 -- Generated derived dates are marked uploadfrom=0 so they can be recalculated.
 UPDATE dr
 SET dr.baserate=CONVERT(varchar(32),TRY_CONVERT(decimal(18,2),drP.rate)),
@@ -1424,9 +1428,8 @@ JOIN dbo.category_plan cpC
 WHERE dr.hotel_id=@hotel
   AND CONVERT(nvarchar(50),dr.planid)=CONVERT(nvarchar(50),@child)
   AND dr.[date]>=@today
-  AND (ISNULL(dr.uploadfrom,0)<>1
-       OR (NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.username))), '') IS NULL
-           AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),dr.systemName))), '') IS NULL))
+  -- Any Bulk, Yield or Cell price is protected from default recalculation.
+  AND ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
   AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))), '') IS NULL;
 
 INSERT INTO dbo.datesrates
@@ -1864,7 +1867,7 @@ WHERE dr.hotel_id=@hotel
             var list = string.Join(",", sorted.Select((_, i) => "@p" + i));
             var exceptional = onlyExceptional ? @"
 AND (
-   ISNULL(dr.uploadfrom,0)=1
+   TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3)
    OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NOT NULL
    OR cp.id IS NULL
    OR TRY_CONVERT(decimal(18,4),dr.rate) IS NULL

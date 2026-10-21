@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Threading.Channels;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Services;
@@ -14,7 +14,9 @@ public sealed record AvailabilityAutoUpdateJob(
     DateTime StartDate,
     DateTime EndDate,
     string CategoryId,
-    bool RunReservationYield = false);
+    bool RunReservationYield = false,
+    bool YieldOnly = false,
+    string YieldSource = "NewReservation");
 
 public interface IAvailabilityAutoUpdateQueue
 {
@@ -59,6 +61,7 @@ public sealed class AvailabilityAutoUpdateWorker : BackgroundService, IAvailabil
     public bool Queue(AvailabilityAutoUpdateJob job)
     {
         if (job == null || string.IsNullOrWhiteSpace(job.HotelId)) return false;
+        if (job.YieldOnly && !job.RunReservationYield) return false;
         return _queue.Writer.TryWrite(job);
     }
 
@@ -78,8 +81,8 @@ public sealed class AvailabilityAutoUpdateWorker : BackgroundService, IAvailabil
                     {
                         var audit = RateAuditMetadata.Create(
                             job.HotelId,
-                            "YieldManagement/NewReservation",
-                            "ReservationCreated",
+                            "YieldManagement/" + job.YieldSource,
+                            job.YieldSource,
                             job.UserId,
                             job.UserName,
                             job.ClientIp);
@@ -101,6 +104,11 @@ public sealed class AvailabilityAutoUpdateWorker : BackgroundService, IAvailabil
                             job.HotelId, job.StartDate, job.EndDate);
                     }
                 }
+
+                // The legacy API and manual rate edits have their own availability/channel
+                // refresh; only evaluate Yield for these jobs.
+                if (job.YieldOnly)
+                    continue;
 
                 // Continue with the existing availability / Channex refresh.
                 await HotelAvailabilityJobCoordinator.RunAsync(

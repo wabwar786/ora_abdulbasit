@@ -2702,3 +2702,89 @@
     .yieldm-editor .yieldm-multi-menu label + label {
         border-top: 1px solid #f1f4f7;
     }
+
+/* =========================================================
+   Yield rule: compact rate-source choices (UI-only)
+   Preserve the three existing IDs used by yield-management.js.
+   ========================================================= */
+.yieldm-editor .yieldm-rate-sources-section {
+    padding-block: 12px 14px;
+}
+
+.yieldm-editor .yieldm-rate-source-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    width: 100%;
+    max-width: 900px;
+    margin-top: 4px;
+}
+
+.yieldm-editor .yieldm-rate-source-option {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 11px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 11px 14px;
+    margin: 0;
+    color: #29425d;
+    background: #ffffff;
+    border: 1px solid #d1deeb;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+.yieldm-editor .yieldm-rate-source-option:hover {
+    background: #f7faff;
+    border-color: #95b7d9;
+}
+
+.yieldm-editor .yieldm-rate-source-option:has(input:checked) {
+    background: #edf5ff;
+    border-color: #7ba8dc;
+}
+
+.yieldm-editor .yieldm-rate-source-option:focus-within {
+    outline: 2px solid #2d6cad;
+    outline-offset: 2px;
+}
+
+.yieldm-editor .yieldm-rate-source-option input[type="checkbox"] {
+    appearance: auto;
+    display: block;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    min-height: 18px;
+    max-height: 18px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    accent-color: #1b61ac;
+    cursor: pointer;
+}
+
+.yieldm-editor .yieldm-rate-source-option-name {
+    display: inline-block;
+    min-width: 0;
+    color: inherit;
+}
+
+@media (max-width: 760px) {
+    .yieldm-editor .yieldm-rate-source-options {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        max-width: none;
+    }
+    .yieldm-editor .yieldm-rate-source-option {
+        min-height: 44px;
+        padding: 10px 12px;
+    }
+}

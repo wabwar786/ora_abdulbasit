@@ -243,7 +243,6 @@ public sealed class YieldManagementController : Controller
             .ThenBy(x => x.Category)
             .ToList();
     }
-
     private string SessionValue(string key) => HttpContext.Session.GetString(key)?.Trim() ?? string.Empty;
     private string ClientIp() => HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
 }

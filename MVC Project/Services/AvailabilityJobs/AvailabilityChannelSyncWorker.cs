@@ -187,9 +187,9 @@ public sealed class AvailabilityChannelSyncWorker : BackgroundService, IAvailabi
 
     private async Task ProcessYieldRulesAsync(CancellationToken stoppingToken)
     {
-        // Reuse this already-registered hosted worker so Yield Management needs no new
-        // Program.cs registration. Active rules are re-evaluated frequently against live
-        // reservations, allowing a reservation/cancellation to change the rate automatically.
+        // Periodic full-hotel Yield reconciliation is a safety net, not the
+        // reservation-triggered path. New Reservation and manual edits still queue
+        // prompt evaluations in AvailabilityAutoUpdateWorker.
         var service = new YieldManagementService(
             _configuration,
             _hotelClock,
@@ -240,7 +240,7 @@ public sealed class AvailabilityChannelSyncWorker : BackgroundService, IAvailabi
 
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(40), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
