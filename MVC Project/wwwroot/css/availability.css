@@ -7,7 +7,7 @@
     --inv-blue-dark: #214368;
     --inv-orange: #f5a623;
     --inv-orange-dark: #e59612;
-    --inv-weekend: #a8e27c;
+    --inv-weekend: #ebf5ff;
     --inv-block: #ffccc7;
     --inv-yield: #fff7d0;
     --inv-missing: #f5f5f5;
@@ -102,7 +102,9 @@
         border-radius: 6px;
         background: #fff;
         color: #334155;
-        font: 500 11px/36px inherit;
+        font-weight: 500;
+        font-size: 11px;
+        line-height: 36px;
         appearance: none;
         outline: none;
         cursor: pointer
@@ -129,7 +131,9 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    font: 600 10.5px/1 inherit;
+    font-weight: 600;
+    font-size: 10.5px;
+    line-height: 1;
     letter-spacing: .15px;
     white-space: nowrap;
     cursor: pointer
@@ -232,7 +236,9 @@
     align-items: center;
     justify-content: space-between;
     overflow: hidden;
-    font: 500 10.5px/1 inherit;
+    font-weight: 500;
+    font-size: 10.5px;
+    line-height: 1;
     text-align: left
 }
 
@@ -279,7 +285,8 @@
         border: 1px solid #cbd5e1;
         border-radius: 5px;
         padding: 0 8px;
-        font: 500 11px inherit
+        font-weight: 500;
+        font-size: 11px;
     }
 
 .inventory-range-actions {
@@ -295,7 +302,8 @@
         height: 31px;
         padding: 0 12px;
         border-radius: 5px;
-        font: 600 10px inherit;
+        font-weight: 600;
+        font-size: 10px;
         cursor: pointer
     }
 
@@ -413,7 +421,7 @@
 
         .inventory-grid thead th.weekend {
             background: var(--inv-weekend);
-            color: #314a1c
+            color: #536377
         }
 
         .inventory-grid thead th.today {
@@ -457,7 +465,7 @@
     }
 
     .inventory-date-heading.weekend small {
-        color: #4d6a32
+        color: #718097
     }
 
 .sticky-col {
@@ -598,7 +606,8 @@
     background: transparent;
     color: #334155;
     text-align: center;
-    font: 500 10.5px inherit;
+    font-weight: 500;
+    font-size: 10.5px;
     box-sizing: border-box;
     -moz-appearance: textfield
 }
@@ -728,7 +737,8 @@
     border: 0;
     background: transparent;
     color: #4b5b6c;
-    font: 600 9.5px inherit;
+    font-weight: 600;
+    font-size: 9.5px;
     cursor: pointer
 }
 
@@ -884,7 +894,8 @@
     border: 1px solid #cbd5e1;
     border-radius: 5px;
     padding: 0 9px;
-    font: 500 11px inherit;
+    font-weight: 500;
+    font-size: 11px;
     background: #fff
 }
 
@@ -1239,7 +1250,9 @@
     border-radius: 5px;
     background: #fff;
     color: #34475d;
-    font: 500 9.5px/1 inherit;
+    font-weight: 500;
+    font-size: 9.5px;
+    line-height: 1;
     cursor: pointer;
 }
 
@@ -1309,7 +1322,9 @@
     height: 32px;
     padding: 0 13px;
     border-radius: 6px;
-    font: 500 10px/1 inherit;
+    font-weight: 500;
+    font-size: 10px;
+    line-height: 1;
     cursor: pointer;
 }
 
@@ -2174,36 +2189,7 @@ body.availability-log-open, body.inventory-modal-open {
     background: #fff1f2 !important;
 }
 
-/* ======================================================================
-   V9 AVAILABILITY TYPOGRAPHY — CALIBRI ONLY
-   Scoped to Inventory / Availability components so the shared PMS layout
-   keeps its existing font family.
-   ====================================================================== */
-.inventory-page,
-.inventory-page input,
-.inventory-page select,
-.inventory-page button,
-.inventory-page textarea,
-.inventory-toast,
-.inventory-modal-backdrop,
-.inventory-modal-backdrop input,
-.inventory-modal-backdrop select,
-.inventory-modal-backdrop button,
-.inventory-modal-backdrop textarea,
-.inventory-bulk-backdrop,
-.inventory-bulk-backdrop input,
-.inventory-bulk-backdrop select,
-.inventory-bulk-backdrop button,
-.inventory-bulk-backdrop textarea,
-.availability-log-overlay,
-.availability-log-overlay button,
-.availability-log-overlay input,
-.availability-log-overlay select {
-    font-family: Calibri, sans-serif !important;
-}
-
-/* Calibri is naturally narrower/softer than Montserrat, so use slightly
-   stronger weights and cleaner spacing to keep the inventory grid crisp. */
+/* Inventory grid type sizing; family inherited from the master layout. */
 .inventory-page {
     font-size: 11.5px;
     line-height: 1.2;
@@ -2259,9 +2245,8 @@ body.availability-log-open, body.inventory-modal-open {
     font-weight: 400 !important;
 }
 
-/* Preserve the requested compact rate styling: 10.5px + bold. */
+/* Preserve the requested compact rate text styling. */
 .rate-cell-input {
-    font-family: Calibri, sans-serif !important;
     font-size: 10.5px !important;
     font-weight: 700 !important;
     line-height: 1 !important;
@@ -2288,17 +2273,8 @@ body.availability-log-open, body.inventory-modal-open {
 }
 
 .restriction-cell-button {
-    font-family: Calibri, sans-serif !important;
     font-size: 10px !important;
     font-weight: 600 !important;
-}
-
-.inventory-calendar-popover-head strong,
-.inventory-calendar-month-head strong,
-.inventory-calendar-footer,
-.inventory-calendar-day,
-.inventory-calendar-weekdays span {
-    font-family: Calibri, sans-serif !important;
 }
 
 .inventory-calendar-day {
@@ -2311,36 +2287,7 @@ body.availability-log-open, body.inventory-modal-open {
     font-weight: 600 !important;
 }
 
-.inventory-modal,
-.inventory-bulk-modal,
-.availability-log-drawer {
-    font-family: Calibri, sans-serif !important;
-}
-
-/* ======================================================================
-   V10 CALIBRI GRID REFINEMENT
-   - 30px data rows
-   - Availability row background #dbe4ed
-   - lock icon aligned to right and yellow
-   - compact 18px restriction toggle
-   - typography resized for Calibri
-   ====================================================================== */
-
-/* Keep Calibri scoped only to the Inventory / Availability page. */
-.inventory-page,
-.inventory-page input,
-.inventory-page select,
-.inventory-page button,
-.inventory-page textarea,
-.inventory-toast,
-.inventory-modal,
-.inventory-bulk-modal,
-.availability-log-drawer {
-    font-family: Calibri, Arial, sans-serif !important;
-}
-
-/* Calibri reads smaller than Montserrat at the same nominal size, so the
-   screen uses slightly larger text without increasing row height. */
+/* Preserve grid text sizing without increasing row height. */
 .inventory-page {
     font-size: 12.5px !important;
     line-height: 1.1 !important;
@@ -2405,7 +2352,7 @@ body.availability-log-open, body.inventory-modal-open {
     line-height: 29px !important;
 }
 
-/* Rate values: larger Calibri text while remaining compact. */
+/* Rate values remain readable in the compact grid. */
 .rate-cell-input {
     font-size: 11.5px !important;
     font-weight: 700 !important;
@@ -2486,7 +2433,7 @@ body.availability-log-open, body.inventory-modal-open {
     font-size: 11.5px !important;
 }
 
-/* Toolbar typography tuned to Calibri without changing its footprint. */
+/* Toolbar typography tuned without changing its footprint. */
 .inventory-category-control > label {
     font-size: 11px !important;
 }
@@ -2733,4 +2680,63 @@ body.availability-log-open, body.inventory-modal-open {
     .availability-log-compact-source { max-width: 42%; }
     .availability-log-compact-time { font-size: 11.5px; }
     .availability-log-compact-value { font-size: 12.5px; }
+}
+
+
+/* Rate cells: display rounded whole amounts; preserve the decimal input value.
+   The precise saved rate is provided by the cell's native hover title. */
+.inventory-page .rate-value-cell .rate-rounded-display {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+    pointer-events: none;
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1;
+    color: #203247;
+}
+
+.inventory-page .rate-value-cell .rate-cell-input:not(:focus) {
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+.inventory-page .rate-value-cell .rate-cell-input:focus {
+    -webkit-text-fill-color: currentColor !important;
+}
+
+.inventory-page .rate-value-cell .rate-cell-input:focus + .rate-rounded-display {
+    display: none;
+}
+
+.inventory-page .rate-value-cell.state-negative .rate-rounded-display {
+    color: #fff;
+}
+
+.inventory-page .rate-value-cell.is-blocked .rate-rounded-display,
+.inventory-page .rate-value-cell[data-effective-stop-sell="1"] .rate-rounded-display {
+    color: #7a2b24;
+}
+
+.inventory-page .rate-value-cell.rate-dirty-cell .rate-rounded-display {
+    color: #7f1d1d;
+}
+
+
+/* Friday & Saturday: align Availability with the Front Desk Calendar.
+   Keep blocked, yield, missing, past and manually edited rate colours distinct. */
+.inventory-page .inventory-grid thead th.inventory-date-heading.weekend {
+    background: var(--inv-weekend);
+    color: #536377;
+}
+.inventory-page .inventory-grid tbody td.availability-value-cell.weekend,
+.inventory-page .inventory-grid tbody td.net-value-cell.weekend,
+.inventory-page .inventory-grid tbody td.restriction-cell.weekend:not(.stop-sell) {
+    background: var(--inv-weekend) !important;
+}
+.inventory-page .inventory-grid tbody td.rate-value-cell.weekend:not(.is-blocked):not(.is-yield-rate):not(.rate-dirty-cell):not(.state-stop-sell):not(.state-negative):not(.state-rate-yield-change):not(.state-past):not(.state-missing):not(.state-rate-missing) {
+    background: var(--inv-weekend) !important;
 }

@@ -214,6 +214,22 @@
         return text;
     }
 
+    function updateRoundedRateDisplay(input) {
+        const display = input.closest('.rate-value-cell')?.querySelector('.rate-rounded-display');
+        if (!display) return;
+        const rate = Number(input.value);
+        display.textContent = input.value.trim() && Number.isFinite(rate)
+            ? String(Math.round(rate))
+            : input.value;
+        const cell = input.closest('.rate-value-cell');
+        if (cell) {
+            const raw = input.value.trim();
+            const blockedMessage = cell.dataset.effectiveStopSell === '1'
+                ? ' · Blocked by Stop Sell or Booking Cutoff.' : '';
+            cell.title = 'Actual rate: ' + raw + blockedMessage;
+        }
+    }
+
     function getDirtyInputs() {
         return Array.from(page.querySelectorAll('.rate-cell-input:not(:disabled)')).filter(input =>
             String(input.value ?? '').trim() !== String(input.dataset.original ?? '').trim());
@@ -234,6 +250,7 @@
         if (!input || input.disabled) return;
         const clean = sanitizeRateText(input.value);
         if (input.value !== clean) input.value = clean;
+        updateRoundedRateDisplay(input);
         const dirty = String(input.value).trim() !== String(input.dataset.original || '').trim();
         input.classList.toggle('rate-dirty', dirty);
         input.closest('.rate-value-cell')?.classList.toggle('rate-dirty-cell', dirty);
@@ -246,6 +263,7 @@
         if (event.key === 'Escape') {
             event.preventDefault();
             input.value = input.dataset.original || '';
+            updateRoundedRateDisplay(input);
             input.classList.remove('rate-dirty');
             input.closest('.rate-value-cell')?.classList.remove('rate-dirty-cell');
             refreshDirtyState();

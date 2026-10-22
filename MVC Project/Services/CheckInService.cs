@@ -1616,6 +1616,10 @@ WHERE ID=@id
         {
             var guest = await GetGuestSummaryAsync(cn, tx, hotelId, request.RegId, ct);
             if (guest == null) return CheckInOperationResult.Fail("Guest record not found.");
+            // The guest may still have a stale active reservation row after being
+            // archived. Give the archived status precedence for payments.
+            var archivedStatus = await GetArchivedPaymentStatusAsync(cn, tx, hotelId, request.RegId, ct);
+            if (!string.IsNullOrWhiteSpace(archivedStatus)) guest.Status = archivedStatus;
             var totals = await LoadTotalsAsync(cn, tx, hotelId, request.RegId, await IsRoundTotalAsync(cn, tx, hotelId, ct), ct);
             var amount = request.Amount;
             var complementary = request.Method.Equals("Complementary", StringComparison.OrdinalIgnoreCase);
@@ -1649,7 +1653,17 @@ WHERE ID=@id
                     }, ct);
             }
 
-            var updatedTotals = await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct, request.Method);
+            // Archive-only rows may have prior paid totals in PaymentsUpdateTB
+            // but not the original PaymentsLogTB rows. Preserve that baseline.
+            var paymentStatusKey = (guest.Status ?? string.Empty)
+                .Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty);
+            var preserveArchivedBalance = paymentStatusKey.StartsWith("cancel", StringComparison.OrdinalIgnoreCase)
+                || paymentStatusKey.Equals("noshow", StringComparison.OrdinalIgnoreCase);
+            var updatedTotals = await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct, request.Method,
+                paidAfterArchivePayment: preserveArchivedBalance && amount > 0m
+                    ? totals.PaidAmount + amount : null,
+                requireUpdate: preserveArchivedBalance,
+                statusOverride: preserveArchivedBalance ? guest.Status : null);
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
                 "PAYMENT", $"{request.Method}: {amount:0.00}; security={request.RoomSecurity:0.00}", ct);
             await tx.CommitAsync(ct);
@@ -4824,9 +4838,13 @@ ORDER BY id DESC;", cn, tx);
             // scanned once for both GrandTotal and TaxTotal instead of twice.
             await using var cmd = new SqlCommand(@"
 SELECT
-    GrandTotal = ISNULL(p.GrandTotal,0),
+    GrandTotal = CASE WHEN p.GrandTotal IS NULL
+                 THEN COALESCE(pu.GrandTotal, closed.TotalAmount, 0)
+                 ELSE p.GrandTotal END,
     TaxTotal = ISNULL(p.TaxTotal,0),
-    PaidAmount = ISNULL(l.PaidAmount,0),
+    PaidAmount = CASE WHEN p.GrandTotal IS NULL
+                 THEN COALESCE(pu.PaidAmount, l.PaidAmount, 0)
+                 ELSE ISNULL(l.PaidAmount,0) END,
     RoomSecurity = ISNULL(s.RoomSecurity,0),
     AdvancePaid = ISNULL(g.AdvancePaid,0),
     PaymentMethod = ISNULL(u.PaymentMethod,'')
@@ -4863,7 +4881,30 @@ OUTER APPLY
     FROM dbo.PaymentsUpdateTB
     WHERE hotel_id=@hotel AND reg_id=@reg
     ORDER BY id DESC
-) u;", cn, tx)
+) u
+OUTER APPLY
+(
+    SELECT TOP (1)
+        TRY_CONVERT(decimal(18,2), NULLIF(CONVERT(varchar(60),grand_total),'')) AS GrandTotal,
+        TRY_CONVERT(decimal(18,2), NULLIF(CONVERT(varchar(60),paid_amount),'')) AS PaidAmount
+    FROM dbo.PaymentsUpdateTB
+    WHERE hotel_id=@hotel AND reg_id=@reg
+    ORDER BY id DESC
+) pu
+OUTER APPLY
+(
+    SELECT TOP (1) d.TotalAmount
+    FROM
+    (
+        SELECT 1 AS ord, TRY_CONVERT(decimal(18,2), NULLIF(CONVERT(varchar(60),total_amount),'')) AS TotalAmount
+        FROM dbo.CancelledReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg
+        UNION ALL
+        SELECT 2, TRY_CONVERT(decimal(18,2), NULLIF(CONVERT(varchar(60),total_amount),''))
+        FROM dbo.NoShowTB WHERE hotel_id=@hotel AND reg_id=@reg
+    ) d
+    WHERE d.TotalAmount IS NOT NULL
+    ORDER BY d.ord
+) closed;", cn, tx)
             { CommandTimeout = 6 };
             cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
             cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
@@ -6475,11 +6516,33 @@ WHERE NOT EXISTS
         }
     }
 
+    // Only used when recording payment. Cancelled/No-show records may still
+    // have an earlier active copy, but their archived status is authoritative.
+    private static async Task<string> GetArchivedPaymentStatusAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT CASE
+  WHEN EXISTS(SELECT 1 FROM dbo.CancelledReservationsTB
+              WHERE hotel_id=@hotel AND reg_id=@reg) THEN 'Cancelled'
+  WHEN EXISTS(SELECT 1 FROM dbo.NoShowTB
+              WHERE hotel_id=@hotel AND reg_id=@reg) THEN 'No Show'
+  ELSE '' END;";
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+        return Convert.ToString(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
     private async Task<GuestSummary?> GetGuestSummaryAsync(SqlConnection cn,SqlTransaction? tx,string hotelId,string regId,CancellationToken ct)
     {
         foreach(var sql in new[]{
             "SELECT TOP 1 * FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC",
-            "SELECT TOP 1 * FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC"})
+            "SELECT TOP 1 * FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC",
+            // Cancelled and no-show reservations remain eligible for outstanding payments.
+            // Use their archived guest details if the original active row is gone.
+            "SELECT TOP 1 * FROM dbo.CancelledReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC",
+            "SELECT TOP 1 * FROM dbo.NoShowTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC"})
         {
             try
             {
@@ -6488,7 +6551,9 @@ WHERE NOT EXISTS
                 {
                     var dep=DateAny(rd,"DepartureDate")??DateAny(rd,"dept_date");
                     var arr=DateAny(rd,"ArrivalDate");
-                    return new GuestSummary{Name=(S(rd,"GuestName")+" "+S(rd,"LastName")).Trim(),Phone=S(rd,"PhoneNo"),Email=S(rd,"Email"),Arrival=arr.HasValue?FmtLegacyDate(arr.Value):S(rd,"ArrivalDate"),Departure=dep.HasValue?FmtLegacyDate(dep.Value):S(rd,"DepartureDate"),VisitId=S(rd,"visit_id"),Status=S(rd,"res_status"),Complementary=S(rd,"Complementary").Equals("Yes",StringComparison.OrdinalIgnoreCase)||B(rd,"Complementary")};
+                    return new GuestSummary{Name=(S(rd,"GuestName")+" "+S(rd,"LastName")).Trim(),Phone=S(rd,"PhoneNo"),Email=S(rd,"Email"),Arrival=arr.HasValue?FmtLegacyDate(arr.Value):S(rd,"ArrivalDate"),Departure=dep.HasValue?FmtLegacyDate(dep.Value):S(rd,"DepartureDate"),VisitId=string.IsNullOrWhiteSpace(S(rd,"visit_id"))?S(rd,"ID"):S(rd,"visit_id"),Status=sql.Contains("CancelledReservationsTB", StringComparison.Ordinal)
+                        ? "Cancelled" : sql.Contains("NoShowTB", StringComparison.Ordinal)
+                        ? "No Show" : S(rd,"res_status"),Complementary=S(rd,"Complementary").Equals("Yes",StringComparison.OrdinalIgnoreCase)||B(rd,"Complementary")};
                 }
             }
             catch { }
@@ -6727,11 +6792,18 @@ VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@
 
     private async Task<CheckInTotals> UpdatePaymentTotalsAsync(
         SqlConnection cn, SqlTransaction? tx, string hotelId, string regId, CancellationToken ct,
-        string? paymentMethod = null, bool? roundTotalOverride = null)
+        string? paymentMethod = null, bool? roundTotalOverride = null, decimal? paidAfterArchivePayment = null,
+        bool requireUpdate = false, string? statusOverride = null)
     {
         var round = roundTotalOverride ?? await IsRoundTotalAsync(cn, tx, hotelId, ct);
         var totals = await LoadTotalsAsync(cn, tx, hotelId, regId, round, ct);
+        if (paidAfterArchivePayment.HasValue)
+        {
+            totals.PaidAmount = paidAfterArchivePayment.Value;
+            totals.Remaining = Math.Round(totals.GrandTotal - totals.PaidAmount, 2);
+        }
         var guest = await GetGuestSummaryAsync(cn, tx, hotelId, regId, ct);
+        if (guest != null && !string.IsNullOrWhiteSpace(statusOverride)) guest.Status = statusOverride;
         var method=paymentMethod??totals.PaymentMethod??string.Empty;
         const string sql=@"
 MERGE dbo.PaymentsUpdateTB AS target
@@ -6745,7 +6817,13 @@ VALUES(@reg,@arrival,@departure,@now,@name,@grand,@security,@payable,@paid,@rema
         cmd.Parameters.Add("@payable",SqlDbType.VarChar,50).Value=totals.Payable.ToString(CultureInfo.InvariantCulture);cmd.Parameters.Add("@paid",SqlDbType.VarChar,50).Value=totals.PaidAmount.ToString(CultureInfo.InvariantCulture);cmd.Parameters.Add("@remaining",SqlDbType.VarChar,50).Value=totals.Remaining.ToString(CultureInfo.InvariantCulture);
         cmd.Parameters.Add("@method",SqlDbType.VarChar,100).Value=method;cmd.Parameters.Add("@status",SqlDbType.VarChar,50).Value=guest?.Status??string.Empty;cmd.Parameters.Add("@visit",SqlDbType.VarChar,50).Value=guest?.VisitId??string.Empty;cmd.Parameters.Add("@system",SqlDbType.VarChar,150).Value=Environment.MachineName;
         try { await cmd.ExecuteNonQueryAsync(ct); }
-        catch (SqlException ex) { _logger.LogDebug(ex, "PaymentsUpdateTB MERGE failed for {RegId}.", regId); }
+        catch (SqlException ex)
+        {
+            _logger.LogDebug(ex, "PaymentsUpdateTB MERGE failed for {RegId}.", regId);
+            // Cancelled/no-show collection must not commit a payment log unless the
+            // corresponding outstanding balance has also been updated.
+            if (requireUpdate) throw;
+        }
         return totals;
     }
 
