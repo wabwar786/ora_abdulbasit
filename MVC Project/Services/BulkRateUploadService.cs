@@ -515,13 +515,37 @@ OFFSET @offset ROWS FETCH NEXT @size ROWS ONLY;";
         {
             await RateAuditContext.CaptureDailyAsync(connection, audit, firstDate, lastDate,
                 cancellationToken, auditTx, plans, categories);
-            // Snapshot prior price and Yield state so a changed Bulk rate can start a NEW one-time cycle.
+            // Create the temporary table in the outer connection scope (without
+            // parameters). SELECT ... INTO #temp inside a parameterized SqlCommand
+            // runs in sp_executesql scope and the table is dropped when that
+            // command ends, producing SQL error 208 in the later UPDATE.
+            await using (var createPrior = new SqlCommand(@"
+CREATE TABLE #ORA_BulkPriorYield
+(
+    hotel_id nvarchar(50) NOT NULL,
+    category_id nvarchar(100) NOT NULL,
+    planid nvarchar(50) NOT NULL,
+    staydate date NOT NULL,
+    applied_rule nvarchar(50) NULL,
+    previous_rate decimal(18,4) NULL,
+    previous_baseline decimal(18,4) NULL
+);", connection, auditTx))
+            {
+                await createPrior.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Snapshot the old price and Yield state before the existing upsert.
             await using (var prior = new SqlCommand(@"
-SELECT dr.hotel_id,dr.category_id,dr.planid,CAST(dr.[date] AS date) AS staydate,
-       CONVERT(nvarchar(50),dr.yeildruleid) AS applied_rule,
-       TRY_CONVERT(decimal(18,4),dr.rate) AS previous_rate,
-       TRY_CONVERT(decimal(18,4),dr.baserate) AS previous_baseline
-INTO #ORA_BulkPriorYield
+INSERT INTO #ORA_BulkPriorYield
+    (hotel_id, category_id, planid, staydate, applied_rule,
+     previous_rate, previous_baseline)
+SELECT CONVERT(nvarchar(50),dr.hotel_id),
+       CONVERT(nvarchar(100),dr.category_id),
+       CONVERT(nvarchar(50),dr.planid),
+       CAST(dr.[date] AS date),
+       CONVERT(nvarchar(50),dr.yeildruleid),
+       TRY_CONVERT(decimal(18,4),dr.rate),
+       TRY_CONVERT(decimal(18,4),dr.baserate)
 FROM dbo.datesrates dr
 JOIN @Rows src ON src.hotel_id=dr.hotel_id AND src.category_id=dr.category_id
               AND src.planid=dr.planid AND CAST(src.[date] AS date)=CAST(dr.[date] AS date)
@@ -580,7 +604,8 @@ INNER JOIN @Rows AS src
 LEFT JOIN #ORA_BulkPriorYield prior
        ON prior.hotel_id=dr.hotel_id AND prior.category_id=dr.category_id
       AND prior.planid=dr.planid AND prior.staydate=CAST(dr.[date] AS date)
-WHERE dr.hotel_id = @hotel;";
+WHERE dr.hotel_id = @hotel;
+DROP TABLE #ORA_BulkPriorYield;";
 
         await using (var reset = new SqlCommand(resetPendingSql, connection, auditTx)
         {

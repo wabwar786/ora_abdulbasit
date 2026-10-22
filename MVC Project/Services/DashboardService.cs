@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
@@ -8,6 +9,10 @@ namespace Orapmshms.Services;
 
 public sealed class DashboardService : IDashboardService
 {
+    // One in-flight room-type query per hotel, shared by the quick graph and
+    // lower-page analytics, avoids duplicate SQL work on a cold load.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> RoomTypeQueryLocks = new();
+
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;
     private readonly IMemoryCache _cache;
@@ -94,13 +99,8 @@ public sealed class DashboardService : IDashboardService
             new List<DashboardDailyPoint>(),
             "selected-period occupancy");
 
-        var occupancy30LastYearTask = SafeLoadAsync(
-            () => CachedAsync(
-                $"dashboard:occupancy-period-ly:{hotelId}:{rangeKey}",
-                TimeSpan.FromMinutes(2),
-                () => LoadOccupancySeriesAsync(hotelId, rangeStart.AddYears(-1), today.AddYears(-1).AddDays(6), cancellationToken)),
-            new List<DashboardDailyPoint>(),
-            "selected-period last-year occupancy");
+        // Prior-year occupancy is only needed by the lower-page analytics.
+        // /Dashboard/Analytics loads it on demand instead of blocking first paint.
 
         // Keep financial, receivable and exception formulas isolated. This is
         // faster in practice on the Dashboard and, more importantly, one slow
@@ -171,7 +171,6 @@ public sealed class DashboardService : IDashboardService
             operationsTask,
             guestsTask,
             occupancy30Task,
-            occupancy30LastYearTask,
             financialTask,
             reportExtrasTask,
             guestNightsTask,
@@ -186,7 +185,7 @@ public sealed class DashboardService : IDashboardService
         var operations = await operationsTask;
         var guests = await guestsTask;
         var occupancy30 = await occupancy30Task;
-        var occupancy30LastYear = await occupancy30LastYearTask;
+        var occupancy30LastYear = new List<DashboardDailyPoint>();
         var financial = await financialTask;
         var reportExtras = await reportExtrasTask;
         var guestNights = await guestNightsTask;
@@ -388,6 +387,44 @@ ORDER BY MonthNumber, Source;";
         return result;
     }
 
+    public async Task<List<DashboardRoomTypeItem>> GetRoomTypePerformanceAsync(
+        string hotelId,
+        DateTime periodStart,
+        DateTime periodEnd,
+        CancellationToken cancellationToken = default)
+    {
+        hotelId = Clean(hotelId, 50);
+        if (string.IsNullOrWhiteSpace(hotelId))
+            throw new UnauthorizedAccessException("Hotel context is missing.");
+        var start = periodStart.Date;
+        var end = periodEnd.Date;
+        if (start > end || end >= start.AddMonths(6))
+            throw new ArgumentOutOfRangeException(nameof(periodStart), "Select up to six calendar months.");
+
+        var key = $"dashboard:room-types-period:v2:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}";
+        if (_cache.TryGetValue(key, out List<DashboardRoomTypeItem>? hit) && hit is not null)
+            return hit;
+
+        var gate = RoomTypeQueryLocks.GetOrAdd(hotelId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_cache.TryGetValue(key, out hit) && hit is not null)
+                return hit;
+            var rows = await LoadRoomTypesAsync(hotelId, end, cancellationToken, start);
+            ApplyRoomTypeContribution(rows);
+            _cache.Set(key, rows, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
+            });
+            return rows;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public Task<DashboardAnalyticsResult> GetAnalyticsAsync(string hotelId, CancellationToken cancellationToken = default)
     {
         var end = _hotelClock.GetHotelToday(hotelId).Date;
@@ -445,10 +482,7 @@ ORDER BY MonthNumber, Source;";
             "revenue sources");
 
         var roomTypesTask = SafeLoadAsync(
-            () => CachedAsync(
-                $"dashboard:room-types-period:{hotelId}:{rangeKey}",
-                TimeSpan.FromMinutes(5),
-                () => LoadRoomTypesAsync(hotelId, today, cancellationToken, rangeStart)),
+            () => GetRoomTypePerformanceAsync(hotelId, rangeStart, today, cancellationToken),
             new List<DashboardRoomTypeItem>(),
             "room type performance");
 
@@ -3684,6 +3718,9 @@ p AS
       AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
       AND NULLIF(LTRIM(RTRIM(p.room_no)),'') IS NOT NULL
       AND UPPER(LTRIM(RTRIM(p.room_no))) <> 'UNASSIGNED'
+      AND COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)) <= @today
+      AND COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate)) > @start
+      AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) NOT IN ('cancel','cancelled','canceled','no show','noshow','no-show')
 ),
 daily AS
 (
@@ -3702,6 +3739,9 @@ daily AS
     CROSS JOIN d dd
     LEFT JOIN ooo o ON o.category=i.category AND o.d=dd.d
     LEFT JOIN p ON p.category=i.category
+       AND p.arrival_date <= dd.d
+       AND dd.d < p.departure_date
+       AND p.res_status NOT IN ('cancel','cancelled','canceled','no show','noshow','no-show')
     GROUP BY i.category,dd.d,i.Rooms,o.blocked
 ),
 agg AS

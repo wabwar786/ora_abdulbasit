@@ -30,11 +30,11 @@
 
 
 
-    string Money(decimal value) => Model.CurrencySymbol + value.ToString("N2", CultureInfo.InvariantCulture);
+    string Money(decimal value) => Model.CurrencySymbol + " " + value.ToString("N2", CultureInfo.InvariantCulture);
 
 
 
-    string Money0(decimal value) => Model.CurrencySymbol + value.ToString("N0", CultureInfo.InvariantCulture);
+    string Money0(decimal value) => Model.CurrencySymbol + " " + value.ToString("N0", CultureInfo.InvariantCulture);
 
 
 
@@ -158,6 +158,15 @@
 
 
     var roomTotal = Model.RoomStatus.Count;
+
+    var dashboardProfitMargin = Model.RevenueLast30 == 0m ? 0m : (Model.ProfitLast30 * 100m / Model.RevenueLast30);
+    var dashboardExpensePercent = Model.RevenueLast30 == 0m ? 0m : (Model.ExpensesLast30 * 100m / Model.RevenueLast30);
+    var dashboardNightTotal = Math.Max(0m, Convert.ToDecimal(Model.SelectedTotalInventoryNights));
+    string DashboardNightPercentage(decimal count) => dashboardNightTotal == 0m ? "0" : Math.Clamp(count * 100m / dashboardNightTotal, 0m, 100m).ToString("0.##", CultureInfo.InvariantCulture);
+    var dashboardSoldPct = DashboardNightPercentage(Convert.ToDecimal(Model.SelectedSoldRoomNights));
+    var dashboardVacantPct = DashboardNightPercentage(Convert.ToDecimal(Model.SelectedVacantRoomNights));
+    var dashboardBlockedPct = DashboardNightPercentage(Convert.ToDecimal(Model.SelectedBlockedRoomNights));
+
 }
 
 @section Styles {
@@ -170,6 +179,7 @@
      data-room-status-url="@Url.Action("RoomStatus", "Dashboard")"
      data-statistic-url="@Url.Action("StatisticDetails", "Dashboard")"
      data-analytics-url="@Url.Action("Analytics", "Dashboard")"
+     data-room-performance-url="@Url.Action("RoomTypePerformance", "Dashboard")"
      data-yearly-url="@Url.Action("YearlySection", "Dashboard")"
      data-dashboard-date="@todayIso"
      data-hotel-today="@Model.ActualHotelToday.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
@@ -209,18 +219,18 @@
                 </div>
             </div>
 
-            <div class="dashboard-hero-stat">
-                <span>Revenue · today <span class="dashboard-info-badge dashboard-info-inverse" tabindex="0" role="note" aria-label="About Revenue · today: Revenue payments recorded on today's hotel business date." data-info="Revenue payments recorded on today's hotel business date." title="Revenue payments recorded on today's hotel business date."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span>
+            <div class="dashboard-hero-stat" data-info="Revenue payments recorded on today's hotel business date." tabindex="0">
+                <span>Revenue · today </span>
                 <strong>@Money0(Model.RevenueToday)</strong>
                 <small>Today only</small>
             </div>
-            <div class="dashboard-hero-stat">
-                <span>ADR <span class="dashboard-info-badge dashboard-info-inverse" tabindex="0" role="note" aria-label="About ADR: Average Daily Rate: accommodation revenue divided by rooms sold." data-info="Average Daily Rate: accommodation revenue divided by rooms sold." title="Average Daily Rate: accommodation revenue divided by rooms sold."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span>
+            <div class="dashboard-hero-stat" data-info="Average Daily Rate: accommodation revenue divided by rooms sold." tabindex="0">
+                <span>ADR </span>
                 <strong>@Money0(Model.AdrToday)</strong>
                 <small>Accommodation</small>
             </div>
-            <div class="dashboard-hero-stat">
-                <span>RevPAR <span class="dashboard-info-badge dashboard-info-inverse" tabindex="0" role="note" aria-label="About RevPAR: Revenue per Available Room: accommodation revenue divided by sellable rooms." data-info="Revenue per Available Room: accommodation revenue divided by sellable rooms." title="Revenue per Available Room: accommodation revenue divided by sellable rooms."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span>
+            <div class="dashboard-hero-stat" data-info="Revenue per Available Room: accommodation revenue divided by sellable rooms." tabindex="0">
+                <span>RevPAR </span>
                 <strong>@Money0(Model.RevParToday)</strong>
                 <small>Sellable rooms</small>
             </div>
@@ -274,80 +284,109 @@
         </form>
     </section>
 
-    <section class="dashboard-kpis" aria-label="Key figures for @rangeLabel">
-        <button type="button" class="dashboard-kpi dashboard-kpi-blue dashboard-kpi-button" data-dashboard-statistic="revenue">
-            <div class="dashboard-kpi-label">Total Revenue Earned <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Payments received during the date range. Click for transaction details; this is not the same as earned accommodation revenue." title="Payments received during the date range. Click for transaction details; this is not the same as earned accommodation revenue."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.RevenueLast30)</div>
-        </button>
-        <button type="button" class="dashboard-kpi dashboard-kpi-amber dashboard-kpi-button" data-dashboard-statistic="receivables">
-            <div class="dashboard-kpi-label">Receivables <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Unpaid reservation balances for arrivals within the chosen dates. Click for details." title="Unpaid reservation balances for arrivals within the chosen dates. Click for details."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.ReceivablesSelectedPeriod)</div>
-        </button>
-        <button type="button" class="dashboard-kpi dashboard-kpi-indigo dashboard-kpi-button" data-dashboard-statistic="expenses">
-            <div class="dashboard-kpi-label">Total Expenses <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Recorded expenses for the chosen date range. Click to view expense transactions." title="Recorded expenses for the chosen date range. Click to view expense transactions."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.ExpensesLast30)</div>
-        </button>
-        <button type="button" class="dashboard-kpi dashboard-kpi-green dashboard-kpi-button" data-dashboard-statistic="profit">
-            <div class="dashboard-kpi-label">Profit <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Payments less recorded expenses for the chosen dates, not audited net profit. Click for details." title="Payments less recorded expenses for the chosen dates, not audited net profit. Click for details."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.ProfitLast30)</div>
-        </button>
-        <button type="button" class="dashboard-kpi dashboard-kpi-slate dashboard-kpi-button" data-dashboard-statistic="noshow">
-            <div class="dashboard-kpi-label">No-shows <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Reservations marked no-show in the chosen dates. Click to see records." title="Reservations marked no-show in the chosen dates. Click to see records."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.NoShowsLast30</div>
-        </button>
-        <button type="button" class="dashboard-kpi dashboard-kpi-red dashboard-kpi-button" data-dashboard-statistic="cancellations">
-            <div class="dashboard-kpi-label">Cancellations <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Cancelled reservations in the chosen dates. Click to see records." title="Cancelled reservations in the chosen dates. Click to see records."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.CancellationsLast30</div>
-        </button>
-        <div class="dashboard-kpi dashboard-kpi-blue" role="group" aria-label="Total Inventory">
-            <div class="dashboard-kpi-label">Total Room Nights  <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Total room inventory summed over every date in the chosen range (room-nights), not a count of distinct physical rooms." title="Total room inventory summed over every date in the chosen range (room-nights), not a count of distinct physical rooms."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.SelectedTotalInventoryNights.ToString("N0")</div>
+    <div class="dashboard-kpi-workspace">
+    <section class="dashboard-kpis dashboard-kpi-reference" aria-label="Key performance indicators">
+    <div class="dashboard-financial-strip">
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-revenue" data-info="Payments received during the date range. Room rent (NET) is accommodation revenue and is not the same as payments received.">
+            <span class="dashboard-overview-icon dashboard-overview-icon-revenue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-6 4 4 8-9"/><path d="M15 5h6v6"/></svg></span>
+            <span class="dashboard-financial-text">
+                <span class="dashboard-overview-title">Total Revenue</span>
+                <strong class="dashboard-overview-number">@Money0(Model.RevenueLast30)</strong>
+                <span class="dashboard-overview-detail dashboard-revenue-breakdown">
+                    <span class="dashboard-revenue-part">
+                        <span class="dashboard-revenue-label">Room rent (NET)</span>
+                        <span class="dashboard-revenue-amount">@Money0(Model.SelectedAccommodationRevenue)</span>
+                    </span>
+                    <span class="dashboard-revenue-part">
+                        <span class="dashboard-revenue-label">Other (Extras)</span>
+                        <span class="dashboard-revenue-amount">@Money0(Model.SelectedExtrasRevenue)</span>
+                    </span>
+                </span>
+                
+            </span>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-red" role="group" aria-label="Blocked">
-            <div class="dashboard-kpi-label">Blocked <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Unavailable room-nights in the chosen dates. Includes active out-of-order room blocks from the occupancy calculation." title="Unavailable room-nights in the chosen dates. Includes active out-of-order room blocks from the occupancy calculation."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.SelectedBlockedRoomNights.ToString("N0")</div>
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-expense" data-info="Recorded expenses for the chosen date range. Hover for a summary.">
+            <span class="dashboard-overview-icon dashboard-overview-icon-expense" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l6 6 4-4 8 9"/><path d="M15 19h6v-6"/></svg></span>
+            <span class="dashboard-financial-text">
+                <span class="dashboard-overview-title">Total Expenses</span>
+                <strong class="dashboard-overview-number">@Money0(Model.ExpensesLast30)</strong>
+                <span class="dashboard-overview-detail">@(dashboardExpensePercent.ToString("0.#", CultureInfo.InvariantCulture) + "%") of revenue</span>
+                
+            </span>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-teal" role="group" aria-label="Sellable">
-            <div class="dashboard-kpi-label">Sellable <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Inventory room-nights minus blocked room-nights, summed across the chosen dates." title="Inventory room-nights minus blocked room-nights, summed across the chosen dates."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.SelectedSellableRoomNights.ToString("N0")</div>
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-profit @(Model.ProfitLast30 < 0m ? "is-negative" : "")" data-info="Payments less recorded expenses for the chosen dates, not audited net profit. Hover for an explanation.">
+            <span class="dashboard-overview-icon dashboard-overview-icon-profit" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.6-1-1.7-1.5-3-1.5-1.8 0-3 .9-3 2.3 0 3.6 6 1.2 6 4 0 1.5-1.5 2.7-3.4 2.7-1.3 0-2.6-.6-3.3-1.7M12 5v14"/></svg></span>
+            <span class="dashboard-financial-text">
+                <span class="dashboard-overview-title">Profit / (Loss)</span>
+                <strong class="dashboard-overview-number">@Money0(Model.ProfitLast30)</strong>
+                <span class="dashboard-overview-detail">Revenue less expenses</span>
+                @if (Model.RevenueLast30 > 0m) { <span class="dashboard-profit-chip">@(dashboardProfitMargin.ToString("0.#", CultureInfo.InvariantCulture))% margin</span> }
+            </span>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-blue" role="group" aria-label="Sold">
-            <div class="dashboard-kpi-label">Sold <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Booked room-nights in the selected date range, not the number of individual reservations." title="Booked room-nights in the selected date range, not the number of individual reservations."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.SelectedSoldRoomNights.ToString("N0")</div>
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-receivable" data-info="Unpaid reservation balances for arrivals within the chosen dates. Hover for an explanation.">
+            <span class="dashboard-overview-icon dashboard-overview-icon-receivable" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+            <span class="dashboard-financial-text">
+                <span class="dashboard-overview-title">Receivables</span>
+                <strong class="dashboard-overview-number">@Money0(Model.ReceivablesSelectedPeriod)</strong>
+                <span class="dashboard-overview-detail">Outstanding balances</span>
+                
+            </span>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-slate" role="group" aria-label="Vacant">
-            <div class="dashboard-kpi-label">Vacant <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Sellable room-nights not sold in the chosen dates. Each day is clamped at zero." title="Sellable room-nights not sold in the chosen dates. Each day is clamped at zero."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.SelectedVacantRoomNights.ToString("N0")</div>
+    </div>
+    <div class="dashboard-primary-metrics">
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-occupancy-metric" data-info="Booked room-nights divided by sellable room-nights for the chosen dates. Hover for a summary.">
+            <span class="dashboard-occupancy-ring" style="--occupancy-pct:@(Model.OccupancyNext30.ToString("0.#") + "%")" aria-hidden="true"><strong>@(Model.OccupancyNext30.ToString("0.#") + "%")</strong></span>
+            <span class="dashboard-occupancy-text">
+                <span class="dashboard-overview-title">Occupancy</span>
+                <strong>@Model.SelectedSoldRoomNights.ToString("N0") <span>sold of</span> @Model.SelectedSellableRoomNights.ToString("N0") <span>sellable</span></strong>
+                
+            </span>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-indigo" role="group" aria-label="In-house Guests">
-            <div class="dashboard-kpi-label">In-house Guests <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Total guest-nights across the selected dates; one guest staying three nights contributes three." title="Total guest-nights across the selected dates; one guest staying three nights contributes three."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Model.SelectedGuestNights.ToString("N0")</div>
+        <div class="dashboard-rate-panel" role="group" aria-label="Room pricing performance">
+            <div class="dashboard-kpi dashboard-rate-metric" role="group" tabindex="0" data-info="Average Daily Rate: accommodation revenue divided by rooms sold across the selected dates.">
+                <span class="dashboard-overview-title">ADR</span><strong>@Money(Model.SelectedAdr)</strong><small>Per sold room</small>
+            </div>
+            <div class="dashboard-kpi dashboard-rate-metric" role="group" tabindex="0" data-info="Revenue Per Available Room: accommodation revenue divided by sellable room-nights across the chosen dates.">
+                <span class="dashboard-overview-title">RevPAR</span><strong>@Money(Model.SelectedRevPar)</strong><small>Per sellable room</small>
+            </div>
         </div>
-        <button type="button" class="dashboard-kpi dashboard-kpi-blue dashboard-kpi-button" data-dashboard-statistic="occupancy">
-            <div class="dashboard-kpi-label">Occupancy <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Booked room-nights divided by sellable room-nights in the selected dates. Click to see detailed occupancy figures." title="Booked room-nights divided by sellable room-nights in the selected dates. Click to see detailed occupancy figures."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@(Model.OccupancyNext30.ToString("0.#") + "%")</div>
-        </button>
-        <div class="dashboard-kpi dashboard-kpi-teal" role="group" aria-label="Accommodation (NET)">
-            <div class="dashboard-kpi-label">Room Rent (NET) <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Accommodation revenue allocated to room-nights as in the Occupancy Report; not cash collected." title="Accommodation revenue allocated to room-nights as in the Occupancy Report; not cash collected."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.SelectedAccommodationRevenue)</div>
+        <div class="dashboard-kpi dashboard-roomnights-metric" role="group" tabindex="0" data-info="Total room-night inventory over the selected dates; sold, vacant and blocked bars show its composition.">
+            <div class="dashboard-roomnights-heading"><span class="dashboard-overview-title">Room nights</span><strong>@Model.SelectedTotalInventoryNights.ToString("N0")</strong></div>
+            <div class="dashboard-roomnights-track" role="img" aria-label="Sold @Model.SelectedSoldRoomNights.ToString("N0"); vacant @Model.SelectedVacantRoomNights.ToString("N0"); blocked @Model.SelectedBlockedRoomNights.ToString("N0")">
+                <span class="dashboard-roomnights-sold" style="width:@dashboardSoldPct%"></span><span class="dashboard-roomnights-vacant" style="width:@dashboardVacantPct%"></span><span class="dashboard-roomnights-blocked" style="width:@dashboardBlockedPct%"></span>
+            </div>
+            <div class="dashboard-roomnights-key"><span><i class="dashboard-dot-sold"></i>Sold @Model.SelectedSoldRoomNights.ToString("N0")</span><span><i class="dashboard-dot-vacant"></i>Vacant @Model.SelectedVacantRoomNights.ToString("N0")</span><span><i class="dashboard-dot-blocked"></i>Blocked @Model.SelectedBlockedRoomNights.ToString("N0")</span></div>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-blue" role="group" aria-label="Extras (NET)">
-            <div class="dashboard-kpi-label">Extras (NET) <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Extras other than room rent posted during the selected dates. Not cash collections." title="Extras other than room rent posted during the selected dates. Not cash collections."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.SelectedExtrasRevenue)</div>
+    </div>
+    <div class="dashboard-activity-strip">
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-activity-metric dashboard-metric-guests" role="group" tabindex="0" data-info="Guest-nights across the chosen date range, rather than the number of unique guests.">
+            <span class="dashboard-overview-icon dashboard-overview-icon-guests" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6m1 3a5 5 0 0 1 3 5v1"/></svg></span><span class="dashboard-activity-label">In-house Guests</span><strong class="dashboard-activity-number">@Model.SelectedGuestNights.ToString("N0")</strong>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-orange" role="group" aria-label="Tax / VAT">
-            <div class="dashboard-kpi-label">Tax / VAT <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Estimated configured tax on accommodation revenue. Actual invoice tax may differ." title="Estimated configured tax on accommodation revenue. Actual invoice tax may differ."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.SelectedReportTax)</div>
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-activity-metric dashboard-metric-cancel" data-info="Cancelled reservations in the chosen dates. Hover for a summary.">
+            <span class="dashboard-overview-icon dashboard-overview-icon-cancel" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg></span><span class="dashboard-activity-label">Cancellations</span><strong class="dashboard-activity-number">@Model.CancellationsLast30</strong>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-teal" role="group" aria-label="ADR">
-            <div class="dashboard-kpi-label">ADR <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Average Daily Rate: accommodation revenue divided by rooms sold across the selected dates." title="Average Daily Rate: accommodation revenue divided by rooms sold across the selected dates."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.SelectedAdr)</div>
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-activity-metric dashboard-metric-noshow" data-info="Reservations marked no-show in the chosen dates. Hover for a summary.">
+            <span class="dashboard-overview-icon dashboard-overview-icon-noshow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="dashboard-activity-label">No-shows</span><strong class="dashboard-activity-number">@Model.NoShowsLast30</strong>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-indigo" role="group" aria-label="RevPAR">
-            <div class="dashboard-kpi-label">RevPAR <span class="dashboard-info-badge" tabindex="0" role="note" data-info="Revenue Per Available Room: accommodation revenue divided by all sellable room-nights in the selected dates." title="Revenue Per Available Room: accommodation revenue divided by all sellable room-nights in the selected dates."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></div>
-            <div class="dashboard-kpi-value">@Money(Model.SelectedRevPar)</div>
+    </div>
+</section>
+
+    <section class="dashboard-room-performance" aria-labelledby="dashboardPerformanceTitle">
+        <header class="dashboard-room-performance-head">
+            <div>
+                <h2 id="dashboardPerformanceTitle">Room type performance</h2>
+                <p>@rangeLabel · Revenue and occupancy by room type</p>
+            </div>
+            <div class="dashboard-performance-legend" aria-label="Chart series"><span><i class="dashboard-legend-revenue"></i>Revenue (£)</span><span><i class="dashboard-legend-occupancy"></i>Occupancy (%)</span></div>
+        </header>
+        <div id="dashboardRoomPerformanceGraph" class="dashboard-performance-graph" role="group" aria-label="Room type revenue and occupancy for selected dates" aria-live="polite">
+            <div class="dashboard-performance-loading" role="status">Loading room type performance…</div>
+        </div>
+        <div class="dashboard-room-performance-footer">
+            <span id="dashboardPerformanceTotalTypes">— room types</span>
         </div>
     </section>
+    </div>
 
     <div class="dashboard-overview-columns">
         <div class="dashboard-overview-left">
@@ -638,17 +677,17 @@
                 </header>
                 <div class="dashboard-card-body">
                     <div class="dashboard-operations">
-                        <button type="button" class="dashboard-operation" data-dashboard-statistic="checkin"><span>Check-ins Today <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Check-ins on end date: Arrivals and check-ins counted for the hotel business date (today)." data-info="Arrivals and check-ins counted for the hotel business date (today)." title="Arrivals and check-ins counted for the hotel business date (today)."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.ArrivalsToday</strong></button>
-                        <button type="button" class="dashboard-operation" data-dashboard-statistic="checkout"><span>Check-outs Today <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Check-outs on end date: Departures and check-outs counted for the current hotel business date." data-info="Departures and check-outs counted for the current hotel business date." title="Departures and check-outs counted for the current hotel business date."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.DeparturesToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-available" data-dashboard-statistic="available"><span>Available rooms <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Available rooms: Rooms available to sell on the current hotel business date." data-info="Rooms available to sell on the current hotel business date." title="Rooms available to sell on the current hotel business date."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.AvailableRoomsToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-occupied" data-dashboard-statistic="occupied"><span>Occupied rooms <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Occupied rooms: Rooms occupied or sold for the current hotel business date." data-info="Rooms occupied or sold for the current hotel business date." title="Rooms occupied or sold for the current hotel business date."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.RoomsSoldToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-danger" data-dashboard-statistic="blocked"><span>Blocked <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Blocked / OOO: Rooms blocked or out of order on the current hotel business date." data-info="Rooms blocked or out of order on the current hotel business date." title="Rooms blocked or out of order on the current hotel business date."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.BlockedRoomsToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-warning" data-dashboard-statistic="dirty"><span>Dirty rooms <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Dirty rooms: Rooms marked dirty for housekeeping on the current hotel business date." data-info="Rooms marked dirty for housekeeping on the current hotel business date." title="Rooms marked dirty for housekeeping on the current hotel business date."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.DirtyRoomsToday</strong></button>
+                        <button type="button" class="dashboard-operation" data-info="Arrivals and check-ins counted for the hotel business date (today)." data-dashboard-statistic="checkin"><span>Check-ins Today </span><strong>@Model.ArrivalsToday</strong></button>
+                        <button type="button" class="dashboard-operation" data-info="Departures and check-outs counted for the current hotel business date." data-dashboard-statistic="checkout"><span>Check-outs Today </span><strong>@Model.DeparturesToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-available" data-info="Rooms available to sell on the current hotel business date." data-dashboard-statistic="available"><span>Available rooms </span><strong>@Model.AvailableRoomsToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-occupied" data-info="Rooms occupied or sold for the current hotel business date." data-dashboard-statistic="occupied"><span>Occupied rooms </span><strong>@Model.RoomsSoldToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-danger" data-info="Rooms blocked or out of order on the current hotel business date." data-dashboard-statistic="blocked"><span>Blocked </span><strong>@Model.BlockedRoomsToday</strong></button>
+                        <button type="button" class="dashboard-operation dashboard-operation-warning" data-info="Rooms marked dirty for housekeeping on the current hotel business date." data-dashboard-statistic="dirty"><span>Dirty rooms </span><strong>@Model.DirtyRoomsToday</strong></button>
                     </div>
                     <div class="dashboard-mini-stats">
-                        <div><span>In-house guests <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About In-house guests: Guests currently checked in according to the dashboard snapshot." data-info="Guests currently checked in according to the dashboard snapshot." title="Guests currently checked in according to the dashboard snapshot."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.InHouseGuests</strong></div>
-                        <div><span>Average stay <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Average stay: Average length of stay for the dashboard guest population, in nights." data-info="Average length of stay for the dashboard guest population, in nights." title="Average length of stay for the dashboard guest population, in nights."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.AverageStayNights.ToString("0.#") <small>nights</small></strong></div>
-                        <div><span>Repeat guests <span class="dashboard-info-badge" tabindex="0" role="note" aria-label="About Repeat guests: Percentage of dashboard guests identified as returning guests." data-info="Percentage of dashboard guests identified as returning guests." title="Percentage of dashboard guests identified as returning guests."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span></span><strong>@Model.RepeatGuestPercent.ToString("0.#")%</strong></div>
+                        <div data-info="Guests currently checked in according to the dashboard snapshot." tabindex="0"><span>In-house guests </span><strong>@Model.InHouseGuests</strong></div>
+                        <div data-info="Average length of stay for the dashboard guest population, in nights." tabindex="0"><span>Average stay </span><strong>@Model.AverageStayNights.ToString("0.#") <small>nights</small></strong></div>
+                        <div data-info="Percentage of dashboard guests identified as returning guests." tabindex="0"><span>Repeat guests </span><strong>@Model.RepeatGuestPercent.ToString("0.#")%</strong></div>
                     </div>
                 </div>
             </section>
@@ -675,7 +714,6 @@
                     <div id="dashboardBookingsMessage" class="dashboard-bookings-message" role="status" aria-live="polite">Loading booking sources…</div>
                     <svg id="dashboardBookingsChart" class="dashboard-chart dashboard-bookings-chart" viewBox="0 0 560 220" role="img" aria-label="Stacked monthly bookings by source" tabindex="0"></svg>
                     <div id="dashboardBookingsLegend" class="dashboard-bookings-legend" role="group" aria-label="Click booking sources to show or hide them"></div>
-                    <p class="dashboard-bookings-help">Click a source in the legend to hide or show its bars. Year totals remain unchanged.</p>
                     <div class="dashboard-chart-foot dashboard-bookings-summary">
                         <div><span>Bookings in selected year</span><strong id="dashboardBookingsTotal">—</strong></div>
                         <div><span>Top booking source</span><strong id="dashboardBookingsTopSource">—</strong></div>

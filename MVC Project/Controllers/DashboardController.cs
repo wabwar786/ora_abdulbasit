@@ -185,6 +185,36 @@ public sealed class DashboardController : Controller
         }
     }
 
+    // Independent endpoint so the KPI area can display its room-type chart without
+    // waiting for all yearly charts, rate suggestions or lower-page analytics.
+    [HttpGet("/Dashboard/RoomTypePerformance")]
+    public async Task<IActionResult> RoomTypePerformance(
+        string? startDate,
+        string? endDate,
+        CancellationToken cancellationToken = default)
+    {
+        var hotelId = SessionValue("hotel");
+        if (string.IsNullOrWhiteSpace(hotelId))
+            return Unauthorized(new { ok = false, message = "Your session has expired." });
+
+        try
+        {
+            var (start, end) = ResolveDateRange(hotelId, startDate, endDate);
+            var roomTypes = await DashboardService.GetRoomTypePerformanceAsync(
+                hotelId, start, end, cancellationToken);
+            return Json(new { ok = true, roomTypes });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new EmptyResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Room-type performance failed for hotel {HotelId}.", hotelId);
+            return StatusCode(500, new { ok = false, message = "Room-type performance could not be loaded." });
+        }
+    }
+
     [HttpGet("/Dashboard/StatisticDetails")]
     public async Task<IActionResult> StatisticDetails(
         string? type,

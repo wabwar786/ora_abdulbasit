@@ -43,7 +43,7 @@
     function formatChartNumber(value, format) {
         var n = Number(value || 0);
         if (format === 'percent') return n.toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
-        if (format === 'money') return pageCurrency() + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (format === 'money') return pageCurrency() + " " + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
     }
 
@@ -904,7 +904,7 @@
             balance.className = paymentState === 'partial' ? 'dashboard-room-balance-partial' : 'dashboard-room-balance-pending';
             var page = document.querySelector('.dashboard-page');
             var currency = page ? (page.getAttribute('data-currency') || '£') : '£';
-            balance.textContent = currency + Number(row.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (paymentState === 'partial' ? ' part paid' : ' pending');
+            balance.textContent = currency + " " + Number(row.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (paymentState === 'partial' ? ' part paid' : ' pending');
             tip.appendChild(balance);
         } else if (row.state !== 'vacant' && row.state !== 'ooo') {
             var settled = document.createElement('b');
@@ -1175,68 +1175,54 @@
         }
     }
 
+    // No info icons: the entire dashboard card displays its explanation on hover/focus.
     function wireStatisticInfo() {
-        var notes = Array.from(document.querySelectorAll('.dashboard-info-badge'));
-        // A body-level, fixed tooltip is not clipped by Dashboard cards (some
-        // have overflow:hidden), and is reliably above other cards / header.
+        var cards = Array.from(document.querySelectorAll(
+            '.dashboard-kpi[data-info], .dashboard-hero-stat[data-info], .dashboard-operation[data-info], .dashboard-mini-stats [data-info]'));
+        if (!cards.length) return;
         var tip = document.createElement('div');
         tip.className = 'dashboard-info-floating';
         tip.setAttribute('role', 'tooltip');
         tip.hidden = true;
         document.body.appendChild(tip);
-        var active = null;
-        function hide() { tip.hidden = true; active = null; }
+        var current = null;
         function position() {
-            if (!active || tip.hidden) return;
-            var r = active.getBoundingClientRect();
-            var w = tip.offsetWidth, h = tip.offsetHeight;
-            var left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
-            var top = r.top - h - 10;
-            if (top < 8) top = r.bottom + 10;
-            tip.style.left = left + 'px';
-            tip.style.top = top + 'px';
+            if (!current || tip.hidden) return;
+            var rect = current.getBoundingClientRect();
+            var width = tip.offsetWidth, height = tip.offsetHeight;
+            tip.style.left = Math.max(8, Math.min(window.innerWidth - width - 8,
+                rect.left + rect.width / 2 - width / 2)) + 'px';
+            var above = rect.top - height - 10;
+            tip.style.top = (above >= 8 ? above : rect.bottom + 9) + 'px';
         }
-        function show(note) {
+        function show(card) {
             if (document.body.classList.contains('dashboard-calendar-open')) return;
-            var value = note.getAttribute('data-info');
-            if (!value) return;
-            active = note;
-            tip.textContent = value;
+            var info = card.getAttribute('data-info');
+            if (!info) return;
+            current = card;
+            tip.textContent = info;
             tip.hidden = false;
             position();
         }
-        function dismiss() {
-            notes.forEach(function (note) { note.classList.remove('is-open'); });
-            hide();
+        function hide(card) {
+            if (card && card !== current) return;
+            current = null;
+            tip.hidden = true;
         }
-        notes.forEach(function (note) {
-            note.addEventListener('mouseenter', function () { show(note); });
-            note.addEventListener('mouseleave', function () { if (!note.classList.contains('is-open')) hide(); });
-            note.addEventListener('focus', function () { show(note); });
-            note.addEventListener('blur', function () { if (!note.classList.contains('is-open')) hide(); });
-            note.addEventListener('click', function (event) {
-                event.preventDefault(); event.stopPropagation();
-                var wasOpen = note.classList.contains('is-open');
-                dismiss();
-                if (!wasOpen) { note.classList.add('is-open'); show(note); }
-            });
-            note.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault(); event.stopPropagation(); note.click();
-                }
-                if (event.key === 'Escape') { event.stopPropagation(); dismiss(); }
-            });
+        cards.forEach(function (card) {
+            card.addEventListener('mouseenter', function () { show(card); });
+            card.addEventListener('mouseleave', function () { hide(card); });
+            card.addEventListener('focus', function () { show(card); });
+            card.addEventListener('blur', function () { hide(card); });
         });
-        document.addEventListener('click', function (event) {
-            if (!event.target.closest('.dashboard-info-badge')) dismiss();
-        });
-        document.addEventListener('scroll', function () { if (active) position(); }, true);
-        window.addEventListener('resize', position);
+        document.addEventListener('scroll', position, { passive: true, capture: true });
+        window.addEventListener('resize', position, { passive: true });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
     }
 
     function wireStatisticDetails() {
         wireStatisticInfo();
-        document.querySelectorAll('[data-dashboard-statistic]').forEach(function (node) {
+        document.querySelectorAll('.dashboard-operations [data-dashboard-statistic]').forEach(function (node) {
             node.addEventListener('click', function (event) {
                 event.preventDefault();
                 openStatisticModal(node.getAttribute('data-dashboard-statistic') || '');
@@ -1264,7 +1250,7 @@
 
     function money0(value) {
         var number = Number(value || 0);
-        return pageCurrency() + number.toLocaleString(undefined, { maximumFractionDigits: 0 });
+        return pageCurrency() + " " + number.toLocaleString(undefined, { maximumFractionDigits: 0 });
     }
 
     function setHtmlText(id, value) {
@@ -1318,6 +1304,97 @@
             tr.appendChild(progressShareCell(item.sharePercent, 'dashboard-share-revenue'));
             body.appendChild(tr);
         });
+    }
+
+    // The same cached date-range API supplies both revenue and occupancy.
+    // Grouped bars use different scales: occupancy out of 100%, and revenue
+    // relative to the highest room type in the selected period.
+    function renderRoomPerformance(rows) {
+        var graph = document.getElementById('dashboardRoomPerformanceGraph');
+        if (!graph) return;
+        var items = (rows || []).slice().sort(function (a, b) {
+            return Number(b.occupancyNext30 || 0) - Number(a.occupancyNext30 || 0);
+        });
+        graph.replaceChildren();
+        var total = document.getElementById('dashboardPerformanceTotalTypes');
+        if (total) total.textContent = items.length + ' room type' + (items.length === 1 ? '' : 's');
+        if (!items.length) {
+            var empty = document.createElement('p');
+            empty.className = 'dashboard-performance-empty';
+            empty.textContent = 'No room-type data for this date range.';
+            graph.appendChild(empty);
+            return;
+        }
+        var peakRevenue = Math.max(0, ...items.map(function (row) {
+            return Math.max(0, Number(row.revenue || 0));
+        }));
+        items.forEach(function (item) {
+            var occ = Math.max(0, Math.min(100, Number(item.occupancyNext30 || 0)));
+            var revenue = Math.max(0, Number(item.revenue || 0));
+            var rooms = Math.max(0, Number(item.rooms || 0));
+            var name = item.category || 'Uncategorised';
+            var occupancyLabel = occ.toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
+            var detail = name + ' · ' + rooms + ' rooms · Occupancy ' + occupancyLabel
+                + ' · Revenue ' + money0(revenue) + ' · ADR ' + money0(item.adr);
+
+            var column = document.createElement('div');
+            column.className = 'dashboard-performance-column';
+            column.tabIndex = 0;
+            column.setAttribute('role', 'group');
+            column.setAttribute('aria-label', detail);
+            column.title = detail;
+
+            var value = document.createElement('strong');
+            value.className = 'dashboard-performance-column-value';
+            value.textContent = occupancyLabel;
+
+            var track = document.createElement('div');
+            track.className = 'dashboard-performance-column-track';
+            var revenueBar = document.createElement('span');
+            revenueBar.className = 'dashboard-performance-column-fill dashboard-performance-column-revenue';
+            revenueBar.style.height = (peakRevenue > 0 ? revenue / peakRevenue * 100 : 0) + '%';
+            revenueBar.title = name + ': revenue ' + money0(revenue);
+            var occupancyBar = document.createElement('span');
+            occupancyBar.className = 'dashboard-performance-column-fill dashboard-performance-column-occupancy';
+            occupancyBar.style.height = occ + '%';
+            occupancyBar.title = name + ': occupancy ' + occupancyLabel;
+            track.append(revenueBar, occupancyBar);
+
+            var label = document.createElement('span');
+            label.className = 'dashboard-performance-column-name';
+            label.textContent = name;
+            label.title = name;
+            var roomCount = document.createElement('small');
+            roomCount.className = 'dashboard-performance-column-rooms';
+            roomCount.textContent = rooms + ' room' + (rooms === 1 ? '' : 's');
+            column.append(value, track, label, roomCount);
+            graph.appendChild(column);
+        });
+    }
+
+    async function loadRoomPerformance() {
+        var page = document.querySelector('.dashboard-page');
+        var url = page && page.getAttribute('data-room-performance-url');
+        if (!url) return;
+        var period = selectedPeriod();
+        try {
+            var response = await fetch(url + '?startDate=' + encodeURIComponent(period.start)
+                + '&endDate=' + encodeURIComponent(period.end), {
+                credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            var result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.message || 'Could not load room types.');
+            renderRoomPerformance(result.roomTypes || []);
+        } catch (error) {
+            var graph = document.getElementById('dashboardRoomPerformanceGraph');
+            if (graph) {
+                graph.replaceChildren();
+                var message = document.createElement('p');
+                message.className = 'dashboard-performance-empty';
+                message.textContent = error.message || 'Room type performance is unavailable.';
+                graph.appendChild(message);
+            }
+        }
     }
 
     function renderRoomTypes(rows) {
@@ -1377,7 +1454,7 @@
     function pricingMoney(value) {
         var number = Number(value || 0);
         // Preserve pennies in price proposals; round whole amounts for readability.
-        return pageCurrency() + number.toLocaleString(undefined, {
+        return pageCurrency() + " " + number.toLocaleString(undefined, {
             minimumFractionDigits: Math.abs(number - Math.round(number)) < 0.00001 ? 0 : 2,
             maximumFractionDigits: 2
         });
@@ -1607,6 +1684,7 @@
 
             renderRevenueSources(data.revenueSources || []);
             renderRoomTypes(data.roomTypes || []);
+            renderRoomPerformance(data.roomTypes || []);
             renderPrices(data.priceRecommendations || []);
             renderDecisions(data.decisions || []);
 
@@ -1751,7 +1829,9 @@
             });
         });
         var today = document.querySelector('.dashboard-page').getAttribute('data-hotel-today');
-        loadYearlyCharts(Number(String(today || '').slice(0,4)) || new Date().getFullYear());
+        whenDashboardSectionNear('dashboardOccupancyChart', function () {
+            loadYearlyCharts(Number(String(today || '').slice(0,4)) || new Date().getFullYear());
+        });
     }
 
     function drawWhenVisible(elementId, draw) {
@@ -1956,11 +2036,27 @@
         }
     }
 
+    // Load below-fold data only when a chart comes near the viewport. This
+    // avoids five competing report queries during the initial KPI page paint.
+    function whenDashboardSectionNear(elementId, callback) {
+        var node = document.getElementById(elementId);
+        if (!node || !('IntersectionObserver' in window)) {
+            window.setTimeout(callback, 50);
+            return;
+        }
+        var observer = new IntersectionObserver(function (entries) {
+            if (!entries.some(function (entry) { return entry.isIntersecting; })) return;
+            observer.disconnect();
+            callback();
+        }, { rootMargin: '320px 0px' });
+        observer.observe(node);
+    }
+
     function wireBookingsChart() {
         var year = document.getElementById('dashboardBookingsYear');
         if (!year) return;
         year.addEventListener('change', loadBookingsChart);
-        loadBookingsChart();
+        whenDashboardSectionNear('dashboardBookingsChart', loadBookingsChart);
     }
 
     function wireResponsiveCharts() {
@@ -2020,6 +2116,7 @@
         wireResponsiveCharts();
         wireGuestFilters();
         wireStatisticDetails();
+        loadRoomPerformance();
         updateRoomLegend(Array.prototype.map.call(document.querySelectorAll('#dashboardRoomRack [data-room-state]'), function (node) {
             return {
                 state: node.getAttribute('data-room-state') || 'vacant',
@@ -2029,13 +2126,8 @@
         drawWhenVisible('dashboardOccupancyChart', drawOccupancyOnBooks);
         drawWhenVisible('dashboardExceptionChart', drawExceptionChart);
 
-        // Let the live room/guest/financial headline render first, then retrieve
-        // heavier charts and rate analysis without holding up first paint.
-        var startAnalytics = function () { loadAnalytics(); };
-        if ('requestIdleCallback' in window) {
-            window.requestIdleCallback(startAnalytics, { timeout: 500 });
-        } else {
-            window.setTimeout(startAnalytics, 80);
-        }
+        // Pricing/revenue breakdowns are below the fold. Defer their heavy
+        // SQL work while the KPI and room-type chart become interactive.
+        whenDashboardSectionNear('dashboardRoomTypesBody', loadAnalytics);
     });
 })();
