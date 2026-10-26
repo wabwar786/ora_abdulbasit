@@ -38,6 +38,13 @@ public interface IYieldManagementService
         int ruleId,
         CancellationToken cancellationToken = default);
 
+    // Reconsider only Yield-owned daily rates affected by a cancelled booking.
+    // Restore when no active rule still qualifies for the stay date/plan/category.
+    Task<int> RestoreAfterReservationCancellationAsync(
+        string hotelId, DateTime arrival, DateTime departure,
+        string userId, string userName, string ip,
+        CancellationToken cancellationToken = default);
+
     Task<YieldEvaluationResult> EvaluateActiveRulesAsync(
         string hotelId,
         CancellationToken cancellationToken = default, RateAuditMetadata? originatingAudit = null);

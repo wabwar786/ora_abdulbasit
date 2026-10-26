@@ -228,6 +228,13 @@
       if (!roomGroups.has(String(r.categoryId))) roomGroups.set(String(r.categoryId), []);
       roomGroups.get(String(r.categoryId)).push(r);
     }
+    const slimByRow = new Map();
+    const visibleDates = dates.map(iso);
+    for(const b of bookings){
+      if(!b.isSameDayCheckout || !visibleDates.includes(String(b.actualCheckoutDate||'').slice(0,10))) continue;
+      const key=`${b.categoryId}|${String(b.roomNo||'UNASSIGNED').toUpperCase()}`;
+      slimByRow.set(key,(slimByRow.get(key)||0)+1);
+    }
     const unassignedByCat = new Set(bookings.filter(b => !b.roomNo || String(b.roomNo).toUpperCase()==='UNASSIGNED').map(b=>String(b.categoryId)));
 
     let html = `<div class="fdc-date-head"><div class="fdc-rooms-head">Rooms</div>`;
@@ -239,16 +246,16 @@
       const cr=roomGroups.get(cid) || [];
       html += `<div class="fdc-category" data-category="${esc(cid)}"><div class="fdc-category-label" data-collapse="${esc(cid)}"><span class="arrow">${collapsed?'▸':'▾'}</span><span title="${esc(cat.name)}">${esc(cat.name)}</span></div><div class="fdc-category-grid"></div></div>`;
       if (collapsed) continue;
-      for (const r of cr) html += roomRow(r, cat, dates, false);
+      for (const r of cr) html += roomRow(r, cat, dates, false, slimByRow.get(`${cid}|${String(r.roomNo).toUpperCase()}`)||0);
       // Keep one Unassigned lane per category; this is also a drag/drop destination.
-      html += roomRow({roomNo:'UNASSIGNED',categoryId:cid,categoryName:cat.name,condition:'Unassigned'}, cat, dates, true);
+      html += roomRow({roomNo:'UNASSIGNED',categoryId:cid,categoryName:cat.name,condition:'Unassigned'}, cat, dates, true, slimByRow.get(`${cid}|UNASSIGNED`)||0);
     }
     calendar.innerHTML=html;
     placeBars(bookings, blocks, dates);
     updateRangeButton();
   }
 
-  function roomRow(room, cat, dates, unassigned) {
+  function roomRow(room, cat, dates, unassigned, slimCount=0) {
     const dirty=normalizeStatus(room.condition).includes('dirty');
     const councilAssigned=!unassigned && (room.isAssignedToCouncil===true || String(room.isAssignedToCouncil).toLowerCase()==='true');
     const councilStart=dateOnly(room.councilAssignmentStartDate);
@@ -264,7 +271,7 @@
       return true;
     };
     const councilVisible=councilAssigned && dates.some(isCouncilDate);
-    let html=`<div class="fdc-room-row ${unassigned?'unassigned-row':''}" data-room="${esc(room.roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">`;
+    let html=`<div class="fdc-room-row ${unassigned?'unassigned-row':''}" style="--slim-count:${Math.max(0,slimCount)}" data-room="${esc(room.roomNo)}" data-category="${esc(room.categoryId)}" data-category-name="${esc(room.categoryName||cat.name)}">`;
     html += `<div class="fdc-room-label ${dirty?'dirty':''} ${unassigned?'unassigned':''} ${councilVisible?'council-assigned':''}" data-room-label><b>${unassigned?'Unassigned':esc(room.roomNo)}</b></div>`;
     dates.forEach((d,i)=>{
       const dirtyToday=dirty && (!room.dirtyDate || sameDate(d,room.dirtyDate));
@@ -294,14 +301,26 @@
       return {leftUnits,rightUnits,widthUnits:rightUnits-leftUnits};
     };
 
+    const rowSlotCounter = new Map();
     const addBar=(item,isBlock=false)=>{
       const room=(item.roomNo || 'UNASSIGNED').toUpperCase();
       const row=index.get(`${item.categoryId}|${room}`);
       if(!row) return;
 
       const a=dateOnly(isBlock?item.startDate:item.arrival);
-      const d=dateOnly(isBlock?item.endDate:item.departure);
-      const bounds=visualBounds(a,d);
+      const actual=dateOnly(item.actualCheckoutDate);
+      const isSlim=!isBlock && item.isSameDayCheckout && actual && a && sameDate(a,actual);
+      // Same-day completed stays are short chips on their actual checkout date;
+      // never draw their original longer scheduled bar underneath as a duplicate.
+      const d=isBlock?dateOnly(item.endDate):
+        (isSlim?addDays(actual,1):
+          ((String(item.statusCode||'').toUpperCase()==='CO' && actual && actual>a)
+             ? (actual<dateOnly(item.departure)?actual:dateOnly(item.departure)) : dateOnly(item.departure)));
+      const bounds=isSlim
+        ? (actual>=rangeStart&&actual<rangeEnd
+           ? {leftUnits:diffDays(rangeStart,actual)+0.03,rightUnits:diffDays(rangeStart,actual)+0.97,widthUnits:0.94}
+           : null)
+        : visualBounds(a,d);
       if(!bounds) return;
 
       const left=`calc(var(--room) + (${bounds.leftUnits} * ((100% - var(--room)) / var(--view-days))) + 2px)`;
@@ -319,9 +338,12 @@
       const payClass=paymentDotClass(item.paymentStatus);
       const roomClass=room==='UNASSIGNED'?' unassigned-booking':'';
       const restaurantClass=item.hasRestaurantPendingBill?' fdc-restaurant-pending':'';
+      const rowKey=`${item.categoryId}|${room}`;
+      const slot=isSlim?(rowSlotCounter.get(rowKey)||0):0;
+      if(isSlim) rowSlotCounter.set(rowKey,slot+1);
       row.insertAdjacentHTML('beforeend',
-        `<div class="fdc-bar ${cls}${roomClass}${restaurantClass}" draggable="${item.canDrag?'true':'false'}" `+
-        `style="left:${left};width:${width}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}${item.hasRestaurantPendingBill?' · Restaurant bill pending':''}">`+
+        `<div class="fdc-bar ${cls}${roomClass}${restaurantClass}${isSlim?' slim-checkout':''}" draggable="${item.canDrag?'true':'false'}" `+
+        `style="left:${left};width:${width};${isSlim?`--slim-slot:${slot};`:''}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}${item.hasRestaurantPendingBill?' · Restaurant bill pending':''}">`+
         `<span class="name">${esc(item.guestName||item.regId)}</span>`+
         `<span class="pay-dot ${payClass}" title="${esc(item.paymentStatus||'')}"></span>`+
         `${item.hasNote?'<span class="fdc-note-indicator" title="Notebook note" aria-label="Notebook note">★</span>':''}`+
@@ -1213,20 +1235,38 @@ ${tag}`:tag;
     });
   }
 
-  function openCheckout(d){
-    const balance=Number(d.balance||0);
-    openModal(
-      'Check-Out',
-      `<div class="fdc-info">${balance>0.005
-        ? `Reservation balance: <b>${money(balance)}</b>. Earlier rooms can check out with a balance; the last room requires settlement.`
-        : `Confirm checkout for <b>${esc(d.guestName||'this guest')}</b>${d.roomNo?` · Room ${esc(d.roomNo)}`:''}.`}</div>`,
-      `<button class="fdc-btn" data-close-modal>Cancel</button><button class="fdc-btn danger" id="confirmCheckout">Check-Out</button>`
-    );
-    $('confirmCheckout').onclick=async e=>{
-      const btn=e.currentTarget;
-      await mutate(cfg.checkoutUrl,{regId:d.regId,paymentId:d.paymentId||0,paymentMethod:'',force:false},'Checking out…',btn);
-      closeModal();closeDrawer();await loadCalendar(state.start,true);
-    };
+  async function openCheckout(d){
+    if(!d?.regId) return;
+    try{
+      const rooms=await api(`/CheckIn/CheckoutRooms?regId=${encodeURIComponent(d.regId)}`);
+      if(!Array.isArray(rooms)||!rooms.length){showToast('No currently checked-in rooms in this reservation.',true);return;}
+      const balance=Number(d.balance||0);
+      const list=rooms.map(r=>`<label class="fdc-checkout-room"><input type="checkbox" data-checkout-payment="${Number(r.paymentId)}" checked><span><b>Room ${esc(r.roomNo||'Unassigned')}</b> · ${esc(r.category||'')}<small>${esc(r.guestName||'Guest')} · ${esc(String(r.arrival||'').slice(0,10))} to ${esc(String(r.departure||'').slice(0,10))}</small></span></label>`).join('');
+      openModal('Check-Out',
+        `<p class="fdc-info">${balance>0.005?`Reservation balance: <b>${money(balance)}</b>. The final room requires settlement.`:'Select the checked-in rooms you want to check out.'} Only selected rooms will be processed.</p>`+
+        `<label class="fdc-checkout-all"><input type="checkbox" id="fdcCheckoutAll" checked> Select all checked-in rooms</label>`+
+        `<div class="fdc-checkout-room-list">${list}</div><div id="fdcCheckoutCount" class="fdc-checkout-count"></div>`,
+        `<button class="fdc-btn" data-close-modal>Cancel</button><button class="fdc-btn danger" id="confirmCheckout">Check-Out Selected</button>`);
+      const boxes=()=>[...modalBody.querySelectorAll('[data-checkout-payment]')];
+      const all=$('fdcCheckoutAll'),button=$('confirmCheckout');
+      const sync=()=>{
+        const selected=boxes().filter(b=>b.checked).length;
+        all.checked=selected===boxes().length;all.indeterminate=selected>0&&selected<boxes().length;
+        $('fdcCheckoutCount').textContent=`${selected} of ${boxes().length} selected`;
+        button.disabled=selected===0;
+      };
+      all.onchange=()=>{boxes().forEach(b=>b.checked=all.checked);sync();};
+      boxes().forEach(b=>b.onchange=sync);
+      button.onclick=async e=>{
+        const ids=boxes().filter(b=>b.checked).map(b=>Number(b.dataset.checkoutPayment));
+        if(!ids.length)return;
+        try{
+          await mutate(cfg.checkoutUrl,{regId:d.regId,paymentIds:ids,paymentMethod:'',force:false},'Checking out…',e.currentTarget);
+          closeModal();closeDrawer();await loadCalendar(state.start,true);
+        }catch{}
+      };
+      sync();
+    }catch(e){showToast(e.message||'Unable to load checkout rooms.',true);}
   }
 
   async function mutate(url, body, label='Saving…', button=null){
@@ -1584,7 +1624,7 @@ ${tag}`:tag;
     // Checked-out drag/drop is a room-assignment correction only. Preserve the
     // historical stay dates and preview the original date span in the target row.
     const startIndex=checkoutMove
-      ? diffDays(state.start,dateOnly(item.arrival))
+      ? diffDays(state.start,dateOnly(item.isSameDayCheckout?item.actualCheckoutDate:item.arrival))
       : Number(cell.dataset.day);
     if(!Number.isFinite(startIndex)||startIndex<0||startIndex>=cells.length) return;
 
@@ -1660,13 +1700,20 @@ ${tag}`:tag;
   function dragNightCount(item){return Math.max(1,diffDays(item.arrival,item.departure));}
   function targetRange(item,cell){
     const checkoutMove=String(item.statusCode||'').toUpperCase()==='CO' || isCheckedOutStatus(item.status);
-    const start=checkoutMove?dateOnly(item.arrival):dateOnly(cell.dataset.date);
-    const nights=dragNightCount(item);
+    const start=checkoutMove?dateOnly(item.isSameDayCheckout?item.actualCheckoutDate:item.arrival):dateOnly(cell.dataset.date);
+    const nights=item.isSameDayCheckout?1:dragNightCount(item);
     return {start,end:addDays(start,nights),nights};
   }
   function targetRangeIsFree(item,cell){
     const {start,end}=targetRange(item,cell); const room=String(cell.dataset.room||'').toUpperCase();
-    if(room==='UNASSIGNED') return true; const cat=String(cell.dataset.category||'');
+    const cat=String(cell.dataset.category||'');
+    if(room==='UNASSIGNED') return !item.isSameDayCheckout || String(item.categoryId)===cat;
+    // A completed same-day stay may share its date with another checkout or an
+    // incoming booking. The server still validates room category and blocks.
+    if(item.isSameDayCheckout){
+      if(String(item.categoryId)!==cat) return false;
+      return !(state.payload?.blocks||[]).some(b=>String(b.categoryId)===cat&&String(b.roomNo||'').toUpperCase()===room&&dateOnly(b.startDate)<=start&&start<dateOnly(b.endDate));
+    }
     const overlaps=(a,d)=>dateOnly(a)<end && start<dateOnly(d);
     for(const b of (state.payload?.bookings||[])){
       if(String(b.id||'')===String(item.id||'') || (b.paymentId&&b.paymentId===item.paymentId)) continue;
@@ -1877,8 +1924,15 @@ ${tag}`:tag;
       <div><span>Room:</span> ${esc(room)} · ${esc(b.categoryName||'')}</div>
       <div><span>Plan:</span> ${esc(b.planName||'—')}</div>
       <div><span>Source:</span> ${esc(b.source||'—')}</div>
-      <div><span>Payment:</span> ${esc(b.paymentStatus||'—')}${Number(b.balance||0)>0?` · ${money(b.balance)} due`:''}</div>`;
-    const x=Math.min(e.clientX+14,innerWidth-315),y=Math.min(e.clientY+14,innerHeight-200);tip.style.left=`${x}px`;tip.style.top=`${y}px`;tip.classList.add('open');
+      <div><span>Payment:</span> ${esc(b.paymentStatus||'—')}${Number(b.balance||0)>0?` · ${money(b.balance)} due`:''}</div>
+      <div><span>Occupancy:</span> ${Math.max(0,Number(b.adults)||0)} Adults · ${Math.max(0,Number(b.children)||0)} Children · ${Math.max(0,Number(b.infants)||0)} Infants</div>
+      <div><span>FDO Notes:</span> <span style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(String(b.frontDeskNotes||'').trim()||'—')}</span></div>`;
+    tip.classList.add('open');
+    const tipBounds=tip.getBoundingClientRect();
+    const x=Math.max(12,Math.min(e.clientX+14,innerWidth-tipBounds.width-12));
+    const y=Math.max(12,Math.min(e.clientY+14,innerHeight-tipBounds.height-12));
+    tip.style.left=`${x}px`;
+    tip.style.top=`${y}px`;
   }
 
   function openRangePicker(){

@@ -93,6 +93,8 @@ public sealed class FrontDeskBookingDto
     public string CategoryName { get; set; } = string.Empty;
     public DateTime Arrival { get; set; }
     public DateTime Departure { get; set; }
+    public DateTime? ActualCheckoutDate { get; set; }
+    public bool IsSameDayCheckout { get; set; }
     public string Status { get; set; } = string.Empty;
     // Legacy WebForms calendar status code used for bar colour/behaviour:
     // CO=checked out, O=checked in, R=reservation, P=provisional.
@@ -123,6 +125,8 @@ public sealed class FrontDeskBookingDto
     // Calendar-only indicators copied from the legacy WebForms behaviour.
     // These flags do not change booking/payment state; they only control the
     // small markers rendered on the booking bar.
+    // Existing GuestNoteBook.description (same text as the right-side Notebook panel).
+    public string FrontDeskNotes { get; set; } = string.Empty;
     public bool HasNote { get; set; }
     public bool HasRoomChange { get; set; }
     public bool HasRestaurantPendingBill { get; set; }

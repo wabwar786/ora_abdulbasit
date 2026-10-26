@@ -18,6 +18,8 @@ public sealed class AvailabilityPageViewModel
     public bool CanUpdateRestriction { get; set; }
     public bool AllowDerivedRateEditing { get; set; }
     public decimal HotelBaseRate { get; set; }
+    // Display-only rounding of Availability rate cells follows the selected property's setting.
+    public bool IsRoundTotal { get; set; }
     public List<AvailabilityCategoryOption> CategoryOptions { get; set; } = new();
     public List<AvailabilityGridCategory> Categories { get; set; } = new();
     public List<AvailabilityDateHeader> Dates { get; set; } = new();

@@ -982,7 +982,7 @@ SELECT CASE WHEN EXISTS
      SELECT 1 FROM dbo.payments p
      WHERE CONVERT(varchar(50),p.hotel_id)=@hotel
        AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
-       AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin','check out')
+       AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
        AND LTRIM(RTRIM(ISNULL(p.room_no,'')))=@room
        AND COALESCE(TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),23),TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),110),TRY_CONVERT(date,p.ArrivalDate))<@dep
        AND @arr<COALESCE(TRY_CONVERT(date,NULLIF(p.DepartureDate,''),23),TRY_CONVERT(date,NULLIF(p.DepartureDate,''),110),TRY_CONVERT(date,p.DepartureDate))
@@ -1021,7 +1021,7 @@ WHERE NOT EXISTS
  SELECT 1 FROM dbo.payments p
  WHERE CONVERT(varchar(50),p.hotel_id)=@hotel
    AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
-   AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin','check out')
+   AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
    AND ISNULL(p.room_no,'') NOT IN ('','UNASSIGNED','Unassigned')
    AND LTRIM(RTRIM(p.room_no))=LTRIM(RTRIM(c.room_no))
    AND COALESCE(TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),23),TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),110),TRY_CONVERT(date,p.ArrivalDate))<@dep

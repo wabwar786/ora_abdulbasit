@@ -479,11 +479,24 @@ public sealed class FbrPostRequest
     public string PaymentMethod { get; set; } = string.Empty;
 }
 
+public sealed class CheckoutRoomOption
+{
+    public int PaymentId { get; set; }
+    public string RoomNo { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string GuestName { get; set; } = string.Empty;
+    public DateTime? Arrival { get; set; }
+    public DateTime? Departure { get; set; }
+}
+
 public sealed class CheckOutRequest
 {
     public string RegId { get; set; } = string.Empty;
     // The selected dbo.payments Room Rent row. Zero is accepted only for a single checked-in room.
     public int PaymentId { get; set; }
+    // Explicit selection; all checked-in rooms are checked by default in the UI.
+    // Legacy callers can continue to send PaymentId for a single-room checkout.
+    public List<int>? PaymentIds { get; set; }
     public string PaymentMethod { get; set; } = string.Empty;
     public bool Force { get; set; }
 }

@@ -569,7 +569,7 @@ ORDER BY description;";
       AND
       (
           @allowDirty=1
-          OR LOWER(LTRIM(RTRIM(ISNULL(r.room_status,'')))) NOT IN ('dirty','notclean','blocked','checkout')
+          OR LOWER(LTRIM(RTRIM(ISNULL(r.room_status,'')))) NOT IN ('dirty','notclean','blocked')
       )
 )
 SELECT c.room_no,c.room_status,c.category_id
@@ -583,7 +583,7 @@ WHERE c.room_no<>''
         AND LTRIM(RTRIM(ISNULL(p.room_no,'')))=c.room_no
         AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
         AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN
-            ('reservation','check in','checked in','checkin','check out')
+            ('reservation','check in','checked in','checkin')
         AND COALESCE(
                 TRY_CONVERT(date,p.ArrivalDate,110),
                 TRY_CONVERT(date,p.ArrivalDate,23),
@@ -1428,7 +1428,7 @@ WHERE ID=@id
   AND hotel_id=@hotel
   AND reg_id=@reg
   AND LTRIM(RTRIM(ISNULL(descr,'')))=LTRIM(RTRIM(@descr))
-  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) NOT IN ('check out','checkout','checked out');", cn, tx))
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');", cn, tx))
             {
                 // WebForms persists the full room-base amount in both Rate and Charge.
                 // request.Rate is the user-facing nightly rate, so multiply by Nights first.
@@ -2191,6 +2191,40 @@ WHERE hotel_id=@hotel AND reg_id=@reg
         }
     }
 
+    // Only active Room Rent rows belong in checkout confirmation. A departure-date filter
+    // would hide early checkouts and guests departing on the same day they checked in.
+    public async Task<IReadOnlyList<CheckoutRoomOption>> GetCheckoutRoomsAsync(
+        string hotelId, string regId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(regId))
+            return Array.Empty<CheckoutRoomOption>();
+        var result = new List<CheckoutRoomOption>();
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(@"
+SELECT p.ID,ISNULL(p.room_no,'') AS room_no,ISNULL(p.[Type],'') AS category,
+       ISNULL(NULLIF(LTRIM(RTRIM(p.guestname)),''),
+           LTRIM(RTRIM(CONCAT(ISNULL(g.GuestName,''),' ',ISNULL(g.LastName,''))))) AS guest_name,
+       p.ArrivalDate,p.DepartureDate
+FROM dbo.payments p
+OUTER APPLY (SELECT TOP (1) GuestName,LastName FROM dbo.GuestInformationLogTB
+             WHERE hotel_id=p.hotel_id AND reg_id=p.reg_id ORDER BY ID DESC) g
+WHERE p.hotel_id=@hotel AND p.reg_id=@reg
+  AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check in','checked in','checkin')
+ORDER BY TRY_CONVERT(int,p.room_no),p.room_no,p.ID;",cn);
+        cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+        cmd.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=regId.Trim();
+        await using var rd=await cmd.ExecuteReaderAsync(ct);
+        while(await rd.ReadAsync(ct)) result.Add(new CheckoutRoomOption
+        {
+            PaymentId=I(rd,"ID"),RoomNo=S(rd,"room_no"),Category=S(rd,"category"),
+            GuestName=S(rd,"guest_name"),Arrival=DateAny(rd,"ArrivalDate"),
+            Departure=DateAny(rd,"DepartureDate")
+        });
+        return result;
+    }
+
     public async Task<CheckInOperationResult> CheckOutAsync(
         string hotelId, string userId, string userName, string ip, CheckOutRequest request, CancellationToken ct = default)
     {
@@ -2265,14 +2299,23 @@ ORDER BY id;";
                 });
         }
         if (rooms.Count == 0) return CheckInOperationResult.Fail("No checked-in room was found for this guest.");
-        if (request.PaymentId <= 0 && rooms.Count != 1)
-            return CheckInOperationResult.Fail("Select the individual room to check out from the Front Desk Calendar.");
-        if (request.PaymentId > 0)
+        // A checked selection is authoritative. Do not silently check out any room
+        // whose payment ID the user did not confirm.
+        if (request.PaymentIds != null)
         {
-            rooms = rooms.Where(r => r.Id == request.PaymentId).ToList();
-            if (rooms.Count == 0)
-                return CheckInOperationResult.Fail("Selected room is not checked in. Refresh the calendar and retry.");
+            var ids=request.PaymentIds.Distinct().ToHashSet();
+            if (ids.Count == 0) return CheckInOperationResult.Fail("Select at least one room to check out.");
+            if (ids.Any(id => id <= 0) || ids.Count != rooms.Count(r => ids.Contains(r.Id)))
+                return CheckInOperationResult.Fail("Room selection changed. Refresh and confirm checkout again.");
+            rooms=rooms.Where(r => ids.Contains(r.Id)).ToList();
         }
+        else if (request.PaymentId > 0)
+        {
+            rooms=rooms.Where(r => r.Id == request.PaymentId).ToList();
+            if (rooms.Count == 0) return CheckInOperationResult.Fail("Selected room is not checked in. Refresh the calendar and retry.");
+        }
+        else if (rooms.Count != 1)
+            return CheckInOperationResult.Fail("Select the rooms to check out from the confirmation list.");
 
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
         try
@@ -2280,10 +2323,11 @@ ORDER BY id;";
             foreach (var row in rooms)
             {
                 await using var p = new SqlCommand(@"
-UPDATE dbo.payments SET res_status='check out',DepartureTime=@time
+UPDATE dbo.payments SET res_status='check out',DepartureTime=@time,actual_checkout_date=@actualDate
 WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
   AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');", cn, tx);
                 p.Parameters.Add("@time", SqlDbType.VarChar, 20).Value = hotelNow.ToString("hh:mm tt", CultureInfo.InvariantCulture);
+                p.Parameters.Add("@actualDate", SqlDbType.Date).Value = hotelToday;
                 p.Parameters.Add("@id", SqlDbType.Int).Value = row.Id;
                 p.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 p.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId;
@@ -2292,7 +2336,11 @@ WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
 
                 await using var r = new SqlCommand(@"
 UPDATE dbo.RoomsTB SET room_status=@roomStatus
-WHERE Hotel_id=@hotel AND room_no=@room AND room_category=@category;", cn, tx);
+WHERE Hotel_id=@hotel AND room_no=@room AND room_category=@category
+  AND NOT EXISTS (SELECT 1 FROM dbo.payments x WITH (UPDLOCK,HOLDLOCK)
+      WHERE x.hotel_id=@hotel AND LTRIM(RTRIM(ISNULL(x.room_no,'')))=@room
+        AND LTRIM(RTRIM(ISNULL(x.descr,'')))='Room Rent'
+        AND LOWER(LTRIM(RTRIM(ISNULL(x.res_status,'')))) IN ('check in','checked in','checkin'));", cn, tx);
                 r.Parameters.Add("@roomStatus", SqlDbType.VarChar, 30).Value = permissions.HasAction("AllowDirty") ? "CheckOut" : "Available";
                 r.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 r.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = row.RoomNo;
@@ -2361,7 +2409,7 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
 
             if (!allRooms)
                 await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip,
-                    request.RegId, "CHECK OUT ROOM", "Room payment ID: " + rooms[0].Id + ". Other rooms remain open.", ct);
+                    request.RegId, "CHECK OUT ROOM", "Room payment IDs: " + string.Join(",", rooms.Select(x => x.Id)) + ". Other rooms remain open.", ct);
             await tx.CommitAsync(ct);
             foreach (var row in rooms)
             {
@@ -6309,7 +6357,7 @@ WHERE
           AND p.ID<>@paymentId
           AND LOWER(LTRIM(RTRIM(ISNULL(p.descr,''))))='room rent'
           AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN
-              ('check in','checkin','checked in','reservation','check out','checkout','checked out')
+              ('check in','checkin','checked in','reservation')
           AND LTRIM(RTRIM(CONVERT(varchar(100),p.room_no)))=LTRIM(RTRIM(c.room_no))
           AND COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,101),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate))<@departure
           AND @arrival<COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,101),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate))
@@ -6325,7 +6373,7 @@ WHERE
           AND p.ID<>@paymentId
           AND LOWER(LTRIM(RTRIM(ISNULL(p.descr,''))))='room rent'
           AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN
-              ('check in','checkin','checked in','reservation','check out','checkout','checked out')
+              ('check in','checkin','checked in','reservation')
           AND LTRIM(RTRIM(CONVERT(varchar(100),p.room_no)))=LTRIM(RTRIM(c.room_no))
           AND COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,101),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate))<@departure
           AND @arrival<COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,101),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate))

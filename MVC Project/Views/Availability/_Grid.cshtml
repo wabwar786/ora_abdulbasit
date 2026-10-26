@@ -18,7 +18,7 @@ else if (Model.Categories.Count == 0)
 }
 else
 {
-    <section class="inventory-grid-card">
+    <section class="inventory-grid-card" data-round-rates="@(Model.IsRoundTotal ? "1" : "0")">
         <div class="inventory-grid-scroll" id="inventoryGridScroll">
             <table class="inventory-grid" aria-label="Availability and rate inventory">
                 <thead>
@@ -94,8 +94,10 @@ else
                                 {
                                     var editable = row.Editable && !cell.IsPast;
                                     var bulkEditable = row.BulkEditable && !cell.IsPast;
-                                    // Round for display only. Preserve the exact amount for editing/saving/hover.
-                                    var roundedRate = decimal.TryParse(cell.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var actualRate)
+                                    // Only hotels with isRoundTotal enabled see a whole-number display.
+                                    // The original decimal remains available for editing, saving and hover.
+                                    var displayedRate = Model.IsRoundTotal &&
+                                        decimal.TryParse(cell.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var actualRate)
                                         ? Math.Round(actualRate, 0, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture)
                                         : cell.Value;
                                     var exactRateTitle = $"Actual rate: {cell.Value}";
@@ -119,7 +121,7 @@ else
                                                data-rowtype="rate" data-date="@cell.Date.ToString("yyyy-MM-dd")"
                                                aria-label="@row.PlanName rate @cell.Date.ToString("dd MMM yyyy")"
                                                disabled="@(editable ? null : "disabled")" />
-                                        <span class="rate-rounded-display" aria-hidden="true">@roundedRate</span>
+                                        <span class="rate-rounded-display" aria-hidden="true">@displayedRate</span>
                                         <button type="button" class="rate-history-button" aria-label="View rate change history for @row.PlanName on @cell.Date.ToString("dd MMM yyyy")"
                                                 title="Rate history · Username and source" tabindex="0">
                                             <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span class="rate-history-fallback">↺</span>

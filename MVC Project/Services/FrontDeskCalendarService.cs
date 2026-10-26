@@ -28,6 +28,7 @@ public sealed class FrontDeskCalendarService : IFrontDeskCalendarService
     private readonly IHotelClock _hotelClock;
     private readonly IAvailabilityAutoUpdateQueue _availabilityQueue;
     private readonly ICheckInService _checkInService;
+    private readonly IYieldManagementService _yieldManagementService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMemoryCache _cache;
     private readonly IAppLogger _logger;
@@ -43,6 +44,7 @@ public sealed class FrontDeskCalendarService : IFrontDeskCalendarService
         IHotelClock hotelClock,
         IAvailabilityAutoUpdateQueue availabilityQueue,
         ICheckInService checkInService,
+        IYieldManagementService yieldManagementService,
         IHttpClientFactory httpClientFactory,
         IMemoryCache cache,
         IAppLogger logger,
@@ -53,6 +55,7 @@ public sealed class FrontDeskCalendarService : IFrontDeskCalendarService
         _hotelClock = hotelClock;
         _availabilityQueue = availabilityQueue;
         _checkInService = checkInService;
+        _yieldManagementService = yieldManagementService;
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
@@ -194,6 +197,7 @@ PaymentRows AS
         COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,23),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)) AS ArrivalDate,
         COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,23),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate)) AS DepartureDate,
         ISNULL(p.res_status,'') AS res_status,
+        p.actual_checkout_date AS actual_checkout_date,
         ISNULL(p.rateplanname,'') AS planname,
         ISNULL(TRY_CONVERT(decimal(18,2),p.rate),0) AS row_rate,
         ISNULL(TRY_CONVERT(decimal(18,2),p.GST),0) AS row_gst,
@@ -239,7 +243,8 @@ PaymentRows AS
       AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
       AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','check out','provisional','tentative')
       AND COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,23),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)) <= @viewEnd
-      AND COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,23),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate)) >= @viewStart
+      AND (COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,23),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate)) >= @viewStart
+           OR (p.actual_checkout_date >= @viewStart AND p.actual_checkout_date <= @viewEnd))
       AND
       (
           @isCouncil=0
@@ -331,7 +336,12 @@ ORDER BY BlockStartDate, BlockID;";
             {
                 var arrival = D(rd, "ArrivalDate");
                 var departure = D(rd, "DepartureDate");
-                if (!arrival.HasValue || !departure.HasValue || departure <= arrival) continue;
+                if (!arrival.HasValue || !departure.HasValue) continue;
+                var actualCheckout = D(rd, "actual_checkout_date");
+                var isCheckedOut = IsCheckedOutStatus(S(rd,"res_status"));
+                var sameDayCheckout = isCheckedOut && actualCheckout.HasValue &&
+                                     actualCheckout.Value.Date == arrival.Value.Date;
+                if (departure <= arrival && !sameDayCheckout) continue;
 
                 var regId = S(rd, "reg_id");
                 var paymentId = I(rd, "PaymentId");
@@ -379,6 +389,8 @@ ORDER BY BlockStartDate, BlockID;";
                     CategoryId = S(rd, "localcategoryid"),
                     Arrival = arrival.Value,
                     Departure = departure.Value,
+                    ActualCheckoutDate = isCheckedOut ? actualCheckout : null,
+                    IsSameDayCheckout = sameDayCheckout,
                     Status = DisplayStatus(statusRaw, arrival.Value, hotelToday),
                     StatusCode = statusCode,
                     Source = S(rd, "Agency"),
@@ -444,14 +456,15 @@ ORDER BY BlockStartDate, BlockID;";
 
         if (visibleRegIds.Count > 0)
         {
-            var noteRegIds = await LoadNotebookIndicatorRegIdsAsync(hotelId, visibleRegIds, ct);
+            var notesByRegId = await LoadNotebookDetailsAsync(hotelId, visibleRegIds, ct);
             var roomChangedRegIds = await LoadRoomChangedIndicatorRegIdsAsync(hotelId, visibleRegIds, ct);
             var restaurantPendingRegIds = await LoadRestaurantPendingRegIdsAsync(hotelId, ct);
 
             foreach (var booking in bookings)
             {
                 var normalizedRegId = NormalizeRegId(booking.RegId);
-                booking.HasNote = noteRegIds.Contains(normalizedRegId);
+                booking.FrontDeskNotes = notesByRegId.TryGetValue(normalizedRegId, out var notes) ? notes : string.Empty;
+                booking.HasNote = !string.IsNullOrWhiteSpace(booking.FrontDeskNotes);
                 booking.HasRoomChange = roomChangedRegIds.Contains(normalizedRegId);
                 booking.HasRestaurantPendingBill = restaurantPendingRegIds.Contains(normalizedRegId);
             }
@@ -963,6 +976,11 @@ UPDATE dbo.RoomBlocksTB SET BlockEndDate=@end,IsActive=0 WHERE HotelID=@hotel AN
                 var checkedOutTargetCategoryId = current.CategoryId;
                 var checkedOutTargetCategoryName = current.CategoryName;
 
+                var completedSameDay = current.ActualCheckoutDate.HasValue &&
+                                       current.ActualCheckoutDate.Value.Date == current.Arrival.Date;
+                if (completedSameDay && !string.IsNullOrWhiteSpace(request.TargetCategoryId) &&
+                    !string.Equals(request.TargetCategoryId, current.CategoryId, StringComparison.OrdinalIgnoreCase))
+                    return FrontDeskOperationResult.Fail("Same-day checkout room changes must remain in the original category.");
                 if (!newRoom.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase))
                 {
                     var roomInfo = await GetRoomInfoAsync(cn, tx, hotelId, newRoom, ct);
@@ -972,11 +990,20 @@ UPDATE dbo.RoomBlocksTB SET BlockEndDate=@end,IsActive=0 WHERE HotelID=@hotel AN
                     checkedOutTargetCategoryName = roomInfo.Value.CategoryName;
                     checkedOutTargetCategoryId = roomInfo.Value.CategoryId;
 
-                    if (!await IsRoomFreeAsync(cn, tx, hotelId, newRoom,
-                            current.Arrival.Date, current.Departure.Date, request.PaymentId, ct))
-                    {
+                    // A guest who arrived and actually departed on the same day can
+                    // share that calendar date with the next incoming reservation.
+                    // This is a historical room correction, NEVER a swap.
+                    // Keep the existing whole-stay validation for other checkouts.
+                    if (completedSameDay &&
+                        !current.CategoryName.Equals(checkedOutTargetCategoryName, StringComparison.OrdinalIgnoreCase))
+                        return FrontDeskOperationResult.Fail("Same-day checkout room changes must stay within the original room category.");
+                    var free = completedSameDay
+                        ? await CanPlaceCompletedSameDayCheckoutAsync(cn, tx, hotelId, newRoom,
+                            current.ActualCheckoutDate!.Value.Date, request.PaymentId, ct)
+                        : await IsRoomFreeAsync(cn, tx, hotelId, newRoom,
+                            current.Arrival.Date, current.Departure.Date, request.PaymentId, ct);
+                    if (!free)
                         return FrontDeskOperationResult.Fail("Destination room is not available for the checked-out stay dates.");
-                    }
                 }
 
                 if (string.Equals(current.RoomNo ?? string.Empty, newRoom, StringComparison.OrdinalIgnoreCase) &&
@@ -2274,11 +2301,32 @@ DELETE FROM dbo.NewReservationsTB      WHERE reg_id=@reg AND hotel_id=@hotel;", 
 
             await tx.CommitAsync(ct);
 
+            // The booking is already committed as cancelled. Reconcile Yield after
+            // commit so occupancy is re-read from the remaining active reservations.
+            // Only Yield-owned rates on affected stay nights can be restored; other
+            // reservation and cancellation operations are unchanged.
+            var yieldWarning = string.Empty;
+            if (cancelledRows > 0 && availabilityStart.HasValue && availabilityEnd.HasValue)
+            {
+                try
+                {
+                    await _yieldManagementService.RestoreAfterReservationCancellationAsync(
+                        hotelId, availabilityStart.Value, availabilityEnd.Value,
+                        userId, userName, ip, ct);
+                }
+                catch (Exception yieldEx)
+                {
+                    _logger.Error(yieldEx,
+                        "Reservation {RegId} was cancelled, but Yield rate reversal failed.", regId);
+                    yieldWarning = " Reservation was cancelled, but automatic Yield rate restoration failed; please review affected rates.";
+                }
+            }
+
             if (availabilityStart.HasValue && availabilityEnd.HasValue)
                 QueueAvailability(hotelId, hotelName, userId, userName, ip,
                     availabilityStart.Value, availabilityEnd.Value, "0");
 
-            return FrontDeskOperationResult.Ok("Reservation cancelled successfully.");
+            return FrontDeskOperationResult.Ok("Reservation cancelled successfully." + yieldWarning);
         }
         catch (Exception ex)
         {
@@ -2493,6 +2541,38 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
         return !status.Equals("Blocked", StringComparison.OrdinalIgnoreCase);
     }
 
+    // Same-day historical stay does not occupy a night. An existing in-house guest
+    // whose arrival was earlier is a conflict; another departure or an incoming
+    // guest on this day is not. Never alter occupancy or billing in this check.
+    private async Task<bool> CanPlaceCompletedSameDayCheckoutAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string roomNo,
+        DateTime checkoutDate, int excludePaymentId, CancellationToken ct)
+    {
+        await using (var cmd = new SqlCommand(@"
+SELECT TOP (1) ID FROM dbo.payments WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND LTRIM(RTRIM(ISNULL(room_no,'')))=@room
+ AND ID<>@exclude AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+ AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin')
+ AND COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate))<@day
+ AND COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate))>@day;", cn, tx))
+        {
+            cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+            cmd.Parameters.Add("@room",SqlDbType.VarChar,50).Value=roomNo;
+            cmd.Parameters.Add("@exclude",SqlDbType.Int).Value=excludePaymentId;
+            cmd.Parameters.Add("@day",SqlDbType.Date).Value=checkoutDate;
+            if(await cmd.ExecuteScalarAsync(ct)!=null) return false;
+        }
+        if ((await FindBlockConflictAsync(cn,tx,hotelId,roomNo,checkoutDate,checkoutDate,null,ct)).Length>0)
+            return false;
+        await using var room = new SqlCommand(@"
+SELECT TOP (1) ISNULL(room_status,'') FROM dbo.RoomsTB WITH (UPDLOCK,HOLDLOCK)
+WHERE Hotel_id=@hotel AND room_no=@room;",cn,tx);
+        room.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+        room.Parameters.Add("@room",SqlDbType.VarChar,50).Value=roomNo;
+        var status=Convert.ToString(await room.ExecuteScalarAsync(ct))??string.Empty;
+        return !status.Equals("Blocked",StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<bool> IsRoomFreeAsync(SqlConnection cn, SqlTransaction tx, string hotelId, string roomNo,
         DateTime arrival, DateTime departure, int excludePaymentId, CancellationToken ct)
     {
@@ -2521,6 +2601,7 @@ SELECT TOP (1) p.ID,p.reg_id,ISNULL(p.room_no,'') room_no,ISNULL(p.[Type],'') ro
  ISNULL(CONVERT(varchar(100),p.category_id),ISNULL(CONVERT(varchar(100),cr.localcategoryid),'')) category_id,
  COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,23),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)) A,
  COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,23),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate)) D,
+ p.actual_checkout_date AS actual_checkout_date,
  ISNULL(p.res_status,'') res_status,
  ISNULL(TRY_CONVERT(decimal(18,2),p.rate),0) rate,
  ISNULL(TRY_CONVERT(decimal(18,2),p.GST),0) gst,
@@ -2540,7 +2621,7 @@ WHERE p.hotel_id=@hotel AND p.reg_id=@reg AND p.ID=@id AND LTRIM(RTRIM(ISNULL(p.
         {
             PaymentId = I(rd, "ID"), RegId = S(rd, "reg_id"), RoomNo = S(rd, "room_no"),
             CategoryName = S(rd, "room_category"), CategoryId = S(rd, "category_id"),
-            Arrival = a.Value, Departure = d.Value, Status = S(rd, "res_status"),
+            Arrival = a.Value, Departure = d.Value, ActualCheckoutDate = D(rd, "actual_checkout_date"), Status = S(rd, "res_status"),
             Rate = M(rd, "rate"), Gst = M(rd, "gst"), Bed = M(rd, "bed"), Total = M(rd, "total")
         };
     }
@@ -3096,12 +3177,12 @@ GROUP BY pa.action_id,pa.action_name;", cn);
         return s is "check out" or "checked out" or "checkout" or "cancelled" or "canceled";
     }
 
-    private async Task<HashSet<string>> LoadNotebookIndicatorRegIdsAsync(
+    private async Task<Dictionary<string, string>> LoadNotebookDetailsAsync(
         string hotelId,
         IReadOnlyCollection<string> visibleRegIds,
         CancellationToken ct)
     {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var ids = (visibleRegIds ?? Array.Empty<string>())
             .Select(NormalizeRegId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -3115,8 +3196,8 @@ GROUP BY pa.action_id,pa.action_name;", cn);
             await using var cn = new SqlConnection(_connectionString);
             await cn.OpenAsync(ct);
 
-            // Same idea as the WebForms notebook cache: load the visible
-            // reservation IDs in bounded batches and never query per bar/cell.
+            // Reuse the existing batched notebook lookup; return the note text
+            // too, so hover cards need no new SQL requests per reservation.
             const int batchSize = 400;
             for (var offset = 0; offset < ids.Count; offset += batchSize)
             {
@@ -3134,24 +3215,29 @@ GROUP BY pa.action_id,pa.action_name;", cn);
                 }
 
                 cmd.CommandText = @"
-SELECT CONVERT(varchar(100),reg_id) AS reg_id
+SELECT CONVERT(varchar(100),reg_id) AS reg_id,
+       CONVERT(nvarchar(max),description) AS fdo_notes
 FROM dbo.GuestNoteBook WITH (READPAST)
 WHERE hotel_id=@hotel
   AND reg_id IN (" + string.Join(",", parameterNames) + @")
-  AND ISNULL(CONVERT(varchar(max),description),'') <> '';";
+  AND ISNULL(CONVERT(nvarchar(max),description),N'') <> N'';";
 
                 await using var rd = await cmd.ExecuteReaderAsync(ct);
                 while (await rd.ReadAsync(ct))
                 {
                     var regId = NormalizeRegId(S(rd, "reg_id"));
-                    if (!string.IsNullOrWhiteSpace(regId)) result.Add(regId);
+                    if (!string.IsNullOrWhiteSpace(regId))
+                    {
+                        var note = S(rd, "fdo_notes");
+                        if (!string.IsNullOrWhiteSpace(note)) result[regId] = note;
+                    }
                 }
             }
         }
         catch (Exception ex)
         {
             // Indicator lookup is deliberately non-fatal, matching WebForms.
-            _logger.Debug(ex, "Calendar notebook indicator lookup skipped.");
+            _logger.Debug(ex, "Calendar notebook hover lookup skipped.");
         }
 
         return result;
@@ -3283,6 +3369,7 @@ WHERE HotelID=@hotel
         public string CategoryName { get; init; } = string.Empty;
         public DateTime Arrival { get; init; }
         public DateTime Departure { get; init; }
+        public DateTime? ActualCheckoutDate { get; init; }
         public string Status { get; init; } = string.Empty;
         public decimal Rate { get; init; }
         public decimal Gst { get; init; }

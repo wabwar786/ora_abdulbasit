@@ -5211,3 +5211,14 @@
 .ora-checkin [data-payment-audit].btn-icon i {
     font-size: 14px !important;
 }
+
+/* Same-day / partial reservation checkout confirmation; isolated styling. */
+.mvc-checkout-dialog{max-width:580px;width:min(94vw,580px)}
+.mvc-checkout-help{font-size:12px;line-height:1.5;color:#526275;margin:0 0 12px}
+.mvc-checkout-select-all{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:750;padding:10px 12px;background:#edf4fc;border:1px solid #cfdfef}
+.mvc-checkout-select-all input,.mvc-checkout-room input{width:17px;height:17px;accent-color:#0c376a;flex:0 0 17px}
+.mvc-checkout-list{max-height:340px;overflow-y:auto;border:1px solid #e1e7ef;border-top:0}
+.mvc-checkout-room{display:flex;align-items:center;gap:11px;cursor:pointer;padding:10px 12px;background:#fff;border-bottom:1px solid #e9eef5;font-size:12px;color:#183551}
+.mvc-checkout-room:last-child{border-bottom:0}.mvc-checkout-room:hover{background:#f5f9ff}
+.mvc-checkout-room span{min-width:0}.mvc-checkout-room small{display:block;margin-top:3px;color:#657789;line-height:1.5;font-size:11px}
+.mvc-checkout-count{text-align:right;padding-top:8px;font-size:11px;font-weight:750;color:#344963}

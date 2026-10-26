@@ -24,6 +24,7 @@ public sealed class FrontDeskCalendarMWController  : Controller
         IHotelClock hotelClock,
         IHttpClientFactory httpClientFactory,
         IAvailabilityAutoUpdateQueue availabilityQueue,
+        IAvailabilityChannelSyncQueue channelQueue,
         IMemoryCache cache,
         ILoggerFactory loggerFactory)
     {
@@ -40,11 +41,18 @@ public sealed class FrontDeskCalendarMWController  : Controller
             availabilityQueue,
             loggerFactory.CreateLogger<CheckInService>());
 
+        IYieldManagementService yieldManagementService = new YieldManagementService(
+            configuration,
+            hotelClock,
+            channelQueue,
+            loggerFactory.CreateLogger<YieldManagementService>());
+
         IFrontDeskCalendarService dailyCalendar = new FrontDeskCalendarService(
             configuration,
             hotelClock,
             availabilityQueue,
             checkInService,
+            yieldManagementService,
             httpClientFactory,
             cache,
             _logger,

@@ -38,6 +38,7 @@
         completeCheckIn: '/CheckIn/CompleteCheckIn',
         undoCheckIn: '/CheckIn/UndoCheckIn',
         checkOut: '/CheckIn/CheckOut',
+        checkoutRooms: '/CheckIn/CheckoutRooms',
         extend: '/CheckIn/Extend',
         applyDiscount: '/CheckIn/ApplyDiscount',
         laundryCategories: '/CheckIn/LaundryCategories',
@@ -2284,16 +2285,47 @@
 
     async function checkOut() {
         if (!regId) return;
-        const method = byId('paymentMethod')?.value || '';
-        if (!(await askConfirm('Check-Out', 'Check out the currently checked-in room(s)? Existing WebForms payment/security validation is applied on the server.', 'Check-Out'))) return;
-        showBusy('Checking out…');
         try {
-            const r = await api(urls.checkOut, { method: 'POST', body: { regId, paymentMethod: method, force: false } });
-            if (!r.ok) return message(r.message, 'error');
-            message(r.message, 'success');
-            if (r.redirectUrl) window.open(r.redirectUrl, '_blank', 'noopener');
-            await refreshReservationUi(regId);
-        } catch (e) { message(e.message, 'error'); } finally { hideBusy(); }
+            const rooms = await api(`${urls.checkoutRooms}?regId=${encodeURIComponent(regId)}`);
+            if (!Array.isArray(rooms) || !rooms.length) return message('No currently checked-in rooms for this reservation.', 'error');
+            const list = byId('checkoutRoomList');
+            list.innerHTML = rooms.map(r => `
+                <label class="mvc-checkout-room">
+                    <input type="checkbox" class="mvc-checkout-room-check" value="${Number(r.paymentId)}" checked />
+                    <span><b>Room ${esc(r.roomNo || 'Unassigned')}</b> · ${esc(r.category || '')}
+                    <small>${esc(r.guestName || 'Guest')} · Arrival ${esc(String(r.arrival || '').slice(0,10))} · Scheduled departure ${esc(String(r.departure || '').slice(0,10))}</small></span>
+                </label>`).join('');
+            const selectAll = byId('checkoutSelectAll');
+            selectAll.checked = true;
+            selectAll.indeterminate = false;
+            const syncAll = () => {
+                const checks = $$('.mvc-checkout-room-check', list);
+                const chosen = checks.filter(c => c.checked).length;
+                selectAll.checked = chosen === checks.length;
+                selectAll.indeterminate = chosen > 0 && chosen < checks.length;
+                byId('checkoutSelectedCount').textContent = `${chosen} of ${checks.length} rooms selected`;
+                byId('checkoutConfirmSelected').disabled = chosen === 0;
+            };
+            selectAll.onchange = () => { $$('.mvc-checkout-room-check', list).forEach(c => { c.checked = selectAll.checked; }); syncAll(); };
+            list.onchange = syncAll;
+            byId('checkoutConfirmSelected').onclick = async () => {
+                const ids = $$('.mvc-checkout-room-check:checked', list).map(c => Number(c.value));
+                if (!ids.length) return;
+                const method = byId('paymentMethod')?.value || '';
+                showBusy('Checking out selected rooms…');
+                try {
+                    const r = await api(urls.checkOut, { method:'POST', body:{regId,paymentIds:ids,paymentMethod:method,force:false} });
+                    if (!r.ok) return message(r.message, 'error');
+                    closeModal('checkoutRoomsModal');
+                    message(r.message, 'success');
+                    if (r.redirectUrl) window.open(r.redirectUrl, '_blank', 'noopener');
+                    await refreshReservationUi(regId);
+                } catch(e) { message(e.message, 'error'); }
+                finally { hideBusy(); }
+            };
+            syncAll();
+            openModal('checkoutRoomsModal');
+        } catch (e) { message(e.message || 'Unable to load checked-in rooms.', 'error'); }
     }
 
     async function extendReservation() {

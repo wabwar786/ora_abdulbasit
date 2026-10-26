@@ -2163,8 +2163,15 @@ ${tag}`:tag;
       <div><span>Room:</span> ${esc(room)} · ${esc(b.categoryName||'')}</div>
       <div><span>Plan:</span> ${esc(b.planName||'—')}</div>
       <div><span>Source:</span> ${esc(b.source||'—')}</div>
-      <div><span>Payment:</span> ${esc(b.paymentStatus||'—')}${Number(b.balance||0)>0?` · ${money(b.balance)} due`:''}</div>`;
-    const x=Math.min(e.clientX+14,innerWidth-315),y=Math.min(e.clientY+14,innerHeight-200);tip.style.left=`${x}px`;tip.style.top=`${y}px`;tip.classList.add('fdcmw-open');
+      <div><span>Payment:</span> ${esc(b.paymentStatus||'—')}${Number(b.balance||0)>0?` · ${money(b.balance)} due`:''}</div>
+      <div><span>Occupancy:</span> ${Math.max(0,Number(b.adults)||0)} Adults · ${Math.max(0,Number(b.children)||0)} Children · ${Math.max(0,Number(b.infants)||0)} Infants</div>
+      <div><span>FDO Notes:</span> <span style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(String(b.frontDeskNotes||'').trim()||'—')}</span></div>`;
+    tip.classList.add('fdcmw-open');
+    const tipBounds=tip.getBoundingClientRect();
+    const x=Math.max(12,Math.min(e.clientX+14,innerWidth-tipBounds.width-12));
+    const y=Math.max(12,Math.min(e.clientY+14,innerHeight-tipBounds.height-12));
+    tip.style.left=`${x}px`;
+    tip.style.top=`${y}px`;
   }
 
   function openRangePicker(){

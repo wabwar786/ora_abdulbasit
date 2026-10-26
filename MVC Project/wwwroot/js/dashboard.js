@@ -511,7 +511,7 @@
         buckets.forEach(function (item, i) {
             var x = buckets.length > 1 ? plot.left + i * spacing : (plot.left + plot.right) / 2;
             [{ value: item.currentPercent, fill: '#376eaa', dx: -barWidth - 1.2 },
-             { value: item.lastYearPercent, fill: '#c4d5e7', dx: 1.2 }].forEach(function (bar) {
+            { value: item.lastYearPercent, fill: '#c4d5e7', dx: 1.2 }].forEach(function (bar) {
                 var clamped = Math.max(0, Math.min(100, bar.value));
                 var barHeight = clamped / 100 * (plot.bottom - plot.top);
                 svg.appendChild(svgNode('rect', {
@@ -524,11 +524,13 @@
         chartXAxis(svg, buckets.map(function (item) { return item.label; }), plot, height);
         attachChartHover(svg, buckets.map(function (b) { return b.label; }),
             buckets.map(function (b) { return b.title; }), [
-                { label: 'Year ' + yearlyChartYear, values: buckets.map(function (b) { return b.currentPercent; }), color: '#376eaa', format: 'percent', marker: false },
-                { label: 'Year ' + (yearlyChartYear - 1), values: buckets.map(function (b) { return b.lastYearPercent; }), color: '#c4d5e7', format: 'percent', marker: false }
-            ], buckets.map(function (b) { return [
+            { label: 'Year ' + yearlyChartYear, values: buckets.map(function (b) { return b.currentPercent; }), color: '#376eaa', format: 'percent', marker: false },
+            { label: 'Year ' + (yearlyChartYear - 1), values: buckets.map(function (b) { return b.lastYearPercent; }), color: '#c4d5e7', format: 'percent', marker: false }
+        ], buckets.map(function (b) {
+            return [
                 ['Booked / sellable room-nights', b.currentSold + ' / ' + b.currentSupply]
-            ]; }), plot, 0, 100, 'percent');
+            ];
+        }), plot, 0, 100, 'percent');
     }
 
     function chartXAxis(svg, labels, plot, height) {
@@ -595,7 +597,7 @@
             }));
         });
         [{ key: 'profit', color: '#2d9470', width: 2.4 },
-         { key: 'lastYearRevenue', color: '#a4afbf', width: 1.8, dash: '5 4' }].forEach(function (series) {
+        { key: 'lastYearRevenue', color: '#a4afbf', width: 1.8, dash: '5 4' }].forEach(function (series) {
             var path = linePath(buckets.map(function (b) { return b[series.key]; }), plot.left, plot.right, plot.top, plot.bottom, min, max);
             if (path) svg.appendChild(svgNode('path', {
                 d: path, fill: 'none', stroke: series.color, 'stroke-width': series.width,
@@ -615,10 +617,12 @@
             { label: 'Revenue', color: '#80a9d2', format: 'money', marker: false, values: buckets.map(function (b) { return b.revenue; }) },
             { label: 'Profit', color: '#2d9470', format: 'money', values: buckets.map(function (b) { return b.profit; }) },
             { label: 'Last year revenue', color: '#a4afbf', format: 'money', values: buckets.map(function (b) { return b.lastYearRevenue; }) }
-        ], buckets.map(function (b) { return [
-            ['Expenses', formatChartNumber(b.expense, 'money')],
-            ['Last year profit', formatChartNumber(b.lastYearProfit, 'money')]
-        ]; }), plot, min, max, 'money');
+        ], buckets.map(function (b) {
+            return [
+                ['Expenses', formatChartNumber(b.expense, 'money')],
+                ['Last year profit', formatChartNumber(b.lastYearProfit, 'money')]
+            ];
+        }), plot, min, max, 'money');
     }
 
     // Chart 3: this is not a statistical prediction. It visualizes booked
@@ -658,6 +662,8 @@
             fragment.appendChild(blank);
         }
         var futureNights = 0;
+        var shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         rows.forEach(function (row) {
             var iso = row.date.slice(0, 10);
             var booked = Math.max(0, Math.min(100, Number(row.occupancyPercent || 0)));
@@ -667,7 +673,7 @@
             button.dataset.date = iso;
             button.className = 'dashboard-heatmap-day ' + (booked >= 90 ? 'dashboard-heatmap-critical' :
                 booked >= 75 ? 'dashboard-heatmap-high' : booked >= 50 ? 'dashboard-heatmap-medium' :
-                booked >= 25 ? 'dashboard-heatmap-moderate' : 'dashboard-heatmap-low');
+                    booked >= 25 ? 'dashboard-heatmap-moderate' : 'dashboard-heatmap-low');
             if (iso > today) { button.classList.add('dashboard-heatmap-upcoming'); futureNights++; }
             if (iso === today) button.classList.add('dashboard-heatmap-today');
             button.setAttribute('aria-label', fullDate(iso) + ': ' + booked.toFixed(1) + '% occupied, ' +
@@ -675,7 +681,9 @@
                 (iso > today ? 'Upcoming reservations on the books.' : 'Past or current date.'));
             var dateLabel = document.createElement('span');
             dateLabel.className = 'dashboard-heatmap-date';
-            dateLabel.textContent = String(Number(iso.slice(-2)));
+            // Show day and abbreviated month within each compact occupancy cell.
+            // Use the ISO month instead of converting to local time, so hotel dates do not shift.
+            dateLabel.textContent = Number(iso.slice(8, 10)) + ' ' + shortMonths[Number(iso.slice(5, 7)) - 1];
             var percentLabel = document.createElement('strong');
             percentLabel.className = 'dashboard-heatmap-percent';
             percentLabel.textContent = booked.toFixed(0) + '%';
@@ -739,7 +747,7 @@
         var footer = document.createElement('div');
         footer.className = 'dashboard-heatmap-legend';
         [['0–24%', 'low'], ['25–49%', 'moderate'], ['50–74%', 'medium'],
-         ['75–89%', 'high'], ['90–100%', 'critical']].forEach(function (item) {
+        ['75–89%', 'high'], ['90–100%', 'critical']].forEach(function (item) {
             var label = document.createElement('span');
             var swatch = document.createElement('i');
             swatch.className = 'dashboard-heatmap-legend-' + item[1];
@@ -1576,7 +1584,7 @@
             var header = 'Room category\tRate plan\tCurrent rate\tSuggested rate\tChange\tBooked occupancy\tReason';
             var text = [header].concat(rows.map(function (item) {
                 return [item.category || '', item.planName || '', pricingMoney(item.currentRate), pricingMoney(item.recommendedRate),
-                    pricingPercent(item.changePercent), pricingPercent(item.occupancyNext30), item.reason || '']
+                pricingPercent(item.changePercent), pricingPercent(item.occupancyNext30), item.reason || '']
                     .map(function (value) { return String(value).replace(/[\t\r\n]+/g, ' '); }).join('\t');
             })).join('\n');
             var successful = false;
@@ -1731,7 +1739,7 @@
         document.querySelectorAll('.dashboard-year-select').forEach(function (select) { select.value = String(year); });
         setHtmlText('dashboardOccYear', String(year));
         ['dashboardOcc30', 'dashboardOccYearLy', 'dashboardOccRoomNights',
-         'dashboardRevenue30', 'dashboardProfit30', 'dashboardProfitMargin30'].forEach(function (id) { setHtmlText(id, '—'); });
+            'dashboardRevenue30', 'dashboardProfit30', 'dashboardProfitMargin30'].forEach(function (id) { setHtmlText(id, '—'); });
         setOccupancyBusy(true, 'Loading ' + year + ' occupancy…');
         annualChartPlaceholder('dashboardOccupancyChart', 'Loading ' + year + ' occupancy…');
         annualChartPlaceholder('dashboardRevenueChart', 'Loading ' + year + ' revenue…');
@@ -1830,7 +1838,7 @@
         });
         var today = document.querySelector('.dashboard-page').getAttribute('data-hotel-today');
         whenDashboardSectionNear('dashboardOccupancyChart', function () {
-            loadYearlyCharts(Number(String(today || '').slice(0,4)) || new Date().getFullYear());
+            loadYearlyCharts(Number(String(today || '').slice(0, 4)) || new Date().getFullYear());
         });
     }
 

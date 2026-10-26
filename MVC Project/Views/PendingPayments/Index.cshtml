@@ -1,11 +1,12 @@
 @model Orapmshms.Models.PendingPaymentsViewModel
 @using System.Globalization
 @{
-    ViewData["Title"] = "Guest Receivables";
+    ViewData["Title"] = "Remaining Balances";
     Layout = "_PmsLayout";
     var gb = CultureInfo.GetCultureInfo("en-GB");
     string Money(decimal value) => $"{Model.CurrencySymbol} {value.ToString("N2", gb)}";
     string DateText(DateTime? value) => value?.ToString("dd-MM-yyyy", gb) ?? "—";
+    string RangeText() => $"{Model.StartDate.ToString("dd/MM/yyyy", gb)} – {Model.EndDate.ToString("dd/MM/yyyy", gb)}";
 }
 @section Styles {
     <link rel="stylesheet" href="~/css/remaining-balances.css" asp-append-version="true" />
@@ -24,94 +25,185 @@
       data-end="@Model.EndDate.ToString("yyyy-MM-dd")"
       data-page-size="@Model.PageSize">
 
-    <div class="rb-titlebar">
-        <div>
+    <div class="rb-report-top">
+        <header class="rb-titlebar">
             <div class="rb-breadcrumb">Accounts / Reports</div>
             <h1>Remaining Balances</h1>
-            <p>Find guests with outstanding balances and receive payments without leaving the report.</p>
-        </div>
-        <div class="rb-record-meta"><span id="rbShowingTop">Showing @Model.Result.TotalRecords.ToString("N0")</span> records</div>
-    </div>
+            <p>Guests with outstanding balances, what they owe and what they paid.</p>
+        </header>
 
-    @if (ViewBag.ReportError != null) { <div class="rb-message error" role="alert">@ViewBag.ReportError</div> }
-    <section class="rb-summary" aria-label="Receivables summary">
-        <div class="rb-summary-main">
-            <span class="rb-summary-icon"><i class="fa-solid fa-wallet"></i></span>
-            <div class="rb-receivables-info">
-                <small id="rbReceivablesTitle">Receivables Total</small>
-                <strong id="rbReceivablesTotal">@Money(Model.Result.TotalReceivables)</strong>
-                <span id="rbReceivablesDescription">Outstanding balance for the selected filters</span>
-                <label class="rb-exclude-closed">
+        <section class="rb-filter-card" aria-label="Search and filters">
+            <div class="rb-filter-grid">
+                <div class="rb-field rb-date-wrap">
+                    <span>Arrival date</span>
+                    <button type="button" id="rbDateTrigger" class="rb-date-trigger" aria-expanded="false" aria-controls="rbDatePicker">
+                        <span id="rbDateLabel">@RangeText()</span>
+                        <i class="fa-regular fa-calendar-days"></i>
+                    </button>
+                    <div id="rbDatePicker" class="rb-date-picker" hidden>
+                        <div class="rb-calendar-top">
+                            <button type="button" id="rbPreviousMonth" aria-label="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+                            <div id="rbCalendarMonths" class="rb-calendar-months"></div>
+                            <button type="button" id="rbNextMonth" aria-label="Next month"><i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
+                        <div id="rbCalendars" class="rb-calendars"></div>
+                        <div class="rb-date-presets">
+                            <button type="button" data-rb-preset="today">Today</button>
+                            <button type="button" data-rb-preset="7">Last 7 days</button>
+                            <button type="button" data-rb-preset="30">Last 30 days</button>
+                            <button type="button" data-rb-preset="month">This month</button>
+                            <button type="button" data-rb-preset="all">All dates</button>
+                        </div>
+                        <div class="rb-date-bottom">
+                            <span id="rbDraftLabel"></span>
+                            <div>
+                                <button type="button" class="rb-btn minor" id="rbDateCancel">Cancel</button>
+                                <button type="button" class="rb-btn primary" id="rbDateApply">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <label class="rb-field rb-search">
+                    <span>Search</span>
+                    <input id="rbSearch" type="search" autocomplete="off" placeholder="CNIC / Visa / Phone / Email / name / reg id" maxlength="160" />
+                </label>
+
+                <label class="rb-field rb-source">
+                    <span>Booking source</span>
+                    <select id="rbSource">
+                        <option value="">All Sources</option>
+                        @foreach (var source in Model.Sources)
+                        {
+                            <option value="@source">@source</option>
+                        }
+                    </select>
+                </label>
+
+                <div class="rb-filter-actions">
+                    <button type="button" id="rbSearchButton" class="rb-btn primary">Generate</button>
+                    <button type="button" id="rbClearFilters" class="rb-btn">Clear</button>
+                </div>
+
+                <label class="rb-inline-toggle">
                     <input type="checkbox" id="rbExcludeClosed" />
                     Exclude cancelled &amp; no-show from total
                 </label>
             </div>
-        </div>
-        <div class="rb-summary-stat"><small>Guests with balance</small><strong id="rbGuestsCount">@Model.Result.TotalRecords.ToString("N0")</strong></div>
-        <div class="rb-summary-stat"><small>Total charges</small><strong id="rbBilledTotal">@Money(Model.Result.TotalBilled)</strong></div>
-        <div class="rb-summary-stat"><small>Payments received</small><strong id="rbPaidTotal">@Money(Model.Result.TotalPaid)</strong></div>
-    </section>
+        </section>
+    </div>
 
-    <section class="rb-filters" aria-label="Search and filters">
-        <div class="rb-filter-grid">
-            <label class="rb-field rb-search"><span>Search</span><input id="rbSearch" type="search" autocomplete="off" placeholder="Reg ID, phone, guest name or email" maxlength="160" /></label>
-            <div class="rb-field rb-date-wrap"><span>Arrival date</span>
-                <button type="button" id="rbDateTrigger" class="rb-date-trigger" aria-expanded="false" aria-controls="rbDatePicker">
-                    <span id="rbDateLabel">@Model.StartDate.ToString("dd/MM/yyyy") - @Model.EndDate.ToString("dd/MM/yyyy")</span>
-                    <i class="fa-regular fa-calendar-days"></i>
-                </button>
-                <div id="rbDatePicker" class="rb-date-picker" hidden>
-                    <div class="rb-calendar-top"><button type="button" id="rbPreviousMonth" aria-label="Previous month"><i class="fa-solid fa-chevron-left"></i></button><div id="rbCalendarMonths" class="rb-calendar-months"></div><button type="button" id="rbNextMonth" aria-label="Next month"><i class="fa-solid fa-chevron-right"></i></button></div>
-                    <div id="rbCalendars" class="rb-calendars"></div>
-                    <div class="rb-date-presets"><button type="button" data-rb-preset="today">Today</button><button type="button" data-rb-preset="7">Last 7 days</button><button type="button" data-rb-preset="30">Last 30 days</button><button type="button" data-rb-preset="month">This month</button><button type="button" data-rb-preset="all">All dates</button></div>
-                    <div class="rb-date-bottom"><span id="rbDraftLabel"></span><div><button type="button" class="rb-btn minor" id="rbDateCancel">Cancel</button><button type="button" class="rb-btn primary" id="rbDateApply">Apply</button></div></div>
-                </div>
-            </div>
-            <label class="rb-field rb-source"><span>Booking source</span><select id="rbSource"><option value="">All Sources</option>@foreach (var source in Model.Sources) { <option value="@source">@source</option> }</select></label>
-            <div class="rb-search-action"><button type="button" id="rbSearchButton" class="rb-btn primary"><i class="fa-solid fa-magnifying-glass"></i>Search</button></div>
+    @if (ViewBag.ReportError != null)
+    {
+        <div class="rb-message error" role="alert">@ViewBag.ReportError</div>
+    }
+
+    <section class="rb-filter-bottom" aria-label="Status filters and report totals">
+        <div class="rb-tabs" id="rbStatusTabs" role="group" aria-label="Guest status">
+            <button type="button" class="active" data-status="all">All <b id="rbAllCount">@Model.Result.TotalRecords</b></button>
+            <button type="button" data-status="reservation"><i class="rb-dot blue"></i>Reservation</button>
+            <button type="button" data-status="check in"><i class="rb-dot green"></i>Check in</button>
+            <button type="button" data-status="check out"><i class="rb-dot slate"></i>Check out</button>
+            <button type="button" data-status="cancelled"><i class="rb-dot red"></i>Cancelled</button>
+            <button type="button" data-status="no show"><i class="rb-dot amber"></i>No-show</button>
         </div>
-        <div class="rb-filter-bottom">
-            <div class="rb-tabs" id="rbStatusTabs" role="group" aria-label="Guest status">
-                <button type="button" class="active" data-status="all">All <b id="rbAllCount">@Model.Result.TotalRecords</b></button>
-                <button type="button" data-status="reservation"><i class="rb-dot blue"></i>Reservation</button>
-                <button type="button" data-status="check in"><i class="rb-dot green"></i>Check in</button>
-                <button type="button" data-status="check out"><i class="rb-dot slate"></i>Check out</button>
-                <button type="button" data-status="cancelled"><i class="rb-dot red"></i>Cancelled</button>
-                <button type="button" data-status="no show"><i class="rb-dot amber"></i>No-show</button>
-            </div>
-            <button type="button" class="rb-refresh" id="rbRefresh" title="Reload remaining balances"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+        <div class="rb-summary-chips" aria-label="Receivables totals">
+            <span class="rb-chip blue">Receivables <strong id="rbReceivablesTotal">@Money(Model.Result.TotalReceivables)</strong></span>
+            <span class="rb-chip green">Paid <strong id="rbPaidTotal">@Money(Model.Result.TotalPaid)</strong></span>
+            <span class="rb-chip amber">Remaining <strong id="rbRemainingChip">@Money(Model.Result.TotalReceivables)</strong></span>
+            <span class="rb-chip dark">Guests <strong id="rbGuestsCount">@Model.Result.TotalRecords.ToString("N0")</strong></span>
+            <span class="rb-chip deep">Total charges <strong id="rbBilledTotal">@Money(Model.Result.TotalBilled)</strong></span>
         </div>
     </section>
 
     <section class="rb-table-card" aria-label="Guests with remaining balances">
-        <div class="rb-table-scroll"><table class="rb-table">
-            <thead><tr><th>#</th><th>Reg ID</th><th>Guest</th><th>Stay</th><th>Source</th><th>Status</th><th class="numeric">Grand total</th><th class="numeric">Paid</th><th class="numeric">Remaining</th><th>Actions</th></tr></thead>
-            <tbody id="rbTableBody">
-            @{ var i = 0; }
-            @foreach (var row in Model.Result.Rows)
-            {
-                i++;
-                <tr>
-                    <td class="rb-rowno">@i</td>
-                    <td><strong>@row.RegId</strong></td>
-                    <td><div class="rb-guest"><span class="rb-avatar">@(row.GuestName.Length > 0 ? row.GuestName[..1].ToUpperInvariant() : "G")</span><div><strong>@row.GuestName</strong><small>@row.Phone</small></div></div></td>
-                    <td><strong>@DateText(row.Arrival) – @DateText(row.Departure)</strong><small>@(string.IsNullOrWhiteSpace(row.RoomCategory) ? "Room not assigned" : row.RoomCategory)</small></td>
-                    <td>@row.BookingSource</td><td><span class="rb-status">@row.Status</span></td>
-                    <td class="numeric">@Money(row.GrandTotal)</td><td class="numeric">@Money(row.Paid)</td><td class="numeric rb-due">@Money(row.Remaining)</td>
-                    <td>@if (row.CanReceivePayment) { <button class="rb-pay" type="button" data-reg="@row.RegId" data-visit="@row.VisitId" data-name="@row.GuestName" data-balance="@row.Remaining.ToString(CultureInfo.InvariantCulture)" data-source="@row.SourceTable" data-arrival="@(row.Arrival?.ToString("yyyy-MM-dd") ?? "")" data-departure="@(row.Departure?.ToString("yyyy-MM-dd") ?? "")"><i class="fa-solid fa-wallet"></i> Receive Payment</button> } else { <span class="rb-muted" title="Reservation record unavailable for payment">Unavailable</span> }</td>
-                </tr>
-            }
-            </tbody>
-        </table></div>
-        <div id="rbEmpty" class="rb-empty" hidden="@(Model.Result.Rows.Count > 0 ? "hidden" : null)"><i class="fa-regular fa-folder-open"></i><strong>No outstanding balances found</strong><span>Change your date range or search filters.</span></div>
+       
+
+        <div class="rb-table-scroll">
+            <table class="rb-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Reg ID</th>
+                        <th>Guest</th>
+                        <th>Arrival &amp; Departure</th>
+                        <th>Booking source</th>
+                        <th>Status</th>
+                        <th class="numeric">Total amount</th>
+                        <th class="numeric">Paid</th>
+                        <th class="numeric">Balance</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="rbTableBody">
+                    @{ var i = 0; }
+                    @foreach (var row in Model.Result.Rows)
+                    {
+                        i++;
+                        <tr>
+                            <td class="rb-rowno">@i</td>
+                            <td><strong>@row.RegId</strong></td>
+                            <td>
+                                <div class="rb-guest">
+                                    <span class="rb-avatar">@(row.GuestName.Length > 0 ? row.GuestName[..1].ToUpperInvariant() : "G")</span>
+                                    <div>
+                                        <strong>@row.GuestName</strong>
+                                        <small>@row.Phone</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <strong>@DateText(row.Arrival) – @DateText(row.Departure)</strong>
+                                <small>@(string.IsNullOrWhiteSpace(row.RoomCategory) ? "Room not assigned" : row.RoomCategory)</small>
+                            </td>
+                            <td>@row.BookingSource</td>
+                            <td><span class="rb-status">@row.Status</span></td>
+                            <td class="numeric">@Money(row.GrandTotal)</td>
+                            <td class="numeric">@Money(row.Paid)</td>
+                            <td class="numeric rb-due">@Money(row.Remaining)</td>
+                            <td>
+                                @if (row.CanReceivePayment)
+                                {
+                                    <button class="rb-pay" type="button"
+                                            data-reg="@row.RegId"
+                                            data-visit="@row.VisitId"
+                                            data-name="@row.GuestName"
+                                            data-balance="@row.Remaining.ToString(CultureInfo.InvariantCulture)"
+                                            data-source="@row.SourceTable"
+                                            data-arrival="@(row.Arrival?.ToString("yyyy-MM-dd") ?? "")"
+                                            data-departure="@(row.Departure?.ToString("yyyy-MM-dd") ?? "")">
+                                        <i class="fa-solid fa-credit-card"></i> Collect Payment
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="rb-muted" title="Reservation record unavailable for payment">Unavailable</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div id="rbEmpty" class="rb-empty" hidden="@(Model.Result.Rows.Count > 0 ? "hidden" : null)">
+            <i class="fa-regular fa-folder-open"></i>
+            <strong>No outstanding balances found</strong>
+            <span>Change your date range or search filters.</span>
+        </div>
+
         <div id="rbError" class="rb-message error" role="alert" hidden></div>
-        <footer class="rb-footer"><span id="rbShowingBottom">Showing @(Model.Result.Rows.Count == 0 ? 0 : 1)–@Model.Result.Rows.Count of @Model.Result.TotalRecords.ToString("N0")</span>
-            <div class="rb-pagination" id="rbPagination"></div><label class="rb-size">Rows <select id="rbPageSize"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></label></footer>
+
+        <footer class="rb-footer">
+            <span id="rbShowingBottom">Showing @(Model.Result.Rows.Count == 0 ? 0 : 1)–@Model.Result.Rows.Count of @Model.Result.TotalRecords.ToString("N0")</span>
+            <div class="rb-pagination" id="rbPagination"></div>
+            <label class="rb-size">Rows <select id="rbPageSize"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></label>
+        </footer>
     </section>
 </main>
 
-@* Exact shared component already used by Calendar and Check-In. *@
 @await Html.PartialAsync("~/Views/Shared/_RecordPaymentModal.cshtml")
+
 @section Scripts {
     <script src="~/js/record-payment.js" asp-append-version="true"></script>
     <script src="~/js/remaining-balances.js" asp-append-version="true"></script>

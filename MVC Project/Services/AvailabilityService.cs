@@ -56,11 +56,14 @@ public sealed class AvailabilityService : IAvailabilityService
             hotelId, cancellationToken);
         var hotelBaseRateTask = LoadHotelBaseRateCachedAsync(
             hotelId, cancellationToken);
+        var isRoundTotalTask = LoadHotelRoundTotalCachedAsync(
+            hotelId, cancellationToken);
 
-        await Task.WhenAll(permissionsTask, categoriesTask, hotelBaseRateTask);
+        await Task.WhenAll(permissionsTask, categoriesTask, hotelBaseRateTask, isRoundTotalTask);
         var permissions = await permissionsTask;
         var allCategories = await categoriesTask;
         var hotelBaseRate = await hotelBaseRateTask;
+        var isRoundTotal = await isRoundTotalTask;
 
         var metadataTask = LoadGridMetadataCachedAsync(
             hotelId, permissions.MenuId, cancellationToken);
@@ -103,6 +106,7 @@ public sealed class AvailabilityService : IAvailabilityService
             CanEdit = canUpdateAvailability || canUpdateRate || canUpdateRestriction,
             AllowDerivedRateEditing = allowDerivedRateEditing,
             HotelBaseRate = hotelBaseRate,
+            IsRoundTotal = isRoundTotal,
             CategoryOptions = allCategories.Select(x => new AvailabilityCategoryOption
             {
                 CategoryId = x.CategoryId,
@@ -1566,6 +1570,30 @@ OFFSET @offset ROWS FETCH NEXT @take ROWS ONLY;";
         var value = await WithConnectionAsync(
             connection => GetHotelBaseRateAsync(connection, hotelId, cancellationToken),
             cancellationToken);
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
+        return value;
+    }
+
+    private async Task<bool> LoadHotelRoundTotalCachedAsync(
+        string hotelId,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = $"availability:hotel-is-round-total:{hotelId}";
+        if (_cache.TryGetValue<bool>(cacheKey, out var cached))
+            return cached;
+
+        // Read the same property flag already used by Check-In and billing.
+        // This controls presentation only; stored rate values remain unchanged.
+        var value = await WithConnectionAsync(async connection =>
+        {
+            const string sql = @"SELECT TOP (1) ISNULL(isRoundTotal, 0)
+FROM dbo.HotelsSignUpTB WHERE hotel_id = @hotel";
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return result is not null && result != DBNull.Value &&
+                   Convert.ToBoolean(result, CultureInfo.InvariantCulture);
+        }, cancellationToken);
         _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
         return value;
     }

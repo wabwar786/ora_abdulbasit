@@ -1167,3 +1167,21 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
 @media (prefers-reduced-motion: reduce) {
   .fdc-restaurant-pending { animation: none; outline: 2px solid #dc2626; outline-offset: -2px; }
 }
+
+/* Isolated same-day checked-out stay lanes; normal bars keep their original
+   colour, height and interaction. Offset applies to the entire room row,
+   including bookings that started before the visible calendar range. */
+.fdc-room-row{height:calc(var(--row) + var(--slim-count,0) * 20px)}
+.fdc-room-row>.fdc-bar:not(.slim-checkout){top:calc(3px + var(--slim-count,0) * 20px)}
+.fdc-room-row>.fdc-bar.slim-checkout{
+  top:calc(2px + var(--slim-slot,0) * 20px);height:18px;line-height:18px;
+  min-height:18px;padding:0 5px;font-size:9px;border:1px solid #999;
+  border-radius:3px!important;background:#a5a5a5!important;color:#fff!important;
+  box-shadow:0 1px 2px rgba(0,0,0,.09);z-index:23
+}
+.fdc-room-row>.fdc-bar.slim-checkout .name{flex:1 1 auto}
+.fdc-checkout-all,.fdc-checkout-room{display:flex;align-items:center;gap:9px;padding:9px;border:1px solid #dde5ee;cursor:pointer;font-size:11px;color:#172d42}
+.fdc-checkout-all{font-weight:800;background:#eaf3ff}.fdc-checkout-room{background:#fff;border-top:0}
+.fdc-checkout-all input,.fdc-checkout-room input{accent-color:#194a82;width:15px;height:15px;flex-shrink:0}
+.fdc-checkout-room span{min-width:0}.fdc-checkout-room small{display:block;color:#687c90;margin-top:3px}
+.fdc-checkout-room-list{max-height:300px;overflow:auto}.fdc-checkout-count{text-align:right;font-size:10px;margin:7px 0;color:#536b80}

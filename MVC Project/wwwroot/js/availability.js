@@ -218,7 +218,10 @@
         const display = input.closest('.rate-value-cell')?.querySelector('.rate-rounded-display');
         if (!display) return;
         const rate = Number(input.value);
-        display.textContent = input.value.trim() && Number.isFinite(rate)
+        // The grid is re-rendered on date/category navigation; read the fresh property flag
+        // from the current grid, not the original page, so both views stay consistent.
+        const roundRates = input.closest('.inventory-grid-card')?.dataset.roundRates === '1';
+        display.textContent = input.value.trim() && Number.isFinite(rate) && roundRates
             ? String(Math.round(rate))
             : input.value;
         const cell = input.closest('.rate-value-cell');

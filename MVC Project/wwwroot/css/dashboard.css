@@ -1965,7 +1965,6 @@ body.dashboard-modal-open {
     border-radius: 9px;
     background: #fff;
     color: #788d8d;
-    
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4100,7 +4099,6 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     justify-content: center;
     gap: 2px;
     cursor: pointer;
-    
     transition: box-shadow .14s ease, transform .14s ease;
     font-size: 10px;
     line-height: 1.2;
@@ -5334,7 +5332,6 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     border-radius: 8px;
     color: white;
     background: #173351;
-    
     font-weight: 500;
     font-size: 11px;
     line-height: 1.5;
@@ -6033,105 +6030,105 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
 
 
 
-.dashboard-page .dashboard-room-status-card .dashboard-room {
-    min-height: 42px;
-    padding: 8px 5px;
-    border-radius: 9px;
-    border: 1px solid #dce6ef;
-    background: #f8fbff;
-    box-shadow: 0 1px 2px rgba(20, 57, 90, .025);
-    transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease, transform .14s ease;
-}
-
-    .dashboard-page .dashboard-room-status-card .dashboard-room:hover,
-    .dashboard-page .dashboard-room-status-card .dashboard-room:focus-visible {
-        border-color: #83afd1;
-        box-shadow: 0 3px 10px rgba(28, 78, 121, .12);
-        transform: translateY(-1px);
-        z-index: 40;
+    .dashboard-page .dashboard-room-status-card .dashboard-room {
+        min-height: 42px;
+        padding: 8px 5px;
+        border-radius: 9px;
+        border: 1px solid #dce6ef;
+        background: #f8fbff;
+        box-shadow: 0 1px 2px rgba(20, 57, 90, .025);
+        transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease, transform .14s ease;
     }
 
-    .dashboard-page .dashboard-room-status-card .dashboard-room:focus-visible {
-        outline: 2px solid #7ea9d2;
-        outline-offset: 1px;
+        .dashboard-page .dashboard-room-status-card .dashboard-room:hover,
+        .dashboard-page .dashboard-room-status-card .dashboard-room:focus-visible {
+            border-color: #83afd1;
+            box-shadow: 0 3px 10px rgba(28, 78, 121, .12);
+            transform: translateY(-1px);
+            z-index: 40;
+        }
+
+        .dashboard-page .dashboard-room-status-card .dashboard-room:focus-visible {
+            outline: 2px solid #7ea9d2;
+            outline-offset: 1px;
+        }
+
+        .dashboard-page .dashboard-room-status-card .dashboard-room .dashboard-room-no {
+            font-size: 12.5px;
+            font-weight: 650;
+            line-height: 1.1;
+            letter-spacing: .005em;
+        }
+    /* Keep room states visually distinct even with a consistent dark room number. */
+    .dashboard-page .dashboard-room-status-card .dashboard-room-checkin {
+        background: #ebf8f1;
+        border-color: #cee9da;
     }
 
-    .dashboard-page .dashboard-room-status-card .dashboard-room .dashboard-room-no {
-        font-size: 12.5px;
-        font-weight: 650;
-        line-height: 1.1;
-        letter-spacing: .005em;
-    }
-/* Keep room states visually distinct even with a consistent dark room number. */
-.dashboard-page .dashboard-room-status-card .dashboard-room-checkin {
-    background: #ebf8f1;
-    border-color: #cee9da;
-}
-
-.dashboard-page .dashboard-room-status-card .dashboard-room-reservation {
-    background: #edf4ff;
-    border-color: #d4e3f7;
-}
-
-.dashboard-page .dashboard-room-status-card .dashboard-room-checkout,
-.dashboard-page .dashboard-room-status-card .dashboard-room-dirty {
-    background: #f4f6f8;
-    border-color: #e1e6eb;
-}
-
-.dashboard-page .dashboard-room-status-card .dashboard-room-vacant {
-    background: #fcfdff;
-    border-color: #e1e8f0;
-}
-
-.dashboard-page .dashboard-room-status-card .dashboard-room-ooo {
-    background: repeating-linear-gradient(135deg, #f5f6f8 0, #f5f6f8 6px, #e9edf2 6px, #e9edf2 12px);
-    border-color: #dfe5ec;
-}
-
-.dashboard-page .dashboard-room-status-card .dashboard-room-legend {
-    margin-top: 13px;
-    padding-top: 10px;
-    gap: 6px;
-    border-top: 1px solid #e9eff6;
-}
-
-.dashboard-page .dashboard-room-status-card .dashboard-room-legend-item {
-    min-height: 24px;
-    padding: 4px 8px;
-    border: 1px solid #e1e9f2;
-    border-radius: 7px;
-    background: #f9fbfe;
-    color: #546c83;
-    font-size: 10px;
-    font-weight: 500;
-}
-
-    .dashboard-page .dashboard-room-status-card .dashboard-room-legend-item b {
-        color: #1e4165;
-        font-weight: 700;
+    .dashboard-page .dashboard-room-status-card .dashboard-room-reservation {
+        background: #edf4ff;
+        border-color: #d4e3f7;
     }
 
-.dashboard-page .dashboard-room-status-card .dashboard-room-tip {
-    border-radius: 9px;
-    background: #183957;
-    box-shadow: 0 9px 22px rgba(15, 38, 65, .2);
-}
-
-    .dashboard-page .dashboard-room-status-card .dashboard-room-tip::after {
-        border-top-color: #183957;
+    .dashboard-page .dashboard-room-status-card .dashboard-room-checkout,
+    .dashboard-page .dashboard-room-status-card .dashboard-room-dirty {
+        background: #f4f6f8;
+        border-color: #e1e6eb;
     }
 
-    .dashboard-page .dashboard-room-status-card .dashboard-room-tip strong {
-        font-size: 12px;
-        font-weight: 700;
+    .dashboard-page .dashboard-room-status-card .dashboard-room-vacant {
+        background: #fcfdff;
+        border-color: #e1e8f0;
     }
 
-    .dashboard-page .dashboard-room-status-card .dashboard-room-tip span {
-        color: #c8dced;
-        font-size: 10.5px;
+    .dashboard-page .dashboard-room-status-card .dashboard-room-ooo {
+        background: repeating-linear-gradient(135deg, #f5f6f8 0, #f5f6f8 6px, #e9edf2 6px, #e9edf2 12px);
+        border-color: #dfe5ec;
+    }
+
+    .dashboard-page .dashboard-room-status-card .dashboard-room-legend {
+        margin-top: 13px;
+        padding-top: 10px;
+        gap: 6px;
+        border-top: 1px solid #e9eff6;
+    }
+
+    .dashboard-page .dashboard-room-status-card .dashboard-room-legend-item {
+        min-height: 24px;
+        padding: 4px 8px;
+        border: 1px solid #e1e9f2;
+        border-radius: 7px;
+        background: #f9fbfe;
+        color: #546c83;
+        font-size: 10px;
         font-weight: 500;
     }
+
+        .dashboard-page .dashboard-room-status-card .dashboard-room-legend-item b {
+            color: #1e4165;
+            font-weight: 700;
+        }
+
+    .dashboard-page .dashboard-room-status-card .dashboard-room-tip {
+        border-radius: 9px;
+        background: #183957;
+        box-shadow: 0 9px 22px rgba(15, 38, 65, .2);
+    }
+
+        .dashboard-page .dashboard-room-status-card .dashboard-room-tip::after {
+            border-top-color: #183957;
+        }
+
+        .dashboard-page .dashboard-room-status-card .dashboard-room-tip strong {
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .dashboard-page .dashboard-room-status-card .dashboard-room-tip span {
+            color: #c8dced;
+            font-size: 10.5px;
+            font-weight: 500;
+        }
 
 @media (max-width: 760px) {
     .dashboard-page .dashboard-room-status-card .dashboard-card-head {
@@ -6158,80 +6155,174 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     position: relative;
     isolation: isolate;
 }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi::before,
-.dashboard-page .dashboard-operations .dashboard-operation::before {
-    content: "";
-    position: absolute;
-    right: 10px;
-    top: 8px;
-    display: block;
-    width: 33px;
-    height: 33px;
-    background-image: var(--dashboard-metric-icon, none);
-    background-position: center;
-    background-size: contain;
-    background-repeat: no-repeat;
-    pointer-events: none;
-    opacity: .96;
-    transition: transform .15s ease, opacity .15s ease;
-}
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi:hover::before,
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi:focus-visible::before,
-.dashboard-page .dashboard-operations .dashboard-operation:hover::before,
-.dashboard-page .dashboard-operations .dashboard-operation:focus-visible::before {
-    transform: translateY(-1px);
-    opacity: 1;
-}
-/* Text remains clear beside the right-hand icon, even at narrow widths. */
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi > .dashboard-kpi-value,
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi > .dashboard-kpi-label {
-    max-width: calc(100% - 37px);
-}
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi > .dashboard-kpi-label {
-    overflow-wrap: anywhere;
-}
-.dashboard-page .dashboard-operations .dashboard-operation::before {
-    width: 27px;
-    height: 27px;
-    top: 7px;
-    right: 8px;
-}
-.dashboard-page .dashboard-operations .dashboard-operation > span {
-    max-width: calc(100% - 28px);
-    overflow-wrap: anywhere;
-}
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="revenue"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%222%22%20y%3D%226%22%20width%3D%2220%22%20height%3D%2212%22%20rx%3D%222%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%222%22%2F%3E%3Cpath%20d%3D%22M6%2012h.01M18%2012h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="receivables"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23fff4dc%22%20stroke%3D%22%23f6e4b7%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23ac7b28%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M20%208V6a3%203%200%200%200-3-3H5a3%203%200%200%200-3%203v12a3%203%200%200%200%203%203h15v-5%22%2F%3E%3Cpath%20d%3D%22M2%208h18a2%202%200%200%201%202%202v6h-6a3%203%200%200%201%200-6h6%22%2F%3E%3Cpath%20d%3D%22M16%2013h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="expenses"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23eff0fe%22%20stroke%3D%22%23dce0f9%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236477a8%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%203h16v18l-4-2-4%202-4-2-4%202z%22%2F%3E%3Cpath%20d%3D%22M8%208h8M8%2012h8M8%2016h4%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="profit"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f7ee%22%20stroke%3D%22%23c9ebdd%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23268269%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2017l6-6%204%204%208-8%22%2F%3E%3Cpath%20d%3D%22M15%207h6v6%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="noshow"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23edf1f6%22%20stroke%3D%22%23d8e3ed%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236b7d91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%228%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M3%2020v-2a6%206%200%200%201%209-5M16%2014l6%206m0-6-6%206%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="cancellations"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23fceced%22%20stroke%3D%22%23f4d5d9%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23bd696c%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2216%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M7%203v4m10-4v4M3%2010h18M9%2014l6%205m0-5-6%205%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Total Inventory"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2216%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M7%203v4m10-4v4M3%2010h18m5%204h2m4%200h2m-6%204h2%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Blocked"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23faebed%22%20stroke%3D%22%23f1d8db%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23bb6a6a%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M5.6%205.6l12.8%2012.8%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Sellable"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e3f5f1%22%20stroke%3D%22%23cbeae2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23298875%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2021V4a2%202%200%200%201%202-2h12a2%202%200%200%201%202%202v17M8%2021V6h8v15M2%2021h20M13%2013h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Sold"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2018V9m18%209V9M3%2014h18M6%209V7h5v2m2%200V7h5v2M3%2018h18%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Vacant"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23edf2f7%22%20stroke%3D%22%23d9e2ec%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23687e93%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2021V4a2%202%200%200%201%202-2h12a2%202%200%200%201%202%202v17M8%2021V6h8v15M2%2021h20M14%2013h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="In-house Guests"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23eff0fd%22%20stroke%3D%22%23dce0f8%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236776a4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%228%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M3%2020v-2a6%206%200%200%201%2012%200v2M17%205a3%203%200%200%201%200%206m1%203a5%205%200%200%201%203%205v1%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="occupancy"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M12%203v9h9%22%2F%3E%3Cpath%20d%3D%22M9%203.5A9%209%200%201%200%2020.5%2015H10V3.5%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Accommodation (NET)"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e3f5f1%22%20stroke%3D%22%23cbeae2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23298875%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%224%22%20y%3D%223%22%20width%3D%2216%22%20height%3D%2218%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M8%207h2m4%200h2M8%2011h2m4%200h2M9%2021v-6h6v6%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="ADR"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e3f5f1%22%20stroke%3D%22%23cbeae2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23298875%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%225%22%20y%3D%222%22%20width%3D%2214%22%20height%3D%2220%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M8%206h8M8%2010h2m4%200h2m-8%204h2m4%200h2m-8%204h2m4%200h2%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="RevPAR"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23eff0fd%22%20stroke%3D%22%23dce0f8%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236776a4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2021V10m0%2011h18M8%2021v-9m5%209V6m5%2015v-14%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="checkin"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M9%203H5a2%202%200%200%200-2%202v14a2%202%200%200%200%202%202h4m7-18h3a2%202%200%200%201%202%202v14a2%202%200%200%201-2%202h-3M8%2012h12m-4-4%204%204-4%204%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="checkout"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M9%203H5a2%202%200%200%200-2%202v14a2%202%200%200%200%202%202h4m7-18h3a2%202%200%200%201%202%202v14a2%202%200%200%201-2%202h-3M4%2012h12m-4-4%204%204-4%204%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="available"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22m7.5%2012%203%203%206-6%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="occupied"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2020v-6h18v6M5%2014V9h14v5M7%209V6h4v3m2%200V6h4v3M3%2020h18%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="blocked"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M5.6%205.6l12.8%2012.8%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="dirty"] { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2020h16M6%2020l1-8%205-3%205%203%201%208M12%202v4M5%206l3%202m11-2-3%202%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
 
-.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div { position: relative; isolation: isolate; }
-.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div::before {
- content: ""; position: absolute; top: 6px; right: 7px; width: 24px; height: 24px;
- background: var(--dashboard-metric-icon, none) center/contain no-repeat; pointer-events: none;
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi::before,
+    .dashboard-page .dashboard-operations .dashboard-operation::before {
+        content: "";
+        position: absolute;
+        right: 10px;
+        top: 8px;
+        display: block;
+        width: 33px;
+        height: 33px;
+        background-image: var(--dashboard-metric-icon, none);
+        background-position: center;
+        background-size: contain;
+        background-repeat: no-repeat;
+        pointer-events: none;
+        opacity: .96;
+        transition: transform .15s ease, opacity .15s ease;
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi:hover::before,
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi:focus-visible::before,
+    .dashboard-page .dashboard-operations .dashboard-operation:hover::before,
+    .dashboard-page .dashboard-operations .dashboard-operation:focus-visible::before {
+        transform: translateY(-1px);
+        opacity: 1;
+    }
+    /* Text remains clear beside the right-hand icon, even at narrow widths. */
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi > .dashboard-kpi-value,
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi > .dashboard-kpi-label {
+        max-width: calc(100% - 37px);
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi > .dashboard-kpi-label {
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation::before {
+        width: 27px;
+        height: 27px;
+        top: 7px;
+        right: 8px;
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation > span {
+        max-width: calc(100% - 28px);
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="revenue"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%222%22%20y%3D%226%22%20width%3D%2220%22%20height%3D%2212%22%20rx%3D%222%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%222%22%2F%3E%3Cpath%20d%3D%22M6%2012h.01M18%2012h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="receivables"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23fff4dc%22%20stroke%3D%22%23f6e4b7%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23ac7b28%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M20%208V6a3%203%200%200%200-3-3H5a3%203%200%200%200-3%203v12a3%203%200%200%200%203%203h15v-5%22%2F%3E%3Cpath%20d%3D%22M2%208h18a2%202%200%200%201%202%202v6h-6a3%203%200%200%201%200-6h6%22%2F%3E%3Cpath%20d%3D%22M16%2013h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="expenses"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23eff0fe%22%20stroke%3D%22%23dce0f9%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236477a8%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%203h16v18l-4-2-4%202-4-2-4%202z%22%2F%3E%3Cpath%20d%3D%22M8%208h8M8%2012h8M8%2016h4%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="profit"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f7ee%22%20stroke%3D%22%23c9ebdd%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23268269%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2017l6-6%204%204%208-8%22%2F%3E%3Cpath%20d%3D%22M15%207h6v6%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="noshow"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23edf1f6%22%20stroke%3D%22%23d8e3ed%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236b7d91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%228%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M3%2020v-2a6%206%200%200%201%209-5M16%2014l6%206m0-6-6%206%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="cancellations"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23fceced%22%20stroke%3D%22%23f4d5d9%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23bd696c%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2216%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M7%203v4m10-4v4M3%2010h18M9%2014l6%205m0-5-6%205%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Total Inventory"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%223%22%20y%3D%225%22%20width%3D%2218%22%20height%3D%2216%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M7%203v4m10-4v4M3%2010h18m5%204h2m4%200h2m-6%204h2%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Blocked"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23faebed%22%20stroke%3D%22%23f1d8db%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23bb6a6a%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M5.6%205.6l12.8%2012.8%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Sellable"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e3f5f1%22%20stroke%3D%22%23cbeae2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23298875%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2021V4a2%202%200%200%201%202-2h12a2%202%200%200%201%202%202v17M8%2021V6h8v15M2%2021h20M13%2013h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Sold"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2018V9m18%209V9M3%2014h18M6%209V7h5v2m2%200V7h5v2M3%2018h18%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Vacant"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23edf2f7%22%20stroke%3D%22%23d9e2ec%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23687e93%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2021V4a2%202%200%200%201%202-2h12a2%202%200%200%201%202%202v17M8%2021V6h8v15M2%2021h20M14%2013h.01%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="In-house Guests"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23eff0fd%22%20stroke%3D%22%23dce0f8%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236776a4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%228%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M3%2020v-2a6%206%200%200%201%2012%200v2M17%205a3%203%200%200%201%200%206m1%203a5%205%200%200%201%203%205v1%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[data-dashboard-statistic="occupancy"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e2f0fc%22%20stroke%3D%22%23cce2f6%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%232b6fa4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M12%203v9h9%22%2F%3E%3Cpath%20d%3D%22M9%203.5A9%209%200%201%200%2020.5%2015H10V3.5%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="Accommodation (NET)"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e3f5f1%22%20stroke%3D%22%23cbeae2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23298875%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%224%22%20y%3D%223%22%20width%3D%2216%22%20height%3D%2218%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M8%207h2m4%200h2M8%2011h2m4%200h2M9%2021v-6h6v6%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="ADR"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e3f5f1%22%20stroke%3D%22%23cbeae2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23298875%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Crect%20x%3D%225%22%20y%3D%222%22%20width%3D%2214%22%20height%3D%2220%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M8%206h8M8%2010h2m4%200h2m-8%204h2m4%200h2m-8%204h2m4%200h2%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi[aria-label="RevPAR"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23eff0fd%22%20stroke%3D%22%23dce0f8%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%236776a4%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2021V10m0%2011h18M8%2021v-9m5%209V6m5%2015v-14%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="checkin"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M9%203H5a2%202%200%200%200-2%202v14a2%202%200%200%200%202%202h4m7-18h3a2%202%200%200%201%202%202v14a2%202%200%200%201-2%202h-3M8%2012h12m-4-4%204%204-4%204%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="checkout"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M9%203H5a2%202%200%200%200-2%202v14a2%202%200%200%200%202%202h4m7-18h3a2%202%200%200%201%202%202v14a2%202%200%200%201-2%202h-3M4%2012h12m-4-4%204%204-4%204%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="available"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22m7.5%2012%203%203%206-6%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="occupied"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%2020v-6h18v6M5%2014V9h14v5M7%209V6h4v3m2%200V6h4v3M3%2020h18%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="blocked"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M5.6%205.6l12.8%2012.8%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="dirty"] {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2020h16M6%2020l1-8%205-3%205%203%201%208M12%202v4M5%206l3%202m11-2-3%202%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div {
+    position: relative;
+    isolation: isolate;
 }
-.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div > span { max-width: calc(100% - 23px); overflow-wrap: anywhere; }
-.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(1) { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%228%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M3%2020v-2a6%206%200%200%201%2012%200v2M17%205a3%203%200%200%201%200%206m1%203a5%205%200%200%201%203%205v1%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(2) { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M12%207v5l3%202%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
-.dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(3) { --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2012a8%208%200%200%201%2014-5M18%203v4h-4M20%2012a8%208%200%200%201-14%205M6%2021v-4h4%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E"); }
+
+    .dashboard-page .dashboard-operations-card .dashboard-mini-stats > div::before {
+        content: "";
+        position: absolute;
+        top: 6px;
+        right: 7px;
+        width: 24px;
+        height: 24px;
+        background: var(--dashboard-metric-icon, none) center/contain no-repeat;
+        pointer-events: none;
+    }
+
+    .dashboard-page .dashboard-operations-card .dashboard-mini-stats > div > span {
+        max-width: calc(100% - 23px);
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(1) {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%229%22%20cy%3D%228%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22M3%2020v-2a6%206%200%200%201%2012%200v2M17%205a3%203%200%200%201%200%206m1%203a5%205%200%200%201%203%205v1%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(2) {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M12%207v5l3%202%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
+
+    .dashboard-page .dashboard-operations-card .dashboard-mini-stats > div:nth-child(3) {
+        --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2236%22%20height%3D%2236%22%20viewBox%3D%220%200%2036%2036%22%3E%3Crect%20x%3D%220.5%22%20y%3D%220.5%22%20width%3D%2235%22%20height%3D%2235%22%20rx%3D%2210%22%20fill%3D%22%23e4effa%22%20stroke%3D%22%23d0e2f2%22%2F%3E%3Cg%20transform%3D%22translate%286%206%29%22%20stroke%3D%22%23285f91%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M4%2012a8%208%200%200%201%2014-5M18%203v4h-4M20%2012a8%208%200%200%201-14%205M6%2021v-4h4%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    }
 
 
 /* 2026-10-22 reference-style summary KPIs — additive; retain existing dashboard components. */
@@ -6243,168 +6334,543 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     min-width: 0;
     align-content: stretch;
 }
+
 .dashboard-page .dashboard-financial-strip,
 .dashboard-page .dashboard-primary-metrics,
-.dashboard-page .dashboard-activity-strip {min-width:0;display:grid;}
+.dashboard-page .dashboard-activity-strip {
+    min-width: 0;
+    display: grid;
+}
+
 .dashboard-page .dashboard-financial-strip {
     grid-template-columns: repeat(4,minmax(0,1fr));
     gap: 0;
     overflow: hidden;
-    background:#fff;
-    border:1px solid #dfe8ee;
-    border-radius:13px;
-    box-shadow:0 3px 12px rgba(16,48,79,.05);
+    background: #fff;
+    border: 1px solid #dfe8ee;
+    border-radius: 13px;
+    box-shadow: 0 3px 12px rgba(16,48,79,.05);
 }
+
 .dashboard-page .dashboard-primary-metrics {
     grid-template-columns: repeat(3,minmax(0,1fr));
     gap: 10px;
 }
+
 .dashboard-page .dashboard-activity-strip {
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:0;
-    border:1px solid #dfe8ee;
-    background:#fff;
-    border-radius:12px;
-    overflow:hidden;
-    box-shadow:0 2px 9px rgba(16,48,79,.04);
+    grid-template-columns: repeat(3,minmax(0,1fr));
+    gap: 0;
+    border: 1px solid #dfe8ee;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 9px rgba(16,48,79,.04);
 }
+
 .dashboard-page .dashboard-kpi-workspace .dashboard-kpi.dashboard-financial-metric,
 .dashboard-page .dashboard-kpi-workspace .dashboard-kpi.dashboard-occupancy-metric,
 .dashboard-page .dashboard-kpi-workspace .dashboard-kpi.dashboard-roomnights-metric,
 .dashboard-page .dashboard-kpi-workspace .dashboard-kpi.dashboard-rate-metric,
 .dashboard-page .dashboard-kpi-workspace .dashboard-kpi.dashboard-activity-metric {
-    font-family:inherit;
-    position:relative;
-    padding:0;
-    min-height:0;
-    box-shadow:none;
-    border:0;
-    border-radius:0;
-    background:transparent;
-    color:#24364a;
-    transform:none;
-    text-align:left;
-    isolation:auto;
-    gap:0;
-    justify-content:center;
-    align-items:stretch;
-    white-space:normal;
+    font-family: inherit;
+    position: relative;
+    padding: 0;
+    min-height: 0;
+    box-shadow: none;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #24364a;
+    transform: none;
+    text-align: left;
+    isolation: auto;
+    gap: 0;
+    justify-content: center;
+    align-items: stretch;
+    white-space: normal;
 }
 /* Earlier SVG icons were drawn by pseudoelements on the right; these tiles use inline SVG on the left. */
-.dashboard-page .dashboard-kpi-reference .dashboard-kpi::before {content:none!important;display:none!important;}
-.dashboard-page .dashboard-kpi-reference .dashboard-kpi:focus-visible {outline:2px solid #70a8cc;outline-offset:-2px;z-index:2;}
-.dashboard-page .dashboard-kpi-reference .dashboard-kpi:hover {background:#f3f9fc;}
+.dashboard-page .dashboard-kpi-reference .dashboard-kpi::before {
+    content: none !important;
+    display: none !important;
+}
+
+.dashboard-page .dashboard-kpi-reference .dashboard-kpi:focus-visible {
+    outline: 2px solid #70a8cc;
+    outline-offset: -2px;
+    z-index: 2;
+}
+
+.dashboard-page .dashboard-kpi-reference .dashboard-kpi:hover {
+    background: #f3f9fc;
+}
+
 .dashboard-page .dashboard-kpi-workspace .dashboard-financial-metric {
-    min-height:94px!important;
-    display:flex!important;
-    flex-direction:row!important;
-    align-items:flex-start!important;
-    justify-content:flex-start!important;
-    gap:10px!important;
-    padding:15px 10px!important;
+    min-height: 94px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 10px !important;
+    padding: 15px 10px !important;
 }
-.dashboard-page .dashboard-financial-metric:not(:first-child) {border-left:1px solid #e6edf2!important;}
+
+.dashboard-page .dashboard-financial-metric:not(:first-child) {
+    border-left: 1px solid #e6edf2 !important;
+}
+
 .dashboard-page .dashboard-overview-icon {
-    width:32px;height:32px;flex:0 0 32px;
-    display:inline-flex;align-items:center;justify-content:center;
-    color:#1f879a;background:#eaf7f8;border-radius:9px;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #1f879a;
+    background: #eaf7f8;
+    border-radius: 9px;
 }
-.dashboard-page .dashboard-overview-icon svg {width:17px;height:17px;display:block;}
-.dashboard-page .dashboard-overview-icon-expense {color:#bb784c;background:#fff1e7;}
-.dashboard-page .dashboard-overview-icon-profit {color:#278665;background:#e8f7ef;}
-.dashboard-page .dashboard-overview-icon-receivable {color:#647485;background:#eff2f5;}
-.dashboard-page .dashboard-overview-icon-guests {color:#178f99;background:#eaf7f8;}
-.dashboard-page .dashboard-overview-icon-cancel {color:#c56568;background:#fcf0f0;}
-.dashboard-page .dashboard-overview-icon-noshow {color:#ad713b;background:#fdf3eb;}
-.dashboard-page .dashboard-financial-text {display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;}
-.dashboard-page .dashboard-overview-title {display:block;color:#566a7a;font-size:11px;font-weight:550;line-height:1.25;white-space:normal;}
-.dashboard-page .dashboard-financial-metric .dashboard-overview-number {display:block;color:#292e35;font-size:clamp(19px,1.5vw,26px);font-weight:720;line-height:1.1;letter-spacing:-.035em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
-.dashboard-page .dashboard-metric-profit .dashboard-overview-number {color:#229267;}
-.dashboard-page .dashboard-overview-detail {color:#7b8792;font-size:9.5px;line-height:1.35;overflow-wrap:anywhere;}
-.dashboard-page .dashboard-profit-chip {font-size:9px;line-height:1.25;font-weight:700;color:#278967;background:#e8f7ef;padding:2px 7px;border-radius:999px;}
+
+    .dashboard-page .dashboard-overview-icon svg {
+        width: 17px;
+        height: 17px;
+        display: block;
+    }
+
+.dashboard-page .dashboard-overview-icon-expense {
+    color: #bb784c;
+    background: #fff1e7;
+}
+
+.dashboard-page .dashboard-overview-icon-profit {
+    color: #278665;
+    background: #e8f7ef;
+}
+
+.dashboard-page .dashboard-overview-icon-receivable {
+    color: #647485;
+    background: #eff2f5;
+}
+
+.dashboard-page .dashboard-overview-icon-guests {
+    color: #178f99;
+    background: #eaf7f8;
+}
+
+.dashboard-page .dashboard-overview-icon-cancel {
+    color: #c56568;
+    background: #fcf0f0;
+}
+
+.dashboard-page .dashboard-overview-icon-noshow {
+    color: #ad713b;
+    background: #fdf3eb;
+}
+
+.dashboard-page .dashboard-financial-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    min-width: 0;
+}
+
+.dashboard-page .dashboard-overview-title {
+    display: block;
+    color: #566a7a;
+    font-size: 11px;
+    font-weight: 550;
+    line-height: 1.25;
+    white-space: normal;
+}
+
+.dashboard-page .dashboard-financial-metric .dashboard-overview-number {
+    display: block;
+    color: #292e35;
+    font-size: clamp(19px,1.5vw,26px);
+    font-weight: 720;
+    line-height: 1.1;
+    letter-spacing: -.035em;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-page .dashboard-metric-profit .dashboard-overview-number {
+    color: #229267;
+}
+
+.dashboard-page .dashboard-overview-detail {
+    color: #7b8792;
+    font-size: 9.5px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.dashboard-page .dashboard-profit-chip {
+    font-size: 9px;
+    line-height: 1.25;
+    font-weight: 700;
+    color: #278967;
+    background: #e8f7ef;
+    padding: 2px 7px;
+    border-radius: 999px;
+}
+
 .dashboard-page .dashboard-kpi-workspace .dashboard-occupancy-metric,
 .dashboard-page .dashboard-kpi-workspace .dashboard-roomnights-metric,
 .dashboard-page .dashboard-rate-panel {
-    min-height:115px!important;
-    border:1px solid #dfe8ee!important;
-    border-radius:12px!important;
-    background:#fff!important;
-    box-shadow:0 3px 11px rgba(16,48,79,.045)!important;
+    min-height: 115px !important;
+    border: 1px solid #dfe8ee !important;
+    border-radius: 12px !important;
+    background: #fff !important;
+    box-shadow: 0 3px 11px rgba(16,48,79,.045) !important;
 }
+
 .dashboard-page .dashboard-kpi-workspace .dashboard-occupancy-metric {
-    display:flex!important;flex-direction:row!important;justify-content:flex-start!important;align-items:center!important;
-    gap:12px!important;padding:14px 13px!important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 14px 13px !important;
 }
+
 .dashboard-page .dashboard-occupancy-ring {
-    width:69px;height:69px;flex:0 0 69px;display:grid;place-items:center;
-    border-radius:50%;position:relative;
-    background:conic-gradient(#1599a3 0 var(--occupancy-pct),#e6edf1 var(--occupancy-pct) 100%);
+    width: 69px;
+    height: 69px;
+    flex: 0 0 69px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    position: relative;
+    background: conic-gradient(#1599a3 0 var(--occupancy-pct),#e6edf1 var(--occupancy-pct) 100%);
 }
-.dashboard-page .dashboard-occupancy-ring::after {content:"";position:absolute;inset:8px;background:#fff;border-radius:50%;}
-.dashboard-page .dashboard-occupancy-ring strong {z-index:1;color:#263a4a;font-size:14px;font-weight:750;}
-.dashboard-page .dashboard-occupancy-text {display:flex;flex-direction:column;gap:4px;min-width:0;}
-.dashboard-page .dashboard-occupancy-text strong {color:#27313a;font-size:12px;font-weight:750;line-height:1.35;}
-.dashboard-page .dashboard-occupancy-text strong span {color:#65717d;font-weight:450;}
-.dashboard-page .dashboard-occupancy-text small {color:#81909b;font-size:10px;line-height:1.35;}
-.dashboard-page .dashboard-rate-panel {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:12px 0;min-width:0;}
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi.dashboard-rate-metric {display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;padding:10px 13px!important;gap:5px!important;}
-.dashboard-page .dashboard-rate-metric + .dashboard-rate-metric {border-left:1px solid #e8edf1!important;}
-.dashboard-page .dashboard-rate-metric strong {font-size:clamp(16px,1.37vw,23px);color:#242d36;line-height:1.12;font-weight:720;letter-spacing:-.035em;overflow-wrap:anywhere;}
-.dashboard-page .dashboard-rate-metric small {font-size:9px;color:#7c8996;line-height:1.2;}
-.dashboard-page .dashboard-kpi-workspace .dashboard-roomnights-metric {padding:14px 14px!important;display:flex!important;flex-direction:column!important;justify-content:space-between!important;gap:9px!important;}
-.dashboard-page .dashboard-roomnights-heading {display:flex;align-items:center;justify-content:space-between;gap:7px;}
-.dashboard-page .dashboard-roomnights-heading strong {font-size:20px;line-height:1;font-weight:750;color:#28343d;letter-spacing:-.035em;}
-.dashboard-page .dashboard-roomnights-track {width:100%;height:9px;border-radius:99px;background:#e9edf2;overflow:hidden;display:flex;}
-.dashboard-page .dashboard-roomnights-track span {display:block;height:100%;flex:none;min-width:0;}
-.dashboard-page .dashboard-roomnights-sold,.dashboard-page .dashboard-dot-sold {background:#15999d;}
-.dashboard-page .dashboard-roomnights-vacant,.dashboard-page .dashboard-dot-vacant {background:#cfd9de;}
-.dashboard-page .dashboard-roomnights-blocked,.dashboard-page .dashboard-dot-blocked {background:#e8a157;}
-.dashboard-page .dashboard-roomnights-key {display:flex;justify-content:space-between;flex-wrap:wrap;gap:3px 7px;color:#778692;font-size:10px;line-height:1.25;}
-.dashboard-page .dashboard-roomnights-key span {display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
-.dashboard-page .dashboard-roomnights-key i {display:inline-block;width:7px;height:7px;border-radius:50%;}
-.dashboard-page .dashboard-kpi-workspace .dashboard-activity-metric {min-height:49px!important;padding:9px 15px!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:8px!important;}
-.dashboard-page .dashboard-activity-metric + .dashboard-activity-metric {border-left:1px solid #e7edf2!important;}
-.dashboard-page .dashboard-activity-metric .dashboard-overview-icon {width:25px;height:25px;flex-basis:25px;border-radius:7px;background:transparent;}
-.dashboard-page .dashboard-activity-metric .dashboard-overview-icon svg {width:17px;height:17px;}
-.dashboard-page .dashboard-activity-label {color:#617181;font-weight:550;font-size:10px;}
-.dashboard-page .dashboard-activity-number {margin-left:auto;font-size:18px;line-height:1.1;color:#26313c;font-weight:750;font-variant-numeric:tabular-nums;}
-.dashboard-page .dashboard-metric-cancel .dashboard-activity-number {color:#c74e55;}
-.dashboard-page .dashboard-metric-noshow .dashboard-activity-number {color:#b46b36;}
+
+    .dashboard-page .dashboard-occupancy-ring::after {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        background: #fff;
+        border-radius: 50%;
+    }
+
+    .dashboard-page .dashboard-occupancy-ring strong {
+        z-index: 1;
+        color: #263a4a;
+        font-size: 14px;
+        font-weight: 750;
+    }
+
+.dashboard-page .dashboard-occupancy-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+    .dashboard-page .dashboard-occupancy-text strong {
+        color: #27313a;
+        font-size: 12px;
+        font-weight: 750;
+        line-height: 1.35;
+    }
+
+        .dashboard-page .dashboard-occupancy-text strong span {
+            color: #65717d;
+            font-weight: 450;
+        }
+
+    .dashboard-page .dashboard-occupancy-text small {
+        color: #81909b;
+        font-size: 10px;
+        line-height: 1.35;
+    }
+
+.dashboard-page .dashboard-rate-panel {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    padding: 12px 0;
+    min-width: 0;
+}
+
+.dashboard-page .dashboard-kpi-workspace .dashboard-kpi.dashboard-rate-metric {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: 10px 13px !important;
+    gap: 5px !important;
+}
+
+.dashboard-page .dashboard-rate-metric + .dashboard-rate-metric {
+    border-left: 1px solid #e8edf1 !important;
+}
+
+.dashboard-page .dashboard-rate-metric strong {
+    font-size: clamp(16px,1.37vw,23px);
+    color: #242d36;
+    line-height: 1.12;
+    font-weight: 720;
+    letter-spacing: -.035em;
+    overflow-wrap: anywhere;
+}
+
+.dashboard-page .dashboard-rate-metric small {
+    font-size: 9px;
+    color: #7c8996;
+    line-height: 1.2;
+}
+
+.dashboard-page .dashboard-kpi-workspace .dashboard-roomnights-metric {
+    padding: 14px 14px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    gap: 9px !important;
+}
+
+.dashboard-page .dashboard-roomnights-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+}
+
+    .dashboard-page .dashboard-roomnights-heading strong {
+        font-size: 20px;
+        line-height: 1;
+        font-weight: 750;
+        color: #28343d;
+        letter-spacing: -.035em;
+    }
+
+.dashboard-page .dashboard-roomnights-track {
+    width: 100%;
+    height: 9px;
+    border-radius: 99px;
+    background: #e9edf2;
+    overflow: hidden;
+    display: flex;
+}
+
+    .dashboard-page .dashboard-roomnights-track span {
+        display: block;
+        height: 100%;
+        flex: none;
+        min-width: 0;
+    }
+
+.dashboard-page .dashboard-roomnights-sold, .dashboard-page .dashboard-dot-sold {
+    background: #15999d;
+}
+
+.dashboard-page .dashboard-roomnights-vacant, .dashboard-page .dashboard-dot-vacant {
+    background: #cfd9de;
+}
+
+.dashboard-page .dashboard-roomnights-blocked, .dashboard-page .dashboard-dot-blocked {
+    background: #e8a157;
+}
+
+.dashboard-page .dashboard-roomnights-key {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 3px 7px;
+    color: #778692;
+    font-size: 10px;
+    line-height: 1.25;
+}
+
+    .dashboard-page .dashboard-roomnights-key span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+    }
+
+    .dashboard-page .dashboard-roomnights-key i {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+    }
+
+.dashboard-page .dashboard-kpi-workspace .dashboard-activity-metric {
+    min-height: 49px !important;
+    padding: 9px 15px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+}
+
+.dashboard-page .dashboard-activity-metric + .dashboard-activity-metric {
+    border-left: 1px solid #e7edf2 !important;
+}
+
+.dashboard-page .dashboard-activity-metric .dashboard-overview-icon {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
+    border-radius: 7px;
+    background: transparent;
+}
+
+    .dashboard-page .dashboard-activity-metric .dashboard-overview-icon svg {
+        width: 17px;
+        height: 17px;
+    }
+
+.dashboard-page .dashboard-activity-label {
+    color: #617181;
+    font-weight: 550;
+    font-size: 10px;
+}
+
+.dashboard-page .dashboard-activity-number {
+    margin-left: auto;
+    font-size: 18px;
+    line-height: 1.1;
+    color: #26313c;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-page .dashboard-metric-cancel .dashboard-activity-number {
+    color: #c74e55;
+}
+
+.dashboard-page .dashboard-metric-noshow .dashboard-activity-number {
+    color: #b46b36;
+}
+
 @media(max-width:1500px) {
- .dashboard-page .dashboard-financial-strip {grid-template-columns:repeat(2,minmax(0,1fr));}
- .dashboard-page .dashboard-financial-metric:nth-child(3) {border-left:0!important;border-top:1px solid #e6edf2!important;}
- .dashboard-page .dashboard-financial-metric:nth-child(4) {border-top:1px solid #e6edf2!important;}
- .dashboard-page .dashboard-primary-metrics {grid-template-columns:repeat(2,minmax(0,1fr));}
- .dashboard-page .dashboard-roomnights-metric {grid-column:1/-1;}
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(3) {
+        border-left: 0 !important;
+        border-top: 1px solid #e6edf2 !important;
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(4) {
+        border-top: 1px solid #e6edf2 !important;
+    }
+
+    .dashboard-page .dashboard-primary-metrics {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .dashboard-page .dashboard-roomnights-metric {
+        grid-column: 1/-1;
+    }
 }
+
 @media(max-width:1050px) {
- .dashboard-page .dashboard-financial-strip {grid-template-columns:repeat(4,minmax(0,1fr));}
- .dashboard-page .dashboard-financial-metric:nth-child(3) {border-left:1px solid #e6edf2!important;border-top:0!important;}
- .dashboard-page .dashboard-financial-metric:nth-child(4) {border-top:0!important;}
- .dashboard-page .dashboard-primary-metrics {grid-template-columns:repeat(3,minmax(0,1fr));}
- .dashboard-page .dashboard-roomnights-metric {grid-column:auto;}
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: repeat(4,minmax(0,1fr));
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(3) {
+        border-left: 1px solid #e6edf2 !important;
+        border-top: 0 !important;
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(4) {
+        border-top: 0 !important;
+    }
+
+    .dashboard-page .dashboard-primary-metrics {
+        grid-template-columns: repeat(3,minmax(0,1fr));
+    }
+
+    .dashboard-page .dashboard-roomnights-metric {
+        grid-column: auto;
+    }
 }
+
 @media(max-width:760px) {
- .dashboard-page .dashboard-financial-strip {grid-template-columns:repeat(2,minmax(0,1fr));}
- .dashboard-page .dashboard-financial-metric:nth-child(3) {border-left:0!important;border-top:1px solid #e6edf2!important;}
- .dashboard-page .dashboard-financial-metric:nth-child(4) {border-top:1px solid #e6edf2!important;}
- .dashboard-page .dashboard-primary-metrics {grid-template-columns:1fr;}
- .dashboard-page .dashboard-roomnights-metric {grid-column:auto;}
- .dashboard-page .dashboard-activity-strip {grid-template-columns:1fr;}
- .dashboard-page .dashboard-activity-metric + .dashboard-activity-metric {border-left:0!important;border-top:1px solid #e7edf2!important;}
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(3) {
+        border-left: 0 !important;
+        border-top: 1px solid #e6edf2 !important;
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(4) {
+        border-top: 1px solid #e6edf2 !important;
+    }
+
+    .dashboard-page .dashboard-primary-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-page .dashboard-roomnights-metric {
+        grid-column: auto;
+    }
+
+    .dashboard-page .dashboard-activity-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-page .dashboard-activity-metric + .dashboard-activity-metric {
+        border-left: 0 !important;
+        border-top: 1px solid #e7edf2 !important;
+    }
 }
-@media(max-width:460px){.dashboard-page .dashboard-financial-strip {grid-template-columns:1fr;}.dashboard-page .dashboard-financial-metric{border-left:0!important;border-top:1px solid #e7edf2!important;}.dashboard-page .dashboard-financial-metric:first-child{border-top:0!important;}}
+
+@media(max-width:460px) {
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-page .dashboard-financial-metric {
+        border-left: 0 !important;
+        border-top: 1px solid #e7edf2 !important;
+    }
+
+        .dashboard-page .dashboard-financial-metric:first-child {
+            border-top: 0 !important;
+        }
+}
 
 /* Narrow laptop width: avoid four cramped financial columns. */
 @media(max-width:900px) and (min-width:761px) {
- .dashboard-page .dashboard-financial-strip {grid-template-columns:repeat(2,minmax(0,1fr));}
- .dashboard-page .dashboard-financial-metric:nth-child(3) {border-left:0!important;border-top:1px solid #e6edf2!important;}
- .dashboard-page .dashboard-financial-metric:nth-child(4) {border-top:1px solid #e6edf2!important;}
- .dashboard-page .dashboard-primary-metrics {grid-template-columns:repeat(2,minmax(0,1fr));}
- .dashboard-page .dashboard-roomnights-metric {grid-column:1/-1;}
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(3) {
+        border-left: 0 !important;
+        border-top: 1px solid #e6edf2 !important;
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(4) {
+        border-top: 1px solid #e6edf2 !important;
+    }
+
+    .dashboard-page .dashboard-primary-metrics {
+        grid-template-columns: repeat(2,minmax(0,1fr));
+    }
+
+    .dashboard-page .dashboard-roomnights-metric {
+        grid-column: 1/-1;
+    }
 }
-.dashboard-page .dashboard-metric-profit.is-negative .dashboard-overview-number {color:#c74e55;}
-.dashboard-page .dashboard-metric-profit.is-negative .dashboard-profit-chip {color:#b64d52;background:#fcebed;}
+
+.dashboard-page .dashboard-metric-profit.is-negative .dashboard-overview-number {
+    color: #c74e55;
+}
+
+.dashboard-page .dashboard-metric-profit.is-negative .dashboard-profit-chip {
+    color: #b64d52;
+    background: #fcebed;
+}
 
 
 /* ORA PMS — latest KPI adjustments, built on the supplied dashboard.css. */
@@ -6420,10 +6886,11 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     line-height: 1.4;
     letter-spacing: -.015em;
 }
-.dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-separator {
-    color: #afbdc9;
-    flex: none;
-}
+
+    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-separator {
+        color: #afbdc9;
+        flex: none;
+    }
 /* Legend: green revenue and blue occupancy on the SAME row. */
 .dashboard-page .dashboard-room-performance-head .dashboard-performance-legend {
     display: flex;
@@ -6434,23 +6901,34 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     gap: 13px;
     white-space: nowrap;
 }
-.dashboard-page .dashboard-room-performance-head .dashboard-performance-legend span {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-}
+
+    .dashboard-page .dashboard-room-performance-head .dashboard-performance-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+    }
 /* The KPI cards are information-only. Hover explanations are still supported. */
 .dashboard-page .dashboard-kpi-workspace .dashboard-kpi,
 .dashboard-page .dashboard-kpi-workspace .dashboard-kpi-button {
     cursor: default !important;
 }
-.dashboard-page .dashboard-kpi-workspace .dashboard-kpi-button:hover {
-    transform: none !important;
-}
+
+    .dashboard-page .dashboard-kpi-workspace .dashboard-kpi-button:hover {
+        transform: none !important;
+    }
+
 @media (max-width: 760px) {
-    .dashboard-page .dashboard-revenue-breakdown { flex-wrap: wrap; gap: 1px 4px; font-size: 9px; }
-    .dashboard-page .dashboard-room-performance-head .dashboard-performance-legend { gap: 8px; font-size: 9px; }
+    .dashboard-page .dashboard-revenue-breakdown {
+        flex-wrap: wrap;
+        gap: 1px 4px;
+        font-size: 9px;
+    }
+
+    .dashboard-page .dashboard-room-performance-head .dashboard-performance-legend {
+        gap: 8px;
+        font-size: 9px;
+    }
 }
 
 
@@ -6473,39 +6951,192 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     line-height: 1.25;
     font-weight: 400 !important;
 }
-.dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-part {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-weight: 400 !important;
-}
-.dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-label {
-    color: #748397;
-    font-size: 9.5px;
-    font-weight: 400 !important;
-    white-space: nowrap;
-}
-.dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-amount {
-    color: #263e59;
-    font-size: 13px;
-    font-weight: 400 !important;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-.dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-separator {
-    display: none;
-}
+
+    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-part {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-weight: 400 !important;
+    }
+
+    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-label {
+        color: #748397;
+        font-size: 9.5px;
+        font-weight: 400 !important;
+        white-space: nowrap;
+    }
+
+    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-amount {
+        color: #263e59;
+        font-size: 13px;
+        font-weight: 400 !important;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-separator {
+        display: none;
+    }
 
 @media (max-width: 1400px) {
-    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-label {font-size: 9px;}
-    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-amount {font-size: 12px;}
+    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-label {
+        font-size: 9px;
+    }
+
+    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-amount {
+        font-size: 12px;
+    }
 }
+
 @media (max-width: 760px) {
     .dashboard-page .dashboard-revenue-breakdown {
         display: grid;
         grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
         gap: 6px;
     }
-    .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-amount {font-size: 13px;}
+
+        .dashboard-page .dashboard-revenue-breakdown .dashboard-revenue-amount {
+            font-size: 13px;
+        }
+}
+
+
+/* Dashboard: light Property Overview. The date-range picker remains interactive. */
+.dashboard-page .dashboard-hero {
+    background: linear-gradient(112deg, #fff 0%, #f8fbff 63%, #edf5fc 100%);
+    border: 1px solid #dbe6f1;
+    color: #1c3856;
+    box-shadow: 0 4px 16px rgba(31, 62, 92, .06);
+}
+
+    .dashboard-page .dashboard-hero::after {
+        background: radial-gradient(circle, rgba(109, 174, 223, .10), transparent 67%);
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-eyebrow {
+        color: #38648c;
+    }
+
+    .dashboard-page .dashboard-hero h1,
+    .dashboard-page .dashboard-hero .dashboard-hero-copy p strong {
+        color: #173755;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-hero-copy p {
+        color: #59738c;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-occupancy-dial span,
+    .dashboard-page .dashboard-hero .dashboard-occupancy-dial small,
+    .dashboard-page .dashboard-hero .dashboard-hero-stat span,
+    .dashboard-page .dashboard-hero .dashboard-hero-stat small {
+        color: #58738f;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-occupancy-dial strong,
+    .dashboard-page .dashboard-hero .dashboard-hero-stat strong {
+        color: #183a5d;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-occupancy-dial svg circle:first-of-type {
+        stroke: #dce7f0;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-occupancy-dial svg circle:nth-of-type(2) {
+        stroke: #3a91bb;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-occupancy-dial svg text {
+        fill: #163b60;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-hero-stat {
+        background: rgba(255,255,255,.85);
+        border: 1px solid #d9e6f1;
+        box-shadow: 0 2px 7px rgba(26, 63, 103, .035);
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-date-filter {
+        background: #eef5fc;
+        border: 1px solid #d5e4f2;
+        color: #254a6f;
+    }
+
+    .dashboard-page .dashboard-hero .dashboard-filter-title {
+        color: #355c7e;
+    }
+
+/* Daily occupancy calendar: compact seven-column grid with clear DD Mon dates. */
+.dashboard-page .dashboard-occupancy-heatmap {
+    min-height: 0;
+}
+
+.dashboard-page .dashboard-heatmap-scroll {
+    max-height: none;
+    overflow: visible;
+    padding: 2px 0 4px;
+}
+
+.dashboard-page .dashboard-heatmap-grid {
+    width: 100%;
+    max-width: 510px;
+    margin-inline: auto;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.dashboard-page .dashboard-heatmap-day {
+    min-height: 43px;
+    height: 43px;
+    padding: 4px 2px;
+    gap: 2px;
+    border-radius: 7px;
+    line-height: 1.1;
+}
+
+.dashboard-page .dashboard-heatmap-blank {
+    min-height: 43px;
+}
+
+.dashboard-page .dashboard-heatmap-date {
+    font-size: 10px;
+    font-weight: 550;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+.dashboard-page .dashboard-heatmap-percent {
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.15;
+}
+
+.dashboard-page .dashboard-heatmap-weekday {
+    padding: 1px 0 3px;
+    font-size: 10px;
+}
+
+@media (max-width: 550px) {
+    .dashboard-page .dashboard-heatmap-grid {
+        gap: 3px;
+    }
+
+    .dashboard-page .dashboard-heatmap-day {
+        min-height: 40px;
+        height: 40px;
+        padding: 3px 1px;
+    }
+
+    .dashboard-page .dashboard-heatmap-blank {
+        min-height: 40px;
+    }
+
+    .dashboard-page .dashboard-heatmap-date {
+        font-size: 9px;
+    }
+
+    .dashboard-page .dashboard-heatmap-percent {
+        font-size: 10px;
+    }
 }
