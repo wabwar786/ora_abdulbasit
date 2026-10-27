@@ -137,6 +137,8 @@ public sealed class CreateReservationResult
     public string RegistrationId { get; set; } = string.Empty;
     public string RedirectUrl { get; set; } = string.Empty;
     public decimal GrandTotal { get; set; }
+    public string GuestEmailStatus { get; set; } = string.Empty;
+    public string HotelEmailStatus { get; set; } = string.Empty;
     public bool PaymentLinkSent { get; set; }
     public string PaymentLinkMessage { get; set; } = string.Empty;
 }

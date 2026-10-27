@@ -799,6 +799,7 @@ ORDER BY COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.Arrival
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
         try
         {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, request.RegId, ct);
             await using (var cmd = new SqlCommand(@"
 UPDATE dbo.GuestNoteBook SET description=@notes
 WHERE hotel_id=@hotel AND reg_id=@reg;
@@ -961,6 +962,7 @@ UPDATE dbo.RoomBlocksTB SET BlockEndDate=@end,IsActive=0 WHERE HotelID=@hotel AN
         BookingRow? current;
         try
         {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, request.RegId, ct);
             current = await GetBookingRowForUpdateAsync(cn, tx, hotelId, request.RegId, request.PaymentId, ct);
             if (current == null) return FrontDeskOperationResult.Fail("Reservation room row was not found.");
 
@@ -1182,6 +1184,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@id AND LTRIM(RTRIM(ISNULL(descr,''
 
         try
         {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, request.RegId, ct);
             var current = await GetBookingRowForUpdateAsync(cn, tx, hotelId, request.RegId, request.PaymentId, ct);
             if (current == null) return FrontDeskOperationResult.Fail("Reservation room row was not found.");
             if (IsClosedStatus(current.Status)) return FrontDeskOperationResult.Fail("A checked-out/cancelled stay cannot be changed.");
@@ -1541,16 +1544,8 @@ WHERE hotel_id=@hotel
             var result = await _checkInService.SaveGuestAndCheckInAsync(
                 hotelId, userId, userName, ip, save, ct);
 
-            if (result.Success)
-            {
-                await using var logCn = new SqlConnection(_connectionString);
-                await logCn.OpenAsync(ct);
-                await InsertLogAsync(
-                    logCn, null, hotelId, userId, userName, ip, regId,
-                    "DIRECT CHECK IN",
-                    $"Calendar direct check-in completed for PaymentId {request.PaymentId}.",
-                    ct);
-            }
+            // CheckInService already writes the committed CHECK IN event to Reserv_log.
+            // Do not add a second event merely because it was initiated via the calendar.
 
             return result.Success
                 ? FrontDeskOperationResult.Ok(result.Message, new { result.RegId, result.Id, result.RedirectUrl })
@@ -1885,6 +1880,7 @@ ORDER BY CASE WHEN hotel_id=@hotel THEN 0 ELSE 1 END, ID DESC;", cn);
 
         try
         {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
             // The WebForms ReservationList only offers No Show after the arrival date.
             // Validate the same rule on the server so a stale/forged calendar request
             // cannot mark a current or future reservation as a no-show.
@@ -2180,6 +2176,7 @@ WHERE hotel_id=@hotel;", cn))
 
         try
         {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
             // Keep the same cancellation audit/history behaviour as the WebForms calendar:
             // copy the active guest/reservation record to CancelledReservationsTB with the
             // entered reason before removing the master row. The payments rows are also
@@ -2871,33 +2868,9 @@ END;", cn, tx);
     private async Task InsertLogAsync(SqlConnection cn, SqlTransaction? tx, string hotelId, string userId, string userName, string ip,
         string regId, string action, string detail, CancellationToken ct)
     {
-        // Keep the MVC-specific log when its table/schema is available.
-        // It is isolated from the legacy-compatible logging below so a schema mismatch
-        // in one logging table never prevents the other logs from being written.
-        try
-        {
-            await using var cmd = new SqlCommand(@"
-IF OBJECT_ID('dbo.ReservationActionLogTB','U') IS NOT NULL AND @reg<>''
-INSERT INTO dbo.ReservationActionLogTB
-(hotel_id,reg_id,action_type,description,currentdate,user_id,systemUser,systemName,ipAddress)
-VALUES(@hotel,@reg,@action,@detail,@now,@user,@username,@system,@ip);", cn, tx);
-            var now = _hotelClock.GetHotelNow(hotelId);
-            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId ?? string.Empty;
-            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(regId);
-            cmd.Parameters.Add("@action", SqlDbType.VarChar, 100).Value = action ?? string.Empty;
-            cmd.Parameters.Add("@detail", SqlDbType.VarChar, -1).Value = detail ?? string.Empty;
-            cmd.Parameters.Add("@now", SqlDbType.DateTime).Value = now;
-            cmd.Parameters.Add("@user", SqlDbType.VarChar, 100).Value = userId ?? string.Empty;
-            cmd.Parameters.Add("@username", SqlDbType.VarChar, 150).Value = userName ?? string.Empty;
-            cmd.Parameters.Add("@system", SqlDbType.VarChar, 150).Value = Environment.MachineName ?? string.Empty;
-            cmd.Parameters.Add("@ip", SqlDbType.VarChar, 100).Value = ip ?? string.Empty;
-            await cmd.ExecuteNonQueryAsync(ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.Debug(ex, "ReservationActionLogTB insert skipped.");
-        }
-
+        // Only use existing legacy audit tables. Reservation-specific entries
+        // are written to dbo.Reserv_log below; a dedicated action-log table
+        // is not part of the deployed database schema.
         // Match the existing WebForms Log_helper behavior:
         // ActionLogTB for every calendar action + Reserv_log for reservation-specific actions.
         await _dbLogger.LogActionTransactionalAsync(
@@ -2912,10 +2885,12 @@ VALUES(@hotel,@reg,@action,@detail,@now,@user,@username,@system,@ip);", cn, tx);
 
         if (!string.IsNullOrWhiteSpace(regId))
         {
+            var changes = await ReservationChangeAudit.ChangesSinceCaptureAsync(
+                cn, tx, hotelId, NormalizeRegId(regId), ct);
             await _dbLogger.InsertReservationLogTransactionalAsync(
                 cn, tx,
                 NormalizeRegId(regId),
-                detail ?? string.Empty,
+                (detail ?? string.Empty) + changes,
                 userId,
                 userName,
                 hotelId,

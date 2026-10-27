@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Models;
+using Orapmshms.Services.Logging;
 using Stripe;
 
 namespace Orapmshms.Services;
@@ -1059,10 +1060,29 @@ WHERE CONVERT(varchar(100), hotel_id)=@hotel_id
             }
 
             await tx.CommitAsync(cancellationToken);
+
+            // A Stripe charge has already succeeded. Do NOT roll back or retry the charge
+            // if the secondary reservation history write fails. The payment log above is
+            // idempotent; this best-effort audit is deliberately after committing it.
+            try
+            {
+                await ReservationAuditWriter.WriteAsync(
+                    cn, null, reservation.HotelId, reservation.RegId,
+                    "AutoPayment", "AutoPayment", "autopayment", "AUTO PAYMENT",
+                    $"Successful automatic card charge | Amount={paidAmount:0.00} {reservation.Currency}; " +
+                    $"PaymentIntent={outcome.PaymentIntentId}; Charge={outcome.ChargeId}",
+                    now, cancellationToken);
+            }
+            catch (Exception auditError)
+            {
+                _logger.LogError(auditError,
+                    "Auto payment was saved but Reserv_log could not be written for hotel {HotelId}, reg {RegId}.",
+                    reservation.HotelId, reservation.RegId);
+            }
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            try { await tx.RollbackAsync(cancellationToken); } catch { /* already committed or transaction unavailable */ }
             throw;
         }
     }

@@ -261,7 +261,35 @@ OUTER APPLY
           AND c.StayDate>g.ToDate
     ) nextDates
     WHERE nextDates.GapKey=0
-) later;
+) later
+WHERE NOT
+(
+    -- SaveBaseRateAsync writes a plan-default history row before daily history.
+    -- A derived/simple daily rate identical to that plan default, for a period
+    -- already fully covered by the same batch's default, is not a second change.
+    -- Keep every daily history row with a distinct rate or uncovered period.
+    @auditSource=N'RatePlans'
+    AND @auditAction=N'BaseRateChange'
+    AND g.Deleted=0
+    AND EXISTS
+    (
+        SELECT 1
+        FROM dbo.RateUploadHistoryTB h
+        WHERE h.hotel_id=@auditHotel
+          AND h.batch_id=@auditBatch
+          AND CONVERT(nvarchar(50),h.plan_id)=g.PlanId
+          AND CONVERT(nvarchar(100),h.category_id)=g.CategoryId
+          AND TRY_CONVERT(decimal(18,4),h.rate)=g.Rate
+          AND TRY_CONVERT(date,h.date_from)<=g.FromDate
+          AND TRY_CONVERT(date,h.date_to)>=
+              CASE WHEN @auditSource=N'RatePlans' AND g.Deleted=0
+                             AND later.ExtendedTo>g.ToDate
+                   THEN later.ExtendedTo ELSE g.ToDate END
+          AND h.[source] IN
+              (N'RatePlans / BaseRateChange / SimplePlanDefault',
+               N'RatePlans / BaseRateChange / DerivedPlanDefault')
+    )
+);
 DROP TABLE #ORA_PreviousDaily;";
         await command.ExecuteNonQueryAsync(token);
     }

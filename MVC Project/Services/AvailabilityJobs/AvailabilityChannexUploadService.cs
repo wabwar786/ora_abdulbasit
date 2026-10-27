@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -852,11 +852,10 @@ WHERE cp.hotel_id=@hotel;", connection))
     }
 
     /// <summary>
-    /// Upload one full date range for each uniform category_plan price. Called only after
-    /// RatePlanService confirms there are no dated rate/restriction/override rows in
-    /// the affected plans or their parent hierarchy. Does not create datesrates rows.
-    /// A successful HTTP call does not prove the OTA has applied the price; reconciliation
-    /// and subsequent channel checks remain operational responsibilities.
+    /// Upload category_plan defaults without creating or changing datesrates rows.
+    /// Explicit daily Bulk/Yield/Cell overrides are excluded from each default
+    /// range, including overrides of an ancestor of a derived plan. This avoids
+    /// overwriting manually controlled prices on the channel manager.
     /// </summary>
     public async Task UploadPlanDefaultsAsync(
         string hotelId,
@@ -866,35 +865,114 @@ WHERE cp.hotel_id=@hotel;", connection))
         IEnumerable<string> categoryIds,
         CancellationToken cancellationToken)
     {
+        fromDate = fromDate.Date;
+        toDate = toDate.Date;
+        if (toDate < fromDate) return;
+
         var context = await LoadContextAsync(hotelId, cancellationToken);
         if (context == null) return;
         var requestedPlans = new HashSet<string>(planIds ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         var requestedCategories = new HashSet<string>(categoryIds ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-        var rows = new List<(string PlanId, string CategoryId, decimal Rate)>();
+        var rows = new List<(string PlanId, string CategoryId, string PlanName, string? ParentName, decimal Rate)>();
+
+        // Use the names to follow parent relationships for the same room category.
+        // Keys are local to this method; neither lookup writes to SQL Server.
+        static string Key(string planOrName, string categoryId) => planOrName + "\u001f" + categoryId;
+        var byName = new Dictionary<string, (string PlanId, string? ParentName)>(StringComparer.OrdinalIgnoreCase);
+        var blockedByPlan = new Dictionary<string, HashSet<DateTime>>(StringComparer.OrdinalIgnoreCase);
+
         await using (var connection = new SqlConnection(_connectionString))
-        await using (var command = new SqlCommand(@"
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using (var command = new SqlCommand(@"
 SELECT CONVERT(nvarchar(50),localplanid) AS planid,
        CONVERT(nvarchar(100),category_id) AS category_id,
+       ISNULL(planname,N'') AS planname,
+       parent_planid,
        TRY_CONVERT(decimal(18,2),rate) AS rate
 FROM dbo.category_plan
 WHERE hotel_id=@hotel AND TRY_CONVERT(decimal(18,2),rate) IS NOT NULL;", connection))
-        {
-            command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-            await connection.OpenAsync(cancellationToken);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
             {
-                var plan = Convert.ToString(reader["planid"])?.Trim() ?? string.Empty;
-                var category = Convert.ToString(reader["category_id"])?.Trim() ?? string.Empty;
-                if (requestedPlans.Count > 0 && !requestedPlans.Contains(plan)) continue;
-                if (requestedCategories.Count > 0 && !requestedCategories.Contains(category)) continue;
-                if (reader["rate"] == DBNull.Value) continue;
-                rows.Add((plan, category, Convert.ToDecimal(reader["rate"], CultureInfo.InvariantCulture)));
+                command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var plan = Convert.ToString(reader["planid"])?.Trim() ?? string.Empty;
+                    var category = Convert.ToString(reader["category_id"])?.Trim() ?? string.Empty;
+                    var name = Convert.ToString(reader["planname"])?.Trim() ?? string.Empty;
+                    var parent = Convert.ToString(reader["parent_planid"])?.Trim();
+                    if (plan.Length == 0 || category.Length == 0) continue;
+                    byName[Key(name, category)] = (plan, parent);
+                    if (requestedPlans.Count > 0 && !requestedPlans.Contains(plan)) continue;
+                    if (requestedCategories.Count > 0 && !requestedCategories.Contains(category)) continue;
+                    rows.Add((plan, category, name, parent,
+                        Convert.ToDecimal(reader["rate"], CultureInfo.InvariantCulture)));
+                }
+            }
+
+            // Daily rate rows are read only. uploadfrom=0 is an automatic/default
+            // rate; flags 1/2/3 or a Yield rule ID indicate a deliberate override.
+            await using (var command = new SqlCommand(@"
+SELECT CONVERT(nvarchar(50),dr.planid) AS planid,
+       CONVERT(nvarchar(100),dr.category_id) AS category_id,
+       CONVERT(date,dr.[date]) AS staydate
+FROM dbo.datesrates dr
+WHERE dr.hotel_id=@hotel
+  AND dr.[date]>=@from AND dr.[date]<DATEADD(day,1,@to)
+  AND (
+      TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3)
+      OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NOT NULL
+  );", connection))
+            {
+                command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+                command.Parameters.Add("@from", SqlDbType.Date).Value = fromDate;
+                command.Parameters.Add("@to", SqlDbType.Date).Value = toDate;
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var plan = Convert.ToString(reader["planid"])?.Trim() ?? string.Empty;
+                    var category = Convert.ToString(reader["category_id"])?.Trim() ?? string.Empty;
+                    if (plan.Length == 0 || category.Length == 0) continue;
+                    var key = Key(plan, category);
+                    if (!blockedByPlan.TryGetValue(key, out var days))
+                        blockedByPlan[key] = days = new HashSet<DateTime>();
+                    days.Add(Convert.ToDateTime(reader["staydate"], CultureInfo.InvariantCulture).Date);
+                }
             }
         }
+
         foreach (var row in rows)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var blockedDays = new HashSet<DateTime>();
+            var currentPlanId = row.PlanId;
+            var parentName = row.ParentName;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { row.PlanName };
+            var invalidParent = false;
+
+            // A derived plan's price should not overwrite a date where its
+            // parent/ancestor has a date-specific manual or Yield override.
+            while (true)
+            {
+                if (blockedByPlan.TryGetValue(Key(currentPlanId, row.CategoryId), out var overrideDays))
+                    blockedDays.UnionWith(overrideDays);
+                if (string.IsNullOrWhiteSpace(parentName)) break;
+                if (!visited.Add(parentName) ||
+                    !byName.TryGetValue(Key(parentName, row.CategoryId), out var parent))
+                {
+                    invalidParent = true;
+                    break;
+                }
+                currentPlanId = parent.PlanId;
+                parentName = parent.ParentName;
+            }
+            if (invalidParent)
+            {
+                _logger.LogWarning("Skipping direct default upload: missing/cyclic parent. Hotel={Hotel} Plan={Plan} Category={Category}",
+                    hotelId, row.PlanId, row.CategoryId);
+                continue;
+            }
+
             var roomType = ResolveRoomType(context.RoomMap, row.CategoryId);
             var ratePlanId = string.IsNullOrWhiteSpace(roomType) ? null :
                 ResolvePlan(context.PlanMap, row.PlanId, roomType, row.CategoryId);
@@ -915,24 +993,50 @@ WHERE hotel_id=@hotel AND TRY_CONVERT(decimal(18,2),rate) IS NOT NULL;", connect
                     hotelId, row.PlanId, row.CategoryId);
                 continue;
             }
-            try
+
+            // Coalesce adjacent default dates into ranges. Skipped override days
+            // remain untouched remotely; the rate calendar is never rebuilt here.
+            var ranges = new List<(DateTime From, DateTime To)>();
+            DateTime? rangeStart = null;
+            for (var day = fromDate; day <= toDate; day = day.AddDays(1))
             {
-                await UploadBatchAsync(context, new List<object> { new
+                if (blockedDays.Contains(day))
                 {
-                    property_id = context.PropertyId,
-                    rate_plan_id = ratePlanId,
-                    room_type_id = roomType,
-                    date_from = fromDate.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    date_to = toDate.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    rate = Math.Round(row.Rate, 2).ToString("0.##", CultureInfo.InvariantCulture)
-                } }, cancellationToken);
-                _logger.LogInformation("Direct category_plan rate uploaded. Hotel={Hotel} Plan={Plan} Category={Category} From={From} To={To} Rate={Rate}",
-                    hotelId, row.PlanId, row.CategoryId, fromDate.Date, toDate.Date, row.Rate);
+                    if (rangeStart.HasValue)
+                    {
+                        ranges.Add((rangeStart.Value, day.AddDays(-1)));
+                        rangeStart = null;
+                    }
+                }
+                else if (!rangeStart.HasValue)
+                {
+                    rangeStart = day;
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            if (rangeStart.HasValue) ranges.Add((rangeStart.Value, toDate));
+
+            foreach (var range in ranges)
             {
-                _logger.LogError(ex,"Direct rate-plan upload failed. Hotel={Hotel} Plan={Plan} Category={Category}",
-                    hotelId, row.PlanId, row.CategoryId);
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    await UploadBatchAsync(context, new List<object> { new
+                    {
+                        property_id = context.PropertyId,
+                        rate_plan_id = ratePlanId,
+                        room_type_id = roomType,
+                        date_from = range.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        date_to = range.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        rate = Math.Round(row.Rate, 2).ToString("0.##", CultureInfo.InvariantCulture)
+                    } }, cancellationToken);
+                    _logger.LogInformation("category_plan rate uploaded without datesrates writes. Hotel={Hotel} Plan={Plan} Category={Category} From={From} To={To} Rate={Rate}",
+                        hotelId, row.PlanId, row.CategoryId, range.From, range.To, row.Rate);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex,"Direct default rate upload failed. Hotel={Hotel} Plan={Plan} Category={Category} From={From} To={To}",
+                        hotelId, row.PlanId, row.CategoryId, range.From, range.To);
+                }
             }
         }
     }

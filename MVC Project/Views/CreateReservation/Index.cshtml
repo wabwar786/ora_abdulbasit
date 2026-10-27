@@ -78,7 +78,7 @@
                     <div class="grid g3">
                         <div>
                             <label class="lbl" for="ArrivalDate">Arrival date<span class="req">*</span></label>
-                            <input id="ArrivalDate" type="date" class="inp" required min="@Model.HotelToday.ToString("yyyy-MM-dd")" value="@arrival.ToString("yyyy-MM-dd")" />
+                            <input id="ArrivalDate" type="date" class="inp" required value="@arrival.ToString("yyyy-MM-dd")" />
                         </div>
                         <div>
                             <label class="lbl" for="DepartureDate">Departure date<span class="req">*</span></label>
@@ -331,7 +331,7 @@
                             <input type="hidden" id="IsProvisional" value="false" />
                         }
                     </div>
-                    <div><label class="lbl" for="PaymentDeadline">Pay by<span class="req">*</span></label><input id="PaymentDeadline" type="datetime-local" class="inp" required /></div>
+                    <div><label class="lbl" for="PaymentDeadline">Pay by<span class="req">*</span></label><input id="PaymentDeadline" type="datetime-local" class="inp" /></div>
                     <div class="warn" id="autoCancel">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                         <span>Automatically cancelled if payment is not received by the deadline.</span>

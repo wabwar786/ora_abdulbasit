@@ -49,6 +49,7 @@ public interface ICheckInService
     Task<TerminalPaymentResult> StripeCheckoutAsync(string hotelId, TerminalPaymentRequest request, CancellationToken ct = default);
     Task<TerminalPaymentResult> StripeCheckoutStatusAsync(string hotelId, string sessionId, CancellationToken ct = default);
     Task<TerminalPaymentResult> CloverPaymentAsync(string hotelId, string userId, string userName, string ip, TerminalPaymentRequest request, CancellationToken ct = default);
-    Task<CheckInOperationResult> ApplyFbrTaxModeAsync(string hotelId, FbrPostRequest request, CancellationToken ct = default);
+    Task<CheckInOperationResult> ApplyFbrTaxModeAsync(string hotelId, FbrPostRequest request, CancellationToken ct = default,
+        string userId = "", string userName = "", string ip = "");
     Task<CheckInOperationResult> PostToFbrAsync(string hotelId, string userId, string userName, string ip, FbrPostRequest request, CancellationToken ct = default);
 }

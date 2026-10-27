@@ -189,7 +189,7 @@
     if(!a.value||!d.value){ a.classList.toggle('invalid',!a.value);d.classList.toggle('invalid',!d.value); error($('dateError'),'Arrival and departure are required.'); return false; }
     const count=isMonthWise?monthCount(a.value,d.value):dateDiff(a.value,d.value);
     if(count<1){d.classList.add('invalid');error($('dateError'),'Departure must be after arrival.');return false;}
-    if(hotelToday && a.value<hotelToday){a.classList.add('invalid');error($('dateError'),'Arrival date cannot be in the past.');return false;}
+    // Historical dates are permitted. Departure must still be after arrival.
     if(!isMonthWise && count>730){d.classList.add('invalid');error($('dateError'),'Stay cannot exceed 730 nights.');return false;}
     error($('dateError'),'');return true;
   }
@@ -287,7 +287,22 @@
     if(msg){bad?.classList.add('invalid');error($('guestError'),msg);return false;}
     error($('guestError'),'');return true;
   }
-  function validateDeadline(){const el=$('PaymentDeadline');el.classList.remove('invalid');if(!el.value){el.classList.add('invalid');error($('deadlineError'),'Payment deadline is required.');return false;}const x=new Date(el.value),a=new Date(`${$('ArrivalDate').value}T23:59:59`),now=new Date();if(Number.isNaN(x.getTime())||x<=now){el.classList.add('invalid');error($('deadlineError'),'Payment deadline must be in the future.');return false;}if(x>a){el.classList.add('invalid');error($('deadlineError'),'Payment deadline must be on or before the arrival date.');return false;}error($('deadlineError'),'');return true;}
+  function isHistoricalArrival(){return !!hotelToday && !!$('ArrivalDate').value && $('ArrivalDate').value < hotelToday;}
+  function validateDeadline(){
+    const el=$('PaymentDeadline');el.classList.remove('invalid');
+    const historical=isHistoricalArrival();
+    if(historical && $('IsProvisional')?.checked){
+      error($('deadlineError'),'Historical reservations cannot be provisional.');return false;
+    }
+    if(!el.value){
+      if(historical){error($('deadlineError'),'');return true;}
+      el.classList.add('invalid');error($('deadlineError'),'Payment deadline is required.');return false;
+    }
+    const x=new Date(el.value),a=new Date(`${$('ArrivalDate').value}T23:59:59`),now=new Date();
+    if(Number.isNaN(x.getTime())||x<=now){el.classList.add('invalid');error($('deadlineError'),'Payment deadline must be in the future.');return false;}
+    if(!historical && x>a){el.classList.add('invalid');error($('deadlineError'),'Payment deadline must be on or before the arrival date.');return false;}
+    error($('deadlineError'),'');return true;
+  }
 
   function request(){const idType=$('IdType').value,idNo=$('IdNumber').value.trim();return{arrivalDate:$('ArrivalDate').value,departureDate:$('DepartureDate').value,firstName:$('FirstName').value.trim(),lastName:$('LastName').value.trim(),phone:$('Phone').value.trim(),email:$('Email').value.trim(),country:$('Country').value,city:$('City').value,address:$('Address').value.trim(),identification:[idType,idNo].filter(Boolean).join(': '),source:$('BookingSource').value,isProvisional:$('IsProvisional')?.type==='checkbox'?$('IsProvisional').checked:false,paymentDeadline:$('PaymentDeadline').value||null,sendPaymentLink:false,paymentLinkEmail:$('PaymentLinkEmail').value.trim(),shuffleType:getShuffle(),reservationMode:getMode(),groupSameDates:sameDates(),rooms:rooms.map(r=>({categoryId:r.categoryId,planId:r.planId,count:r.count,roomNo:r.roomNo,guestName:r.guestName,arrivalDate:r.arrivalDate,departureDate:r.departureDate,monthlyRate:r.monthlyRate,discount:r.discount,applyGst:r.applyGst,applyBedTax:r.applyBedTax,adults:r.adults,children:r.children,infants:r.infants}))};}
 
@@ -309,7 +324,7 @@
 
       const reg=result.registrationId||'';
       const total=number(result.grandTotal);
-      const successMessage=`Reservation ${reg} created successfully.`;
+      const successMessage=`Reservation ${reg} created successfully. Guest confirmation email: ${result.guestEmailStatus||'not checked'}. Hotel notification email: ${result.hotelEmailStatus||'not checked'}.`;
       resetReservationForm({registrationId:reg,grandTotal:total,email:paymentEmail,paymentDeadline,arrivalDate:paymentArrival});
       showSuccess(successMessage);
       toast(successMessage);
@@ -331,10 +346,13 @@
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return error($('linkError'),'Enter a valid email address for the payment link.');
     const deadlineEl=$('PaymentDeadline');
     deadlineEl.classList.remove('invalid');
-    if(!deadlineEl.value){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline is required.');return;}
-    const deadline=new Date(deadlineEl.value),now=new Date();
-    if(Number.isNaN(deadline.getTime())||deadline<=now){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline must be in the future.');return;}
-    if(lastSavedArrivalDate){const arrivalEnd=new Date(`${lastSavedArrivalDate}T23:59:59`);if(deadline>arrivalEnd){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline must be on or before the saved reservation arrival date.');return;}}
+    const savedHistorical=!!hotelToday && !!lastSavedArrivalDate && lastSavedArrivalDate < hotelToday;
+    if(!deadlineEl.value && !savedHistorical){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline is required.');return;}
+    if(deadlineEl.value){
+      const deadline=new Date(deadlineEl.value),now=new Date();
+      if(Number.isNaN(deadline.getTime())||deadline<=now){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline must be in the future.');return;}
+      if(lastSavedArrivalDate&&!savedHistorical){const arrivalEnd=new Date(`${lastSavedArrivalDate}T23:59:59`);if(deadline>arrivalEnd){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline must be on or before the saved reservation arrival date.');return;}}
+    }
     error($('deadlineError'),'');
 
     const button=$('btnSendLink');
@@ -388,7 +406,14 @@
     finally{setButtonBusy(button,false);}
   }
 
-  function defaultDeadline(){const now=new Date();now.setHours(now.getHours()+24);const arrival=new Date(`${$('ArrivalDate').value}T18:00:00`);const d=now<arrival?now:arrival;const pad=n=>String(n).padStart(2,'0');$('PaymentDeadline').value=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+  function defaultDeadline(){
+    if(isHistoricalArrival()){$('PaymentDeadline').value='';return;}
+    const now=new Date();now.setHours(now.getHours()+24);
+    const arrival=new Date(`${$('ArrivalDate').value}T18:00:00`);
+    const d=now<arrival?now:arrival;
+    const pad=n=>String(n).padStart(2,'0');
+    $('PaymentDeadline').value=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
   function modeUi(){const group=getMode()==='Group',diff=group&&!sameDates();show($('sameDatesWrap'),group);show($('roomDates'),diff);if(!diff){$('RoomArrival').value=$('ArrivalDate').value;$('RoomDeparture').value=$('DepartureDate').value;}const auto=getShuffle()==='Auto';show($('roomNumberWrap'),!auto);show($('roomCountWrap'),auto);}
 
   let previousArrival=$('ArrivalDate').value,previousDeparture=$('DepartureDate').value;

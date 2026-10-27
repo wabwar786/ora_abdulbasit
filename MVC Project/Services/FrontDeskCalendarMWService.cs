@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Models;
 using Orapmshms.Services.AvailabilityJobs;
+using Orapmshms.Services.Logging;
 
 namespace Orapmshms.Services;
 
@@ -478,6 +479,7 @@ ORDER BY p.planId,p.roomType;";
 
         try
         {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
             if (isExtend)
             {
                 var extMonths = MonthDiffCeil(oldDeparture, newDeparture);
@@ -602,6 +604,13 @@ VALUES(@reg,@old,@new,@hotel,@user,@system,@ip);", cn, tx);
             }
 
             await RefreshPaymentSummaryAsync(cn, tx, hotelId, regId, userId, userName, ip, ct);
+            await ReservationAuditWriter.WriteAsync(cn, tx, hotelId, regId, userId, userName, ip,
+                isExtend ? "MONTHWISE EXTEND" : "MONTHWISE SHRINK",
+                $"Month-wise {(isExtend ? "extension" : "reduction")} from {oldDeparture:yyyy-MM-dd} to {newDeparture:yyyy-MM-dd}; " +
+                $"months {oldTotalMonths} -> {newTotalMonths}; plans: " +
+                string.Join(", ", plans.Select(p => $"{p.PlanName}={p.NewRate:0.00}")) +
+                await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, regId, ct),
+                _hotelClock.GetHotelNow(hotelId), ct);
             await tx.CommitAsync(ct);
 
             _availabilityQueue.Queue(new AvailabilityAutoUpdateJob(
@@ -661,6 +670,9 @@ VALUES(@reg,@old,@new,@hotel,@user,@system,@ip);", cn, tx);
 
         try
         {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, sourceReg, ct);
+            if (!sourceReg.Equals(targetReg, StringComparison.OrdinalIgnoreCase))
+                await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, targetReg, ct);
             var source = await LoadSwapRowAsync(cn, tx, hotelId, sourceReg, request.SourcePaymentId, ct);
             var target = await LoadSwapRowAsync(cn, tx, hotelId, targetReg, request.TargetPaymentId, ct);
             if (source == null || target == null)
@@ -759,6 +771,20 @@ UPDATE dbo.payments
 
             await SetRoomOccupiedAsync(cn, tx, hotelId, source.RoomNo, ct);
             await SetRoomOccupiedAsync(cn, tx, hotelId, target.RoomNo, ct);
+
+            // Both bookings are modified by a swap: each reg_id must have its own log.
+            await ReservationAuditWriter.WriteAsync(cn, tx, hotelId, sourceReg, userId, userName, ip,
+                "MONTHWISE ROOM SWAP",
+                $"Payment {request.SourcePaymentId}: {source.RoomNo} -> {target.RoomNo}; " +
+                $"Payment {request.TargetPaymentId}: {target.RoomNo} -> {source.RoomNo}; paired reg_id {targetReg}." +
+                await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, sourceReg, ct),
+                _hotelClock.GetHotelNow(hotelId), ct);
+            if (!sourceReg.Equals(targetReg, StringComparison.OrdinalIgnoreCase))
+                await ReservationAuditWriter.WriteAsync(cn, tx, hotelId, targetReg, userId, userName, ip,
+                    "MONTHWISE ROOM SWAP",
+                    $"Payment {request.TargetPaymentId}: {target.RoomNo} -> {source.RoomNo}; paired reg_id {sourceReg} (payment {request.SourcePaymentId})." +
+                    await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, targetReg, ct),
+                    _hotelClock.GetHotelNow(hotelId), ct);
 
             await tx.CommitAsync(ct);
 

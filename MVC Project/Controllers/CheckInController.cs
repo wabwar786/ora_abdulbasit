@@ -341,7 +341,7 @@ try {{ if (window.opener) window.opener.postMessage({{ type:'ora-stripe-checkout
     [HttpPost("Fbr/ApplyTaxMode")]
     [ValidateAntiForgeryToken]
     public Task<IActionResult> FbrApplyTaxMode([FromBody] FbrPostRequest request, CancellationToken ct)
-        => Run(() => _service.ApplyFbrTaxModeAsync(HotelId, request, ct));
+        => Run(() => _service.ApplyFbrTaxModeAsync(HotelId, request, ct, UserId, UserName, ClientIp()));
 
     [HttpPost("Fbr/Post")]
     [ValidateAntiForgeryToken]

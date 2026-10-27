@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -100,7 +100,9 @@ public sealed class RatePlanService : IRatePlanService
 
         var oldBase = await GetBaseRateAsync(connection, hotelId, null, cancellationToken);
         var delta = request.NewBaseRate - oldBase;
-        if (delta == 0m)
+        // Re-applying the same base with the cascade selected is also a valid
+        // repair/reconciliation action for out-of-date derived plan rates.
+        if (delta == 0m && !request.ApplyToAllRatePlans)
             return RatePlanOperationResult.Ok("No change in base rate.");
 
         var audit = RateAuditMetadata.Create(hotelId, "RatePlans", "BaseRateChange", userId, userName, ip, pcName);
@@ -132,42 +134,60 @@ public sealed class RatePlanService : IRatePlanService
         {
             try
             {
+                // Validate the dependency graph before changing anything. Eight arbitrary
+                // UPDATE passes did not reliably support long derived-plan chains/cycles.
+                var graph = await LoadPlanGraphAsync(connection, transaction, hotelId, cancellationToken);
+                var dependencyError = ValidateDerivedDependencies(graph);
+                if (dependencyError != null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return RatePlanOperationResult.Fail(dependencyError);
+                }
+                var orderedDerived = OrderDerivedPlans(graph);
+
+                // Base-rate saves change plan defaults only. Do not snapshot or
+                // materialise any datesrates rows for this action.
                 await RateAuditContext.CapturePlansAsync(connection, audit, cancellationToken, transaction);
-                await RateAuditContext.CaptureDailyAsync(connection, audit, today, toDate, cancellationToken, transaction);
                 await UpsertBaseRateAsync(connection, transaction, hotelId, request.NewBaseRate, cancellationToken);
 
+                // Simple plans keep their existing per-room price adjustment, but
+                // their base must now equal the NEW hotel base (not oldBase + delta).
+                // Fall back to the previous hotel base for legacy rows with no base.
                 await using (var command = new SqlCommand(@"
 UPDATE cp
-SET cp.baserate = cp.baserate + @delta,
-    cp.rate     = cp.rate + @delta
+SET cp.rate = CAST(@newBase +
+                   (cp.rate - COALESCE(cp.baserate, @oldBase)) AS decimal(18,2)),
+    cp.baserate = @newBase
 FROM dbo.category_plan cp
 WHERE cp.hotel_id=@hotel
-  AND cp.parent_planid IS NULL;", connection, transaction))
+  AND (cp.parent_planid IS NULL OR LTRIM(RTRIM(cp.parent_planid))='');", connection, transaction))
                 {
                     command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
-                    var p = command.Parameters.Add("@delta", SqlDbType.Decimal);
-                    p.Precision = 18; p.Scale = 2; p.Value = delta;
+                    AddDecimal(command, "@newBase", request.NewBaseRate);
+                    AddDecimal(command, "@oldBase", oldBase);
                     await command.ExecuteNonQueryAsync(cancellationToken);
                 }
 
-                // Multiple passes preserve chains of derived plans, not just one level.
-                for (var i = 0; i < 8; i++)
-                    await RecomputeAllDerivedAsync(connection, transaction, hotelId, cancellationToken);
+                // Parent-first propagation ensures every derived plan gets the final
+                // rate of its parent, including chains deeper than eight levels.
+                foreach (var derived in orderedDerived)
+                    await RecomputeDerivedPlanAsync(
+                        connection, transaction, hotelId, derived.LocalPlanId, cancellationToken);
 
-                await EnsureRateRowsForHotelAsync(
-                    connection, transaction, hotelId, today, toDate, userName, ip, cancellationToken);
+                var invalid = await FindNegativeDefaultRateAsync(
+                    connection, transaction, hotelId, cancellationToken);
+                if (invalid != null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return RatePlanOperationResult.Fail(invalid);
+                }
 
-                await SyncManualDatesRatesFromCategoryPlanAsync(
-                    connection, transaction, hotelId, today, cancellationToken);
-
-                var graph = await LoadPlanGraphAsync(connection, transaction, hotelId, cancellationToken);
-                foreach (var derived in OrderDerivedPlans(graph))
-                    await SyncDerivedDatesRatesFromParentAsync(
-                        connection, transaction, hotelId, derived.LocalPlanId, today, cancellationToken);
-
+                // Exactly one plan-default history entry per changed plan/category.
+                // No daily-rate history: datesrates is not modified by BaseRateChange.
                 await RateAuditContext.WritePlansAsync(connection, audit, today, toDate, cancellationToken, transaction);
-                await RateAuditContext.WriteDailyAsync(connection, audit, today, toDate, cancellationToken, transaction);
-                await RateAuditContext.WriteBaseAsync(connection, audit, request.NewBaseRate, today, toDate, cancellationToken, transaction);
+                if (delta != 0m)
+                    await RateAuditContext.WriteBaseAsync(connection, audit, request.NewBaseRate,
+                        today, toDate, cancellationToken, transaction);
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -179,17 +199,21 @@ WHERE cp.hotel_id=@hotel
 
         var planIds = await LoadAllLocalPlanIdsAsync(connection, hotelId, cancellationToken);
 
-        // Channex work is handled by the existing background channel-sync worker.
-        // This keeps the request fast and lets the worker retry/pacing logic create
-        // every missing Channex rate plan before uploading rates.
-        QueueRateUpload(hotelId, today, toDate, planIds, Array.Empty<string>(), audit);
+        // PlanDefaults uploads the category_plan prices directly. Unlike the Rates
+        // job, it must NOT invoke PrepareRateRowsAsync (which writes datesrates).
+        // The uploader excludes explicit manual/Yield override dates, including
+        // those inherited by derived plans, from the default upload windows.
+        QueueRateUpload(hotelId, today, toDate, planIds, Array.Empty<string>(), audit,
+            usePlanDefaults: true);
 
         await WriteAuditAsync(hotelId, userName, ip,
-            $"Rates | Change Base Rate | Base rate updated from {oldBase:0.##} to {request.NewBaseRate:0.##} (delta {delta:+0.##;-0.##}); applied to all rate plans.",
+            $"Rates | Change Base Rate | Base rate {oldBase:0.##} to {request.NewBaseRate:0.##} (delta {delta:+0.##;-0.##}); recalculated all rate plans.",
             cancellationToken);
 
         return RatePlanOperationResult.Ok(
-            $"Base rate updated from {oldBase:0.##} to {request.NewBaseRate:0.##} (Δ {delta:+0.##;-0.##}). All rate plans were recalculated and queued for Channex upload.");
+            delta == 0m
+                ? $"Base rate {request.NewBaseRate:0.##} unchanged. Rate plans were recalculated and queued for Channex upload."
+                : $"Base rate updated from {oldBase:0.##} to {request.NewBaseRate:0.##} (Δ {delta:+0.##;-0.##}). All rate plans were recalculated and queued for Channex upload.");
     }
 
     public async Task<RatePlanOperationResult> SaveDetailsAsync(
@@ -1207,11 +1231,30 @@ WHEN NOT MATCHED THEN
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task RecomputeAllDerivedAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string hotelId,
-        CancellationToken cancellationToken)
+    // Base-rate cascades must resolve the graph once in parent-before-child order.
+    // Do not silently keep stale prices if the source plan is missing or circular.
+    private static string? ValidateDerivedDependencies(IReadOnlyList<PlanGraphRow> graph)
+    {
+        var byName = graph.ToDictionary(x => x.PlanName, StringComparer.OrdinalIgnoreCase);
+        foreach (var plan in graph.Where(x => !string.IsNullOrWhiteSpace(x.ParentPlanName)))
+        {
+            var parentsSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { plan.PlanName };
+            var parentName = plan.ParentPlanName;
+            while (!string.IsNullOrWhiteSpace(parentName))
+            {
+                if (!parentsSeen.Add(parentName))
+                    return $"Cannot update rates: derived rate plan '{plan.PlanName}' has a circular parent relationship.";
+                if (!byName.TryGetValue(parentName, out var parent) || parent.LocalPlanId <= 0)
+                    return $"Cannot update rates: parent rate plan '{parentName}' for '{plan.PlanName}' is missing.";
+                parentName = parent.ParentPlanName;
+            }
+        }
+        return null;
+    }
+
+    private static async Task RecomputeDerivedPlanAsync(
+        SqlConnection connection, SqlTransaction transaction, string hotelId,
+        int childLocalPlanId, CancellationToken cancellationToken)
     {
         await using var command = new SqlCommand(@"
 UPDATE child
@@ -1225,9 +1268,58 @@ JOIN dbo.category_plan parent
  AND parent.planname=child.parent_planid
  AND parent.category_id=child.category_id
 WHERE child.hotel_id=@hotel
-  AND child.parent_planid IS NOT NULL;", connection, transaction);
+  AND child.parent_planid IS NOT NULL
+  AND child.localplanid=@child;", connection, transaction);
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+        command.Parameters.Add("@child", SqlDbType.Int).Value = childLocalPlanId;
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<string?> FindNegativeDefaultRateAsync(
+        SqlConnection connection, SqlTransaction transaction, string hotelId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new SqlCommand(@"
+SELECT TOP (1) planname, category, category_id, rate
+FROM dbo.category_plan
+WHERE hotel_id=@hotel AND TRY_CONVERT(decimal(18,4),rate)<0
+ORDER BY planname,category_id;", connection, transaction);
+        command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var plan = Convert.ToString(reader["planname"]) ?? "Unknown";
+        var category = Convert.ToString(reader["category"]) ?? "";
+        if (string.IsNullOrWhiteSpace(category)) category = Convert.ToString(reader["category_id"]) ?? "Unknown";
+        var rate = ToDecimal(reader["rate"]);
+        return $"Base rate was NOT changed. '{plan}' / '{category}' would have a negative rate ({rate:0.00}). Reduce its Minus adjustment or choose a higher base rate.";
+    }
+
+    private static async Task<string?> FindNegativeDailyRateAsync(
+        SqlConnection connection, SqlTransaction transaction, string hotelId,
+        DateTime start, DateTime end, CancellationToken cancellationToken)
+    {
+        await using var command = new SqlCommand(@"
+SELECT TOP (1) cp.planname, cp.category, dr.category_id, dr.[date], dr.rate
+FROM dbo.datesrates dr
+JOIN dbo.category_plan cp
+  ON cp.hotel_id=dr.hotel_id
+ AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
+ AND CONVERT(nvarchar(100),cp.category_id)=CONVERT(nvarchar(100),dr.category_id)
+WHERE dr.hotel_id=@hotel
+  AND dr.[date]>=@start AND dr.[date]<DATEADD(day,1,@end)
+  AND TRY_CONVERT(decimal(18,4),dr.rate)<0
+ORDER BY dr.[date], cp.planname;", connection, transaction);
+        command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+        command.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
+        command.Parameters.Add("@end", SqlDbType.Date).Value = end.Date;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var plan = Convert.ToString(reader["planname"]) ?? "Unknown";
+        var category = Convert.ToString(reader["category"]) ?? "";
+        if (string.IsNullOrWhiteSpace(category)) category = Convert.ToString(reader["category_id"]) ?? "Unknown";
+        var day = Convert.ToDateTime(reader["date"], CultureInfo.InvariantCulture);
+        var rate = ToDecimal(reader["rate"]);
+        return $"Base rate was NOT changed. '{plan}' / '{category}' would have a negative daily rate ({rate:0.00}) on {day:yyyy-MM-dd}. Check its Minus adjustment and any date-specific parent rate.";
     }
 
     private static async Task RecomputeAllDerivedExceptAsync(

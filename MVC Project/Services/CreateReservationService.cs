@@ -350,8 +350,6 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
         if (request.Discount is < 0m or > 10000000m) return FailQuote("Discount is outside the permitted range.");
         if (request.DepartureDate.Date <= request.ArrivalDate.Date)
             return FailQuote("Departure date must be later than arrival date.");
-        if (request.ArrivalDate.Date < _hotelClock.GetHotelToday(hotelId))
-            return FailQuote("Arrival date cannot be in the past.");
         if ((request.DepartureDate.Date - request.ArrivalDate.Date).TotalDays > 730)
             return FailQuote("Stay cannot exceed 730 nights.");
         if (string.IsNullOrWhiteSpace(request.CategoryId))
@@ -445,17 +443,23 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
         if (!IsValidEmail(request.Email)) return FailCreate("Enter a valid email address.");
         if (request.Source.Length is < 2 or > 80) return FailCreate("Booking source is required and must be 2 to 80 characters.");
         if (request.DepartureDate.Date <= request.ArrivalDate.Date) return FailCreate("Departure date must be later than arrival date.");
-        if (request.ArrivalDate.Date < _hotelClock.GetHotelToday(hotelId)) return FailCreate("Arrival date cannot be in the past.");
         if ((request.DepartureDate.Date - request.ArrivalDate.Date).TotalDays > 730) return FailCreate("Stay cannot exceed 730 nights.");
         if (request.Rooms == null || request.Rooms.Count == 0) return FailCreate("Please add at least one room before creating the reservation.");
         if (request.Rooms.Count > 50) return FailCreate("A reservation cannot contain more than 50 room rows.");
+        // Backdated reservations are historical entries: a future deadline on or before
+        // a past arrival is impossible. Do not require a payment deadline for them.
+        var historicalArrival = request.ArrivalDate.Date < _hotelClock.GetHotelToday(hotelId);
+        if (historicalArrival && request.IsProvisional)
+            return FailCreate("Historical reservations cannot be provisional. Please create a confirmed reservation.");
         if (request.PaymentDeadline.HasValue)
         {
             var hotelNowForDeadline = _hotelClock.GetHotelNow(hotelId);
             if (request.PaymentDeadline.Value <= hotelNowForDeadline) return FailCreate("Payment deadline must be in the future.");
-            if (request.PaymentDeadline.Value > request.ArrivalDate.Date.AddDays(1).AddTicks(-1)) return FailCreate("Payment deadline must be on or before the arrival date.");
+            if (!historicalArrival && request.PaymentDeadline.Value > request.ArrivalDate.Date.AddDays(1).AddTicks(-1))
+                return FailCreate("Payment deadline must be on or before the arrival date.");
         }
-        if ((request.IsProvisional || request.SendPaymentLink) && !request.PaymentDeadline.HasValue) return FailCreate("Payment deadline is required.");
+        if (!historicalArrival && !request.PaymentDeadline.HasValue)
+            return FailCreate("Payment deadline is required.");
         if (request.SendPaymentLink && !IsValidEmail(request.PaymentLinkEmail)) return FailCreate("Enter a valid payment-link email address.");
 
         await using var settingsConnection = new SqlConnection(_connectionString);
@@ -579,14 +583,18 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
         // executes Yield first, then the existing availability refresh, in job order.
         // Do not call YieldBackgroundService.RunYieldForDateRange() directly here:
         // that blocks the success response even though the reservation was committed.
+        var hotelToday = _hotelClock.GetHotelToday(hotelId);
         var minRoomArrival = validatedRooms.Min(x => x.ArrivalDate).Date;
         var maxRoomDeparture = validatedRooms.Max(x => x.DepartureDate).Date;
+        // Historical-only bookings must not retroactively trigger live channel uploads/Yield.
+        // A stay that spans today still updates only today and the future.
+        if (maxRoomDeparture > hotelToday)
         try
         {
             var queued = _availabilityQueue.Queue(new AvailabilityAutoUpdateJob(
                 hotelId, hotelName ?? string.Empty, userId, userName ?? string.Empty,
-                clientIp ?? string.Empty, minRoomArrival, maxRoomDeparture, "0",
-                RunReservationYield: true));
+                clientIp ?? string.Empty, minRoomArrival < hotelToday ? hotelToday : minRoomArrival,
+                maxRoomDeparture, "0", RunReservationYield: true));
             if (!queued)
             {
                 // Reservation is already committed. Do not tell the user to resubmit
@@ -602,12 +610,28 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
                 "Reservation {RegId} saved, but Yield/Availability processing could not be queued. Manual retry is required.", regId);
         }
 
+        // Reservation is already saved. Each notification is independent; an SMTP
+        // failure must NEVER report a failed booking and encourage a duplicate save.
+        (string Guest, string Hotel) notifications;
+        try
+        {
+            notifications = await SendCreationNotificationsAsync(
+                hotelId, hotelName, regId, request, validatedRooms, grandTotal);
+        }
+        catch (Exception ex)
+        {
+            // The reservation is COMMITTED: never return HTTP 500 for an email error.
+            _logger.LogError(ex, "Reservation {RegId} saved but confirmation notifications failed.", regId);
+            notifications = ("Failed (check server logs)", "Failed (check server logs)");
+        }
         return new CreateReservationResult
         {
             Success = true,
             Message = "Reservation created successfully.",
             RegistrationId = regId,
             GrandTotal = grandTotal,
+            GuestEmailStatus = notifications.Guest,
+            HotelEmailStatus = notifications.Hotel,
             // Stay on the Create Reservation screen after success.
             // The client clears the form and shows the confirmation message.
             RedirectUrl = string.Empty
@@ -643,7 +667,6 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
             departure = request.DepartureDate.Date;
         }
         if (departure <= arrival) return RoomValidationResult.Fail($"Invalid stay dates for {categoryName}.");
-        if (arrival < _hotelClock.GetHotelToday(hotelId)) return RoomValidationResult.Fail($"Arrival date cannot be in the past for {categoryName}.");
         if ((departure - arrival).TotalDays > 730) return RoomValidationResult.Fail($"Stay cannot exceed 730 nights for {categoryName}.");
 
         var count = request.ShuffleType.Equals("Manual", StringComparison.OrdinalIgnoreCase) ? 1 : item.Count;
@@ -960,7 +983,7 @@ SELECT CASE WHEN EXISTS(SELECT 1 FROM dbo.GuestInformationLogTB WHERE hotel_id=@
         return now.ToString("yyMMddHHmmssfff", CultureInfo.InvariantCulture);
     }
 
-    private static async Task<bool> IsRoomAvailableAsync(
+    private async Task<bool> IsRoomAvailableAsync(
         SqlConnection cn, SqlTransaction tx, string hotelId, string categoryName, string roomNo,
         DateTime arrival, DateTime departure, CancellationToken ct)
     {
@@ -982,10 +1005,17 @@ SELECT CASE WHEN EXISTS
      SELECT 1 FROM dbo.payments p
      WHERE CONVERT(varchar(50),p.hotel_id)=@hotel
        AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
-       AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
+       AND
+       (
+           LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
+           OR (@arr < @hotelToday AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check out','checkout','checked out'))
+       )
        AND LTRIM(RTRIM(ISNULL(p.room_no,'')))=@room
        AND COALESCE(TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),23),TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),110),TRY_CONVERT(date,p.ArrivalDate))<@dep
-       AND @arr<COALESCE(TRY_CONVERT(date,NULLIF(p.DepartureDate,''),23),TRY_CONVERT(date,NULLIF(p.DepartureDate,''),110),TRY_CONVERT(date,p.DepartureDate))
+       AND @arr<COALESCE(
+            CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check out','checkout','checked out')
+                THEN TRY_CONVERT(date,p.actual_checkout_date) END,
+            TRY_CONVERT(date,NULLIF(p.DepartureDate,''),23),TRY_CONVERT(date,NULLIF(p.DepartureDate,''),110),TRY_CONVERT(date,p.DepartureDate))
    )
 ) THEN 1 ELSE 0 END;";
         await using var cmd = new SqlCommand(sql, cn, tx);
@@ -993,11 +1023,12 @@ SELECT CASE WHEN EXISTS
         cmd.Parameters.Add("@category", SqlDbType.VarChar, 180).Value = categoryName;
         cmd.Parameters.Add("@room", SqlDbType.VarChar, 100).Value = roomNo;
         cmd.Parameters.Add("@arr", SqlDbType.Date).Value = arrival.Date;
+        cmd.Parameters.Add("@hotelToday", SqlDbType.Date).Value = _hotelClock.GetHotelToday(hotelId);
         cmd.Parameters.Add("@dep", SqlDbType.Date).Value = departure.Date;
         return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) == 1;
     }
 
-    private static async Task<List<string>> GetAvailableRoomsAsync(
+    private async Task<List<string>> GetAvailableRoomsAsync(
         SqlConnection cn, SqlTransaction tx, string hotelId, string categoryName,
         DateTime arrival, DateTime departure, int needed, IReadOnlySet<string> excluded, CancellationToken ct)
     {
@@ -1021,11 +1052,18 @@ WHERE NOT EXISTS
  SELECT 1 FROM dbo.payments p
  WHERE CONVERT(varchar(50),p.hotel_id)=@hotel
    AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
-   AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
+   AND
+       (
+           LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
+           OR (@arr < @hotelToday AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check out','checkout','checked out'))
+       )
    AND ISNULL(p.room_no,'') NOT IN ('','UNASSIGNED','Unassigned')
    AND LTRIM(RTRIM(p.room_no))=LTRIM(RTRIM(c.room_no))
    AND COALESCE(TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),23),TRY_CONVERT(date,NULLIF(p.ArrivalDate,''),110),TRY_CONVERT(date,p.ArrivalDate))<@dep
-   AND @arr<COALESCE(TRY_CONVERT(date,NULLIF(p.DepartureDate,''),23),TRY_CONVERT(date,NULLIF(p.DepartureDate,''),110),TRY_CONVERT(date,p.DepartureDate))
+   AND @arr<COALESCE(
+            CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check out','checkout','checked out')
+                THEN TRY_CONVERT(date,p.actual_checkout_date) END,
+            TRY_CONVERT(date,NULLIF(p.DepartureDate,''),23),TRY_CONVERT(date,NULLIF(p.DepartureDate,''),110),TRY_CONVERT(date,p.DepartureDate))
 )
 ORDER BY TRY_CONVERT(int,c.room_no),c.room_no;";
         var list = new List<string>();
@@ -1033,6 +1071,7 @@ ORDER BY TRY_CONVERT(int,c.room_no),c.room_no;";
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         cmd.Parameters.Add("@category", SqlDbType.VarChar, 180).Value = categoryName;
         cmd.Parameters.Add("@arr", SqlDbType.Date).Value = arrival.Date;
+        cmd.Parameters.Add("@hotelToday", SqlDbType.Date).Value = _hotelClock.GetHotelToday(hotelId);
         cmd.Parameters.Add("@dep", SqlDbType.Date).Value = departure.Date;
         cmd.Parameters.Add("@need", SqlDbType.Int).Value = Math.Max(1, needed + (excluded?.Count ?? 0));
         await using var rd = await cmd.ExecuteReaderAsync(ct);
@@ -1299,33 +1338,327 @@ WHERE CONVERT(varchar(50),hotel_id)=@hotel AND CONVERT(varchar(100),localcategor
     private static CreateReservationQuoteResult FailQuote(string message)
         => new() { Success = false, Message = message };
 
+    private sealed record CreationEmailSettings(string FromEmail, string FromName,
+        string Host, int Port, bool UseSsl, string SmtpUser, string Password);
+
+    private sealed record CreationSmtpLookup(CreationEmailSettings? Settings, string FailureReason);
+
+    /// <summary>
+    /// WebForms EmailSender.GetActiveConfig uses hotel SMTP first and hotel_id = -1
+    /// as the global fallback. Check every active candidate: a broken hotel-specific
+    /// record must not prevent a valid global setting being used.
+    /// The DPAPI password can ONLY be decrypted on the Windows server whose
+    /// LocalMachine key protected the password (or with correctly migrated keys).
+    /// </summary>
+    private async Task<CreationSmtpLookup> LoadCreationSmtpAsync(
+        SqlConnection cn, string hotelId, CancellationToken ct)
+    {
+        const string sql = @"
+SELECT FromEmail,FromName,SmtpHost,SmtpPort,UseSsl,SmtpUser,SmtpPassEnc
+FROM dbo.EmailSettingsTB
+WHERE IsActive=1 AND CONVERT(varchar(50),hotel_id) IN (@hotel,'-1')
+ORDER BY CASE WHEN CONVERT(varchar(50),hotel_id)=@hotel THEN 0 ELSE 1 END, ID DESC;";
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        var found = false;
+        var reason = "No active SMTP settings found for this hotel or global fallback.";
+        while (await rd.ReadAsync(ct))
+        {
+            found = true;
+            var from = Convert.ToString(rd["FromEmail"])?.Trim() ?? string.Empty;
+            var name = Convert.ToString(rd["FromName"])?.Trim() ?? string.Empty;
+            var host = Convert.ToString(rd["SmtpHost"])?.Trim() ?? string.Empty;
+            var port = SafeInt(rd["SmtpPort"]);
+            var ssl = SafeBool(rd["UseSsl"]);
+            var user = Convert.ToString(rd["SmtpUser"])?.Trim() ?? string.Empty;
+            var encrypted = Convert.ToString(rd["SmtpPassEnc"])?.Trim() ?? string.Empty;
+
+            if (!IsValidEmail(from) || host.Length == 0 || port is <= 0 or > 65535)
+            {
+                reason = "SMTP settings are incomplete (sender, host or port).";
+                _logger.LogWarning("Hotel {HotelId}: an active SMTP record is incomplete; trying fallback if present.", hotelId);
+                continue;
+            }
+
+            string password;
+            try
+            {
+                password = DecryptEmailPassword(encrypted);
+            }
+            catch (Exception ex) when (ex is CryptographicException or FormatException or PlatformNotSupportedException)
+            {
+                reason = "SMTP password cannot be decrypted on this server. Re-save/re-encrypt the SMTP password on the MVC Windows server.";
+                _logger.LogWarning(ex, "Hotel {HotelId}: SMTP DPAPI password cannot be decrypted on this server; trying global fallback.", hotelId);
+                continue;
+            }
+
+            if (user.Length > 0 && password.Length == 0)
+            {
+                reason = "SMTP username is configured but password is empty.";
+                _logger.LogWarning("Hotel {HotelId}: SMTP password is empty; trying global fallback.", hotelId);
+                continue;
+            }
+            return new CreationSmtpLookup(
+                new CreationEmailSettings(from, name, host, port, ssl, user, password),
+                string.Empty);
+        }
+        return new CreationSmtpLookup(null, found ? reason :
+            "No active SMTP settings found for this hotel or global fallback.");
+    }
+
+    private async Task<(string Guest, string Hotel)> SendCreationNotificationsAsync(
+        string hotelId, string suppliedHotelName, string regId,
+        CreateReservationRequest request, IReadOnlyList<ValidatedRoom> rooms, decimal total)
+    {
+        // Always save the booking first. Email failures are independent of the
+        // reservation transaction and must not make a saved booking look failed.
+        string hotelEmail = string.Empty;
+        string hotelName = string.IsNullOrWhiteSpace(suppliedHotelName) ? "Hotel" : suppliedHotelName;
+        string currency = "GBP";
+        CreationEmailSettings? settings = null;
+        string? lookupFailure = null;
+        try
+        {
+            await using var cn = new SqlConnection(_connectionString);
+            await cn.OpenAsync(CancellationToken.None);
+
+            // Hotel metadata is optional for SMTP lookup: a missing/renamed hotel
+            // metadata column must never be misreported as missing SMTP settings.
+            try
+            {
+                await using var hotel = new SqlCommand(@"
+SELECT TOP (1) name,email,currency FROM dbo.HotelsSignUpTB
+WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn);
+                hotel.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                await using var rd = await hotel.ExecuteReaderAsync(CancellationToken.None);
+                if (await rd.ReadAsync(CancellationToken.None))
+                {
+                    hotelName = Convert.ToString(rd["name"])?.Trim() is { Length: > 0 } n ? n : hotelName;
+                    hotelEmail = Convert.ToString(rd["email"])?.Trim() ?? string.Empty;
+                    currency = NormalizeCurrencyCode(Convert.ToString(rd["currency"]));
+                }
+            }
+            catch (SqlException ex)
+            {
+                _logger.LogWarning(ex, "Reservation {RegId}: hotel notification metadata lookup failed; SMTP settings will still be checked.", regId);
+                // Recover the hotel recipient even if optional currency is missing.
+                try
+                {
+                    await using var fallback = new SqlCommand(@"
+SELECT TOP (1) name,email FROM dbo.HotelsSignUpTB
+WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn);
+                    fallback.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    await using var r = await fallback.ExecuteReaderAsync(CancellationToken.None);
+                    if (await r.ReadAsync(CancellationToken.None))
+                    {
+                        hotelName = Convert.ToString(r["name"])?.Trim() is { Length: > 0 } n ? n : hotelName;
+                        hotelEmail = Convert.ToString(r["email"])?.Trim() ?? string.Empty;
+                    }
+                }
+                catch (SqlException nested)
+                {
+                    _logger.LogWarning(nested, "Reservation {RegId}: fallback hotel email lookup failed.", regId);
+                }
+            }
+
+            var smtp = await LoadCreationSmtpAsync(cn, hotelId, CancellationToken.None);
+            settings = smtp.Settings;
+            lookupFailure = smtp.FailureReason;
+        }
+        catch (SqlException ex)
+        {
+            lookupFailure = "SMTP database query failed. Check the server logs and EmailSettingsTB schema.";
+            _logger.LogError(ex, "Reservation {RegId}: SQL error loading SMTP settings for hotel {HotelId}.", regId, hotelId);
+        }
+        catch (Exception ex)
+        {
+            lookupFailure = "SMTP configuration could not be read; check server logs.";
+            _logger.LogError(ex, "Reservation {RegId}: unexpected error loading SMTP settings for hotel {HotelId}.", regId, hotelId);
+        }
+
+        if (settings is null)
+        {
+            var reason = lookupFailure ?? "No usable SMTP configuration was found.";
+            _logger.LogWarning("Reservation {RegId}: notifications not sent: {Reason}", regId, reason);
+            await RecordCreationEmailFailuresAsync(hotelId, regId, request.Email, hotelEmail, reason);
+            return ($"Failed ({reason})", $"Failed ({reason})");
+        }
+
+        static string H(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+        var guestName = (request.FirstName + " " + request.LastName).Trim();
+        var stayDates = $"{request.ArrivalDate:dd MMM yyyy} – {request.DepartureDate:dd MMM yyyy}";
+        var roomDetails = string.Join("", rooms.Select(r =>
+            $"<tr><td style='padding:7px;border-bottom:1px solid #e2e8f0'>{H(r.CategoryName)}</td>" +
+            $"<td style='padding:7px;border-bottom:1px solid #e2e8f0'>{H(r.PlanName)}</td>" +
+            $"<td style='padding:7px;border-bottom:1px solid #e2e8f0'>{H(string.Join(", ", r.AssignedRooms))}</td>" +
+            $"<td style='padding:7px;border-bottom:1px solid #e2e8f0'>{r.ArrivalDate:dd MMM yyyy} – {r.DepartureDate:dd MMM yyyy}</td></tr>"));
+        var details = $"<p><strong>Reservation:</strong> {H(regId)}<br>" +
+            $"<strong>Guest:</strong> {H(guestName)}<br>" +
+            $"<strong>Stay:</strong> {H(stayDates)}<br>" +
+            $"<strong>Status:</strong> {(request.IsProvisional ? "Provisional" : "Confirmed")}<br>" +
+            $"<strong>Grand total:</strong> {H(currency)} {total:0.00}</p>" +
+            $"<table style='border-collapse:collapse;width:100%;font-size:13px'><thead>" +
+            $"<tr><th align='left'>Room type</th><th align='left'>Rate plan</th><th align='left'>Room</th><th align='left'>Dates</th></tr></thead>" +
+            $"<tbody>{roomDetails}</tbody></table>";
+        static string Wrap(string name, string body) =>
+            $"<!doctype html><html><body style='margin:0;background:#f5f7fb;padding:24px;font-family:Arial,sans-serif;color:#1e293b'>" +
+            $"<div style='max-width:660px;margin:auto;background:white;padding:28px;border-radius:12px'>" +
+            $"<h2 style='color:#0b3b8c'>{H(name)}</h2>{body}<p style='font-size:12px;color:#64748b'>This is an automated reservation notification.</p></div></body></html>";
+
+        var guestSubject = request.IsProvisional
+            ? $"Provisional reservation at {hotelName} – {regId}"
+            : $"Your booking is confirmed at {hotelName} – {regId}";
+        var hotelSubject = $"New {(request.IsProvisional ? "Provisional " : "")}Reservation - {guestName} - {regId}";
+
+        // Independent calls: a missing hotel address does not prevent the guest email.
+        var guestTask = SendCreationEmailAsync(hotelId, regId, "BOOKING_GUEST", request.Email,
+            guestSubject, Wrap(hotelName, $"<p>Dear {H(guestName)},</p>" +
+                $"<p>{(request.IsProvisional ? "Your provisional reservation has been received." : "Your reservation has been confirmed.")}</p>" + details), settings);
+        var hotelTask = SendCreationEmailAsync(hotelId, regId, "BOOKING_HOTEL", hotelEmail,
+            hotelSubject, Wrap(hotelName, "<p>A reservation has been created in ORA PMS.</p>" + details +
+                $"<p><strong>Guest email:</strong> {H(request.Email)}<br><strong>Guest phone:</strong> {H(request.Phone)}</p>"), settings);
+        await Task.WhenAll(guestTask, hotelTask);
+        return (await guestTask, await hotelTask);
+    }
+
+    private async Task RecordCreationEmailFailuresAsync(string hotelId, string regId,
+        string guestEmail, string hotelEmail, string reason)
+    {
+        await TryWriteCreationEmailLogAsync(hotelId, regId, "BOOKING_GUEST", guestEmail,
+            "Failed", reason, claim: true);
+        await TryWriteCreationEmailLogAsync(hotelId, regId, "BOOKING_HOTEL", hotelEmail,
+            "Failed", reason, claim: true);
+    }
+
+    private async Task<string> SendCreationEmailAsync(string hotelId, string regId, string emailType,
+        string recipient, string subject, string html, CreationEmailSettings settings)
+    {
+        if (!IsValidEmail(recipient))
+        {
+            _logger.LogWarning("Reservation {RegId}: {Type} email skipped because recipient is missing or invalid.", regId, emailType);
+            await TryWriteCreationEmailLogAsync(hotelId, regId, emailType, recipient, "Skipped", "Recipient address missing or invalid", claim: true);
+            return "Skipped (recipient email missing)";
+        }
+
+        // A unique (hotel_id, reg_id, email_type) key on EmailSendLogTB prevents
+        // duplicate sends when creation processing is retried.
+        var claimed = await TryWriteCreationEmailLogAsync(hotelId, regId, emailType,
+            recipient, "Pending", "Preparing confirmation email", claim: true);
+        if (claimed == false) return "Already processed";
+        try
+        {
+            using var msg = new MailMessage
+            {
+                From = new MailAddress(settings.FromEmail,
+                    string.IsNullOrWhiteSpace(settings.FromName) ? settings.FromEmail : settings.FromName),
+                Subject = subject,
+                Body = html,
+                IsBodyHtml = true
+            };
+            msg.To.Add(recipient);
+            using var smtp = new SmtpClient(settings.Host, settings.Port)
+            {
+                EnableSsl = settings.UseSsl,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential(settings.SmtpUser, settings.Password),
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                Timeout = 15000
+            };
+            using var emailTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await smtp.SendMailAsync(msg, emailTimeout.Token);
+            await TryWriteCreationEmailLogAsync(hotelId, regId, emailType, recipient, "Sent", "SMTP accepted message", claim: false);
+            _logger.LogInformation("Reservation {RegId}: {Type} accepted by SMTP.", regId, emailType);
+            return "Sent";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Reservation {RegId}: {Type} confirmation email failed.", regId, emailType);
+            await TryWriteCreationEmailLogAsync(hotelId, regId, emailType, recipient, "Failed", ex.Message, claim: false);
+            return "Failed (check email settings/logs)";
+        }
+    }
+
+    // null means the log could not be written; notification still gets attempted.
+    private async Task<bool?> TryWriteCreationEmailLogAsync(string hotelId, string regId,
+        string type, string to, string status, string message, bool claim)
+    {
+        try
+        {
+            await using var cn = new SqlConnection(_connectionString);
+            await cn.OpenAsync(CancellationToken.None);
+            // Compatibility with logs written before the email-type rename.
+            // Otherwise a reprocessed reservation could send the same email twice.
+            if (claim && (type == "BOOKING_GUEST" || type == "BOOKING_HOTEL"))
+            {
+                await using var oldLogCmd = new SqlCommand(@"
+SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM dbo.EmailSendLogTB
+    WHERE hotel_id = @hotel AND reg_id = @reg
+      AND email_type = @legacyType
+) THEN 1 ELSE 0 END;", cn);
+                oldLogCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                oldLogCmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                oldLogCmd.Parameters.Add("@legacyType", SqlDbType.VarChar, 50).Value = "MVC_" + type;
+                var alreadyLogged = Convert.ToInt32(await oldLogCmd.ExecuteScalarAsync(CancellationToken.None));
+                if (alreadyLogged != 0)
+                {
+                    _logger.LogInformation("Reservation {RegId}: legacy {Type} log exists; suppressing duplicate.", regId, type);
+                    return false;
+                }
+            }
+            await using var cmd = new SqlCommand(claim ? @"
+INSERT INTO dbo.EmailSendLogTB(hotel_id,reg_id,email_type,ToEmail,Status,Message)
+VALUES(@hotel,@reg,@type,@to,@status,@message);" : @"
+UPDATE dbo.EmailSendLogTB SET Status=@status,Message=@message
+WHERE hotel_id=@hotel AND reg_id=@reg AND email_type=@type;", cn);
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+            cmd.Parameters.Add("@type", SqlDbType.VarChar, 50).Value = type;
+            cmd.Parameters.Add("@to", SqlDbType.VarChar, 180).Value = to ?? string.Empty;
+            cmd.Parameters.Add("@status", SqlDbType.VarChar, 30).Value = status;
+            cmd.Parameters.Add("@message", SqlDbType.NVarChar, 1000).Value = message.Length > 1000 ? message[..1000] : message;
+            await cmd.ExecuteNonQueryAsync(CancellationToken.None);
+            return true;
+        }
+        catch (SqlException ex) when (claim && (ex.Number == 2601 || ex.Number == 2627))
+        {
+            _logger.LogWarning("Reservation {RegId}: duplicate {Type} email log; suppressing resend.", regId, type);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Reservation {RegId}: unable to persist {Type} email audit.", regId, type);
+            return null;
+        }
+    }
+
     private async Task<PaymentLinkSendResult> SendPaymentLinkEmailAsync(
         string hotelId, string toEmail, string regId, decimal amount, string currencyCode, string checkoutUrl, DateTime? deadline, CancellationToken ct)
     {
         try
         {
-            string fromEmail="", fromName="", host="", user="", encrypted=""; int port=0; bool ssl=false; string hotelName="Hotel";
-            await using var cn = new SqlConnection(_connectionString);
-            await cn.OpenAsync(ct);
-            await using (var cmd = new SqlCommand(@"SELECT TOP 1 FromEmail,FromName,SmtpHost,SmtpPort,UseSsl,SmtpUser,SmtpPassEnc
-FROM dbo.EmailSettingsTB WHERE IsActive=1 AND hotel_id IN (@hotel,'-1') ORDER BY CASE WHEN hotel_id=@hotel THEN 0 ELSE 1 END, ID DESC;", cn))
+            string hotelName = "Hotel";
+            CreationEmailSettings settings;
+            await using (var cn = new SqlConnection(_connectionString))
             {
-                cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-                await using var rd = await cmd.ExecuteReaderAsync(ct);
-                if (!await rd.ReadAsync(ct)) return PaymentLinkFail("No active SMTP configuration was found for this hotel.");
-                fromEmail=Convert.ToString(rd["FromEmail"])?.Trim()??""; fromName=Convert.ToString(rd["FromName"])?.Trim()??"";
-                host=Convert.ToString(rd["SmtpHost"])?.Trim()??""; port=SafeInt(rd["SmtpPort"]); ssl=rd["UseSsl"]!=DBNull.Value && Convert.ToBoolean(rd["UseSsl"]);
-                user=Convert.ToString(rd["SmtpUser"])?.Trim()??""; encrypted=Convert.ToString(rd["SmtpPassEnc"])??"";
+                await cn.OpenAsync(ct);
+                var smtpLookup = await LoadCreationSmtpAsync(cn, hotelId, ct);
+                if (smtpLookup.Settings is null)
+                    return PaymentLinkFail(smtpLookup.FailureReason);
+                settings = smtpLookup.Settings;
+                await using var nameCmd = new SqlCommand(@"
+SELECT TOP (1) ISNULL(name,'Hotel') FROM dbo.HotelsSignUpTB
+WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn);
+                nameCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                hotelName = Convert.ToString(await nameCmd.ExecuteScalarAsync(ct))?.Trim() ?? "Hotel";
             }
-            await using (var nameCmd = new SqlCommand("SELECT TOP 1 ISNULL(name,'Hotel') FROM dbo.HotelsSignUpTB WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn))
-            { nameCmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId; hotelName=Convert.ToString(await nameCmd.ExecuteScalarAsync(ct))?.Trim()??"Hotel"; }
-            if (fromEmail.Length==0 || host.Length==0 || port<=0) return PaymentLinkFail("SMTP configuration is incomplete.");
-            var pass = DecryptEmailPassword(encrypted);
             var safeHotel=WebUtility.HtmlEncode(hotelName); var safeUrl=WebUtility.HtmlEncode(checkoutUrl); var safeReg=WebUtility.HtmlEncode(regId);
             var deadlineText=deadline.HasValue ? deadline.Value.ToString("dd MMM yyyy HH:mm",CultureInfo.InvariantCulture) : "the requested deadline";
             var html=$@"<!doctype html><html><body style='font-family:Arial,sans-serif;background:#f5f7fb;padding:24px'><div style='max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px'><h2 style='color:#0B2A5B'>{safeHotel}</h2><p>Please use the secure link below to pay the outstanding balance for reservation <strong>{safeReg}</strong>.</p><p><strong>Amount due:</strong> {WebUtility.HtmlEncode(currencyCode)} {amount:0.00}<br><strong>Pay by:</strong> {WebUtility.HtmlEncode(deadlineText)}</p><p><a href='{safeUrl}' style='display:inline-block;background:#0B3B8C;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold'>Pay securely</a></p><p style='font-size:12px;color:#64748b'>If the button does not open, copy this link into your browser:<br>{safeUrl}</p></div></body></html>";
-            using var msg=new MailMessage(); msg.From=new MailAddress(fromEmail,string.IsNullOrWhiteSpace(fromName)?fromEmail:fromName); msg.To.Add(toEmail); msg.Subject=$"Payment Link - Reservation {regId}"; msg.Body=html; msg.IsBodyHtml=true;
-            using var smtp=new SmtpClient(host,port){EnableSsl=ssl,Credentials=new NetworkCredential(user,pass),DeliveryMethod=SmtpDeliveryMethod.Network,Timeout=30000};
+            using var msg=new MailMessage(); msg.From=new MailAddress(settings.FromEmail,string.IsNullOrWhiteSpace(settings.FromName)?settings.FromEmail:settings.FromName); msg.To.Add(toEmail); msg.Subject=$"Payment Link - Reservation {regId}"; msg.Body=html; msg.IsBodyHtml=true;
+            using var smtp=new SmtpClient(settings.Host,settings.Port){EnableSsl=settings.UseSsl,UseDefaultCredentials=false,Credentials=new NetworkCredential(settings.SmtpUser,settings.Password),DeliveryMethod=SmtpDeliveryMethod.Network,Timeout=30000};
             await smtp.SendMailAsync(msg);
             ct.ThrowIfCancellationRequested();
             return new PaymentLinkSendResult { Success=true, Message="Payment link sent successfully.", CheckoutUrl=checkoutUrl };

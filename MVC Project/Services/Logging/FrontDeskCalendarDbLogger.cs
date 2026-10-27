@@ -122,7 +122,11 @@ END;", cn, tx);
         }
         catch (Exception ex)
         {
-            _appLogger.Debug(ex, "Front Desk Calendar Reserv_log insert skipped for {RegId}.", regId);
+            _appLogger.Error(ex, "Front Desk Calendar Reserv_log insert failed for {RegId}.", regId);
+            // Transactional room/reservation edits must not commit without an audit row.
+            // Direct check-in logs after the stay save may be nontransactional; its
+            // CHECK IN audit is already written inside CheckInService's transaction.
+            if (tx != null) throw;
         }
     }
 

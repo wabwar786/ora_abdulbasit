@@ -1174,7 +1174,7 @@ WHERE hotel_id = @hotel_id AND reg_id = @reg_id;", conn, tx))
                                 catch { }
                                 Log_helper.Log("Channex Reservation Api", "Cancel Booking", hotelid, "channex",
                                     "A Booking Cancel By Guest: Booking#= " + bookingid + " Hotel ID= " + hotelid);
-                                Log_helper.InsertReservLog(otabookingid, "A Booking Cancel By Guest with OTA Booking #:" + otabookingid, "Channex", currentUser, hotelid, "Reservation Cancel", ip, systemName);
+
                             }
                             else if (statusLower == "modified")
                             {
@@ -3345,6 +3345,14 @@ END
                         $"A reservation has been cancelled through the channel manager for the guest {firstname} {lastname} with arrival date {formatedArrivalDate}.";
                     Serviced(hotelid, description);
                 }
+
+                // Record the actual PMS registration ID (not the OTA booking ID).
+                // This covers both webhook and direct API cancellations and logs only success.
+                if (!string.IsNullOrWhiteSpace(reg_id))
+                    Log_helper.InsertReservLog(reg_id,
+                        $"Channel cancellation completed | OTA BookingId={bookingid} | Guest={firstname} {lastname} | Arrival={formatedArrivalDate}",
+                        "Channex", "Channex", hotelid, "Reservation Cancel",
+                        GetClientIPAddress(), Environment.MachineName);
 
                 // Return success response
                 return Ok("Booking and associated payment records have been successfully deleted.");
