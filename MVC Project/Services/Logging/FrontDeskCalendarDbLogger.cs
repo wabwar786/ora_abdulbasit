@@ -109,7 +109,7 @@ BEGIN
 END;", cn, tx);
 
             cmd.Parameters.Add("@reg_id", SqlDbType.VarChar, 100).Value = regId.Trim();
-            cmd.Parameters.Add("@descp", SqlDbType.VarChar, -1).Value = description ?? string.Empty;
+            cmd.Parameters.Add("@descp", SqlDbType.NVarChar, -1).Value = description ?? string.Empty;
             cmd.Parameters.Add("@user_id", SqlDbType.VarChar, 100).Value = userId ?? string.Empty;
             cmd.Parameters.Add("@username", SqlDbType.VarChar, 150).Value = userName ?? string.Empty;
             cmd.Parameters.Add("@hotel_id", SqlDbType.VarChar, 100).Value = hotelId ?? string.Empty;

@@ -265,6 +265,11 @@ WHERE hotel_id = @hotel_id;", connection);
     public Task<IActionResult> MoveBooking([FromBody] FrontDeskBookingMoveRequest request, CancellationToken ct) => Mutate(
         () => _calendar.MoveBookingAsync(SessionValue("hotel"), SessionValue("HotelName"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
 
+    [HttpPost("DeleteRoomSegment"), ValidateAntiForgeryToken]
+    public Task<IActionResult> DeleteRoomSegment([FromBody] FrontDeskDeleteRoomSegmentRequest request, CancellationToken ct) => Mutate(
+        () => _calendar.DeleteRoomSegmentAsync(SessionValue("hotel"), SessionValue("HotelName"),
+            SessionValue("UserId"), SessionValue("UserName"), Ip(), request.RegId, request.PaymentId, ct));
+
     [HttpPost("ResizeBooking"), ValidateAntiForgeryToken]
     public Task<IActionResult> ResizeBooking([FromBody] FrontDeskBookingResizeRequest request, CancellationToken ct) => Mutate(
         () => _calendar.ResizeBookingAsync(SessionValue("hotel"), SessionValue("HotelName"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));

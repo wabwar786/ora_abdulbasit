@@ -74,7 +74,7 @@ public sealed class CreateReservationRequest
     [StringLength(150)] public string Country { get; set; } = string.Empty;
     [StringLength(150)] public string City { get; set; } = string.Empty;
     [StringLength(200)] public string Address { get; set; } = string.Empty;
-    [StringLength(180)] public string Identification { get; set; } = string.Empty;
+    [StringLength(30)] public string Identification { get; set; } = string.Empty;
     [Required, StringLength(80, MinimumLength=2)] public string Source { get; set; } = string.Empty;
     public bool IsProvisional { get; set; }
     public DateTime? PaymentDeadline { get; set; }

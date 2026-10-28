@@ -542,6 +542,7 @@ WHEN NOT MATCHED THEN
                     new[] { meta.LocalPlanId.ToString(CultureInfo.InvariantCulture) },
                     touchedCategories,
                     userName,
+                    today,
                     cancellationToken);
             }
         }
@@ -566,7 +567,7 @@ WHEN NOT MATCHED THEN
                 await ratePreparation.PrepareBookingCutoffRowsAsync(
                     hotelId, today, cutoffEnd,
                     new[] { meta.LocalPlanId.ToString(CultureInfo.InvariantCulture) },
-                    touchedCategories, userName, cancellationToken);
+                    touchedCategories, userName, today, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

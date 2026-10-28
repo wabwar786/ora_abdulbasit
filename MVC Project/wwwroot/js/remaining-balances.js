@@ -261,7 +261,17 @@
       showOnlineCard: root.dataset.canOnlineCard === '1',
       showPdqPayment: root.dataset.canPdqPayment === '1',
       showAutoPay: false,
-      onCompleted: async () => { await load(); }
+      onCompleted: () => {
+        try {
+          sessionStorage.setItem('oraRemainingBalancesAfterPayment', JSON.stringify({
+            path: window.location.pathname, at: Date.now(),
+            start: state.start, end: state.end, search: state.search,
+            source: state.source, status: state.status, page: state.page,
+            pageSize: state.pageSize
+          }));
+        } catch (_) { /* Refresh even when browser storage is blocked. */ }
+        window.location.reload();
+      }
     });
   });
 
@@ -359,4 +369,30 @@
 
   updateDateLabels();
   renderPagination(Number(get('rbGuestsCount').textContent.replaceAll(',', '')) || 0);
+
+  // Restore only the one-time search/filter context of the page that collected payment.
+  try {
+    const key = 'oraRemainingBalancesAfterPayment';
+    const raw = sessionStorage.getItem(key);
+    if (raw) {
+      sessionStorage.removeItem(key);
+      const saved = JSON.parse(raw);
+      if (saved.path === window.location.pathname && Date.now() - saved.at < 60000) {
+        state.start = saved.start || null;
+        state.end = saved.end || null;
+        state.search = String(saved.search || '').slice(0,160);
+        state.source = String(saved.source || '');
+        state.status = String(saved.status || 'all');
+        state.page = Math.max(1, Number(saved.page) || 1);
+        state.pageSize = [25,50,100].includes(Number(saved.pageSize)) ? Number(saved.pageSize) : 50;
+        get('rbSearch').value = state.search;
+        get('rbSource').value = state.source;
+        get('rbPageSize').value = String(state.pageSize);
+        get('rbStatusTabs').querySelectorAll('[data-status]').forEach(button =>
+          button.classList.toggle('active', button.dataset.status === state.status));
+        updateDateLabels();
+        void load();
+      }
+    }
+  } catch (_) { /* Keep normal report loading when storage is unavailable. */ }
 })();

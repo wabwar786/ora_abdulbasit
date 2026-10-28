@@ -560,19 +560,123 @@ ORDER BY CASE WHEN CreatedOn IS NULL THEN 1 ELSE 0 END,CreatedOn DESC,LogID DESC
             || string.IsNullOrWhiteSpace(planId))
             return result;
 
+        // History is a timeline for the selected Inventory cell, not a snapshot
+        // of the current override alone. When a bulk daily override applies:
+        // - show Rate Plans changes made BEFORE the first applicable bulk update;
+        // - show the bulk update and all subsequent dated rate edits;
+        // - hide Rate Plans changes made AFTER the override started (they only
+        //   change category_plan, not the explicitly overridden datesrates row).
+        // If there is no applicable bulk event, preserve the existing behavior
+        // for other dated overrides (manual/Yield). This is read-only.
         const string sql = @"
-SELECT TOP (100) id, created_at, user_id, updated_by, pc, ip,
-       date_from, date_to, base_rate_set, currency, rate, [source]
-FROM dbo.RateUploadHistoryTB
-WHERE CONVERT(nvarchar(50),hotel_id)=@hotel
-  AND CONVERT(nvarchar(100),category_id)=@category
-  AND CONVERT(nvarchar(50),plan_id)=@plan
-  AND TRY_CONVERT(date,date_from)<=@selectedDate
-  AND TRY_CONVERT(date,date_to)>=@selectedDate
-  AND rate IS NOT NULL
-  AND (NULLIF(LTRIM(RTRIM(days_text)), '') IS NULL OR days_text='All'
-       OR CHARINDEX(','+@day+',', ','+REPLACE(days_text,' ','')+',')>0 OR CHARINDEX('/',days_text)>0)
-ORDER BY created_at DESC, id DESC;";
+DECLARE @hasDatedRate bit = 0;
+DECLARE @firstBulkAt datetime2(7) = NULL;
+DECLARE @firstBulkId bigint = NULL;
+
+-- Resolve whether the selected cell uses a dated override. The priority
+-- matches the Availability grid's existing preference for uploadfrom 1/2/3.
+SELECT TOP (1)
+       @hasDatedRate = CASE
+           WHEN TRY_CONVERT(int, dr.uploadfrom) IN (1, 2, 3) THEN 1
+           WHEN TRY_CONVERT(decimal(18,4), dr.rate) IS NOT NULL
+                AND cp.default_rate IS NOT NULL
+                AND TRY_CONVERT(decimal(18,4), dr.rate) <> cp.default_rate THEN 1
+           ELSE 0
+       END
+FROM dbo.datesrates AS dr
+OUTER APPLY
+(
+    SELECT TOP (1) TRY_CONVERT(decimal(18,4), cp0.rate) AS default_rate
+    FROM dbo.category_plan AS cp0
+    WHERE cp0.hotel_id=dr.hotel_id
+      AND CONVERT(nvarchar(100),cp0.category_id)=CONVERT(nvarchar(100),dr.category_id)
+      AND CONVERT(nvarchar(50),cp0.localplanid)=CONVERT(nvarchar(50),dr.planid)
+    ORDER BY cp0.id DESC
+) AS cp
+WHERE CONVERT(nvarchar(50),dr.hotel_id)=@hotel
+  AND CONVERT(nvarchar(100),dr.category_id)=@category
+  AND CONVERT(nvarchar(50),dr.planid)=@plan
+  AND CONVERT(date,dr.[date])=@selectedDate
+ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
+         CASE WHEN ISNULL(dr.upload,0)=0 THEN 0 ELSE 1 END;
+
+-- The FIRST bulk change for this specific category, plan, date and weekday
+-- marks when plan-default edits stopped affecting the selected daily rate.
+-- Do not use the most recent bulk change: intervening plan-default changes
+-- also did not affect this date. Use id as the timestamp tie-breaker.
+IF @hasDatedRate=1
+BEGIN
+    SELECT TOP (1)
+           @firstBulkAt = TRY_CONVERT(datetime2(7),b.created_at),
+           @firstBulkId = b.id
+    FROM dbo.RateUploadHistoryTB AS b
+    WHERE CONVERT(nvarchar(50),b.hotel_id)=@hotel
+      AND CONVERT(nvarchar(100),b.category_id)=@category
+      AND CONVERT(nvarchar(50),b.plan_id)=@plan
+      AND TRY_CONVERT(date,b.date_from)<=@selectedDate
+      AND TRY_CONVERT(date,b.date_to)>=@selectedDate
+      AND b.rate IS NOT NULL
+      AND
+      (
+          UPPER(LTRIM(RTRIM(ISNULL(b.[source],N'')))) LIKE N'BULKRATEUPDATE%'
+          OR UPPER(LTRIM(RTRIM(ISNULL(b.[source],N'')))) LIKE N'AVAILABILITY / BULKRATEUPDATE%'
+      )
+      AND (NULLIF(LTRIM(RTRIM(b.days_text)), '') IS NULL OR b.days_text='All'
+           OR CHARINDEX(','+@day+',', ','+REPLACE(b.days_text,' ','')+',')>0
+           OR CHARINDEX('/',b.days_text)>0)
+    ORDER BY b.created_at ASC,b.id ASC;
+END;
+
+SELECT TOP (100) h.id, h.created_at, h.user_id, h.updated_by, h.pc, h.ip,
+       h.date_from, h.date_to, h.base_rate_set, h.currency, h.rate, h.[source]
+FROM dbo.RateUploadHistoryTB AS h
+WHERE CONVERT(nvarchar(50),h.hotel_id)=@hotel
+  AND CONVERT(nvarchar(100),h.category_id)=@category
+  AND CONVERT(nvarchar(50),h.plan_id)=@plan
+  AND TRY_CONVERT(date,h.date_from)<=@selectedDate
+  AND TRY_CONVERT(date,h.date_to)>=@selectedDate
+  AND h.rate IS NOT NULL
+  AND (NULLIF(LTRIM(RTRIM(h.days_text)), '') IS NULL OR h.days_text='All'
+       OR CHARINDEX(','+@day+',', ','+REPLACE(h.days_text,' ','')+',')>0
+       OR CHARINDEX('/',h.days_text)>0)
+  AND
+  (
+      @hasDatedRate=0
+      OR UPPER(LTRIM(RTRIM(ISNULL(h.[source],N'')))) NOT LIKE N'RATEPLANS%'
+      OR
+      (
+          -- For bulk-overridden dates, retain the earlier plan-rate history.
+          -- Later plan-only edits cannot change this daily cell.
+          @firstBulkId IS NOT NULL
+          AND
+          (
+              TRY_CONVERT(datetime2(7),h.created_at)<@firstBulkAt
+              OR (TRY_CONVERT(datetime2(7),h.created_at)=@firstBulkAt AND h.id<@firstBulkId)
+          )
+      )
+  )
+  -- Older plan saves sometimes wrote both a category_plan default and a
+  -- matching datesrates row in the same audit batch. Present these as one
+  -- event, retaining the plan-default history and suppressing only the
+  -- redundant matching daily record. Real manual/bulk/Yield edits remain.
+  AND NOT (
+      h.[source] LIKE N'RatePlans / %'
+      AND h.[source] NOT LIKE N'%PlanDefault'
+      AND h.batch_id IS NOT NULL
+      AND EXISTS
+      (
+          SELECT 1 FROM dbo.RateUploadHistoryTB AS d
+          WHERE d.hotel_id=h.hotel_id AND d.batch_id=h.batch_id
+            AND CONVERT(nvarchar(100),d.category_id)=CONVERT(nvarchar(100),h.category_id)
+            AND CONVERT(nvarchar(50),d.plan_id)=CONVERT(nvarchar(50),h.plan_id)
+            AND d.[source] LIKE N'RatePlans / %PlanDefault'
+            AND TRY_CONVERT(decimal(18,4),d.rate)=TRY_CONVERT(decimal(18,4),h.rate)
+            AND TRY_CONVERT(decimal(18,4),d.base_rate_set)=TRY_CONVERT(decimal(18,4),h.base_rate_set)
+            AND TRY_CONVERT(date,d.date_from)<=TRY_CONVERT(date,h.date_from)
+            AND TRY_CONVERT(date,d.date_to)>=TRY_CONVERT(date,h.date_to)
+      )
+  )
+ORDER BY h.created_at DESC, h.id DESC;";
         await using var connection = new SqlConnection(_connectionString);
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId.Trim();
@@ -891,7 +995,9 @@ ORDER BY created_at DESC;";
                 effectiveCutoffDays = 0;
             }
             var cutoffClosed = date >= hotelToday && effectiveCutoffDays > 0 && (date - hotelToday).Days < effectiveCutoffDays;
-            var manualStopSell = r?.StopSell ?? false;
+            // datesrates.stop_sell also stores cutoff-generated closures. Only
+            // call it "manual Stop Sell" when the cutoff marker is absent.
+            var manualStopSell = (r?.StopSell ?? false) && !(r?.CutoffStopSell ?? false);
             var cta = (r?.ClosedToArrival ?? false) ? "Closed" : "Open";
             var ctd = (r?.ClosedToDeparture ?? false) ? "Closed" : "Open";
             var ss = manualStopSell ? "Closed" : "Open";
@@ -2643,7 +2749,9 @@ WHEN MATCHED THEN
 WHEN NOT MATCHED THEN
     INSERT ([date],rate,baserate,ip,systemName,username,category_id,hotel_id,currentdate,planid,
             [{dbColumn}],restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom)
-    VALUES (S.[date],COALESCE(S.cp_rate,S.prev_rate,0),COALESCE(S.cp_baserate,S.prev_baserate,0),
+    VALUES (S.[date],
+     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
+     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_baserate),TRY_CONVERT(decimal(18,4),S.prev_baserate),CONVERT(decimal(18,4),0)),
             @ip,@system,@username,S.category_id,S.hotel_id,GETDATE(),S.planid,@value,GETDATE(),@username,0,1);";
 
         await using var command = new SqlCommand(sql, connection, transaction);
@@ -3183,7 +3291,9 @@ WHEN NOT MATCHED THEN INSERT
      min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure,stop_sell,
      restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom)
 VALUES
-    (S.[date],COALESCE(S.cp_rate,S.prev_rate,0),COALESCE(S.cp_baserate,S.prev_baserate,0),
+    (S.[date],
+     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
+     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_baserate),TRY_CONVERT(decimal(18,4),S.prev_baserate),CONVERT(decimal(18,4),0)),
      S.ip,S.systemName,S.username,S.category_id,S.hotel_id,GETDATE(),S.planid,
      CASE WHEN S.update_min_los=1 THEN S.min_los ELSE NULL END,
      CASE WHEN S.update_min_stay_through=1 THEN S.min_stay_through ELSE NULL END,

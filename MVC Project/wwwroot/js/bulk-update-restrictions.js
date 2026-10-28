@@ -489,9 +489,17 @@
 
     function updateCalendarRangeText() {
         if (!calendarText) return;
-        if (!calendarStart) calendarText.textContent = "Select date range";
-        else if (!calendarEnd) calendarText.textContent = `${toDisplay(calendarStart)} - Select end date`;
-        else calendarText.textContent = `${toDisplay(calendarStart)} - ${toDisplay(calendarEnd)}`;
+        if (!calendarStart) {
+            calendarText.textContent = "Select date range";
+        } else if (!calendarEnd) {
+            calendarText.textContent = `${toDisplay(calendarStart)} - Select end date`;
+        } else {
+            // The summary and the calendar use the same weekday filter as Preview/Save.
+            const selectedCount = selectedIsoDates(
+                [{ start: toIso(calendarStart), end: toIso(calendarEnd) }], selectedDays()
+            ).size;
+            calendarText.textContent = `${toDisplay(calendarStart)} - ${toDisplay(calendarEnd)} · ${selectedCount} selected date${selectedCount === 1 ? "" : "s"}`;
+        }
     }
 
     function selectCalendarDate(date) {
@@ -518,6 +526,7 @@
         const today = hotelTodayDate();
         const startTime = calendarStart ? dayTime(calendarStart) : null;
         const endTime = calendarEnd ? dayTime(calendarEnd) : null;
+        const enabledWeekdays = new Set(selectedDays());
 
         for (let i = 0; i < 42; i += 1) {
             const current = new Date(firstVisible.getFullYear(), firstVisible.getMonth(), firstVisible.getDate() + i);
@@ -528,19 +537,45 @@
             button.textContent = String(current.getDate());
             button.dataset.date = toIso(current);
 
-            if (current.getMonth() !== month) button.classList.add("outside-month");
-            if (sameDay(current, today)) button.classList.add("today");
+            // Shared calendar styles are defined in bulk-rate-upload.css. Its
+            // selection classes must be used here as well; the old unprefixed
+            // classes (range-fill/start/end/today) had no corresponding styles.
+            if (current.getMonth() !== month) button.classList.add("bulk-rate-upload-outside-month");
+            if (sameDay(current, today)) button.classList.add("bulk-rate-upload-today");
             if (isBeforeHotelToday(current)) {
                 button.disabled = true;
                 button.classList.add("is-disabled");
                 button.setAttribute("aria-disabled", "true");
                 button.title = "Past dates are not available for this hotel.";
             }
-            if (startTime !== null && endTime !== null && currentTime >= startTime && currentTime <= endTime)
-                button.classList.add("range-fill");
-            if (startTime !== null && currentTime === startTime) button.classList.add("range-start");
-            if (endTime !== null && currentTime === endTime) button.classList.add("range-end");
 
+            const insideRange = startTime !== null && endTime !== null &&
+                currentTime >= startTime && currentTime <= endTime;
+            const isSelectedWeekday = enabledWeekdays.has(current.getDay());
+            const excludedByFilter = insideRange && !isSelectedWeekday;
+            const isStart = startTime !== null && currentTime === startTime;
+            const isEnd = endTime !== null && currentTime === endTime;
+
+            if (insideRange) {
+                button.classList.add("bulk-rate-upload-range-fill");
+                if (excludedByFilter) {
+                    button.classList.add("bulkrestrict-calendar-skipped");
+                    button.title = "Within date range, but excluded by Applicable Days.";
+                } else {
+                    button.title = "Selected for restriction update.";
+                }
+            }
+            if (isStart || isEnd) {
+                // Show the range boundaries without suggesting an excluded
+                // weekday will be updated. A lone start date is always visible.
+                if (excludedByFilter) {
+                    button.classList.add("bulkrestrict-calendar-skipped-boundary");
+                } else {
+                    if (isStart) button.classList.add("bulk-rate-upload-range-start");
+                    if (isEnd) button.classList.add("bulk-rate-upload-range-end");
+                }
+            }
+            button.setAttribute("aria-pressed", insideRange && isSelectedWeekday ? "true" : "false");
             host.appendChild(button);
         }
     }
@@ -676,12 +711,14 @@
 
         if (event.target.closest("#bulkRestrictionAllDays")) {
             page.querySelectorAll("#bulkRestrictionDays input[type='checkbox']").forEach(input => { input.checked = true; });
+            if (calendarPopover?.hidden === false) renderCalendars();
             schedulePreview();
             return;
         }
 
         if (event.target.closest("#bulkRestrictionClearDays")) {
             page.querySelectorAll("#bulkRestrictionDays input[type='checkbox']").forEach(input => { input.checked = false; });
+            if (calendarPopover?.hidden === false) renderCalendars();
             schedulePreview();
             return;
         }
@@ -756,6 +793,7 @@
             return;
         }
         if (event.target.matches("#bulkRestrictionDays input[type='checkbox']")) {
+            if (calendarPopover?.hidden === false) renderCalendars();
             schedulePreview();
             return;
         }

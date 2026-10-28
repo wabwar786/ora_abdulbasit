@@ -49,6 +49,9 @@
   };
 
   let current = null;
+  let activePdqWindow = null;
+  let activePdqContext = null;
+  let pdqCompletionInProgress = false;
   let toastTimer = 0;
   let holdsBusy = false;
 
@@ -302,13 +305,24 @@
       status:base64Url(current.status||'check in'),src:base64Url(current.source||'NR'),userid:base64Url(current.userId||''),
       description:base64Url(note),mode:base64Url(mode)
     });
-    const pdqTarget=`${urls.pdqUrl}?${q.toString()}`;
+    const terminalUrl = new URL(urls.pdqUrl, window.location.origin);
+    // The payment popup must stay same-origin for a verified completion message.
+    if (terminalUrl.origin !== window.location.origin) {
+      showToast('PDQ payment must open on the same website.',true);
+      return;
+    }
+    terminalUrl.search = q.toString();
+    const pdqTarget = terminalUrl.toString();
     const w=window.open('about:blank','pdq','width=500,height=760,resizable=yes,scrollbars=yes');
     if(!w){
       showToast('Please allow pop-ups for this website to open the PDQ terminal.',true);
       return;
     }
-    try{ w.opener=null; }catch(_){}
+    // Do not clear w.opener: the terminal sends its successful result back via postMessage.
+    // The receiving code verifies origin, source window and reservation ID.
+    activePdqWindow = w;
+    activePdqContext = {...current};
+    pdqCompletionInProgress = false;
     try{
       w.location.replace(pdqTarget);
       w.focus();
@@ -499,20 +513,62 @@
 
   root.addEventListener('click',e=>{if(e.target===root)e.preventDefault();});
 
-  // PDQ popup tells the opener immediately. The webhook remains authoritative for database writes.
+  // The terminal can finish before Stripe's webhook has committed PaymentsLogTB.
+  // Wait for its actual payment ID to appear before refreshing the originating page.
+  async function waitForPdqPosting(regId, response) {
+    const ids = [response.paymentIntentId, response.chargeId]
+      .map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
+    if (!ids.length) return false;
+    for (let attempt=0; attempt<15; attempt++) {
+      try {
+        const url = new URL('/Calendar/BookingDetails', window.location.origin);
+        url.searchParams.set('regId', regId);
+        url.searchParams.set('paymentId', '0');
+        url.searchParams.set('_', String(Date.now()));
+        const res = await fetch(url.toString(), {
+          credentials: 'same-origin', cache: 'no-store', headers: {'Accept':'application/json'}
+        });
+        if (res.ok) {
+          const result = await res.json();
+          const logs = result?.data?.payments || [];
+          if (logs.some(log => ids.some(id => [log.paymentId,log.chargeId,log.reference]
+            .some(value => String(value || '').toLowerCase() === id)))) return true;
+        }
+      } catch (_) { /* Transient read; retry while the webhook is processing. */ }
+      await new Promise(resolve=>setTimeout(resolve,800));
+    }
+    return false;
+  }
+
   window.addEventListener('message',async e=>{
-    if(e.origin!==window.location.origin || !current || !e.data) return;
-    if(e.data.regId && String(e.data.regId)!==String(current.regId||'')) return;
+    if(e.origin!==window.location.origin || !e.data) return;
+    if(!activePdqWindow || e.source!==activePdqWindow || !activePdqContext) return;
+    // Even if Record Payment was closed, retain the originating-page refresh callback.
+    const pdqContext = activePdqContext;
+    if(e.data.regId && String(e.data.regId)!==String(pdqContext.regId||'')) return;
     if(e.data.type==='PDQ_HOLD_AUTHORIZED'){
       showToast('PDQ payment hold authorized. It is ready to capture or release later.');
-      hidePdqChooser();
-      await loadHolds(false);
+      if(current && String(current.regId)===String(pdqContext.regId)) {
+        hidePdqChooser();
+        await loadHolds(false);
+      }
+      activePdqWindow=null;
+      activePdqContext=null;
     }else if(e.data.type==='PDQ_PAYMENT_SAVED'){
-      showToast('PDQ payment completed.');
-      const detail={context:{...current},response:e.data,method:'PDQ Payment'};
+      if(pdqCompletionInProgress) return;
+      pdqCompletionInProgress=true;
+      showToast('PDQ payment approved. Updating payment history…');
+      const context=pdqContext;
+      const posted=await waitForPdqPosting(context.regId,e.data);
+      if(!posted) showToast('Payment approved. The Stripe webhook may still be processing.',true);
+      const detail={context,response:e.data,method:'PDQ Payment',posted};
       root.dispatchEvent(new CustomEvent('recordpayment:completed',{detail}));
-      const callback=current?.onCompleted;
-      if(typeof callback==='function') await Promise.resolve(callback(detail));
+      const callback=context.onCompleted;
+      activePdqWindow=null;
+      activePdqContext=null;
+      try {
+        if(typeof callback==='function') await Promise.resolve(callback(detail));
+      } finally { pdqCompletionInProgress=false; }
     }
   });
 

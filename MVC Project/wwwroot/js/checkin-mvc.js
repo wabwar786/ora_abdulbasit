@@ -161,8 +161,13 @@
                 recordPaymentUrl: urls.recordPayment,
                 pdqUrl: app.dataset.terminalUrl || '/TerminalCardPayment.aspx'
             },
-            onCompleted: async () => {
-                await refreshReservationUi(currentRegId);
+            onCompleted: () => {
+                // Keep the currently selected guest when refreshing after a payment.
+                const url = new URL(window.location.href);
+                url.searchParams.delete('RI');
+                url.searchParams.set('q', currentRegId);
+                window.history.replaceState(window.history.state, '', url.toString());
+                window.location.reload();
             }
         });
     }
@@ -1808,7 +1813,13 @@
         const rate = toNumber(charge.rate);
         const baseCharge = toNumber(charge.charge);
         const isRoom = description.toLowerCase() === 'room rent';
-        const ratePerNight = isRoom && nights > 1 && Math.abs(rate - baseCharge) < 0.01 ? rate / nights : rate;
+        // Use the whole-stay base when it exists; preserve the old MVC nightly-rate layout.
+        const units = Math.max(1, nights);
+        const legacyBase = baseCharge > 0 ? baseCharge :
+            (toNumber(charge.totalAmount) - toNumber(charge.gst) - toNumber(charge.bedTax) + toNumber(charge.discount) > 0
+                ? toNumber(charge.totalAmount) - toNumber(charge.gst) - toNumber(charge.bedTax) + toNumber(charge.discount) : rate);
+        const oldMvcNightly = isRoom && baseCharge > 0 && rate > 0 && Math.abs(rate * units - baseCharge) <= 0.05;
+        const ratePerNight = isRoom ? (oldMvcNightly ? rate : Math.round(legacyBase / units * 100) / 100) : rate;
         const detailText = isRoom ? description : (String(charge.deductionInfo || '').trim() || description);
         const guestName = String(charge.guestName || '').trim();
         const planName = String(charge.ratePlanName || charge.ratePlanId || '');

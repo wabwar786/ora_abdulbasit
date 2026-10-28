@@ -1,4 +1,4 @@
-:root {
+﻿:root {
     --inv-line: #d6e0e8;
     --inv-line-strong: #9aa7b2;
     --inv-text: #263646;
@@ -2739,4 +2739,54 @@ body.availability-log-open, body.inventory-modal-open {
 }
 .inventory-page .inventory-grid tbody td.rate-value-cell.weekend:not(.is-blocked):not(.is-yield-rate):not(.rate-dirty-cell):not(.state-stop-sell):not(.state-negative):not(.state-rate-yield-change):not(.state-past):not(.state-missing):not(.state-rate-missing) {
     background: var(--inv-weekend) !important;
+}
+
+/* Shared compact history styles for Rate, Availability and Restriction logs. */
+.availability-log-overlay.availability-log-show-rate .availability-log-summary { display: none; }
+.availability-log-show-rate .availability-log-drawer { background: #f7f9fc; }
+.availability-log-show-rate .availability-log-body { padding: 12px 13px 18px; }
+.availability-log-show-rate .availability-log-header { min-height: 64px; padding: 12px 15px; }
+.availability-log-show-rate .availability-log-header h3 { font-size: 16px !important; }
+.availability-log-show-rate .availability-log-header p { font-size: 11px !important; line-height: 1.4; }
+.availability-log-show-rate .rate-history-card {
+    border: 1px solid #dce5ee !important;
+    border-left: 1px solid #dce5ee !important;
+    background: #fff; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(15,23,42,.045);
+    padding: 11px 12px; margin-bottom: 8px;
+    display: flex; flex-direction: column; gap: 5px;
+}
+.rate-history-card-top { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+.rate-history-card-top time { font-size: 10.5px; color: #334e6b; font-weight: 650; white-space: nowrap; }
+.rate-history-badges { display: flex; align-items: end; flex-direction: column; gap: 3px; min-width: 0; }
+.rate-history-price { font-size: 11px; color: #174b80; background: #eef5ff; border: 1px solid #d2e3f7; padding: 3px 6px; border-radius: 5px; white-space: nowrap; }
+.rate-history-base { font-size: 10.5px; color: #45647f; background: #f3f6fa; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
+.rate-history-action { font-size: 11.5px; font-weight: 700; color: #163b65; }
+.rate-history-source { font-size: 10.5px; color: #496780; }
+.rate-history-meta { font-size: 10px; line-height: 1.45; color: #6a7c90; overflow-wrap: anywhere; }
+@media (max-width: 540px) { .rate-history-card-top { flex-wrap: wrap; } .rate-history-badges { align-items: start; } }
+
+/* Three compact rows for all three history panels. */
+.availability-log-show-rate .availability-log-body { padding: 7px 9px 10px; }
+.availability-log-show-rate .rate-history-card {
+    padding: 7px 9px !important; margin-bottom: 5px !important;
+    gap: 3px !important; border: 1px solid #dce5ee !important;
+    border-radius: 6px; box-shadow: 0 1px 2px rgba(15,23,42,.035);
+}
+.availability-log-show-rate .rate-history-line {
+    display: flex; align-items: center; gap: 7px; min-width: 0;
+    font-size: 10px; line-height: 1.3; color: #5b6f84;
+}
+.availability-log-show-rate .rate-history-line-top { justify-content: space-between; }
+.availability-log-show-rate .rate-history-line-top time { font-size: 10px; font-weight: 700; color: #26466e; white-space: nowrap; }
+.availability-log-show-rate .rate-history-inline-prices { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; }
+.availability-log-show-rate .rate-history-price { font-size: 10px; padding: 2px 5px; }
+.availability-log-show-rate .rate-history-base { font-size: 9.5px; padding: 1px 4px; }
+.availability-log-show-rate .rate-history-line-action { color: #365671; }
+.availability-log-show-rate .rate-history-line-action strong { color: #173e68; font-size: 10.5px; }
+.availability-log-show-rate .rate-history-line-meta { flex-wrap: wrap; gap: 3px 7px; color: #6b7e91; font-size: 9.5px; }
+.availability-log-show-rate .rate-history-line-meta > span:not(:first-child)::before { content: '·'; margin-right: 7px; color: #95a5b5; }
+@media (max-width: 540px) {
+    .availability-log-show-rate .rate-history-line-top { flex-wrap: wrap; }
+    .availability-log-show-rate .rate-history-line-meta { gap: 3px 6px; }
 }

@@ -297,142 +297,65 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND email_type=@type;", cn);
     }
     private static string Base64Url(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value.Trim()))
         .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    private static string H(string value) => WebUtility.HtmlEncode(value ?? "");
+    private static string EscapeEmailHtml(string? value) =>
+        WebUtility.HtmlEncode(value ?? string.Empty)
+            .Replace("{", "&#123;", StringComparison.Ordinal)
+            .Replace("}", "&#125;", StringComparison.Ordinal);
 
-    private static string BuildWelcomeHtml(string hotelName, string hotelLogoUrl, Guest guest, string checkedInRooms)
+    private static string BuildWelcomeHtml(string hotelName, string hotelLogoUrl,
+        Guest guest, string checkedInRooms)
     {
         var name = string.IsNullOrWhiteSpace(guest.Name) ? "Guest" : guest.Name;
         var room = checkedInRooms.Length > 0 ? checkedInRooms : guest.Room;
         var date = FormatLegacyDate(guest.ArrivalDate);
-        var time = guest.ArrivalTime;
-        // The HTML below is ported from EmailSender.BuildWelcomeTemplate_YourHtml.
-        const string template = @"<!doctype html>
-<html>
-<head>
-  <meta charset=""utf-8"">
-  <meta name=""viewport"" content=""width=device-width,initial-scale=1"">
-  <meta name=""x-apple-disable-message-reformatting"">
-  <title>Check-in Details</title>
-  <style>
-    @media (max-width:600px){
-      .w{width:100%!important}
-      .px{padding-left:16px!important;padding-right:16px!important}
-      .center{text-align:center!important}
-      .stack{display:block!important;width:100%!important}
-      .pt{padding-top:10px!important}
-    }
-  </style>
-</head>
-
-<body style=""margin:0;padding:0;"">
-  <!-- preheader -->
-  <div style=""display:none;max-height:0;overflow:hidden;opacity:0;color:#ffffff;font-size:1px;line-height:1px;"">
-    Your check-in is on {{CheckInDate}} at {{CheckInTime}} — Room {{RoomNo}}.
-  </div>
-
-  <!-- FULL BACKGROUND GRADIENT -->
-  <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"">
-    <tr>
-      <td align=""center"" style=""padding:44px 14px;"">
-        <!-- WHITE CARD -->
-        <table role=""presentation"" width=""600"" cellpadding=""0"" cellspacing=""0"" border=""0"" class=""w""
-               style=""width:600px;max-width:600px;background:#ffffff;border-radius:22px;overflow:hidden;
-                      box-shadow:0 20px 55px rgba(0,0,0,.22);"">
-          <!-- Header -->
-          <tr>
-            <td class=""px center"" style=""padding:26px 34px 16px;background:#f8fafc;"">
-             
-               <div  style=""display:block;margin:0 auto;border:0;max-width:140px;height:auto;font-weight:bold;"" >{{HotelName}}</div>
-              <div style=""margin-top:12px;display:inline-block;padding:7px 12px;border-radius:999px;
-                          background:#ffffff;border:1px solid #e5e7eb;
-                          font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:800;color:#0f172a;"">
-                Check-in Details
-              </div>
-            </td>
-          </tr>
-
-          <!-- Title -->
-          <tr>
-            <td class=""px center"" style=""padding:22px 34px 10px;"">
-              <div style=""font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:1.15;
-                          font-weight:900;color:#0f172a;letter-spacing:-0.3px;"">
-                Welcome, {{GuestName}}
-              </div>
-              <div style=""margin-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;color:#475569;"">
-                We look forward to hosting you at <strong style=""color:#0f172a;"">{{HotelName}}</strong>.
-              </div>
-            </td>
-          </tr>
-
-          <!-- DETAILS STRIP -->
-          <tr>
-            <td class=""px"" style=""padding:12px 34px 0;"">
-              <table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0""
-                     style=""background:#ffffff;border-radius:16px;overflow:hidden;"">
-                <tr>
-                  <td class=""stack center"" style=""width:60%;padding:14px 16px;vertical-align:top;"">
-                    <div style=""font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#64748b;font-weight:800;letter-spacing:.4px;"">
-                      CHECK-IN
-                    </div>
-                    <div style=""margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#0f172a;font-weight:900;"">
-                      {{CheckInDate}}
-                    </div>
-                  </td>
-
-                  <td class=""stack center pt"" style=""width:40%;padding:14px 16px;vertical-align:top;border-left:1px solid #e5e7eb;"">
-                    <div style=""font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#64748b;font-weight:800;letter-spacing:.4px;"">
-                      ROOM
-                    </div>
-                    <div style=""margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:22px;color:#0f172a;font-weight:900;"">
-                      {{RoomNo}}
-                    </div>
-                    <div style=""margin-top:2px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#64748b;"">
-                      {{RoomType}}
-                    </div>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Accent line -->
-            </td>
-          </tr>
-
-          <!-- Note -->
-          <tr>
-            <td class=""px center"" style=""padding:18px 34px 26px;"">
-
-              <div style=""margin-top:14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#94a3b8;"">
-                Warm regards,<br>
-                <strong style=""color:#0f172a;"">{{HotelName}} Team</strong>
-              </div>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td class=""px center"" style=""padding:14px 34px;background:#f8fafc;border-top:1px solid #e5e7eb;"">
-              <div style=""font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#94a3b8;"">
-                © {{Year}} {{HotelName}}
-              </div>
-            </td>
-          </tr>
-
+        const string template = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>CHECK-IN DETAILS — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">Your check-in details for {{HotelName}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#2FAA8F;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">CHECK-IN DETAILS</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">Welcome to your stay.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">Everything you need for your arrival, in one place.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 9px;font-size:16px;font-weight:700;color:#142638">Welcome, {{GuestName}}.</p>
+        <p style="margin:0 0 24px;color:#617386;font:14px/23px Arial,Helvetica,sans-serif">We look forward to hosting you at <strong style="color:#142638">{{HotelName}}</strong>. Here are your check-in details.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="width:100%;border-collapse:collapse;"><tr><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Check-in date</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{CheckInDate}}</div></div></td><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Arrival time</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{CheckInTime}}</div></div></td></tr></table>
+        <div style="height:15px"></div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#EAF8F3;border:1px solid #CDE8DC;border-radius:12px;border-collapse:separate;"><tr><td style="padding:19px 22px"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Assigned room</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{RoomNo}}</div><div style="margin-top:4px;color:#4B716C;font-size:13px">{{RoomType}}</div></td></tr></table>
+        <div style="margin-top:26px;padding-top:21px;border-top:1px solid #E2EAF0"><p style="margin:0;font:13px/22px Arial,Helvetica,sans-serif;color:#617386">We wish you a comfortable and pleasant stay.<br><br>Warm regards,<br><strong style="color:#142638">{{HotelName}} Team</strong></p></div>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
         </table>
-        <!-- /WHITE CARD -->
-
-      </td>
-    </tr>
-  </table>
-</body>
-</html>";
-        return template.Replace("{{HotelName}}", H(hotelName))
-            .Replace("{{HotelLogoUrl}}", H(hotelLogoUrl))
-            .Replace("{{GuestName}}", H(name))
-            .Replace("{{CheckInDate}}", H(date))
-            .Replace("{{CheckInTime}}", H(time))
-            .Replace("{{RoomNo}}", H(room.Length > 0 ? room : "-"))
-            .Replace("{{RoomType}}", H(guest.Category))
-            .Replace("{{Year}}", DateTime.UtcNow.Year.ToString(CultureInfo.InvariantCulture));
+        </td></tr></table></body></html>
+        """;
+        return template
+            .Replace("{{HotelName}}", EscapeEmailHtml(hotelName), StringComparison.Ordinal)
+            .Replace("{{GuestName}}", EscapeEmailHtml(name), StringComparison.Ordinal)
+            .Replace("{{CheckInDate}}", EscapeEmailHtml(date), StringComparison.Ordinal)
+            .Replace("{{CheckInTime}}", EscapeEmailHtml(guest.ArrivalTime), StringComparison.Ordinal)
+            .Replace("{{RoomNo}}", EscapeEmailHtml(room.Length > 0 ? room : "-"), StringComparison.Ordinal)
+            .Replace("{{RoomType}}", EscapeEmailHtml(guest.Category), StringComparison.Ordinal)
+            .Replace("{{Year}}", DateTime.UtcNow.Year.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     private static string FormatLegacyDate(string date)
@@ -444,19 +367,89 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND email_type=@type;", cn);
 
     private static string BuildCheckoutHtml(string hotelName, string guestName, string reviewUrl)
     {
-        var title = H(hotelName);
-        var name = H(string.IsNullOrWhiteSpace(guestName) ? "Guest" : guestName);
-        var feedback = reviewUrl.Length > 0
-            ? $"<p style='padding:18px 0'><a href='{H(reviewUrl)}' style='background:#0d2742;color:#fff;padding:14px 22px;border-radius:9px;text-decoration:none;font-weight:bold'>Share your stay experience</a></p>"
-            : string.Empty;
-        return $"""
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="background:#eef3f8;margin:0;padding:28px 12px;font-family:Arial,Helvetica,sans-serif;color:#0d2742">
-<table role="presentation" style="width:100%;max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;border-collapse:collapse">
-<tr><td style="background:#0d2742;color:#fff;text-align:center;padding:30px 22px"><div style="font-size:24px;font-weight:bold">{title}</div><div style="font-size:12px;margin-top:8px">THANK YOU FOR YOUR STAY</div></td></tr>
-<tr><td style="padding:30px"><h2 style="margin:0">Dear {name},</h2><p style="line-height:1.6;color:#475569">Thank you for choosing {title}. We hope your stay was comfortable and memorable.</p>{feedback}<p>Warm regards,<br><strong>{title} Team</strong></p></td></tr>
-<tr><td style="padding:16px;text-align:center;color:#64748b;background:#f8fafc;font-size:12px">&copy; {DateTime.UtcNow.Year} {title}</td></tr>
-</table></body></html>
-""";
+        // Existing policy: only generated BNBUK review URLs are passed to this
+        // method; other reservations get a thank-you with no review button.
+        const string withoutReviewHtml = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>THANK YOU FOR STAYING — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">Thank you for staying with {{HotelName}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#2FAA8F;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">THANK YOU FOR STAYING</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">Until next time.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">We hope you enjoyed your visit.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 9px;font-size:17px;font-weight:800;color:#142638">Dear {{GuestName}},</p>
+        <p style="margin:0;color:#617386;font:14px/25px Arial,Helvetica,sans-serif">Thank you for choosing <strong style="color:#142638">{{HotelName}}</strong>. We hope your stay was comfortable and memorable.</p>
+        
+        <div style="margin-top:27px;padding-top:22px;border-top:1px solid #E2EAF0"><p style="margin:0;font:13px/23px Arial,Helvetica,sans-serif;color:#617386">We hope to welcome you again soon.<br><br>Warm regards,<br><strong style="color:#142638">{{HotelName}} Team</strong></p></div>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
+        </table>
+        </td></tr></table></body></html>
+        """;
+        const string withReviewHtml = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>THANK YOU FOR STAYING — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">We would love to hear about your stay at {{HotelName}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#2FAA8F;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">THANK YOU FOR STAYING</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">Until next time.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">We hope you enjoyed your visit.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 9px;font-size:17px;font-weight:800;color:#142638">Dear {{GuestName}},</p>
+        <p style="margin:0;color:#617386;font:14px/25px Arial,Helvetica,sans-serif">Thank you for choosing <strong style="color:#142638">{{HotelName}}</strong>. We hope your stay was comfortable and memorable.</p>
+        <div style="padding:20px 22px;border:1px solid #D7EDE5;border-radius:12px;background:#F1FAF6;margin:26px 0"><p style="font-size:15px;font-weight:800;color:#142638;margin:0 0 8px">We'd love your feedback</p><p style="margin:0 0 19px;color:#617386;font:13px/21px Arial,Helvetica,sans-serif">Your experience helps us make every stay better.</p><table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:separate;"><tr><td style="border-radius:9px;background:#2FAA8F;text-align:center"><a href="{{ReviewUrl}}" style="display:inline-block;text-decoration:none;border:1px solid #2FAA8F;border-radius:9px;color:#fff;font:700 14px Arial,Helvetica,sans-serif;padding:15px 24px;">Share your stay experience &nbsp;&rsaquo;</a></td></tr></table></div>
+        <div style="margin-top:27px;padding-top:22px;border-top:1px solid #E2EAF0"><p style="margin:0;font:13px/23px Arial,Helvetica,sans-serif;color:#617386">We hope to welcome you again soon.<br><br>Warm regards,<br><strong style="color:#142638">{{HotelName}} Team</strong></p></div>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
+        </table>
+        </td></tr></table></body></html>
+        """;
+        var template = reviewUrl.Length > 0 ? withReviewHtml : withoutReviewHtml;
+        return template
+            .Replace("{{HotelName}}", EscapeEmailHtml(hotelName), StringComparison.Ordinal)
+            .Replace("{{GuestName}}", EscapeEmailHtml(string.IsNullOrWhiteSpace(guestName) ? "Guest" : guestName), StringComparison.Ordinal)
+            .Replace("{{ReviewUrl}}", EscapeEmailHtml(reviewUrl), StringComparison.Ordinal)
+            .Replace("{{Year}}", DateTime.UtcNow.Year.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 }

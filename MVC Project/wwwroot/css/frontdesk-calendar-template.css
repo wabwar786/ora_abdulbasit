@@ -1185,3 +1185,9 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
 .fdc-checkout-all input,.fdc-checkout-room input{accent-color:#194a82;width:15px;height:15px;flex-shrink:0}
 .fdc-checkout-room span{min-width:0}.fdc-checkout-room small{display:block;color:#687c90;margin-top:3px}
 .fdc-checkout-room-list{max-height:300px;overflow:auto}.fdc-checkout-count{text-align:right;font-size:10px;margin:7px 0;color:#536b80}
+
+/* Compact calendar payment links; retain clear access to refunds on checked-out stays. */
+.fdc-payment-log-tools{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:2px}
+.fdc-payment-receipt,.fdc-payment-refund{display:inline-flex;align-items:center;justify-content:center;min-height:20px!important;height:auto!important;padding:1px 3px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:10px!important;font-weight:700!important;text-decoration:underline;text-underline-offset:3px;line-height:1.4;cursor:pointer}
+.fdc-payment-receipt{color:#155a91!important}.fdc-payment-refund{color:#b42336!important}
+.fdc-payment-receipt:focus-visible,.fdc-payment-refund:focus-visible{outline:2px solid #2456a2!important;outline-offset:2px}

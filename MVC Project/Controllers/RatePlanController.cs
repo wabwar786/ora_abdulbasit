@@ -76,7 +76,8 @@ public sealed class RatePlanController : Controller
                 SessionValue("UserName"),
                 ClientIp(),
                 request,
-                cancellationToken),
+                cancellationToken,
+                pcName: RateAuditClientInfo.ResolvePc(HttpContext)),
             "saving the hotel base rate");
 
     [HttpPost("SaveDetails")]
@@ -119,7 +120,8 @@ public sealed class RatePlanController : Controller
                 SessionValue("UserName"),
                 ClientIp(),
                 request,
-                CancellationToken.None),
+                CancellationToken.None,
+                pcName: RateAuditClientInfo.ResolvePc(HttpContext)),
             "saving rate-plan rates");
     }
 

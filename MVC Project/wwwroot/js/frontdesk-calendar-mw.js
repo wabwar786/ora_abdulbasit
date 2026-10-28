@@ -704,7 +704,7 @@
     const row=(label,value)=>`<div class="fdcmw-fdc-kv"><span>${label}</span><b>${value}</b></div>`;
     const logs=(d.payments||[]).map(p=>{
       const refundable=Math.max(0,Number(p.remainingRefundable||0));
-      const canRefund=cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
+      const canRefund=!closed && cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
       const receipt=String(p.receiptUrl||'').trim();
       return `<div class="fdcmw-fdc-payment-log-entry" data-payment-log-id="${Number(p.id||0)}">
         <div class="fdcmw-fdc-payment-log-meta">
@@ -712,8 +712,8 @@
           <strong class="${Number(p.amount||0)<0?'fdcmw-fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
         </div>
         ${(receipt||canRefund)?`<div class="fdcmw-fdc-payment-log-tools">
-          ${receipt?`<a class="fdcmw-fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener">Receipt ↗</a>`:''}
-          ${canRefund?`<button type="button" class="fdcmw-fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}">Refund</button>`:''}
+          ${receipt?`<a class="fdcmw-fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener" aria-label="View payment receipt">Receipt</a>`:''}
+          ${canRefund?`<button type="button" class="fdcmw-fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}" title="Refund this payment">Refund</button>`:''}
         </div>`:''}
       </div>`;
     }).join('');
@@ -723,7 +723,7 @@
       <button type="button" data-drawer-action="security-settle">Manage Security</button>
     </div>`:'';
 
-    return `<div class="fdcmw-fdc-panel"><h4>Booking information</h4>
+    return `${securityPanel}<div class="fdcmw-fdc-panel"><h4>Booking information</h4>
         ${row('Reference #',esc(d.regId||'—'))}
         ${row('Booking #',esc(d.bookingNo||'—'))}
         ${row('Contact #',esc(d.phone||'—'))}
@@ -748,7 +748,6 @@
         ${balance>0.005?`<div class="fdcmw-fdc-payment-due-note">${money(balance)} remains to be collected.</div>`:'<div class="fdcmw-fdc-payment-settled-note">Payment received in full.</div>'}
         ${logs?`<div class="fdcmw-fdc-payment-log"><strong>Payment history</strong>${logs}</div>`:''}
       </div>
-      ${securityPanel}
       ${holdPanel}
       ${d.frontDeskNotes?`<div class="fdcmw-fdc-panel"><h4>Notebook</h4><p class="fdcmw-fdc-drawer-notes">${esc(d.frontDeskNotes)}</p></div>`:''}
       ${d.notes?`<div class="fdcmw-fdc-panel"><h4>Notes</h4><p class="fdcmw-fdc-drawer-notes">${esc(d.notes)}</p></div>`:''}`;
@@ -835,6 +834,8 @@
   function openReceivedPaymentRefund(button){
     const d=state.currentDetails;
     if(!d?.regId) return showToast('Reservation reference is missing.',true);
+    // Do not offer refunds inside the calendar drawer for checked-out stays.
+    if(isCheckedOutStatus(d.status)) return showToast('Refund is not available for checked-out reservations here.',true);
     if(!window.RefundPayment || typeof window.RefundPayment.open!=='function')
       return showToast('Refund component is not loaded.',true);
 
@@ -948,6 +949,9 @@
       if(canNoShow) actions.push(action('⊘','No Show','no-show','fdcmw-danger-action'));
       else actions.push(action('×','Cancel Reservation','cancel','fdcmw-danger-action'));
     }
+    if(d.canDeleteRoomSegment && !closed){
+      actions.push(action('×','Delete Room Entry','delete-room-segment','fdcmw-danger-action'));
+    }
     if(Number(d.balance||0)>0.005){
       actions.push(action('£','Record Payment','payment','fdcmw-payment-action'));
     }
@@ -984,6 +988,7 @@
     if(action==='payment'){openPayment(d,button);return;}
     if(action==='cardpayment' || action==='pdqpayment'){openPayment(d);return;}
     if(action==='sendpaylink'){openSendPaymentLink(d,button);return;}
+    if(action==='delete-room-segment'){await deleteRoomSegment(d,button);return;}
     if(action==='unassign'){await moveToUnassigned(d,button);return;}
     if(action==='invoice'){openInvoice(d);return;}
     if(action==='detail-invoice'){await openDetailInvoice(d,button);return;}
@@ -1002,6 +1007,17 @@
       await mutate(cfg.undoUrl,{regId:d.regId,paymentId:d.paymentId||0},'Undoing check-in…',button);closeDrawer();await loadCalendar(state.start,true);return;
     }
     if(action==='checkout'){openCheckout(d);return;}
+  }
+
+  async function deleteRoomSegment(d,button=null){
+    if(!d?.regId || !Number(d?.paymentId)){showToast('Select the room date entry first.',true);return;}
+    if(!d.canDeleteRoomSegment){showToast('This room does not have another date segment to retain.',true);return;}
+    if(!confirm(`Delete room ${d.roomNo||''} for ${fmt(d.arrival,true)} – ${fmt(d.departure,true)}? Only this entry will be removed.`))return;
+    try{
+      await mutate('/Calendar/DeleteRoomSegment',{regId:d.regId,paymentId:Number(d.paymentId)},'Deleting room entry…',button);
+      closeDrawer();
+      await loadCalendar(state.start,true);
+    }catch{}
   }
 
   async function moveToUnassigned(d,button=null){
@@ -1367,9 +1383,12 @@ ${tag}`:tag;
         recordPaymentUrl:cfg.paymentUrl||'/CheckIn/RecordPayment',
         pdqUrl:cfg.pdqUrl||'/TerminalCardPayment.aspx',
       },
-      onCompleted:async()=>{
-        await openDetails({regId:d.regId,paymentId:d.paymentId});
-        await loadCalendar(state.start,true);
+      onCompleted:()=>{
+        const url=new URL(window.location.href);
+        url.searchParams.set('start',iso(state.start));
+        url.searchParams.set('end',iso(state.end));
+        window.history.replaceState(window.history.state,'',url.toString());
+        window.location.reload();
       }
     });
   }
@@ -1498,6 +1517,15 @@ ${tag}`:tag;
       actions.push(bookingMenuItem('£','Record Payment','payment','fdcmw-payment-action'));
     }
     actions.push(bookingMenuItem('✉','Send Email','sendpaylink','fdcmw-payment-action'));
+    const segments=(state.payload?.bookings||[]).filter(x=>
+      String(x.regId||'')===String(item.regId||'') &&
+      String(x.roomNo||'').trim()===String(item.roomNo||'').trim() &&
+      Number(x.paymentId||0)!==Number(item.paymentId||0) &&
+      (String(x.arrival||'')!==String(item.arrival||'') || String(x.departure||'')!==String(item.departure||'')));
+    if(!closed && segments.length && item.roomNo && String(item.roomNo).toUpperCase()!=='UNASSIGNED'){
+      actions.push(bookingMenuItem('×','Delete Room Entry','delete-room-segment','fdcmw-danger-action'));
+    }
+
 
     if(item.roomNo && String(item.roomNo).toUpperCase()!=='UNASSIGNED'){
       terminal.push(bookingMenuItem('↧','Move to Unassigned','unassign','fdcmw-assignment-action'));
@@ -1545,6 +1573,15 @@ ${tag}`:tag;
         context.classList.remove('fdcmw-fdc-context-processing');
         context.removeAttribute('data-processing');
       }
+      return;
+    }
+
+    if(action==='delete-room-segment'){
+      try{
+        const d=await fetchBookingDetails(item);
+        if(d) await deleteRoomSegment(d,button);
+        closeContext(true);
+      }catch(e){showToast(e.message||'Unable to delete this room entry.',true);}
       return;
     }
 

@@ -584,7 +584,11 @@ UPDATE dbo.NewReservationsTB
                 ? charge.Currency
                 : (pi.Currency ?? "gbp");
 
-            long amountMinor = charge != null ? charge.Amount : pi.Amount;
+            // For manual/partial capture the authorized amount (pi.Amount / charge.Amount)
+            // is NOT the amount paid. Stripe confirms the actual captured amount here.
+            long amountMinor = pi.AmountReceived;
+            if (amountMinor <= 0)
+                throw new InvalidOperationException("Stripe has not confirmed a captured amount for this PaymentIntent. Payment log not written.");
             decimal paidAmountMajor = FromMinorUnits(amountMinor, currency);
 
             string stripeStatus = pi.Status;

@@ -204,6 +204,10 @@
                         <label class="bulk-field" id="bulkCutoffDaysWrap" hidden><span>Custom days</span><input type="number" id="bulkCutoffDays" min="1" max="365" step="1" /></label>
                     </div>
                     <p class="bulk-hint" id="bulkRestrictionHint"></p>
+                    <p class="bulk-hint" id="bookingCutoffMeaning" hidden>
+                        A cutoff of 4 days closes an arrival date only when fewer than 4 days remain before arrival.
+                        It does not activate Stop Sell immediately when saved. Existing manual Stop Sell remains in force.
+                    </p>
                     <div class="bulk-preview-head"><strong>Restriction Details</strong><span id="bulkDetailsLoading">Loading selected dates...</span></div>
                     <div class="bulk-table-wrap restriction-detail-wrap">
                         <table class="bulk-preview-table"><thead><tr><th>Date</th><th>Min Arrival</th><th>Min Through</th><th>Max Stay</th><th>CTA</th><th>CTD</th><th>Stop Sell</th></tr></thead><tbody id="bulkRestrictionDetailsBody"><tr><td colspan="7">—</td></tr></tbody></table>

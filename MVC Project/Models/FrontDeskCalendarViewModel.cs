@@ -145,11 +145,21 @@ public sealed class FrontDeskBlockDto
     public string Kind { get; set; } = "Room Block";
 }
 
+public sealed class FrontDeskDeleteRoomSegmentRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
+    public string RegId { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)]
+    public int PaymentId { get; set; }
+}
+
 public sealed class FrontDeskBookingDetailsDto
 {
     public string RegId { get; set; } = string.Empty;
     public int PaymentId { get; set; }
     public string VisitId { get; set; } = string.Empty;
+    public bool CanDeleteRoomSegment { get; set; }
     public string GuestName { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;

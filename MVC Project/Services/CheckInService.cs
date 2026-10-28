@@ -1150,6 +1150,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
         var storedRate = charge;
 
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+        var operationStage = "capturing reservation history";
         try
         {
             await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, request.RegId, ct);
@@ -1187,6 +1188,7 @@ VALUES
  @reg,'','','',@room,@status,@hotel,@ip,@systemUser,@systemName,@discount,@rateplan,@rateplanname,
  @category_id,@room_adults,@room_children,@room_infants);";
             int insertedId;
+            operationStage = "inserting the room/service charge into payments";
             await using (var cmd = new SqlCommand(sql, cn, tx))
             {
                 cmd.Parameters.Add("@currentdate", SqlDbType.DateTime).Value = _hotelClock.GetHotelNow(hotelId);
@@ -1221,6 +1223,7 @@ VALUES
                 insertedId = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
             }
 
+            operationStage = "updating room occupancy and rate details";
             if (isRoomRent)
             {
                 await using var room = new SqlCommand(@"
@@ -1254,16 +1257,20 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
 
             // Update the financial summary once and reuse the resulting totals for the AJAX response.
             // Previously Add Room recalculated the same totals again a few lines later.
+            operationStage = "recalculating payment totals";
             var refreshedTotals = await UpdatePaymentTotalsAsync(
                 cn, tx, hotelId, request.RegId, ct, roundTotalOverride: hotelSettings.IsRoundTotal);
+            operationStage = "writing the detailed reservation history to Reserv_log";
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
                 isRoomRent ? "ADD ROOM" : "ADD SERVICE",
-                $"PaymentId={insertedId}; Type={description}; Room={request.RoomNo}; Category={request.Category}; " +
-                $"Stay={arrival:yyyy-MM-dd} to {departure:yyyy-MM-dd}; Plan={request.RatePlanName}; Total={total:0.00}", ct);
+                $"{(isRoomRent ? "Room" : "Service")}: {request.RoomNo} ({request.Category}); " +
+                $"{arrival:dd MMM yyyy} to {departure:dd MMM yyyy}; " +
+                $"Rate plan: {request.RatePlanName}; Total: {total:0.00}", ct);
 
             // Build the response snapshot inside the same transaction.  This avoids a second
             // request after Add and guarantees the row/totals returned to the browser match
             // exactly what is committed below.
+            operationStage = "reading the inserted charge";
             var addedRow = await GetChargeRowAsync(cn, tx, hotelId, request.RegId, insertedId, ct);
             if (addedRow != null)
             {
@@ -1277,6 +1284,7 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
                 addedRow.CanDelete = permissions.HasAction("DeleteRoom") && CanDeleteByStatus(permissions, addedRow.ReservationStatus);
                 addedRow.DeleteLockTitle = addedRow.CanDelete ? string.Empty : DeleteLockTitle(permissions, addedRow.ReservationStatus);
             }
+            operationStage = "committing the charge transaction";
             await tx.CommitAsync(ct);
 
             if (isRoomRent)
@@ -1303,7 +1311,14 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
         catch (Exception ex)
         {
             await tx.RollbackAsync(ct);
-            _logger.LogError(ex, "AddCharge failed for {RegId}.", request.RegId);
+            _logger.LogError(ex, "AddCharge failed for {RegId} during {OperationStage}.", request.RegId, operationStage);
+            // SQL Server 8152/2628 identifies a text-field overflow. Provide the
+            // statement stage so the correct column can be fixed, without
+            // suppressing the required audit or accidentally committing the charge.
+            if (ex is SqlException sqlError && (sqlError.Number == 8152 || sqlError.Number == 2628))
+                return CheckInOperationResult.Fail(
+                    $"Unable to add the charge: a SQL text field is too short while {operationStage}. " +
+                    "Run the supplied database-column diagnostic. " + sqlError.Message);
             return CheckInOperationResult.Fail("Unable to add the charge. " + ex.Message);
         }
     }
@@ -1359,8 +1374,8 @@ WHERE Hotel_id=@hotel AND room_no=@room
             await UpdatePaymentTotalsAsync(cn, tx, hotelId, regId, ct);
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
                 row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "DELETE ROOM" : "DELETE SERVICE",
-                $"PaymentId={paymentId}; Type={row.Description}; Room={row.RoomNo}; Category={row.Category}; " +
-                $"Stay={row.ArrivalDate:yyyy-MM-dd} to {row.DepartureDate:yyyy-MM-dd}", ct);
+                $"{(row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "Room" : "Service")}: {row.RoomNo} ({row.Category}); " +
+                $"{row.ArrivalDate:dd MMM yyyy} to {row.DepartureDate:dd MMM yyyy}", ct);
             var refreshedTotals = await LoadTotalsAsync(cn, tx, hotelId, regId, await IsRoundTotalAsync(cn, tx, hotelId, ct), ct);
             await tx.CommitAsync(ct);
 
@@ -1465,7 +1480,8 @@ WHERE ID=@id
                 await IsRoundTotalAsync(cn, tx, hotelId, ct), ct);
 
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "RATE CHANGE",
-                $"PaymentId={request.PaymentId} | Room={row.RoomNo} | Category={row.Category} | Nights={stayCount:0.##} | Old Nightly={oldNightly:0.00} | New Nightly={request.Rate:0.00} | Old Base={oldBase:0.00} | New Base={newBase:0.00} | GST={gst:0.00} | BedTax={bed:0.00} | Total={total:0.00}", ct);
+                $"Room {row.RoomNo}: nightly rate {oldNightly:0.00} → {request.Rate:0.00}; " +
+                $"New total: {total:0.00}", ct);
 
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Rate updated.", request.RegId,
@@ -1507,7 +1523,7 @@ WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg
                 return CheckInOperationResult.Fail("Payment row not found.");
             }
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "UPDATE GUEST NAME",
-                $"PaymentId={request.PaymentId}, guest={request.GuestName}", ct);
+                "Room guest name updated", ct);
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Room guest name updated.", request.RegId,
                 data: new { paymentId = request.PaymentId, guestName = (request.GuestName ?? string.Empty).Trim() });
@@ -1614,7 +1630,7 @@ WHERE ID=@id
             var remarks = $"PaymentId: {request.PaymentId} | Stay: {arrival:dd-MMM-yyyy} to {departure:dd-MMM-yyyy} | Room: {row.RoomNo} -> {selectedRoom} | Category: {row.Category} | Status: {row.ReservationStatus}";
             await InsertRoomChangeLogAsync(cn, tx, hotelId, request.RegId.Trim(), oldCatId, newCatId, row.Category,
                 row.RoomNo, selectedRoom, userId, userName, ip, remarks, ct);
-            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "ROOM CHANGE", remarks, ct);
+            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "ROOM CHANGE", $"Room {row.RoomNo} → {selectedRoom} ({row.Category})", ct);
             await tx.CommitAsync(ct);
 
             return CheckInOperationResult.Ok($"Room changed successfully from {row.RoomNo} to {selectedRoom}.", request.RegId,
@@ -1959,7 +1975,7 @@ WHERE reg_id=@reg AND hotel_id=@hotel;", cn, tx))
             await InsertReservationActionLogAsync(
                 cn, tx, hotelId, userId, userName, ip, request.RegId,
                 "REFUND",
-                $"PaymentLogId={request.LogId}, amount={refundAmount:0.00}, reason={request.Reason.Trim()}", ct);
+                $"Refunded: {refundAmount:0.00}", ct);
 
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Refund processed successfully.", request.RegId);
@@ -2141,7 +2157,7 @@ VALUES(@reg,@visit,@arrival,@departure,'1',@hotel,@systemUser,@systemName,@ip);"
             await UpdatePaymentTotalsAsync(cn, tx, hotelId, g.RegId, ct, request.PaymentMethod);
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, g.RegId,
                 alreadyCheckedIn ? "CHECK IN ADDED ROOM" : "CHECK IN",
-                "PaymentIds: " + string.Join(",", selectedRows.Select(x => x.Id)) + " | Rooms: " + string.Join(",", selectedRooms), ct);
+                "Rooms: " + string.Join(", ", selectedRooms), ct);
             await tx.CommitAsync(ct);
 
             // WebForms parity: notify the guest only after a successful check-in.
@@ -2218,7 +2234,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg
                 await header.ExecuteNonQueryAsync(ct);
             }
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
-                "UNDO CHECK IN", "Room payment ID: " + targetId + ". Other rooms unaffected.", ct);
+                "UNDO CHECK IN", "Check-in reversed for one room; other rooms unaffected.", ct);
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Selected room check-in has been undone.", regId,
                 data: new { paymentId = targetId, remainingCheckedInRooms = checkedInIds.Count - 1 });
@@ -2450,7 +2466,7 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
 
             if (!allRooms)
                 await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip,
-                    request.RegId, "CHECK OUT ROOM", "Room payment IDs: " + string.Join(",", rooms.Select(x => x.Id)) + ". Other rooms remain open.", ct);
+                    request.RegId, "CHECK OUT ROOM", "Rooms checked out: " + string.Join(", ", rooms.Select(x => x.RoomNo)) + "; other rooms remain checked in.", ct);
             await tx.CommitAsync(ct);
             foreach (var row in rooms)
             {
@@ -2834,7 +2850,7 @@ VALUES(@current,@qty,@amount,'1',@reg,@category,@sub,@item,@description,@rate,@v
             cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId.Trim();
             var changed = await cmd.ExecuteNonQueryAsync(ct);
             if (changed == 0) return CheckInOperationResult.Fail("Laundry item was not found.");
-            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId, "DELETE LAUNDRY", "Laundry Id=" + id, ct);
+            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId, "DELETE LAUNDRY", "Laundry item removed", ct);
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Laundry item deleted.", regId);
         }
@@ -3093,7 +3109,7 @@ WHERE id=@id
                 await UpdatePaymentTotalsAsync(cn, settleTx, hotelId, request.RegId, ct);
                 await InsertReservationActionLogAsync(cn, settleTx, hotelId, userId, userName, ip, request.RegId,
                     "ROOM SECURITY SETTLEMENT",
-                    $"SecurityId={request.SecurityId}; Refund={refundAmount:0.00}; Deduct={deductionAmount:0.00}; PI={paymentIntentId}", ct);
+                    $"Refund: {refundAmount:0.00}; Deduction: {deductionAmount:0.00}", ct);
                 await settleTx.CommitAsync(ct);
                 return CheckInOperationResult.Ok("Room security settled successfully.", request.RegId);
             }
@@ -3153,7 +3169,7 @@ ORDER BY id DESC;", cn);
             await InsertSecurityMovementInternalAsync(cn, tx, hotelId, userId, userName, ip, request, ct);
             await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct);
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
-                "ROOM SECURITY " + movement.ToUpperInvariant(), $"{request.Amount:0.00}; {request.Note}", ct);
+                "ROOM SECURITY " + movement.ToUpperInvariant(), $"Amount: {request.Amount:0.00}", ct);
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Room security updated.", request.RegId);
         }
@@ -6957,7 +6973,7 @@ VALUES(@reg,@arrival,@departure,@now,@name,@grand,@security,@payable,@paid,@rema
         // Use the SAME SQL transaction as the room/payment/guest mutation to prevent
         // an action from committing without a corresponding registration audit entry.
         var changes = await ReservationChangeAudit.ChangesSinceCaptureAsync(
-            cn, tx, hotelId, regId, ct);
+            cn, tx, hotelId, regId, ct, action);
         await ReservationAuditWriter.WriteAsync(
             cn, tx, hotelId, regId, userId, userName, ip,
             action, $"{action} | {detail}{changes}", _hotelClock.GetHotelNow(hotelId), ct);

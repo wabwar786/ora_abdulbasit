@@ -60,8 +60,9 @@ public static class RateAuditClientInfo
             System.Net.IPAddress.IsLoopback(address))
             return Environment.MachineName;
 
-        // Never report the web server's name as a remote browser PC name.
-        return "Unknown web client";
+        // A browser cannot reveal its Windows computer name. Store an empty value
+        // if this session has no trusted workstation identifier; display the client IP instead.
+        return string.Empty;
     }
 }
 
@@ -269,7 +270,10 @@ WHERE NOT
     -- already fully covered by the same batch's default, is not a second change.
     -- Keep every daily history row with a distinct rate or uncovered period.
     @auditSource=N'RatePlans'
-    AND @auditAction=N'BaseRateChange'
+    -- Saving a plan default and priming matching daily rows belong to ONE
+    -- logical change. Do not create a second audit entry for an identical
+    -- dated rate already represented by this batch's plan-default log.
+    AND @auditAction IN (N'BaseRateChange',N'SimplePlanChange',N'DerivedPlanChange')
     AND g.Deleted=0
     AND EXISTS
     (
@@ -287,7 +291,11 @@ WHERE NOT
                    THEN later.ExtendedTo ELSE g.ToDate END
           AND h.[source] IN
               (N'RatePlans / BaseRateChange / SimplePlanDefault',
-               N'RatePlans / BaseRateChange / DerivedPlanDefault')
+               N'RatePlans / BaseRateChange / DerivedPlanDefault',
+               N'RatePlans / SimplePlanChange / SimplePlanDefault',
+               N'RatePlans / SimplePlanChange / DerivedPlanDefault',
+               N'RatePlans / DerivedPlanChange / SimplePlanDefault',
+               N'RatePlans / DerivedPlanChange / DerivedPlanDefault')
     )
 );
 DROP TABLE #ORA_PreviousDaily;";

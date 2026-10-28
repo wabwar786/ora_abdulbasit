@@ -1456,3 +1456,9 @@ body.fdcmw-fdc-move-drop-pending .fdcmw-fdc-drag-focus-backdrop{
 @media (prefers-reduced-motion: reduce) {
   .fdcmw-restaurant-pending { animation: none; outline: 2px solid #dc2626; outline-offset: -2px; }
 }
+
+/* Compact calendar payment links; retain clear access to refunds on checked-out stays. */
+.fdcmw-fdc-payment-log-tools{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:2px}
+.fdcmw-fdc-payment-receipt,.fdcmw-fdc-payment-refund{display:inline-flex;align-items:center;justify-content:center;min-height:20px!important;height:auto!important;padding:1px 3px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:10px!important;font-weight:700!important;text-decoration:underline;text-underline-offset:3px;line-height:1.4;cursor:pointer}
+.fdcmw-fdc-payment-receipt{color:#155a91!important}.fdcmw-fdc-payment-refund{color:#b42336!important}
+.fdcmw-fdc-payment-receipt:focus-visible,.fdcmw-fdc-payment-refund:focus-visible{outline:2px solid #2456a2!important;outline-offset:2px}

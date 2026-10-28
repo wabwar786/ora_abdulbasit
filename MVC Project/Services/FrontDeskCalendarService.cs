@@ -731,7 +731,72 @@ ORDER BY id DESC;";
         // Keep the drawer compact while refund calculations still consider the
         // complete reservation payment history.
         details.Payments = allLogs.Take(30).ToList();
+        await rd.DisposeAsync();
+        details.CanDeleteRoomSegment = !IsClosedStatus(details.Status) &&
+            await HasOtherRoomSegmentAsync(cn, null, hotelId, details.RegId,
+                details.PaymentId, details.RoomNo, ct);
         return details;
+    }
+
+    // A room segment is removable only if another row for the same room/reg exists
+    // with different stay dates. Never rely on a room number alone to identify it.
+    private static async Task<bool> HasOtherRoomSegmentAsync(
+        SqlConnection cn, SqlTransaction? tx, string hotelId, string regId,
+        int paymentId, string roomNo, CancellationToken ct)
+    {
+        if (paymentId <= 0 || string.IsNullOrWhiteSpace(roomNo)) return false;
+        await using var cmd = new SqlCommand(@"
+SELECT TOP (1) 1
+FROM dbo.payments currentRow
+JOIN dbo.payments other ON other.hotel_id=currentRow.hotel_id
+  AND other.reg_id=currentRow.reg_id
+  AND LTRIM(RTRIM(ISNULL(other.room_no,'')))=LTRIM(RTRIM(ISNULL(currentRow.room_no,'')))
+  AND other.ID<>currentRow.ID
+  AND LTRIM(RTRIM(ISNULL(other.descr,'')))='Room Rent'
+WHERE currentRow.hotel_id=@hotel AND currentRow.reg_id=@reg AND currentRow.ID=@id
+  AND LTRIM(RTRIM(ISNULL(currentRow.descr,'')))='Room Rent'
+  AND LTRIM(RTRIM(ISNULL(currentRow.room_no,'')))=@room
+  AND (
+    COALESCE(TRY_CONVERT(date,other.ArrivalDate,110),TRY_CONVERT(date,other.ArrivalDate,23),TRY_CONVERT(date,other.ArrivalDate,103),TRY_CONVERT(date,other.ArrivalDate))
+      <> COALESCE(TRY_CONVERT(date,currentRow.ArrivalDate,110),TRY_CONVERT(date,currentRow.ArrivalDate,23),TRY_CONVERT(date,currentRow.ArrivalDate,103),TRY_CONVERT(date,currentRow.ArrivalDate))
+    OR COALESCE(TRY_CONVERT(date,other.DepartureDate,110),TRY_CONVERT(date,other.DepartureDate,23),TRY_CONVERT(date,other.DepartureDate,103),TRY_CONVERT(date,other.DepartureDate))
+      <> COALESCE(TRY_CONVERT(date,currentRow.DepartureDate,110),TRY_CONVERT(date,currentRow.DepartureDate,23),TRY_CONVERT(date,currentRow.DepartureDate,103),TRY_CONVERT(date,currentRow.DepartureDate))
+  );", cn, tx);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(regId);
+        cmd.Parameters.Add("@id", SqlDbType.Int).Value = paymentId;
+        cmd.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = roomNo.Trim();
+        return await cmd.ExecuteScalarAsync(ct) != null;
+    }
+
+    public async Task<FrontDeskOperationResult> DeleteRoomSegmentAsync(
+        string hotelId, string hotelName, string userId, string userName, string ip,
+        string regId, int paymentId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(regId) || paymentId <= 0)
+            return FrontDeskOperationResult.Fail("Select a valid room entry to remove.");
+        string roomNo;
+        await using (var cn = new SqlConnection(_connectionString))
+        {
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(@"
+SELECT TOP (1) ISNULL(room_no,'')
+FROM dbo.payments
+WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@id
+  AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent';", cn);
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(regId);
+            cmd.Parameters.Add("@id", SqlDbType.Int).Value = paymentId;
+            roomNo = Convert.ToString(await cmd.ExecuteScalarAsync(ct)) ?? string.Empty;
+            if (!await HasOtherRoomSegmentAsync(cn, null, hotelId, regId, paymentId, roomNo, ct))
+                return FrontDeskOperationResult.Fail("Delete Room is available only when this reservation has a separate date entry for the same room.");
+        }
+        // Use the existing transaction, reservation audit, permissions and charge totals.
+        var result = await _checkInService.DeleteChargeAsync(
+            hotelId, hotelName, userId, userName, ip, regId, paymentId, ct);
+        return result.Success
+            ? FrontDeskOperationResult.Ok("Selected room date entry removed.")
+            : FrontDeskOperationResult.Fail(result.Message);
     }
 
     public async Task<FrontDeskGuestHistoryDto?> GetGuestHistoryAsync(
@@ -1040,7 +1105,8 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@id
                     newRoom.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase)
                         ? "CALENDAR MOVE TO UNASSIGNED"
                         : "CALENDAR MOVE CHECKED OUT",
-                    $"Checked-out room {current.RoomNo} -> {newRoom}; category {current.CategoryName} -> {checkedOutTargetCategoryName}; PaymentId={request.PaymentId}.", ct);
+                    $"Checked-out room {current.RoomNo} → {newRoom}" +
+                    (current.CategoryName == checkedOutTargetCategoryName ? "." : $"; category: {checkedOutTargetCategoryName}."), ct);
 
                 await tx.CommitAsync(ct);
 
@@ -1142,7 +1208,8 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@id AND LTRIM(RTRIM(ISNULL(descr,''
                 current.CategoryName, targetCategoryName, current.RoomNo, newRoom, userId, userName, ip,
                 $"Drag/drop PaymentId={request.PaymentId}; {current.Arrival:yyyy-MM-dd}-{current.Departure:yyyy-MM-dd} -> {newArrival:yyyy-MM-dd}-{newDeparture:yyyy-MM-dd}", ct);
             await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId, "CALENDAR MOVE",
-                $"Room {current.RoomNo} -> {newRoom}; category {current.CategoryName} -> {targetCategoryName}.", ct);
+                $"Room {current.RoomNo} → {newRoom}" +
+                (current.CategoryName == targetCategoryName ? "." : $"; category: {current.CategoryName} → {targetCategoryName}."), ct);
             await tx.CommitAsync(ct);
 
             var min = current.Arrival < newArrival ? current.Arrival : newArrival;
@@ -1204,7 +1271,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@id AND LTRIM(RTRIM(ISNULL(descr,''
 
             if (!current.RoomNo.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(current.RoomNo) &&
-                !await IsRoomFreeForReservationAsync(cn, tx, hotelId, current.RoomNo, newArrival, newDeparture, request.RegId, ct))
+                !await IsRoomFreeAsync(cn, tx, hotelId, current.RoomNo, newArrival, newDeparture, request.PaymentId, ct))
             {
                 return FrontDeskOperationResult.Fail("Room is not available for the selected dates.");
             }
@@ -1272,10 +1339,40 @@ WHERE hotel_id=@hotel
                     if (parsedDeparture.HasValue) rowOldDeparture = parsedDeparture.Value.Date;
                 }
 
+                // Check the actual added date span against every OTHER payment row,
+                // including rows belonging to the same reservation and room number.
+                if (!string.IsNullOrWhiteSpace(roomNo) &&
+                    !roomNo.Equals("UNASSIGNED", StringComparison.OrdinalIgnoreCase) &&
+                    !await IsRoomFreeAsync(cn, tx, hotelId, roomNo, rowOldDeparture, newDeparture, request.PaymentId, ct))
+                    return FrontDeskOperationResult.Fail("The extension overlaps another stay segment for this room. Choose different dates or a different room.");
+
                 var oldRowNights = Math.Max(1, (rowOldDeparture - rowArrival).Days);
                 var addedNights = (newDeparture - rowOldDeparture).Days;
                 if (addedNights <= 0)
                     return FrontDeskOperationResult.Fail("New departure must be after this room's current departure date.");
+
+                // An existing date segment under the SAME registration must also
+                // block an overlap, even when that historical segment is checked out.
+                // The normal room-availability check only considers active stays.
+                await using (var existingSegment = new SqlCommand(@"
+SELECT TOP (1) 1
+FROM dbo.payments WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg AND ID<>@paymentId
+  AND LTRIM(RTRIM(ISNULL(room_no,'')))=@room
+  AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) NOT IN ('cancelled','canceled')
+  AND COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)) < @newDeparture
+  AND @oldDeparture < COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate));", cn, tx))
+                {
+                    existingSegment.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    existingSegment.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(request.RegId);
+                    existingSegment.Parameters.Add("@paymentId", SqlDbType.Int).Value = request.PaymentId;
+                    existingSegment.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = roomNo;
+                    existingSegment.Parameters.Add("@oldDeparture", SqlDbType.Date).Value = rowOldDeparture;
+                    existingSegment.Parameters.Add("@newDeparture", SqlDbType.Date).Value = newDeparture;
+                    if (await existingSegment.ExecuteScalarAsync(ct) != null)
+                        return FrontDeskOperationResult.Fail("This room already has a reservation entry for part of the extension dates. The extension was not saved.");
+                }
 
                 if (!request.NightlyRateOverride.HasValue)
                     chosenPerNight = oldRowNights > 0
@@ -1412,7 +1509,8 @@ END;", cn, tx);
                 await RefreshPaymentSummaryAsync(cn, tx, hotelId, request.RegId, ct);
                 await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
                     "EXTEND RESERVATION",
-                    $"PaymentId {request.PaymentId}: added {addedNights} night(s), {rowOldDeparture:yyyy-MM-dd} -> {newDeparture:yyyy-MM-dd}; rate/night={chosenPerNight:0.00}; tax={(request.IncludeTaxOnExtension ? "Yes" : "No")}.", ct);
+                    $"Departure: {rowOldDeparture:dd MMM yyyy} → {newDeparture:dd MMM yyyy}; " +
+                    $"Added {addedNights} night(s); nightly rate: {chosenPerNight:0.00}.", ct);
 
                 resultTotal = extensionTotal;
             }
@@ -1461,7 +1559,8 @@ WHERE hotel_id=@hotel
                 await RefreshPaymentSummaryAsync(cn, tx, hotelId, request.RegId, ct);
                 await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
                     "SHRINK RESERVATION",
-                    $"PaymentId {request.PaymentId}: {current.Departure:yyyy-MM-dd} -> {newDeparture:yyyy-MM-dd}; rate/night={chosenPerNight:0.00}", ct);
+                    $"Departure: {current.Departure:dd MMM yyyy} → {newDeparture:dd MMM yyyy}; " +
+                    $"nightly rate: {chosenPerNight:0.00}", ct);
 
                 resultTotal = newTotal;
             }
@@ -2886,7 +2985,7 @@ END;", cn, tx);
         if (!string.IsNullOrWhiteSpace(regId))
         {
             var changes = await ReservationChangeAudit.ChangesSinceCaptureAsync(
-                cn, tx, hotelId, NormalizeRegId(regId), ct);
+                cn, tx, hotelId, NormalizeRegId(regId), ct, action);
             await _dbLogger.InsertReservationLogTransactionalAsync(
                 cn, tx,
                 NormalizeRegId(regId),

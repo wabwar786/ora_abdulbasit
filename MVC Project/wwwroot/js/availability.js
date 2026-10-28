@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
     'use strict';
 
     const page = document.getElementById('availabilityPage');
@@ -837,16 +837,14 @@
     function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value == null || value === '' ? '—' : String(value); }
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
     function openLogDrawer() { logOverlay?.classList.add('is-open'); logOverlay?.setAttribute('aria-hidden', 'false'); document.body.classList.add('availability-log-open'); }
-    function closeLogDrawer() { logOverlay?.classList.remove('is-open'); logOverlay?.setAttribute('aria-hidden', 'true'); document.body.classList.remove('availability-log-open'); }
+    function closeLogDrawer() { logOverlay?.classList.remove('is-open', 'availability-log-show-rate'); logOverlay?.setAttribute('aria-hidden', 'true'); document.body.classList.remove('availability-log-open'); }
     function showLogState(state) {
         ['availabilityLogLoading', 'availabilityLogError', 'availabilityLogEmpty', 'availabilityLogTimeline'].forEach(id => {
             const el = document.getElementById(id); if (el) el.hidden = id !== state;
         });
     }
-    // All history drawers use the same compact, TWO-ROW record layout.
-    // Row 1: timestamp + actual changed value + change type.
-    // Row 2: user + readable source + stay dates + workstation.
-    // Full metadata is available through native hover tooltips / accessible labels.
+    // Availability, rate and restriction history share a compact three-row card.
+    // Full data stays available in hover titles; all values are HTML-escaped.
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     function prettyStayDate(value) {
         const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -894,30 +892,26 @@
         const stayText = String(stay || '—');
         const pcText = String(pc || '').trim();
         const ipText = String(ip || '').trim();
+        const pcLabel = pcText && !/^unknown web client$/i.test(pcText) ? pcText : 'Not provided';
+        const ipLabel = ipText || 'Not recorded';
         const valueText = String(value ?? '—');
-        const tooltip = [
-            'Changed: ' + String(createdAt || '—'), 'Value: ' + valueText,
-            'By: ' + username, 'Source: ' + sourceText,
-            'Stay: ' + stayText, pcText ? 'PC: ' + pcText : '',
-            ipText ? 'IP: ' + ipText : '', more || ''
-        ].filter(Boolean).join(' | ');
-        const deviceDisplay = pcText && !/^unknown web client$/i.test(pcText)
-            ? pcText : (ipText ? 'IP ' + ipText : '');
-        return '<article class="availability-log-item availability-log-compact availability-log-kind-' + escapeHtml(kind || 'rate') + '"' +
-            ' aria-label="' + escapeHtml(tooltip) + '" title="' + escapeHtml(tooltip) + '">' +
-            '<div class="availability-log-compact-row availability-log-compact-primary">' +
-              '<time class="availability-log-compact-time" title="' + escapeHtml(createdAt || '—') + '">' +
+        const actionText = String(type || 'Change');
+        const tooltip = [createdAt, actionText, valueText, sourceText,
+            'By ' + username, 'PC: ' + pcLabel, 'IP: ' + ipLabel, stayText, more || '']
+            .filter(Boolean).join(' | ');
+        return '<article class="availability-log-item rate-history-card availability-history-' +
+            escapeHtml(kind || 'change') + '" title="' + escapeHtml(tooltip) + '">' +
+            '<div class="rate-history-line rate-history-line-top"><time>' +
                 escapeHtml(compactLogTime(createdAt)) + '</time>' +
-              '<strong class="availability-log-compact-value" title="' + escapeHtml(valueText) + '">' + escapeHtml(valueText) + '</strong>' +
-              '<span class="availability-log-compact-type">' + escapeHtml(type || 'Change') + '</span>' +
-            '</div>' +
-            '<div class="availability-log-compact-row availability-log-compact-secondary">' +
-              '<span class="availability-log-compact-user" title="By ' + escapeHtml(username) + '">By ' + escapeHtml(username) + '</span>' +
-              '<span class="availability-log-compact-source" title="Source: ' + escapeHtml(sourceText) + '">' + escapeHtml(sourceText) + '</span>' +
-              '<span class="availability-log-compact-stay" title="Stay: ' + escapeHtml(stayText) + '">' + escapeHtml(stayText) + '</span>' +
-              (deviceDisplay ? '<span class="availability-log-compact-device" title="' + escapeHtml([pcText ? 'PC: ' + pcText : '', ipText ? 'IP: ' + ipText : ''].filter(Boolean).join(' · ')) + '">' + escapeHtml(deviceDisplay) + '</span>' : '') +
-            '</div>' +
-          '</article>';
+                '<span class="rate-history-inline-prices"><strong class="rate-history-price">' +
+                escapeHtml(valueText) + '</strong></span></div>' +
+            '<div class="rate-history-line rate-history-line-action"><strong>' +
+                escapeHtml(actionText) + '</strong><span>· ' + escapeHtml(sourceText) + '</span></div>' +
+            '<div class="rate-history-line rate-history-line-meta"><span>By ' +
+                escapeHtml(username) + '</span><span>PC: ' + escapeHtml(pcLabel) +
+                '</span><span>IP: ' + escapeHtml(ipLabel) + '</span><span>' +
+                escapeHtml(stayText) + '</span></div>' +
+            '</article>';
     }
     function showCompactEntries(rows, mapper) {
         rows = Array.isArray(rows) ? rows : [];
@@ -936,8 +930,8 @@
             return renderCompactLogItem({
                 kind: row.isSuccess ? 'availability' : 'failed',
                 createdAt: row.createdOn || ((row.logDate || '') + ' ' + (row.logTime || '')).trim(),
-                value: prev ? prev + ' → ' + current : 'Set to ' + current,
-                type: row.isSuccess ? 'Saved' : 'Failed',
+                value: prev ? prev + ' → ' + current : 'Availability: ' + current,
+                type: row.isSuccess ? 'Availability updated' : 'Availability update failed',
                 user: row.username || row.userId || 'System',
                 source: 'Availability · Inventory', stay,
                 pc: row.systemName, ip: row.ipAddress,
@@ -947,16 +941,45 @@
     }
     function renderRateLogRows(rows) {
         showCompactEntries(rows, row => {
-            const rate = row.rate == null ? '—' : Number(row.rate).toFixed(2);
-            return renderCompactLogItem({
-                kind: 'rate', createdAt: row.createdAt,
-                value: (row.currency ? row.currency + ' ' : '') + rate,
-                type: 'Rate', user: row.username || row.userId || 'System',
-                source: friendlyRateSource(row.source),
-                stay: formatStayRange(row.dateFrom, row.dateTo),
-                pc: row.pc, ip: row.ipAddress,
-                more: row.baseRate == null ? '' : 'Base rate: ' + row.baseRate
-            });
+            const source = String(row.source || '');
+            const isBaseChange = /RatePlans\s*\/\s*BaseRateChange/i.test(source);
+            const isBulk = /^(BulkRateUpdate|Availability\s*\/\s*BulkRateUpdate)/i.test(source);
+            const isDaily = /^Availability/i.test(source);
+            const currency = String(row.currency || 'GBP').trim();
+            const amount = value => value == null || !Number.isFinite(Number(value))
+                ? '—' : Number(value).toFixed(2);
+            const rateLabel = isBaseChange ? 'Plan rate' : 'Saved rate';
+            const action = isBaseChange ? 'Plan default updated'
+                : isBulk ? 'Bulk dated rate override'
+                : isDaily ? 'Daily rate updated' : 'Rate updated';
+            const username = String(row.username || row.userId || 'System').trim();
+            // Do not invent a Windows PC name: browsers cannot disclose it.
+            const pc = String(row.pc || '').trim();
+            const ip = String(row.ipAddress || '').trim();
+            const pcLabel = pc && !/^unknown web client$/i.test(pc) ? pc : 'Not provided';
+            const ipLabel = ip || 'Not recorded';
+            const range = formatStayRange(row.dateFrom, row.dateTo);
+            const sourceText = friendlyRateSource(source);
+            const rateText = rateLabel + ': ' + currency + ' ' + amount(row.rate);
+            const baseText = row.baseRate == null ? '' : 'Base: ' + currency + ' ' + amount(row.baseRate);
+            const tooltip = [action, sourceText, rateText, baseText, 'By: ' + username,
+                'PC: ' + pcLabel, 'IP: ' + ipLabel, range].filter(Boolean).join(' | ');
+            return '<article class="availability-log-item rate-history-card" title="' + escapeHtml(tooltip) + '">' +
+                // Row 1: timestamp, saved rate, and optional base rate
+                '<div class="rate-history-line rate-history-line-top"><time>' +
+                    escapeHtml(compactLogTime(row.createdAt)) + '</time>' +
+                    '<span class="rate-history-inline-prices"><strong class="rate-history-price">' +
+                    escapeHtml(rateText) + '</strong>' +
+                    (baseText ? '<span class="rate-history-base">' + escapeHtml(baseText) + '</span>' : '') +
+                    '</span></div>' +
+                // Row 2: action and source
+                '<div class="rate-history-line rate-history-line-action"><strong>' +
+                    escapeHtml(action) + '</strong><span>· ' + escapeHtml(sourceText) + '</span></div>' +
+                // Row 3: user, real/available workstation, IP and affected date(s)
+                '<div class="rate-history-line rate-history-line-meta"><span>By ' + escapeHtml(username) +
+                    '</span><span>PC: ' + escapeHtml(pcLabel) + '</span><span>IP: ' +
+                    escapeHtml(ipLabel) + '</span><span>' + escapeHtml(range) + '</span></div>' +
+                '</article>';
         });
     }
     function renderRestrictionLogRows(rows) {
@@ -965,8 +988,8 @@
             const restriction = String(row.restriction || 'Restriction');
             return renderCompactLogItem({
                 kind: 'restriction', createdAt: row.createdAt,
-                value: restriction + ': ' + value,
-                type: 'Restriction', user: row.username || 'System',
+                value: value,
+                type: restriction + ' updated', user: row.username || 'System',
                 source: 'Availability · Restriction',
                 stay: formatStayRange(row.dateFrom, row.dateTo),
                 pc: row.pc, ip: row.ipAddress,
@@ -979,11 +1002,15 @@
         const { category: categoryId, plan: planId, key: restrictionKey, date } = cell.dataset;
         if (!categoryId || !planId || !restrictionKey || !date) return;
         const requestId = ++currentLogRequest;
+        logOverlay?.classList.add('availability-log-show-rate');
         setText('availabilityLogTitle', 'Restriction Change History');
         setText('availabilityLogCategoryLabel', 'Room / Rate Plan');
         setText('availabilityLogDate', prettyStayDate(date));
         setText('availabilityLogCategory', (cell.dataset.categoryname || 'Room') + ' / ' + (cell.dataset.planname || 'Plan'));
-        setText('availabilityLogSubtitle', (cell.dataset.label || restrictionKey) + ' · ' + prettyStayDate(date));
+        setText('availabilityLogSubtitle', prettyStayDate(date) + ' · ' +
+            (cell.dataset.categoryname || 'Room') + ' · ' +
+            (cell.dataset.planname || 'Plan') + ' · ' +
+            (cell.dataset.label || restrictionKey));
         showLogState('availabilityLogLoading');
         openLogDrawer();
         try {
@@ -1011,7 +1038,8 @@
         setText('availabilityLogCategoryLabel', 'Room / Rate Plan');
         setText('availabilityLogDate', prettyStayDate(date));
         setText('availabilityLogCategory', categoryName + ' / ' + planName);
-        setText('availabilityLogSubtitle', prettyStayDate(date) + ' · ' + planName);
+        setText('availabilityLogSubtitle', prettyStayDate(date) + ' · ' + categoryName + ' · ' + planName);
+        logOverlay?.classList.add('availability-log-show-rate');
         setText('availabilityLogCount', '—');
         showLogState('availabilityLogLoading');
         openLogDrawer();
@@ -1034,6 +1062,7 @@
         const date = cell.dataset.date || '';
         if (!categoryId || !date || !logUrl) return;
         const requestId = ++currentLogRequest;
+        logOverlay?.classList.add('availability-log-show-rate');
         setText('availabilityLogTitle', 'Availability Change Log');
         setText('availabilityLogCategoryLabel', 'Category');
         setText('availabilityLogDate', prettyStayDate(date)); setText('availabilityLogCategory', categoryName);
@@ -1139,6 +1168,8 @@
         const boolTypes = ['closed_to_arrival', 'closed_to_departure', 'stop_sell'];
         const isBool = boolTypes.includes(type), isCutoff = type === 'booking_cutoff';
         boolWrap.hidden = !isBool; numberWrap.hidden = isBool || isCutoff; cutoffEditor.hidden = !isCutoff;
+        const cutoffMeaning = document.getElementById('bookingCutoffMeaning');
+        if (cutoffMeaning) cutoffMeaning.hidden = !isCutoff;
         setText('bulkRestrictionValueLabel', ({ min_stay_arrival: 'Min Stay Arrival', min_stay_through: 'Min Stay Through', max_stay: 'Max Stay' })[type] || 'Value');
         if (isBool) document.getElementById('bulkRestrictionBoolean').value = String(summary).toLowerCase() === 'closed' || summary === '1' ? 'true' : 'false';
         if (!isBool && !isCutoff) {
@@ -1146,7 +1177,7 @@
             input.min = type === 'max_stay' ? '0' : '1'; input.max = '999';
             input.value = /^\d+$/.test(String(summary)) ? summary : '';
         }
-        if (isCutoff) setText('bulkRestrictionHint', 'Use Rate Plan Default, disable the cutoff for selected dates, or enter custom days.');
+        if (isCutoff) setText('bulkRestrictionHint', 'Booking Cutoff controls last-minute arrivals. Custom 3 days blocks arrival dates today, tomorrow and the following day; later dates remain bookable unless another restriction applies. Default uses the rate plan setting; Disabled overrides it for these dates.');
         else if (isBool) setText('bulkRestrictionHint', 'Closed applies the manual restriction. Open removes it for the selected dates.');
         else setText('bulkRestrictionHint', type === 'max_stay' ? '0 removes the maximum stay restriction.' : 'Enter a whole number of nights.');
     }
@@ -1181,6 +1212,8 @@
     }
 
     function updateCutoffEditor() {
+        const help = document.getElementById('bookingCutoffMeaning');
+        if (help) help.hidden = document.getElementById('bulkCutoffEditor')?.hidden !== false;
         const mode = document.getElementById('bulkCutoffMode')?.value || 'default';
         const wrap = document.getElementById('bulkCutoffDaysWrap');
         if (wrap) wrap.hidden = mode !== 'custom';

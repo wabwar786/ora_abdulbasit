@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using Orapmshms.Services;
 
 namespace Orapmshms.Services.AvailabilityJobs;
@@ -103,6 +103,7 @@ public sealed class AvailabilityChannelSyncWorker : BackgroundService, IAvailabi
                         job.PlanIds,
                         job.CategoryIds,
                         "BookingCutoffWorker",
+                        _hotelClock.GetHotelToday(job.HotelId).Date,
                         stoppingToken);
                 }
                 // ReconcileMappings intentionally does not rebuild datesrates. It is a lightweight

@@ -745,7 +745,7 @@ VALUES
         cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
         cmd.Parameters.Add("@first", SqlDbType.VarChar, 180).Value = Clean(request.FirstName, 180);
         cmd.Parameters.Add("@last", SqlDbType.VarChar, 180).Value = Clean(request.LastName, 180);
-        cmd.Parameters.Add("@identification", SqlDbType.VarChar, 180).Value = Clean(request.Identification, 180);
+        cmd.Parameters.Add("@identification", SqlDbType.VarChar, 30).Value = Clean(request.Identification, 30);
         cmd.Parameters.Add("@address", SqlDbType.VarChar, 500).Value = Clean(request.Address, 500);
         cmd.Parameters.Add("@country", SqlDbType.VarChar, 150).Value = Clean(request.Country, 150);
         cmd.Parameters.Add("@city", SqlDbType.VarChar, 150).Value = Clean(request.City, 150);
@@ -947,13 +947,13 @@ INSERT INTO dbo.Reserv_log
 (reg_id,descp,user_id,username,hotel_id,status,ipAddress,systemname,createdat,date)
 VALUES(@reg,@description,@user,@username,@hotel,'Reservation',@ip,@system,@created,@date);";
         var roomText = string.Join(",", rooms.SelectMany(x => x.AssignedRooms));
-        var categoryText = string.Join(", ", rooms.Select(x => x.CategoryName));
-        var planText = string.Join(", ", rooms.Select(x => x.PlanName));
-        var description = $"New Reservation Created | Reg:{regId} | {request.ArrivalDate:MM-dd-yyyy} to {request.DepartureDate:MM-dd-yyyy} | " +
-                          $"Guest:{request.FirstName} {request.LastName} | Rooms:{roomText} | Categories:{categoryText} | RatePlans:{planText} | Total:{grandTotal:0.00}";
+        // Short, useful Guest History entry. Reg ID/user/date are already separate audit columns.
+        var description = $"Reservation created | Guest: {request.FirstName} {request.LastName} | " +
+                          $"Stay: {request.ArrivalDate:dd MMM yyyy} to {request.DepartureDate:dd MMM yyyy} | " +
+                          $"Rooms: {roomText} | Total: {grandTotal:0.00}";
         await using var cmd = new SqlCommand(sql, cn, tx);
         cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
-        cmd.Parameters.Add("@description", SqlDbType.VarChar, -1).Value = description;
+        cmd.Parameters.Add("@description", SqlDbType.NVarChar, -1).Value = description;
         cmd.Parameters.Add("@user", SqlDbType.VarChar, 50).Value = userId;
         cmd.Parameters.Add("@username", SqlDbType.VarChar, 180).Value = Clean(userName, 180);
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
@@ -1486,41 +1486,273 @@ WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn);
             return ($"Failed ({reason})", $"Failed ({reason})");
         }
 
-        static string H(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
         var guestName = (request.FirstName + " " + request.LastName).Trim();
         var stayDates = $"{request.ArrivalDate:dd MMM yyyy} – {request.DepartureDate:dd MMM yyyy}";
-        var roomDetails = string.Join("", rooms.Select(r =>
-            $"<tr><td style='padding:7px;border-bottom:1px solid #e2e8f0'>{H(r.CategoryName)}</td>" +
-            $"<td style='padding:7px;border-bottom:1px solid #e2e8f0'>{H(r.PlanName)}</td>" +
-            $"<td style='padding:7px;border-bottom:1px solid #e2e8f0'>{H(string.Join(", ", r.AssignedRooms))}</td>" +
-            $"<td style='padding:7px;border-bottom:1px solid #e2e8f0'>{r.ArrivalDate:dd MMM yyyy} – {r.DepartureDate:dd MMM yyyy}</td></tr>"));
-        var details = $"<p><strong>Reservation:</strong> {H(regId)}<br>" +
-            $"<strong>Guest:</strong> {H(guestName)}<br>" +
-            $"<strong>Stay:</strong> {H(stayDates)}<br>" +
-            $"<strong>Status:</strong> {(request.IsProvisional ? "Provisional" : "Confirmed")}<br>" +
-            $"<strong>Grand total:</strong> {H(currency)} {total:0.00}</p>" +
-            $"<table style='border-collapse:collapse;width:100%;font-size:13px'><thead>" +
-            $"<tr><th align='left'>Room type</th><th align='left'>Rate plan</th><th align='left'>Room</th><th align='left'>Dates</th></tr></thead>" +
-            $"<tbody>{roomDetails}</tbody></table>";
-        static string Wrap(string name, string body) =>
-            $"<!doctype html><html><body style='margin:0;background:#f5f7fb;padding:24px;font-family:Arial,sans-serif;color:#1e293b'>" +
-            $"<div style='max-width:660px;margin:auto;background:white;padding:28px;border-radius:12px'>" +
-            $"<h2 style='color:#0b3b8c'>{H(name)}</h2>{body}<p style='font-size:12px;color:#64748b'>This is an automated reservation notification.</p></div></body></html>";
+
+        // Guest email contains only room type, rate plan and stay dates.
+        // Never pass assigned room numbers to the guest email builder.
+        static string Cell(string value) =>
+            "<td style='padding:15px 10px;border-bottom:1px solid #e2eaf0;" +
+            "font:12px/18px Arial,Helvetica,sans-serif;color:#233e52;" +
+            "vertical-align:top;word-break:break-word'>" + EscapeEmailHtml(value) + "</td>";
+        var guestRoomRows = string.Join("", rooms.Select(r =>
+            "<tr>" + Cell(r.CategoryName) + Cell(r.PlanName) +
+            Cell($"{r.ArrivalDate:dd MMM yyyy} – {r.DepartureDate:dd MMM yyyy}") + "</tr>"));
+        var hotelRoomRows = string.Join("", rooms.Select(r =>
+            "<tr>" + Cell(r.CategoryName) + Cell(r.PlanName) +
+            Cell(string.Join(", ", r.AssignedRooms)) +
+            Cell($"{r.ArrivalDate:dd MMM yyyy} – {r.DepartureDate:dd MMM yyyy}") + "</tr>"));
 
         var guestSubject = request.IsProvisional
             ? $"Provisional reservation at {hotelName} – {regId}"
             : $"Your booking is confirmed at {hotelName} – {regId}";
         var hotelSubject = $"New {(request.IsProvisional ? "Provisional " : "")}Reservation - {guestName} - {regId}";
 
-        // Independent calls: a missing hotel address does not prevent the guest email.
-        var guestTask = SendCreationEmailAsync(hotelId, regId, "BOOKING_GUEST", request.Email,
-            guestSubject, Wrap(hotelName, $"<p>Dear {H(guestName)},</p>" +
-                $"<p>{(request.IsProvisional ? "Your provisional reservation has been received." : "Your reservation has been confirmed.")}</p>" + details), settings);
-        var hotelTask = SendCreationEmailAsync(hotelId, regId, "BOOKING_HOTEL", hotelEmail,
-            hotelSubject, Wrap(hotelName, "<p>A reservation has been created in ORA PMS.</p>" + details +
-                $"<p><strong>Guest email:</strong> {H(request.Email)}<br><strong>Guest phone:</strong> {H(request.Phone)}</p>"), settings);
+        // Both HTML bodies are generated in the service, exactly as in the legacy
+        // flow. SMTP notifications remain independent after reservation commit.
+        var guestHtml = BuildGuestReservationHtml(
+            hotelName, guestName, regId, stayDates, currency, total,
+            guestRoomRows, request.IsProvisional);
+        var hotelHtml = BuildHotelReservationHtml(
+            hotelName, guestName, request.Email, request.Phone, regId,
+            stayDates, currency, total, hotelRoomRows, request.IsProvisional);
+        var guestTask = SendCreationEmailAsync(hotelId, regId, "BOOKING_GUEST",
+            request.Email, guestSubject, guestHtml, settings);
+        var hotelTask = SendCreationEmailAsync(hotelId, regId, "BOOKING_HOTEL",
+            hotelEmail, hotelSubject, hotelHtml, settings);
         await Task.WhenAll(guestTask, hotelTask);
         return (await guestTask, await hotelTask);
+    }
+
+    // Values are encoded before insertion into built-in HTML. Encode braces too so
+    // untrusted hotel/guest values cannot be mistaken for later HTML placeholders.
+    private static string EscapeEmailHtml(string? value) =>
+        WebUtility.HtmlEncode(value ?? string.Empty)
+            .Replace("{", "&#123;", StringComparison.Ordinal)
+            .Replace("}", "&#125;", StringComparison.Ordinal);
+
+    // Guest confirmation deliberately has NO room number column or assignment data.
+    // HTML is embedded in this service; there is no disk template or renderer.
+    private static string BuildGuestReservationHtml(
+        string hotelName, string guestName, string regId, string stayDates,
+        string currency, decimal total, string guestRoomRows, bool provisional)
+    {
+        const string confirmedHtml = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>BOOKING CONFIRMED — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">Your booking at {{HotelName}} is confirmed — {{ReservationId}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#2FAA8F;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">BOOKING CONFIRMED</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">Your stay is booked.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">Your reservation is confirmed and your stay details are below.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 7px;font-size:16px;font-weight:700;color:#142638">Hello {{GuestName}},</p>
+        <p style="margin:0 0 25px;font:14px/23px Arial,Helvetica,sans-serif;color:#617386">Your reservation is confirmed. We look forward to welcoming you. Your booking details are shown below.</p>
+        
+        <div style="border-radius:12px;padding:18px 20px;background:#F4F8FA;border:1px solid #E2EAF0;margin:0 0 25px">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><span style="font-size:11px;letter-spacing:.9px;color:#617386;text-transform:uppercase;font-weight:700">Booking reference</span><br><strong style="display:inline-block;margin-top:5px;font-size:19px;letter-spacing:.2px;color:#142638">{{ReservationId}}</strong></td><td style="text-align:right;vertical-align:middle"><span style="display:inline-block;border-radius:20px;padding:7px 13px;background:#E8F6F0;color:#0C8462;font-size:11px;font-family:Arial,Helvetica,sans-serif;letter-spacing:.85px;font-weight:800;text-transform:uppercase;">Confirmed</span></td></tr></table></div>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="width:100%;border-collapse:collapse;"><tr><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Your stay</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{StayDates}}</div></div></td><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Total booking amount</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{Currency}} {{GrandTotal}}</div></div></td></tr></table>
+        
+        <div style="height:23px"></div>
+        <p style="font-size:11px;font-weight:800;letter-spacing:1.3px;color:#527184;text-transform:uppercase;margin:0 0 12px;">Your room selection</p>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;border:1px solid #E2EAF0;border-radius:10px;background:#fff;table-layout:fixed;"><thead><tr style="background:#F2F7F9"><th align="left" width="38%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Room type</th><th align="left" width="32%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Rate plan</th><th align="left" width="30%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Stay dates</th></tr></thead><tbody>{{GuestRoomRows}}</tbody></table>
+        <p style="margin:18px 0 0;font:12px/20px Arial,Helvetica,sans-serif;color:#617386">Your booking summary shows the room category and rate plan. Room assignment details will be provided by the property when applicable.</p>
+        <div style="margin-top:28px;padding-top:19px;border-top:1px solid #E2EAF0"><p style="margin:0;font:13px/21px Arial,Helvetica,sans-serif;color:#617386">Warm regards,<br><strong style="color:#142638">{{HotelName}} Team</strong></p></div>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
+        </table>
+        </td></tr></table></body></html>
+        """;
+        const string provisionalHtml = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>PROVISIONAL RESERVATION — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">Your provisional reservation at {{HotelName}} — {{ReservationId}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#E4AA55;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">PROVISIONAL RESERVATION</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">We have your request.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">Your reservation has been recorded as provisional.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 7px;font-size:16px;font-weight:700;color:#142638">Hello {{GuestName}},</p>
+        <p style="margin:0 0 25px;font:14px/23px Arial,Helvetica,sans-serif;color:#617386">Your provisional reservation has been received. Your reservation is currently provisional. Please refer to your booking arrangements for the next steps.</p>
+        
+        <div style="border-radius:12px;padding:18px 20px;background:#F4F8FA;border:1px solid #E2EAF0;margin:0 0 25px">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><span style="font-size:11px;letter-spacing:.9px;color:#617386;text-transform:uppercase;font-weight:700">Booking reference</span><br><strong style="display:inline-block;margin-top:5px;font-size:19px;letter-spacing:.2px;color:#142638">{{ReservationId}}</strong></td><td style="text-align:right;vertical-align:middle"><span style="display:inline-block;border-radius:20px;padding:7px 13px;background:#FFF3DB;color:#9B6714;font-size:11px;font-family:Arial,Helvetica,sans-serif;letter-spacing:.85px;font-weight:800;text-transform:uppercase;">Provisional</span></td></tr></table></div>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="width:100%;border-collapse:collapse;"><tr><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Your stay</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{StayDates}}</div></div></td><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Total booking amount</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{Currency}} {{GrandTotal}}</div></div></td></tr></table>
+        
+        <div style="height:23px"></div>
+        <p style="font-size:11px;font-weight:800;letter-spacing:1.3px;color:#527184;text-transform:uppercase;margin:0 0 12px;">Your room selection</p>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;border:1px solid #E2EAF0;border-radius:10px;background:#fff;table-layout:fixed;"><thead><tr style="background:#F2F7F9"><th align="left" width="38%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Room type</th><th align="left" width="32%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Rate plan</th><th align="left" width="30%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Stay dates</th></tr></thead><tbody>{{GuestRoomRows}}</tbody></table>
+        <p style="margin:18px 0 0;font:12px/20px Arial,Helvetica,sans-serif;color:#617386">Your booking summary shows the room category and rate plan. Room assignment details will be provided by the property when applicable.</p>
+        <div style="margin-top:28px;padding-top:19px;border-top:1px solid #E2EAF0"><p style="margin:0;font:13px/21px Arial,Helvetica,sans-serif;color:#617386">Warm regards,<br><strong style="color:#142638">{{HotelName}} Team</strong></p></div>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
+        </table>
+        </td></tr></table></body></html>
+        """;
+        var template = provisional ? provisionalHtml : confirmedHtml;
+        return template
+            .Replace("{{HotelName}}", EscapeEmailHtml(hotelName), StringComparison.Ordinal)
+            .Replace("{{GuestName}}", EscapeEmailHtml(guestName), StringComparison.Ordinal)
+            .Replace("{{ReservationId}}", EscapeEmailHtml(regId), StringComparison.Ordinal)
+            .Replace("{{StayDates}}", EscapeEmailHtml(stayDates), StringComparison.Ordinal)
+            .Replace("{{Currency}}", EscapeEmailHtml(currency), StringComparison.Ordinal)
+            .Replace("{{GrandTotal}}", total.ToString("0.00", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{GuestRoomRows}}", guestRoomRows, StringComparison.Ordinal)
+            .Replace("{{Year}}", DateTime.UtcNow.Year.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    // The hotel-facing notification retains assigned room numbers.
+    private static string BuildHotelReservationHtml(
+        string hotelName, string guestName, string guestEmail, string guestPhone,
+        string regId, string stayDates, string currency, decimal total,
+        string hotelRoomRows, bool provisional)
+    {
+        const string confirmedHtml = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>NEW RESERVATION — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">New reservation from {{GuestName}} — {{ReservationId}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#2FAA8F;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">NEW RESERVATION</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">A new booking has arrived.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">Reservation activity notification for your front desk.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 23px;font:14px/23px Arial,Helvetica,sans-serif;color:#617386">A new reservation has been recorded. Below is the information available in ORA PMS.</p>
+        
+        <div style="border-radius:12px;padding:18px 20px;background:#F4F8FA;border:1px solid #E2EAF0;margin:0 0 25px">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><span style="font-size:11px;letter-spacing:.9px;color:#617386;text-transform:uppercase;font-weight:700">Booking reference</span><br><strong style="display:inline-block;margin-top:5px;font-size:19px;letter-spacing:.2px;color:#142638">{{ReservationId}}</strong></td><td style="text-align:right;vertical-align:middle"><span style="display:inline-block;border-radius:20px;padding:7px 13px;background:#E8F6F0;color:#0C8462;font-size:11px;font-family:Arial,Helvetica,sans-serif;letter-spacing:.85px;font-weight:800;text-transform:uppercase;">Confirmed</span></td></tr></table></div>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="width:100%;border-collapse:collapse;"><tr><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Your stay</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{StayDates}}</div></div></td><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Total booking amount</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{Currency}} {{GrandTotal}}</div></div></td></tr></table>
+        
+        <div style="height:25px"></div>
+        <p style="font-size:11px;font-weight:800;letter-spacing:1.3px;color:#527184;text-transform:uppercase;margin:0 0 12px;">Guest details</p>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse"><tr><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#617386;font:13px Arial,Helvetica,sans-serif;width:45%;vertical-align:top">Guest name</td><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#142638;font:700 14px Arial,Helvetica,sans-serif;text-align:right;vertical-align:top;word-break:break-word">{{GuestName}}</td></tr><tr><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#617386;font:13px Arial,Helvetica,sans-serif;width:45%;vertical-align:top">Email</td><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#142638;font:700 14px Arial,Helvetica,sans-serif;text-align:right;vertical-align:top;word-break:break-word">{{GuestEmail}}</td></tr><tr><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#617386;font:13px Arial,Helvetica,sans-serif;width:45%;vertical-align:top">Phone</td><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#142638;font:700 14px Arial,Helvetica,sans-serif;text-align:right;vertical-align:top;word-break:break-word">{{GuestPhone}}</td></tr></table>
+        <div style="height:28px"></div>
+        <p style="font-size:11px;font-weight:800;letter-spacing:1.3px;color:#527184;text-transform:uppercase;margin:0 0 12px;">Room allocations</p>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;border:1px solid #E2EAF0;border-radius:10px;background:#fff;table-layout:fixed;"><thead><tr style="background:#F2F7F9"><th align="left" width="28%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Room type</th><th align="left" width="25%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Rate plan</th><th align="left" width="14%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Room</th><th align="left" width="33%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Stay dates</th></tr></thead><tbody>{{HotelRoomRows}}</tbody></table>
+        <div style="margin-top:28px;padding:17px 19px;border-radius:10px;background:#F2F8F8;border-left:3px solid #2FAA8F;color:#4F6C7C;font:13px/20px Arial,Helvetica,sans-serif">This is an internal hotel notification for reservation <strong style="color:#183A4D">{{ReservationId}}</strong>.</div>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
+        </table>
+        </td></tr></table></body></html>
+        """;
+        const string provisionalHtml = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>PROVISIONAL RESERVATION — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">New provisional reservation from {{GuestName}} — {{ReservationId}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#E4AA55;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">PROVISIONAL RESERVATION</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">A provisional booking arrived.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">Reservation activity notification for your front desk.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 23px;font:14px/23px Arial,Helvetica,sans-serif;color:#617386">A new provisional booking requires attention. Below is the information available in ORA PMS.</p>
+        
+        <div style="border-radius:12px;padding:18px 20px;background:#F4F8FA;border:1px solid #E2EAF0;margin:0 0 25px">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><span style="font-size:11px;letter-spacing:.9px;color:#617386;text-transform:uppercase;font-weight:700">Booking reference</span><br><strong style="display:inline-block;margin-top:5px;font-size:19px;letter-spacing:.2px;color:#142638">{{ReservationId}}</strong></td><td style="text-align:right;vertical-align:middle"><span style="display:inline-block;border-radius:20px;padding:7px 13px;background:#FFF3DB;color:#9B6714;font-size:11px;font-family:Arial,Helvetica,sans-serif;letter-spacing:.85px;font-weight:800;text-transform:uppercase;">Provisional</span></td></tr></table></div>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="width:100%;border-collapse:collapse;"><tr><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Your stay</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{StayDates}}</div></div></td><td class="mobile-block" width="50%" style="width:50%;vertical-align:top;padding:0 5px 0 0"><div style="background:#F4F8FA;border-radius:12px;padding:17px 18px;min-height:67px;"><div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#60768b;">Total booking amount</div><div style="margin-top:7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;font-weight:700;color:#122e45;">{{Currency}} {{GrandTotal}}</div></div></td></tr></table>
+        
+        <div style="height:25px"></div>
+        <p style="font-size:11px;font-weight:800;letter-spacing:1.3px;color:#527184;text-transform:uppercase;margin:0 0 12px;">Guest details</p>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse"><tr><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#617386;font:13px Arial,Helvetica,sans-serif;width:45%;vertical-align:top">Guest name</td><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#142638;font:700 14px Arial,Helvetica,sans-serif;text-align:right;vertical-align:top;word-break:break-word">{{GuestName}}</td></tr><tr><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#617386;font:13px Arial,Helvetica,sans-serif;width:45%;vertical-align:top">Email</td><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#142638;font:700 14px Arial,Helvetica,sans-serif;text-align:right;vertical-align:top;word-break:break-word">{{GuestEmail}}</td></tr><tr><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#617386;font:13px Arial,Helvetica,sans-serif;width:45%;vertical-align:top">Phone</td><td style="padding:10px 0;border-bottom:1px solid #E2EAF0;color:#142638;font:700 14px Arial,Helvetica,sans-serif;text-align:right;vertical-align:top;word-break:break-word">{{GuestPhone}}</td></tr></table>
+        <div style="height:28px"></div>
+        <p style="font-size:11px;font-weight:800;letter-spacing:1.3px;color:#527184;text-transform:uppercase;margin:0 0 12px;">Room allocations</p>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;border:1px solid #E2EAF0;border-radius:10px;background:#fff;table-layout:fixed;"><thead><tr style="background:#F2F7F9"><th align="left" width="28%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Room type</th><th align="left" width="25%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Rate plan</th><th align="left" width="14%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Room</th><th align="left" width="33%" style="font:700 11px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:#617588;padding:13px 10px;text-align:left;white-space:normal">Stay dates</th></tr></thead><tbody>{{HotelRoomRows}}</tbody></table>
+        <div style="margin-top:28px;padding:17px 19px;border-radius:10px;background:#F2F8F8;border-left:3px solid #2FAA8F;color:#4F6C7C;font:13px/20px Arial,Helvetica,sans-serif">This is an internal hotel notification for reservation <strong style="color:#183A4D">{{ReservationId}}</strong>.</div>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
+        </table>
+        </td></tr></table></body></html>
+        """;
+        var template = provisional ? provisionalHtml : confirmedHtml;
+        return template
+            .Replace("{{HotelName}}", EscapeEmailHtml(hotelName), StringComparison.Ordinal)
+            .Replace("{{GuestName}}", EscapeEmailHtml(guestName), StringComparison.Ordinal)
+            .Replace("{{GuestEmail}}", EscapeEmailHtml(guestEmail), StringComparison.Ordinal)
+            .Replace("{{GuestPhone}}", EscapeEmailHtml(guestPhone), StringComparison.Ordinal)
+            .Replace("{{ReservationId}}", EscapeEmailHtml(regId), StringComparison.Ordinal)
+            .Replace("{{StayDates}}", EscapeEmailHtml(stayDates), StringComparison.Ordinal)
+            .Replace("{{Currency}}", EscapeEmailHtml(currency), StringComparison.Ordinal)
+            .Replace("{{GrandTotal}}", total.ToString("0.00", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{HotelRoomRows}}", hotelRoomRows, StringComparison.Ordinal)
+            .Replace("{{Year}}", DateTime.UtcNow.Year.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     private async Task RecordCreationEmailFailuresAsync(string hotelId, string regId,
@@ -1654,9 +1886,11 @@ WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn);
                 nameCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 hotelName = Convert.ToString(await nameCmd.ExecuteScalarAsync(ct))?.Trim() ?? "Hotel";
             }
-            var safeHotel=WebUtility.HtmlEncode(hotelName); var safeUrl=WebUtility.HtmlEncode(checkoutUrl); var safeReg=WebUtility.HtmlEncode(regId);
-            var deadlineText=deadline.HasValue ? deadline.Value.ToString("dd MMM yyyy HH:mm",CultureInfo.InvariantCulture) : "the requested deadline";
-            var html=$@"<!doctype html><html><body style='font-family:Arial,sans-serif;background:#f5f7fb;padding:24px'><div style='max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:12px'><h2 style='color:#0B2A5B'>{safeHotel}</h2><p>Please use the secure link below to pay the outstanding balance for reservation <strong>{safeReg}</strong>.</p><p><strong>Amount due:</strong> {WebUtility.HtmlEncode(currencyCode)} {amount:0.00}<br><strong>Pay by:</strong> {WebUtility.HtmlEncode(deadlineText)}</p><p><a href='{safeUrl}' style='display:inline-block;background:#0B3B8C;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold'>Pay securely</a></p><p style='font-size:12px;color:#64748b'>If the button does not open, copy this link into your browser:<br>{safeUrl}</p></div></body></html>";
+            var deadlineText = deadline.HasValue
+                ? deadline.Value.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture)
+                : "the requested deadline";
+            var html = BuildPaymentLinkHtml(
+                hotelName, regId, currencyCode, amount, deadlineText, checkoutUrl);
             using var msg=new MailMessage(); msg.From=new MailAddress(settings.FromEmail,string.IsNullOrWhiteSpace(settings.FromName)?settings.FromEmail:settings.FromName); msg.To.Add(toEmail); msg.Subject=$"Payment Link - Reservation {regId}"; msg.Body=html; msg.IsBodyHtml=true;
             using var smtp=new SmtpClient(settings.Host,settings.Port){EnableSsl=settings.UseSsl,UseDefaultCredentials=false,Credentials=new NetworkCredential(settings.SmtpUser,settings.Password),DeliveryMethod=SmtpDeliveryMethod.Network,Timeout=30000};
             await smtp.SendMailAsync(msg);
@@ -1664,6 +1898,63 @@ WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn);
             return new PaymentLinkSendResult { Success=true, Message="Payment link sent successfully.", CheckoutUrl=checkoutUrl };
         }
         catch(Exception ex){_logger.LogError(ex,"Payment-link email failed for reservation {RegId}.",regId);return PaymentLinkFail("Payment link was created, but the email could not be sent. " + ex.Message);}
+    }
+
+    private static string BuildPaymentLinkHtml(
+        string hotelName, string regId, string currency, decimal amount,
+        string deadlineText, string checkoutUrl)
+    {
+        const string template = """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="x-apple-disable-message-reformatting"><title>SECURE PAYMENT — {{HotelName}}</title>
+        <style>
+          @media screen and (max-width:620px) {
+            .email-wrap { width:100%!important; }
+            .email-pad { padding-left:22px!important; padding-right:22px!important; }
+            .mobile-block { display:block!important;width:100%!important;padding-right:0!important;box-sizing:border-box!important;padding-bottom:9px!important; }
+            .mobile-title {font-size:26px!important;line-height:33px!important;}
+            .outer-pad {padding:0!important;}
+            .small-table th,.small-table td {font-size:11px!important;padding:10px 5px!important;}
+          }
+        </style></head>
+        <body style="margin:0;padding:0;background:#EEF3F6;font-family:Arial,Helvetica,sans-serif;color:#142638;-webkit-text-size-adjust:100%;">
+        <div style="display:none!important;font-size:1px;color:#f0f4f7;line-height:1px;opacity:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all">Secure payment request for {{ReservationId}}.</div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#EEF3F6;border-collapse:collapse;"><tr><td class="outer-pad" style="padding:38px 14px 52px;" align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="email-wrap" style="width:600px;max-width:600px;background:#fff;border-collapse:separate;border-spacing:0;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px rgba(23,49,70,.07);text-align:left;">
+        <tr><td style="height:5px;background:#2FAA8F;font-size:0;line-height:5px">&nbsp;</td></tr>
+        <tr><td class="email-pad" style="background:#10273E;padding:28px 35px 35px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td style="vertical-align:middle"><p style="margin:0;color:white;font-size:20px;line-height:26px;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:-.4px">{{HotelName}}</p></td><td align="right" style="vertical-align:middle;color:#9DB8C8;font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;white-space:nowrap">ORA PMS</td></tr></table>
+        <div style="height:1px;background:#2E465B;margin:22px 0 27px"></div>
+        <p style="margin:0 0 9px;color:#7DDBBE;letter-spacing:1.8px;font-weight:800;font-size:11px;line-height:16px;text-transform:uppercase">SECURE PAYMENT</p>
+        <h1 class="mobile-title" style="margin:0;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:30px;line-height:39px;letter-spacing:-.8px;font-weight:800">Complete your payment.</h1>
+        <p style="margin:12px 0 0;color:#C7D7E2;font-size:14px;line-height:22px">Secure payment information for your hotel reservation.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="padding:30px 35px 35px;background:#fff;">
+        <p style="margin:0 0 24px;font:14px/24px Arial,Helvetica,sans-serif;color:#617386">Please complete the outstanding payment for reservation <strong style="color:#142638">{{ReservationId}}</strong> using the secure checkout link below.</p>
+        <div style="background:#F3F8FA;border:1px solid #E2EAF0;border-radius:13px;padding:26px 23px;text-align:center;margin-bottom:25px">
+        <p style="margin:0;font-size:11px;color:#617386;font-weight:800;letter-spacing:1.4px;text-transform:uppercase">Amount to pay</p>
+        <div style="font-size:32px;font-weight:800;color:#10273E;line-height:44px;margin:8px 0 6px">{{Currency}} {{AmountDue}}</div>
+        <p style="margin:0;font:13px/21px Arial,Helvetica,sans-serif;color:#627789">Payment deadline: <strong style="color:#183A4D">{{PayBy}}</strong></p>
+        </div>
+        <div style="text-align:center;margin:0 0 26px"><table role="presentation" align="center" cellspacing="0" cellpadding="0"><tr><td><table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:separate;"><tr><td style="border-radius:9px;background:#2FAA8F;text-align:center"><a href="{{PaymentUrl}}" style="display:inline-block;text-decoration:none;border:1px solid #2FAA8F;border-radius:9px;color:#fff;font:700 14px Arial,Helvetica,sans-serif;padding:15px 24px;">Pay securely &nbsp;&rsaquo;</a></td></tr></table></td></tr></table></div>
+        <div style="padding:18px 19px;background:#F8FAFB;border-left:3px solid #C4D5DD;border-radius:8px;color:#617386;font:12px/20px Arial,Helvetica,sans-serif;overflow-wrap:anywhere;word-break:break-word"><strong style="color:#344B5B">Having trouble with the button?</strong><br>Copy and paste this secure link into your browser:<br><a href="{{PaymentUrl}}" style="color:#167D72;text-decoration:underline;word-break:break-all">{{PaymentUrl}}</a></div>
+        <p style="margin:20px 0 0;font:12px/20px Arial,Helvetica,sans-serif;color:#617386">For your security, complete payment using the secure link only. Do not email your payment card details.</p>
+        </td></tr>
+        <tr><td class="email-pad" style="background:#F6F9FB;padding:22px 35px 26px;border-top:1px solid #E7EEF3;">
+        <p style="font:12px/19px Arial,Helvetica,sans-serif;color:#627789;margin:0 0 8px">This is an automated email from {{HotelName}}.</p>
+        <p style="font:11px/18px Arial,Helvetica,sans-serif;color:#8CA0AE;margin:0">&copy; {{Year}} {{HotelName}} &nbsp;&middot;&nbsp; Powered by ORA PMS</p>
+        </td></tr>
+        </table>
+        </td></tr></table></body></html>
+        """;
+        return template
+            .Replace("{{HotelName}}", EscapeEmailHtml(hotelName), StringComparison.Ordinal)
+            .Replace("{{ReservationId}}", EscapeEmailHtml(regId), StringComparison.Ordinal)
+            .Replace("{{Currency}}", EscapeEmailHtml(currency), StringComparison.Ordinal)
+            .Replace("{{AmountDue}}", amount.ToString("0.00", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{{PayBy}}", EscapeEmailHtml(deadlineText), StringComparison.Ordinal)
+            .Replace("{{PaymentUrl}}", EscapeEmailHtml(checkoutUrl), StringComparison.Ordinal)
+            .Replace("{{Year}}", DateTime.UtcNow.Year.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     private static string DecryptEmailPassword(string encrypted)

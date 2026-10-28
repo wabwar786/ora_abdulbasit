@@ -606,10 +606,10 @@ VALUES(@reg,@old,@new,@hotel,@user,@system,@ip);", cn, tx);
             await RefreshPaymentSummaryAsync(cn, tx, hotelId, regId, userId, userName, ip, ct);
             await ReservationAuditWriter.WriteAsync(cn, tx, hotelId, regId, userId, userName, ip,
                 isExtend ? "MONTHWISE EXTEND" : "MONTHWISE SHRINK",
-                $"Month-wise {(isExtend ? "extension" : "reduction")} from {oldDeparture:yyyy-MM-dd} to {newDeparture:yyyy-MM-dd}; " +
-                $"months {oldTotalMonths} -> {newTotalMonths}; plans: " +
-                string.Join(", ", plans.Select(p => $"{p.PlanName}={p.NewRate:0.00}")) +
-                await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, regId, ct),
+                $"Departure: {oldDeparture:dd MMM yyyy} → {newDeparture:dd MMM yyyy}; " +
+                $"Months: {oldTotalMonths} → {newTotalMonths}" +
+                await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, regId, ct,
+                    isExtend ? "MONTHWISE EXTEND" : "MONTHWISE SHRINK"),
                 _hotelClock.GetHotelNow(hotelId), ct);
             await tx.CommitAsync(ct);
 
@@ -775,15 +775,14 @@ UPDATE dbo.payments
             // Both bookings are modified by a swap: each reg_id must have its own log.
             await ReservationAuditWriter.WriteAsync(cn, tx, hotelId, sourceReg, userId, userName, ip,
                 "MONTHWISE ROOM SWAP",
-                $"Payment {request.SourcePaymentId}: {source.RoomNo} -> {target.RoomNo}; " +
-                $"Payment {request.TargetPaymentId}: {target.RoomNo} -> {source.RoomNo}; paired reg_id {targetReg}." +
-                await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, sourceReg, ct),
+                $"Room {source.RoomNo} → {target.RoomNo}; swapped with reservation {targetReg}" +
+                await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, sourceReg, ct, "ROOM SWAP"),
                 _hotelClock.GetHotelNow(hotelId), ct);
             if (!sourceReg.Equals(targetReg, StringComparison.OrdinalIgnoreCase))
                 await ReservationAuditWriter.WriteAsync(cn, tx, hotelId, targetReg, userId, userName, ip,
                     "MONTHWISE ROOM SWAP",
-                    $"Payment {request.TargetPaymentId}: {target.RoomNo} -> {source.RoomNo}; paired reg_id {sourceReg} (payment {request.SourcePaymentId})." +
-                    await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, targetReg, ct),
+                    $"Room {target.RoomNo} → {source.RoomNo}; swapped with reservation {sourceReg}" +
+                    await ReservationChangeAudit.ChangesSinceCaptureAsync(cn, tx, hotelId, targetReg, ct, "ROOM SWAP"),
                     _hotelClock.GetHotelNow(hotelId), ct);
 
             await tx.CommitAsync(ct);

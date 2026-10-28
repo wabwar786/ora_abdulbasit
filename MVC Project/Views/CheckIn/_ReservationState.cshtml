@@ -111,7 +111,18 @@
                         }</td>
                     <td>@(string.IsNullOrWhiteSpace(row.RatePlanName) ? row.RatePlanId : row.RatePlanName)</td>
                     @{
-                        var ratePerNight = isRoomRentRow && row.Nights > 1m && Math.Abs(row.Rate - row.Charge) < 0.01m ? Math.Round(row.Rate / row.Nights, 2) : row.Rate;
+                        // Room Rent is usually stored as the whole-stay amount in Rate/Charge.
+                        // Older MVC rows stored a nightly Rate and a whole-stay Charge.
+                        // Use the charge total as the source of truth, without changing the stored amount.
+                        var stayUnits = Math.Max(1m, row.Nights);
+                        var storedBase = row.Charge > 0m ? row.Charge :
+                            (row.TotalAmount - row.Gst - row.BedTax + row.Discount > 0m
+                                ? row.TotalAmount - row.Gst - row.BedTax + row.Discount : row.Rate);
+                        var oldMvcNightly = isRoomRentRow && row.Charge > 0m && row.Rate > 0m &&
+                            Math.Abs(row.Rate * stayUnits - row.Charge) <= 0.05m;
+                        var ratePerNight = isRoomRentRow
+                            ? (oldMvcNightly ? row.Rate : Math.Round(storedBase / stayUnits, 2, MidpointRounding.AwayFromZero))
+                            : row.Rate;
                     }
                     <td class="num rate-cell inline-editable-cell" data-value="@ratePerNight.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-can-edit-rate="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "1" : "0")" title="@(row.CanEditRate && row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase) ? "Double-click to edit rate per night" : "Rate update not permitted")">@Money(ratePerNight)</td>
                     <td data-charge-col="discount" data-value="@row.Discount.ToString(System.Globalization.CultureInfo.InvariantCulture)" class="num @(!showDiscountColumn ? "is-column-hidden" : "")">@Money(row.Discount)</td>

@@ -3,7 +3,6 @@ using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
 using Microsoft.Data.SqlClient;
 
 namespace Orapmshms.Services.Logging;
@@ -66,64 +65,148 @@ public static class ReservationChangeAudit
         images.Items.Add(key, await ReadAsync(connection, transaction, hotelId, regId, cancellationToken));
     }
 
-    /// <summary>Returns details to APPEND to the normal reservation action entry, not an extra log row.</summary>
+    /// <summary>
+    /// Returns only meaningful, human-readable old/new changes for the Guest History.
+    /// Internal SQL table names, row IDs, ledger recalculations and whole-row snapshots
+    /// are never placed into the visible Reserv_log description.
+    /// </summary>
     public static async Task<string> ChangesSinceCaptureAsync(SqlConnection connection, SqlTransaction? transaction,
-        string hotelId, string regId, CancellationToken cancellationToken = default)
+        string hotelId, string regId, CancellationToken cancellationToken = default, string? action = null)
     {
         if (transaction == null || string.IsNullOrWhiteSpace(regId) ||
             !Images.TryGetValue(transaction, out var images) ||
             !images.Items.TryGetValue(Key(hotelId, regId), out var before)) return string.Empty;
 
         var after = await ReadAsync(connection, transaction, hotelId, regId, cancellationToken);
-        // Multiple action messages in one transaction should not repeat the same before/after details.
+        // When multiple actions share a transaction, do not log the same mutation twice.
         images.Items[Key(hotelId, regId)] = after;
-        var changes = new List<string>();
+
+        var preferredFields = PreferredFields(action);
+        var changed = new List<(int Rank, string Text)>();
+        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var keys = before.Rows.Keys.Union(after.Rows.Keys, StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
-        foreach (var rowKey in keys)
+
+        foreach (var key in keys)
         {
-            var oldExists = before.Rows.TryGetValue(rowKey, out var oldRow);
-            var newExists = after.Rows.TryGetValue(rowKey, out var newRow);
-            var table = rowKey.Split('#')[0];
+            var table = key.Split('#')[0];
             if (before.TruncatedTables.Contains(table) || after.TruncatedTables.Contains(table)) continue;
-            var display = rowKey.Replace("#", " #", StringComparison.Ordinal);
-            if (!oldExists)
+            if (!before.Rows.TryGetValue(key, out var oldRow) ||
+                !after.Rows.TryGetValue(key, out var newRow))
             {
-                changes.Add($"ADDED {display}: {Summary(newRow!)}");
+                // ADD ROOM, DELETE ROOM, PAYMENT and LAUNDRY already describe the
+                // addition/removal in their action details. Never dump the SQL row.
                 continue;
             }
-            if (!newExists)
+
+            foreach (var field in preferredFields)
             {
-                changes.Add($"DELETED {display}: previous {Summary(oldRow!)}");
-                continue;
-            }
-            foreach (var field in oldRow!.Keys.Union(newRow!.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(x => x))
-            {
-                var prior = oldRow.GetValueOrDefault(field, "");
-                var current = newRow.GetValueOrDefault(field, "");
-                if (string.Equals(prior, current, StringComparison.Ordinal)) continue;
-                var protectedField = IsPrivate(field);
-                changes.Add(protectedField
-                    ? $"{display}.{field}: [previous value withheld] -> [updated value withheld]"
-                    : $"{display}.{field}: '{Display(prior)}' -> '{Display(current)}'");
+                if (!oldRow.TryGetValue(field, out var prior) ||
+                    !newRow.TryGetValue(field, out var current) ||
+                    string.Equals(prior, current, StringComparison.Ordinal)) continue;
+                if (!AllowedSource(table, field)) continue;
+                if (IsPrivate(field))
+                {
+                    // Record that sensitive notes/address were updated, not their contents.
+                    var redacted = FieldLabel(field) + " updated";
+                    if (unique.Add(redacted)) changed.Add((preferredFields.Length + 1, redacted));
+                    continue;
+                }
+                var line = $"{FieldLabel(field)}: {FriendlyValue(field, prior)} → {FriendlyValue(field, current)}";
+                if (unique.Add(line))
+                    changed.Add((Array.IndexOf(preferredFields, field), line));
             }
         }
-        foreach (var name in before.TruncatedTables.Union(after.TruncatedTables))
-            changes.Add($"{name}: more than 500 rows; detailed comparison not available");
-        if (changes.Count == 0) return "";
-        // Reserv_log.descp is varchar(max); cap message size for a readable Guest Log timeline.
-        var result = new StringBuilder(" | CHANGES (OLD -> NEW): ");
-        for (var i = 0; i < changes.Count; i++)
+        if (changed.Count == 0) return string.Empty;
+
+        // A brief operational log rather than a complete database change-data dump.
+        // The original business transaction remains the source of truth for values.
+        var ordered = changed.OrderBy(x => x.Rank).ThenBy(x => x.Text, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.Text).ToList();
+        var selected = new List<string>();
+        var length = 0;
+        foreach (var line in ordered)
         {
-            if (result.Length + changes[i].Length > 9500)
-            {
-                result.Append($"; ... {changes.Count - i} additional changes");
-                break;
-            }
-            if (i > 0) result.Append("; ");
-            result.Append(changes[i]);
+            if (selected.Count >= 4 || length + line.Length > 270) break;
+            selected.Add(line);
+            length += line.Length + 2;
         }
-        return result.ToString();
+        var remainder = ordered.Count - selected.Count;
+        if (remainder > 0) selected.Add($"{remainder} more field(s) updated");
+        return " | " + string.Join("; ", selected);
+    }
+
+    private static readonly string[] GuestFields =
+    {
+        "GuestName", "LastName", "Email", "PhoneNo", "ArrivalDate", "DepartureDate",
+        "NumberOfAdults", "NumberOfMinors", "number_of_adult", "number_of_minor",
+        "Agency", "Status", "Country", "City", "notes", "Address"
+    };
+
+    private static readonly string[] RoomFields =
+    {
+        "room_no", "Type", "ArrivalDate", "DepartureDate", "Nights", "rateplanname",
+        "rateplan", "room_adults", "room_children", "room_infants"
+    };
+
+    private static string[] PreferredFields(string? action)
+    {
+        var a = (action ?? string.Empty).ToUpperInvariant();
+        if (a.Contains("GUEST NAME")) return new[] { "GuestName", "LastName", "guestname" };
+        if (a.Contains("UPDATE GUEST")) return GuestFields;
+        if (a.Contains("ROOM CHANGE") || a.Contains("ROOM MOVE") || a.Contains("ROOM SWAP") ||
+            a.Contains("CALENDAR MOVE")) return Array.Empty<string>(); // Room before/after is in action details.
+        if (a.Contains("RATE")) return Array.Empty<string>(); // Rate action already records old/new nightly price.
+        if (a.Contains("TAX")) return new[] { "GST", "Bed", "totalamount" };
+        if (a.Contains("EXTEND") || a.Contains("SHRINK") || a.Contains("DATE"))
+            return new[] { "ArrivalDate", "DepartureDate", "Nights" };
+        if (a.Contains("CHECK IN") || a.Contains("CHECK OUT") || a.Contains("STATUS"))
+            return new[] { "res_status" };
+        if (a.Contains("ADD ROOM") || a.Contains("DELETE ROOM") ||
+            a.Contains("ADD SERVICE") || a.Contains("DELETE SERVICE") ||
+            a.Contains("PAYMENT") || a.Contains("REFUND") || a.Contains("LAUNDRY") ||
+            a.Contains("SECURITY")) return Array.Empty<string>();
+        return GuestFields.Concat(RoomFields).Concat(new[] { "res_status", "Rate", "discount" })
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static bool AllowedSource(string table, string field)
+    {
+        if (table.Equals("PaymentsUpdateTB", StringComparison.OrdinalIgnoreCase) ||
+            table.Equals("PaymentsLogTB", StringComparison.OrdinalIgnoreCase) ||
+            table.Equals("LaundryTB", StringComparison.OrdinalIgnoreCase) ||
+            table.Equals("GuestNoteBook", StringComparison.OrdinalIgnoreCase)) return false;
+        var payment = table.Equals("payments", StringComparison.OrdinalIgnoreCase);
+        return payment
+            ? RoomFields.Contains(field, StringComparer.OrdinalIgnoreCase) ||
+              new[] { "Rate", "Charge", "discount", "GST", "Bed", "totalamount", "res_status", "guestname" }
+                  .Contains(field, StringComparer.OrdinalIgnoreCase)
+            : GuestFields.Contains(field, StringComparer.OrdinalIgnoreCase) ||
+              field.Equals("res_status", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FieldLabel(string field) => field.ToLowerInvariant() switch
+    {
+        "guestname" => "Guest name", "lastname" => "Last name", "email" => "Email",
+        "phoneno" => "Phone", "arrivaldate" => "Arrival", "departuredate" => "Departure",
+        "numberofadults" or "number_of_adult" or "room_adults" => "Adults",
+        "numberofminors" or "number_of_minor" or "room_children" => "Children",
+        "room_infants" => "Infants", "agency" => "Company", "status" => "Booking source",
+        "res_status" => "Reservation status", "country" => "Country", "city" => "City",
+        "address" => "Address", "notes" => "Guest notes", "room_no" => "Room",
+        "type" => "Room type", "nights" => "Nights", "rateplan" or "rateplanname" => "Rate plan",
+        "rate" => "Rate", "charge" => "Charge", "discount" => "Discount", "gst" => "GST",
+        "bed" => "Bed tax", "totalamount" => "Total", _ => field
+    };
+
+    private static string FriendlyValue(string field, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "Not set";
+        if ((field.Contains("Date", StringComparison.OrdinalIgnoreCase)) &&
+            DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            return date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+        var clean = value.Replace('\r', ' ').Replace('\n', ' ').Replace('|', '/').Trim();
+        return clean.Length <= 55 ? clean : clean[..52] + "...";
     }
 
     private static async Task<Snapshot> ReadAsync(SqlConnection connection, SqlTransaction transaction,
@@ -180,14 +263,4 @@ public static class ReservationChangeAudit
         field.Equals("VisaPassportNo", StringComparison.OrdinalIgnoreCase) ||
         field.Equals("Address", StringComparison.OrdinalIgnoreCase);
 
-    private static string Display(string? value)
-    {
-        if (string.IsNullOrEmpty(value)) return "(empty)";
-        var normalized = value.Replace('\n', ' ').Replace('\r', ' ').Replace('|', '/').Trim();
-        return normalized.Length > 140 ? normalized[..140] + "..." : normalized;
-    }
-
-    private static string Summary(Dictionary<string, string> fields) =>
-        string.Join(", ", fields.Where(kv => !IsPrivate(kv.Key) && !string.IsNullOrEmpty(kv.Value))
-            .Take(14).Select(kv => kv.Key + "=" + Display(kv.Value)));
 }

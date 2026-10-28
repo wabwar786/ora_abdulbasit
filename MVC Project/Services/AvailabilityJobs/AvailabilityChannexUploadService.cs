@@ -191,10 +191,11 @@ WHERE p.hotel_id=@hotel AND TRY_CONVERT(int,p.localplanid)>0;", connection))
         IEnumerable<string> planIds,
         IEnumerable<string> categoryIds,
         string updatedBy,
+        DateTime hotelToday,
         CancellationToken cancellationToken)
     {
         await PrepareBookingCutoffRowsWithCountsAsync(
-            hotelId, fromDate, toDate, planIds, categoryIds, updatedBy, cancellationToken);
+            hotelId, fromDate, toDate, planIds, categoryIds, updatedBy, hotelToday, cancellationToken);
     }
 
     internal sealed record BookingCutoffPreparationCounts(int UpdatedRows, int InsertedRows);
@@ -206,6 +207,7 @@ WHERE p.hotel_id=@hotel AND TRY_CONVERT(int,p.localplanid)>0;", connection))
         IEnumerable<string> planIds,
         IEnumerable<string> categoryIds,
         string updatedBy,
+        DateTime hotelToday,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(hotelId)) return new(0, 0);
@@ -261,9 +263,25 @@ SELECT cp.hotel_id,cp.localplanid,cp.category_id,D.[date],
        CONVERT(varchar(32),cp.baserate),CONVERT(varchar(32),cp.rate),0,0,0,0,GETDATE()
 FROM dbo.category_plan cp
 CROSS JOIN D
+OUTER APPLY
+(
+    SELECT TOP 1 ISNULL(p.booking_cutoff_enabled,0) AS enabled,
+           TRY_CONVERT(int,p.booking_cutoff_days) AS days
+    FROM dbo.plans p
+    WHERE p.hotel_id=cp.hotel_id
+      AND CONVERT(nvarchar(50),p.localplanid)=CONVERT(nvarchar(50),cp.localplanid)
+    ORDER BY p.id DESC
+) planCutoff
 WHERE cp.hotel_id=@hotel
   {cpPlanFilter}
   {cpCategoryFilter}
+  -- Do not materialise 730 ordinary daily-rate rows just because a plan has
+  -- one custom cutoff date. Date-specific overrides already have datesrates
+  -- rows; create NEW rows only inside an active plan-default cutoff window.
+  AND ISNULL(planCutoff.enabled,0)=1
+  AND ISNULL(planCutoff.days,0)>0
+  AND D.[date]>=@today
+  AND D.[date]<DATEADD(DAY,planCutoff.days,@today)
   AND NOT EXISTS
   (
       SELECT 1
@@ -344,7 +362,10 @@ SELECT @updatedRows AS UpdatedRows, @insertedRows AS InsertedRows;";
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
         command.Parameters.Add("@from", SqlDbType.Date).Value = fromDate;
         command.Parameters.Add("@to", SqlDbType.Date).Value = toDate;
-        command.Parameters.Add("@today", SqlDbType.Date).Value = fromDate;
+        // @from is the requested rate/restriction date range, NOT the business date.
+        // For a future-dated edit these can be weeks apart. Using @from as @today
+        // wrongly closes that arrival immediately when a 4-day cutoff is saved.
+        command.Parameters.Add("@today", SqlDbType.Date).Value = hotelToday.Date;
         command.Parameters.Add("@updatedBy", SqlDbType.NVarChar, 200).Value = updatedBy ?? string.Empty;
 
         for (var i = 0; i < plans.Length; i++)

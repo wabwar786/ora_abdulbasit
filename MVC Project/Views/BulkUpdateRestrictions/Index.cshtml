@@ -412,8 +412,12 @@
                 <div class="bulkrate-calendar-grid" id="bulkRestrictionCalendarRight"></div>
             </section>
         </div>
+        <div class="bulkrestrict-calendar-legend" aria-label="Date selection legend">
+            <span><i class="bulkrestrict-legend-swatch is-selected" aria-hidden="true"></i> Selected for update</span>
+            <span><i class="bulkrestrict-legend-swatch is-skipped" aria-hidden="true"></i> Skipped by weekday filter</span>
+        </div>
         <div class="bulkrate-calendar-footer">
-            <span id="bulkRestrictionCalendarText">Select date range</span>
+            <span id="bulkRestrictionCalendarText" aria-live="polite">Select date range</span>
             <div>
                 <button type="button" class="bulkrate-calendar-clear" id="bulkRestrictionCalendarClear">Clear</button>
                 <button type="button" class="bulkrate-calendar-apply" id="bulkRestrictionCalendarApply">Apply</button>

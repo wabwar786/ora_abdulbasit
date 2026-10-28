@@ -419,3 +419,60 @@
         display: none;
     }
 }
+
+/* Restriction calendar: visible range selection + weekday-filter preview.
+   Only the picker appearance is changed; Preview and Save request data are unchanged. */
+.bulkrestrict-root .bulkrate-calendar-day.bulk-rate-upload-range-fill:not(.bulkrestrict-calendar-skipped) {
+    background: #d9e9fc;
+    color: #124a85;
+    box-shadow: inset 0 0 0 1px #accded;
+    font-weight: 700;
+}
+
+.bulkrestrict-root .bulkrate-calendar-day.bulk-rate-upload-range-start,
+.bulkrestrict-root .bulkrate-calendar-day.bulk-rate-upload-range-end {
+    background: #15558e !important;
+    color: #fff !important;
+    box-shadow: inset 0 0 0 1px #15558e;
+}
+
+.bulkrestrict-root .bulkrate-calendar-day.bulkrestrict-calendar-skipped {
+    background: #f2f4f7 !important;
+    color: #8291a5 !important;
+    box-shadow: inset 0 0 0 1px #e0e6ee;
+    font-weight: 500;
+}
+
+.bulkrestrict-root .bulkrate-calendar-day.bulkrestrict-calendar-skipped-boundary {
+    box-shadow: inset 0 0 0 2px #8598b1;
+}
+
+.bulkrestrict-calendar-legend {
+    padding: 2px 14px 8px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    color: #5c6f84;
+    font-size: 10px;
+}
+
+.bulkrestrict-calendar-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.bulkrestrict-legend-swatch {
+    width: 11px;
+    height: 11px;
+    display: inline-block;
+    border-radius: 3px;
+    flex: 0 0 11px;
+}
+
+.bulkrestrict-legend-swatch.is-selected { background: #d9e9fc; border: 1px solid #accded; }
+.bulkrestrict-legend-swatch.is-skipped { background: #f2f4f7; border: 1px solid #d3dce7; }
+
+@media (max-width: 680px) {
+    .bulkrestrict-calendar-legend { gap: 8px 12px; }
+}

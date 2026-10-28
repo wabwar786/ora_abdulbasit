@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Services;
 
@@ -116,7 +116,7 @@ public sealed class BookingCutoffDailyService
 
                         var preparation = await uploader.PrepareBookingCutoffRowsWithCountsAsync(
                             hotelId, today, through, plans, Array.Empty<string>(),
-                            "BookingCutoffDailyJob", cancellationToken);
+                            "BookingCutoffDailyJob", today, cancellationToken);
                         result.UpdatedRows = preparation.UpdatedRows;
                         result.InsertedRows = preparation.InsertedRows;
 
@@ -200,7 +200,9 @@ FROM
     UNION
     SELECT CONVERT(NVARCHAR(50), dr.hotel_id) AS hotel_id
     FROM dbo.datesrates dr
-    WHERE dr.hotel_id IS NOT NULL AND ISNULL(dr.cutoff_stop_sell,0)=1
+    WHERE dr.hotel_id IS NOT NULL
+      AND (ISNULL(dr.cutoff_stop_sell,0)=1
+           OR ISNULL(TRY_CONVERT(INT,dr.cutoff_days),0)>0)
 ) H
 WHERE NULLIF(LTRIM(RTRIM(H.hotel_id)),N'') IS NOT NULL
 ORDER BY H.hotel_id;";
@@ -232,7 +234,8 @@ FROM (
     SELECT CONVERT(NVARCHAR(50),dr.planid) AS plan_id
     FROM dbo.datesrates dr
     WHERE CONVERT(NVARCHAR(50),dr.hotel_id)=@hotel
-      AND ISNULL(dr.cutoff_stop_sell,0)=1
+      AND (ISNULL(dr.cutoff_stop_sell,0)=1
+           OR ISNULL(TRY_CONVERT(INT,dr.cutoff_days),0)>0)
 ) plans
 WHERE NULLIF(LTRIM(RTRIM(plans.plan_id)),N'') IS NOT NULL;";
 
