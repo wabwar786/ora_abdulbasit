@@ -1462,3 +1462,11 @@ body.fdcmw-fdc-move-drop-pending .fdcmw-fdc-drag-focus-backdrop{
 .fdcmw-fdc-payment-receipt,.fdcmw-fdc-payment-refund{display:inline-flex;align-items:center;justify-content:center;min-height:20px!important;height:auto!important;padding:1px 3px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:10px!important;font-weight:700!important;text-decoration:underline;text-underline-offset:3px;line-height:1.4;cursor:pointer}
 .fdcmw-fdc-payment-receipt{color:#155a91!important}.fdcmw-fdc-payment-refund{color:#b42336!important}
 .fdcmw-fdc-payment-receipt:focus-visible,.fdcmw-fdc-payment-refund:focus-visible{outline:2px solid #2456a2!important;outline-offset:2px}
+
+/* Payment history: one concise row; technical Stripe IDs remain in backend logs. */
+.fdcmw-fdc-payment-log-entry{display:grid;grid-template-columns:minmax(70px,1fr) minmax(56px,.8fr) minmax(52px,.7fr) auto;align-items:center;gap:5px;padding:7px 0;font-size:9px;line-height:1.25}
+.fdcmw-fdc-payment-date{white-space:nowrap;color:#60758a}
+.fdcmw-fdc-payment-method{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#52697f}
+.fdcmw-fdc-payment-log-entry>strong{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+.fdcmw-fdc-payment-log-entry .fdcmw-fdc-payment-log-tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:nowrap;gap:5px;margin:0;white-space:nowrap}
+.fdcmw-fdc-payment-log-entry .fdcmw-fdc-payment-receipt,.fdcmw-fdc-payment-log-entry .fdcmw-fdc-payment-refund{min-height:18px!important;padding:0 1px!important;font-size:9px!important;white-space:nowrap}

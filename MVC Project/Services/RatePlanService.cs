@@ -197,6 +197,14 @@ WHERE cp.hotel_id=@hotel
             }
         }
 
+        // A newly created plan may have Save Details completed but no per-room
+        // category_plan rows until Save Rates is clicked. Never claim that such
+        // a plan was recalculated; its adjustment/derived relationship is unknown.
+        var unfinishedPlans = await LoadPlansWithoutRoomRatesAsync(connection, hotelId, cancellationToken);
+        var incompleteWarning = unfinishedPlans.Count > 0
+            ? $" Save Rates for these new plans before their prices can follow the hotel base: {string.Join(", ", unfinishedPlans.Take(5))}{(unfinishedPlans.Count > 5 ? " (and others)" : string.Empty)}."
+            : string.Empty;
+
         var planIds = await LoadAllLocalPlanIdsAsync(connection, hotelId, cancellationToken);
 
         // PlanDefaults uploads the category_plan prices directly. Unlike the Rates
@@ -211,9 +219,11 @@ WHERE cp.hotel_id=@hotel
             cancellationToken);
 
         return RatePlanOperationResult.Ok(
-            delta == 0m
-                ? $"Base rate {request.NewBaseRate:0.##} unchanged. Rate plans were recalculated and queued for Channex upload."
-                : $"Base rate updated from {oldBase:0.##} to {request.NewBaseRate:0.##} (Δ {delta:+0.##;-0.##}). All rate plans were recalculated and queued for Channex upload.");
+            (delta == 0m
+                ? $"Base rate {request.NewBaseRate:0.##} unchanged. Saved room rates were recalculated and queued for Channex upload."
+                : $"Base rate updated from {oldBase:0.##} to {request.NewBaseRate:0.##} (Δ {delta:+0.##;-0.##}). Saved room rates were recalculated and queued for Channex upload.")
+            + incompleteWarning,
+            warning: unfinishedPlans.Count > 0);
     }
 
     public async Task<RatePlanOperationResult> SaveDetailsAsync(
@@ -340,6 +350,9 @@ WHEN NOT MATCHED THEN
                 : "Rate plan details saved, but the Booking Cutoff synchronization job could not be queued."
             : "Rate plan details saved.";
 
+        if (!before.Exists)
+            message += " New plan created. Click Save Rates to initialize the room rates; only then can a base-rate change recalculate this plan.";
+
         return RatePlanOperationResult.Ok(message, planName, idValue, cutoffChanged && !queued);
     }
 
@@ -426,11 +439,12 @@ WHEN NOT MATCHED THEN
                     if (parentPlan.Equals(planName, StringComparison.OrdinalIgnoreCase))
                         return RatePlanOperationResult.Fail("A rate plan cannot be derived from itself.");
 
-                    // Use the parent's EFFECTIVE rate for today: a date-specific inventory rate wins,
-                    // otherwise category_plan.rate is used. This prevents a newly-derived plan from
-                    // showing a stale category_plan default (for example 17 instead of 26 + 5 = 31).
-                    var parentRates = await LoadParentEffectiveRatesAsync(
-                        connection, transaction, hotelId, parentPlan, today, cancellationToken);
+                    // Derived plan DEFAULTS must be calculated from the parent's
+                    // category_plan default, not a Bulk/Yield/Cell override that happens
+                    // to be active today. Date-specific inherited prices are calculated
+                    // separately by Inventory/derived-rate preparation.
+                    var parentRates = await LoadParentDefaultRatesAsync(
+                        connection, transaction, hotelId, parentPlan, cancellationToken);
                     if (parentRates.Count == 0)
                         return RatePlanOperationResult.Fail("The selected parent plan does not have room rates yet.");
 
@@ -465,12 +479,10 @@ WHEN NOT MATCHED THEN
 
                 var graph = await LoadPlanGraphAsync(connection, transaction, hotelId, cancellationToken);
                 idsToPush = GetPlanAndDescendantIds(graph, meta.LocalPlanId, planName);
-                // Remove only legacy, automatically generated simple-plan daily prices
-                // that still exactly match the PREVIOUS category_plan defaults. Preserve
-                // manual/Yield changes and all restriction metadata. This avoids retaining
-                // stale prices when switching an existing simple plan to default-only rates.
-                await RemoveRedundantSimpleDefaultsAsync(connection, transaction, hotelId,
-                    today, endDate, meta.LocalPlanId, cancellationToken);
+                // Saving rate-plan prices MUST NOT rewrite or delete dated rows.
+                // category_plan is the default; Inventory resolves uploadfrom=0 rows
+                // against the current default at read time. Bulk/Cell/Yield overrides
+                // and every dated restriction remain untouched.
 
                 // A derived plan's category_plan value is the default calculated from the
                 // parent's rate TODAY, not necessarily the effective rate on every date.
@@ -500,13 +512,11 @@ WHEN NOT MATCHED THEN
         var bookingCutoff = await LoadBookingCutoffSnapshotAsync(
             connection, hotelId, planName, cancellationToken);
 
-        // Keep the original simple-plan path unchanged. Derived plans make the
-        // decision inside their transaction so their audit and upload agree.
+        // A simple plan save is strictly a category_plan default update. Any
+        // generated daily row is a cache, not an override; transmit the updated
+        // default directly, skipping actual dated Bulk/Cell/Yield overrides.
         if (!request.Derive)
-        {
-            useDefaultOnlyUpload = await CanUploadPlanDefaultsWithoutDailyRowsAsync(
-                connection, hotelId, today, endDate, idsToPush, cancellationToken);
-        }
+            useDefaultOnlyUpload = true;
 
         // Prime the next month immediately so Inventory shows the correct derived values as soon as
         // Save Rates returns. This runs OUTSIDE the transaction and is a few set-based statements,
@@ -697,6 +707,32 @@ WHEN NOT MATCHED THEN
     }
 
     // ---------------- Page loading ----------------
+
+    private static async Task<List<string>> LoadPlansWithoutRoomRatesAsync(
+        SqlConnection connection, string hotelId, CancellationToken cancellationToken)
+    {
+        // Save Details inserts into plans, while Save Rates inserts into category_plan.
+        // Detect the gap; do not guess a new plan's per-room increment or parent.
+        var missing = new List<string>();
+        await using var command = new SqlCommand(@"
+SELECT DISTINCT p.name
+FROM dbo.plans p
+WHERE p.hotel_id=@hotel
+  AND NOT EXISTS (
+      SELECT 1 FROM dbo.category_plan cp
+      WHERE cp.hotel_id=p.hotel_id
+        AND cp.planname=p.name
+  )
+ORDER BY p.name;", connection);
+        command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var name = Convert.ToString(reader["name"])?.Trim();
+            if (!string.IsNullOrEmpty(name)) missing.Add(name);
+        }
+        return missing;
+    }
 
     private static async Task<IReadOnlyList<RatePlanListItem>> LoadPlansAsync(
         SqlConnection connection,
@@ -1132,46 +1168,30 @@ WHERE hotel_id=@hotel AND planname=@plan;", connection, transaction);
         return result;
     }
 
-    private static async Task<Dictionary<string, decimal>> LoadParentEffectiveRatesAsync(
+    private static async Task<Dictionary<string, decimal>> LoadParentDefaultRatesAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         string hotelId,
         string parentPlan,
-        DateTime effectiveDate,
         CancellationToken cancellationToken)
     {
+        // category_plan represents the default for all dates without a real
+        // override; a dated Bulk/Yield/Cell price must not become the default
+        // when creating or editing a derived rate plan.
         var result = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-
         await using var command = new SqlCommand(@"
-SELECT cp.category_id,
-       COALESCE(DailyRate.rate, TRY_CONVERT(decimal(18,2),cp.rate), 0) AS effective_rate
-FROM dbo.category_plan cp
-OUTER APPLY
-(
-    SELECT TOP (1) TRY_CONVERT(decimal(18,2),dr.rate) AS rate
-    FROM dbo.datesrates dr
-    WHERE dr.hotel_id=cp.hotel_id
-      AND CONVERT(nvarchar(50),dr.planid)=CONVERT(nvarchar(50),cp.localplanid)
-      AND CONVERT(nvarchar(100),dr.category_id)=CONVERT(nvarchar(100),cp.category_id)
-      AND dr.[date]=@date
-      AND TRY_CONVERT(decimal(18,2),dr.rate) IS NOT NULL
-    ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
-             CASE WHEN ISNULL(dr.upload,0)=0 THEN 0 ELSE 1 END
-) DailyRate
-WHERE cp.hotel_id=@hotel AND cp.planname=@plan;", connection, transaction);
-
+SELECT category_id, TRY_CONVERT(decimal(18,2),rate) AS default_rate
+FROM dbo.category_plan
+WHERE hotel_id=@hotel AND planname=@plan;", connection, transaction);
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
         command.Parameters.Add("@plan", SqlDbType.NVarChar, 200).Value = parentPlan;
-        command.Parameters.Add("@date", SqlDbType.Date).Value = effectiveDate.Date;
-
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var category = Convert.ToString(reader["category_id"])?.Trim() ?? string.Empty;
-            if (category.Length == 0) continue;
-            result[category] = ToDecimal(reader["effective_rate"]);
+            var categoryId = Convert.ToString(reader["category_id"])?.Trim() ?? string.Empty;
+            if (categoryId.Length == 0 || reader["default_rate"] == DBNull.Value) continue;
+            result[categoryId] = ToDecimal(reader["default_rate"]);
         }
-
         return result;
     }
 
@@ -1923,10 +1943,10 @@ WHERE dr.hotel_id=@hotel
     }
 
     /// <summary>
-    /// Uniform plans can be sent directly from category_plan only if the affected plans
-    /// have no daily rows, and ancestors have no effective day-specific pricing. Ordinary
-    /// legacy rows in an ancestor are acceptable when identical to its category_plan
-    /// default; intentional override rows, Yield rules and stale prices are not.
+    /// Plan-default rates can be uploaded directly from category_plan even when
+    /// legacy uploadfrom=0 dated rows exist. Explicit Bulk/Cell/Yield rates are
+    /// skipped by the uploader. Derived children of a date-overridden ancestor
+    /// still require derived daily-rate preparation for that inherited date.
     /// </summary>
     private static async Task<bool> CanUploadPlanDefaultsWithoutDailyRowsAsync(
         SqlConnection connection, string hotelId, DateTime fromDate, DateTime toDate,
@@ -1963,9 +1983,6 @@ AND (
    TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3)
    OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NOT NULL
    OR cp.id IS NULL
-   OR TRY_CONVERT(decimal(18,4),dr.rate) IS NULL
-   OR TRY_CONVERT(decimal(18,4),cp.rate) IS NULL
-   OR TRY_CONVERT(decimal(18,4),dr.rate)<>TRY_CONVERT(decimal(18,4),cp.rate)
 )" : string.Empty;
             await using var cmd = new SqlCommand(@"
 SELECT TOP (1) 1
@@ -1983,8 +2000,11 @@ AND TRY_CONVERT(int,dr.planid) IN (" + list + ")" + exceptional, connection, tra
                 cmd.Parameters.Add("@p" + i, SqlDbType.Int).Value = sorted[i];
             return await cmd.ExecuteScalarAsync(cancellationToken) != null;
         }
-        return !await HasRowsAsync(affectedPlanIds, false)
-            && !await HasRowsAsync(ancestors, true);
+        // Dated rows with uploadfrom=0 are generated caches, not overrides.
+        // Even existing explicit overrides in the edited plan can be skipped by
+        // UploadPlanDefaultsAsync. Only a dated override in an ancestor requires
+        // recalculating descendant rates for that date.
+        return !await HasRowsAsync(ancestors, true);
     }
 
     private void QueueRateUpload(

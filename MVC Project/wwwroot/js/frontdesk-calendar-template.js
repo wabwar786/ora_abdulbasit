@@ -546,14 +546,13 @@
       const canRefund=!closed && cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
       const receipt=String(p.receiptUrl||'').trim();
       return `<div class="fdc-payment-log-entry" data-payment-log-id="${Number(p.id||0)}">
-        <div class="fdc-payment-log-meta">
-          <span>${fmt(p.date,true)} · ${esc(p.method||'Payment')}${p.reference?` · ${esc(p.reference)}`:''}</span>
-          <strong class="${Number(p.amount||0)<0?'fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
-        </div>
-        ${(receipt||canRefund)?`<div class="fdc-payment-log-tools">
+        <span class="fdc-payment-date" title="Payment date">${fmt(p.date,true)}</span>
+        <span class="fdc-payment-method" title="${esc(p.method||'Payment')}">${esc(p.method||'Payment')}</span>
+        <strong class="${Number(p.amount||0)<0?'fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
+        <div class="fdc-payment-log-tools">
           ${receipt?`<a class="fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener" aria-label="View payment receipt">Receipt</a>`:''}
           ${canRefund?`<button type="button" class="fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}" title="Refund this payment">Refund</button>`:''}
-        </div>`:''}
+        </div>
       </div>`;
     }).join('');
     const holdPanel=paymentHoldsHtml(holds);
@@ -2040,8 +2039,32 @@ ${tag}`:tag;
   calendar.addEventListener('mouseout',e=>{if(e.target.closest('.fdc-bar[data-booking]'))closeTip();});
   calendar.addEventListener('dragstart',e=>{const bar=e.target.closest('.fdc-bar[data-booking]');if(bar)dragStart(e,bar);});
   calendar.addEventListener('dragend',()=>{if(!state.dropPending)finishDragUi();});
-  calendar.addEventListener('dragover',e=>{const cell=e.target.closest('.fdc-cell');if(cell&&state.drag){e.preventDefault();markDropPreview(cell);}});
-  calendar.addEventListener('drop',e=>{const cell=e.target.closest('.fdc-cell');if(cell)dropBooking(e,cell);});
+  // Long reservation bars are absolutely positioned OVER their date cells. A forward
+  // move by one or two nights often drops on the bar (a sibling of the cells), not
+  // on a .fdc-cell. Resolve the covered date from the pointer's X coordinate.
+  // The selected booking remains excluded by payment ID in the availability check.
+  function bookingDropCell(e){
+    const direct=e.target.closest('.fdc-cell');
+    if(direct)return direct;
+    const row=e.target.closest('.fdc-room-row');
+    if(!row)return null;
+    const cells=[...row.querySelectorAll('.fdc-cell')];
+    if(!cells.length)return null;
+    const x=e.clientX;
+    // Do not snap a drop on the room label/outside the visible dates to a day.
+    return cells.find(cell=>{
+      const rect=cell.getBoundingClientRect();
+      return x>=rect.left&&x<rect.right;
+    })||null;
+  }
+  calendar.addEventListener('dragover',e=>{
+    const cell=bookingDropCell(e);
+    if(cell&&state.drag){e.preventDefault();markDropPreview(cell);}
+  });
+  calendar.addEventListener('drop',e=>{
+    const cell=bookingDropCell(e);
+    if(cell&&state.drag)dropBooking(e,cell);
+  });
   calendar.addEventListener('pointerdown',e=>{const h=e.target.closest('[data-resize]');if(h)resizeStart(e,h);});
   document.addEventListener('pointermove',resizeMove);
   document.addEventListener('pointerup',resizeEnd);

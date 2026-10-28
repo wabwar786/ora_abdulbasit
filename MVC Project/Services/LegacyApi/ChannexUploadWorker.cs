@@ -1,4 +1,4 @@
-using Orapmshms.Services.LegacyApi;
+﻿using Orapmshms.Services.LegacyApi;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using System;
@@ -51,11 +51,23 @@ namespace Orapmshms.Services.LegacyApi
 SELECT dr.planid      AS localplanid,
        dr.category_id AS localcategoryid,
        dr.[date],
-       CAST(dr.rate AS decimal(18,2)) AS rate
+       -- Legacy Yield uploader must not resend old generated simple-plan
+       -- prices after Rate Plans changed category_plan defaults.
+       CASE WHEN ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
+                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NULL
+                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),cp.parent_planid))),N'') IS NULL
+                 AND TRY_CONVERT(decimal(18,2),cp.rate) IS NOT NULL
+            THEN TRY_CONVERT(decimal(18,2),cp.rate)
+            ELSE TRY_CONVERT(decimal(18,2),dr.rate) END AS rate
 FROM dbo.datesrates dr
+LEFT JOIN dbo.category_plan cp
+  ON cp.hotel_id=dr.hotel_id
+ AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
+ AND CONVERT(nvarchar(100),cp.category_id)=CONVERT(nvarchar(100),dr.category_id)
 WHERE dr.hotel_id=@hid
   AND dr.[date] >= @fromDate AND dr.[date] <= @toDate
-  AND dr.upload = 0;", con))
+  AND dr.upload = 0
+  AND TRY_CONVERT(decimal(18,2),dr.rate) IS NOT NULL;", con))
                 {
                     cmd.Parameters.AddWithValue("@hid", hotelId);
                     cmd.Parameters.AddWithValue("@fromDate", fromDate.Date);

@@ -526,6 +526,12 @@ OUTER APPLY
       AND CONVERT(nvarchar(100),drP.category_id)=CONVERT(nvarchar(100),child.category_id)
       AND drP.[date]=D.[date]
       AND TRY_CONVERT(decimal(18,2),drP.rate) IS NOT NULL
+      -- A simple parent uses category_plan unless its rate was explicitly
+      -- overridden for this date. A derived parent was prepared immediately
+      -- before its child and may legitimately have a generated dated price.
+      AND (NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),parent.parent_planid))),N'') IS NOT NULL
+           OR TRY_CONVERT(int,drP.uploadfrom) IN (1,2,3)
+           OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),drP.yeildruleid))),N'') IS NOT NULL)
     ORDER BY CASE WHEN TRY_CONVERT(int,drP.uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
              CASE WHEN ISNULL(drP.upload,0)=0 THEN 0 ELSE 1 END
 ) ParentDaily
@@ -1079,14 +1085,26 @@ WHERE dr.hotel_id=@hotel
 
         await using (var connection = new SqlConnection(_connectionString))
         await using (var command = new SqlCommand(@"
-SELECT CONVERT(nvarchar(50),planid) AS planid,
-       CONVERT(nvarchar(50),category_id) AS category_id,
-       [date],TRY_CONVERT(decimal(18,2),rate) AS rate
-FROM dbo.datesrates
-WHERE hotel_id=@hotel
-  AND [date] BETWEEN @from AND @to
-  AND ISNULL(upload,0)=0
-  AND TRY_CONVERT(decimal(18,2),rate) IS NOT NULL;", connection))
+SELECT CONVERT(nvarchar(50),dr.planid) AS planid,
+       CONVERT(nvarchar(50),dr.category_id) AS category_id,
+       dr.[date],
+       -- A queued upload of an old generated row must never send an
+       -- obsolete simple-plan price after category_plan has changed.
+       CASE WHEN ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
+                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NULL
+                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),cp.parent_planid))),N'') IS NULL
+                 AND TRY_CONVERT(decimal(18,2),cp.rate) IS NOT NULL
+            THEN TRY_CONVERT(decimal(18,2),cp.rate)
+            ELSE TRY_CONVERT(decimal(18,2),dr.rate) END AS rate
+FROM dbo.datesrates dr
+LEFT JOIN dbo.category_plan cp
+  ON cp.hotel_id=dr.hotel_id
+ AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
+ AND CONVERT(nvarchar(100),cp.category_id)=CONVERT(nvarchar(100),dr.category_id)
+WHERE dr.hotel_id=@hotel
+  AND dr.[date] BETWEEN @from AND @to
+  AND ISNULL(dr.upload,0)=0
+  AND TRY_CONVERT(decimal(18,2),dr.rate) IS NOT NULL;", connection))
         {
             command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
             command.Parameters.Add("@from", SqlDbType.Date).Value = fromDate.Date;

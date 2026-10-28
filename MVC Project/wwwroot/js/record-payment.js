@@ -540,6 +540,29 @@
     return false;
   }
 
+  // The terminal success can arrive before the asynchronous hold webhook commits.
+  // Wait briefly for the actual authorization to be readable before returning to
+  // Calendar / Check-In / Pending Payments. A HOLD is NOT a received payment.
+  async function waitForPdqHold(regId, paymentIntentId){
+    if(!paymentIntentId)return false;
+    for(let attempt=0;attempt<12;attempt++){
+      try{
+        const u=new URL(defaults.holdsUrl,location.origin);
+        u.searchParams.set('regId',regId);
+        u.searchParams.set('_',String(Date.now()));
+        const res=await fetch(u.toString(),{
+          credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json'}
+        });
+        if(res.ok){
+          const data=await res.json();
+          if(Array.isArray(data?.holds)&&data.holds.some(h=>String(h.paymentIntentId||'')===String(paymentIntentId)))return true;
+        }
+      }catch(_){ /* Webhook may still be committing; retry. */ }
+      await new Promise(resolve=>setTimeout(resolve,500));
+    }
+    return false;
+  }
+
   window.addEventListener('message',async e=>{
     if(e.origin!==window.location.origin || !e.data) return;
     if(!activePdqWindow || e.source!==activePdqWindow || !activePdqContext) return;
@@ -547,13 +570,27 @@
     const pdqContext = activePdqContext;
     if(e.data.regId && String(e.data.regId)!==String(pdqContext.regId||'')) return;
     if(e.data.type==='PDQ_HOLD_AUTHORIZED'){
-      showToast('PDQ payment hold authorized. It is ready to capture or release later.');
-      if(current && String(current.regId)===String(pdqContext.regId)) {
-        hidePdqChooser();
-        await loadHolds(false);
-      }
-      activePdqWindow=null;
-      activePdqContext=null;
+      if(pdqCompletionInProgress)return;
+      pdqCompletionInProgress=true;
+      // The success message comes from the verified PDQ window and Stripe result.
+      // No room payment is recorded here: the authorization remains a hold.
+      showToast('PDQ hold authorized. Updating the originating page…');
+      const context=pdqContext;
+      try{
+        const posted=await waitForPdqHold(context.regId,e.data.paymentIntentId);
+        if(!posted)showToast('Hold approved. The webhook may still be processing.',true);
+        const detail={context,response:e.data,method:'PDQ Hold',hold:true,posted};
+        root.dispatchEvent(new CustomEvent('recordpayment:completed',{detail}));
+        const callback=context.onCompleted;
+        // If the current popup is still displayed, refresh its hold list too.
+        if(current && String(current.regId)===String(context.regId)) {
+          hidePdqChooser();
+          await loadHolds(false);
+        }
+        activePdqWindow=null;
+        activePdqContext=null;
+        if(typeof callback==='function')await Promise.resolve(callback(detail));
+      }finally{pdqCompletionInProgress=false;}
     }else if(e.data.type==='PDQ_PAYMENT_SAVED'){
       if(pdqCompletionInProgress) return;
       pdqCompletionInProgress=true;

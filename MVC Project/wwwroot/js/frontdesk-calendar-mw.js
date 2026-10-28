@@ -707,14 +707,13 @@
       const canRefund=!closed && cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
       const receipt=String(p.receiptUrl||'').trim();
       return `<div class="fdcmw-fdc-payment-log-entry" data-payment-log-id="${Number(p.id||0)}">
-        <div class="fdcmw-fdc-payment-log-meta">
-          <span>${fmt(p.date,true)} · ${esc(p.method||'Payment')}${p.reference?` · ${esc(p.reference)}`:''}</span>
-          <strong class="${Number(p.amount||0)<0?'fdcmw-fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
-        </div>
-        ${(receipt||canRefund)?`<div class="fdcmw-fdc-payment-log-tools">
+        <span class="fdcmw-fdc-payment-date" title="Payment date">${fmt(p.date,true)}</span>
+        <span class="fdcmw-fdc-payment-method" title="${esc(p.method||'Payment')}">${esc(p.method||'Payment')}</span>
+        <strong class="${Number(p.amount||0)<0?'fdcmw-fdc-payment-refund-amount':''}">${money(p.amount)}</strong>
+        <div class="fdcmw-fdc-payment-log-tools">
           ${receipt?`<a class="fdcmw-fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener" aria-label="View payment receipt">Receipt</a>`:''}
           ${canRefund?`<button type="button" class="fdcmw-fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}" title="Refund this payment">Refund</button>`:''}
-        </div>`:''}
+        </div>
       </div>`;
     }).join('');
     const holdPanel=paymentHoldsHtml(holds);

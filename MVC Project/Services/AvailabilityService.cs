@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
@@ -133,8 +133,9 @@ public sealed class AvailabilityService : IAvailabilityService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // Static rate-plan metadata is short-lived cached; all changing inventory data
-        // continues to be read in parallel directly from SQL Server.
+        // category_plan contains live prices. Read it on each inventory page
+        // request; caching even for five seconds can show the previous base rate
+        // immediately after a successful Rate Plans save.
         var plansTask = LoadPlansCachedAsync(
             hotelId, categoryIds, cancellationToken);
         var availabilityTask = WithConnectionAsync(
@@ -152,6 +153,11 @@ public sealed class AvailabilityService : IAvailabilityService
         var availability = await availabilityTask;
         var rates = await ratesTask;
         var occupied = await occupiedTask;
+
+        // Resolve generated daily rows using current plan defaults. This is a
+        // READ-ONLY operation: dated Bulk/Cell/Yield overrides and restrictions
+        // are not modified, while derived plans follow the effective parent.
+        ApplyEffectivePlanRates(plans, rates, startDate, endDate);
 
         // The live grid query already contains restriction columns. Prime a short-lived
         // per-plan cache from that same result so expanding restrictions normally needs
@@ -1632,15 +1638,11 @@ OFFSET @offset ROWS FETCH NEXT @take ROWS ONLY;";
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var cacheKey = $"availability:plans:{hotelId}:{string.Join("|", normalizedIds)}";
-        if (_cache.TryGetValue<List<AvailabilityDbPlan>>(cacheKey, out var cached) && cached != null)
-            return cached;
-
-        var value = await WithConnectionAsync(
+        // Do not cache category_plan prices; their values are changed by Save
+        // Rates and Base Rate independently of AvailabilityService requests.
+        return await WithConnectionAsync(
             connection => LoadPlansAsync(connection, hotelId, normalizedIds, cancellationToken),
             cancellationToken);
-        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(5));
-        return value;
     }
 
     private async Task<GridMetadata> LoadGridMetadataCachedAsync(
@@ -1669,15 +1671,10 @@ OFFSET @offset ROWS FETCH NEXT @take ROWS ONLY;";
         string hotelId,
         CancellationToken cancellationToken)
     {
-        var cacheKey = $"availability:hotel-base-rate:{hotelId}";
-        if (_cache.TryGetValue<decimal>(cacheKey, out var cached))
-            return cached;
-
-        var value = await WithConnectionAsync(
+        // Hotel base-rate changes must be visible on the very next request.
+        return await WithConnectionAsync(
             connection => GetHotelBaseRateAsync(connection, hotelId, cancellationToken),
             cancellationToken);
-        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(30));
-        return value;
     }
 
     private async Task<bool> LoadHotelRoundTotalCachedAsync(
@@ -1823,6 +1820,64 @@ ORDER BY cp.category_id, ISNULL(p.orderid,999999), cp.planname;";
         return result;
     }
 
+    // Rate Plans saves change category_plan only. A datesrates row marked
+    // uploadfrom=0 is generated/default data, even if it contains an older
+    // numerical rate. Resolve it at read time; preserve all dated restrictions.
+    private static void ApplyEffectivePlanRates(
+        IReadOnlyList<AvailabilityDbPlan> plans,
+        Dictionary<(string CategoryId, string PlanId, DateTime Date), AvailabilityDbRate> rates,
+        DateTime start,
+        DateTime end)
+    {
+        foreach (var categoryPlans in plans.GroupBy(x => x.CategoryId, StringComparer.OrdinalIgnoreCase))
+        {
+            var byName = categoryPlans.Where(x => !string.IsNullOrWhiteSpace(x.PlanName))
+                .GroupBy(x => x.PlanName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+
+            for (var day = start.Date; day <= end.Date; day = day.AddDays(1))
+            {
+                var resolved = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+                var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                decimal Resolve(AvailabilityDbPlan plan)
+                {
+                    if (resolved.TryGetValue(plan.PlanId, out var value)) return value;
+                    var key = (plan.CategoryId, plan.PlanId, day);
+                    if (!rates.TryGetValue(key, out var daily))
+                        return plan.DefaultRate;
+                    if (daily.IsExplicitPriceOverride)
+                        return resolved[plan.PlanId] = daily.Rate;
+
+                    if (!visiting.Add(plan.PlanId))
+                        return daily.Rate; // Invalid cyclic relationship: preserve existing value.
+                    try
+                    {
+                        if (!plan.IsDerived)
+                        {
+                            daily.Rate = plan.DefaultRate;
+                            daily.BaseRate = plan.BaseRate;
+                        }
+                        else if (byName.TryGetValue(plan.ParentPlanName, out var parent) &&
+                                 !string.Equals(parent.PlanId, plan.PlanId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var parentRate = Resolve(parent);
+                            var adjustment = string.Equals(plan.ChangeType, "Percentage", StringComparison.OrdinalIgnoreCase)
+                                ? parentRate * plan.Adjustment / 100m
+                                : plan.Adjustment;
+                            daily.BaseRate = parentRate;
+                            daily.Rate = Math.Round(parentRate + adjustment, 2, MidpointRounding.AwayFromZero);
+                        }
+                        return resolved[plan.PlanId] = daily.Rate;
+                    }
+                    finally { visiting.Remove(plan.PlanId); }
+                }
+
+                foreach (var plan in categoryPlans) Resolve(plan);
+            }
+        }
+    }
+
     private sealed record AvailabilityValue(string Value, string Upload);
 
     private async Task<Dictionary<(string CategoryId, DateTime Date), AvailabilityValue>> LoadAvailabilityAsync(
@@ -1875,29 +1930,41 @@ WHERE hotel_id=@hotel
         if (categoryIds.Count == 0) return result;
         var inClause = string.Join(",", categoryIds.Select((_, index) => "@ratecat" + index));
         var restrictionColumns = includeRestrictionDetails
+            ? ",dr.min_los,dr.min_stay_through,dr.max_los,dr.cutoff_days,dr.closed_to_arrival,dr.closed_to_departure"
+            : string.Empty;
+        var outerRestrictionColumns = includeRestrictionDetails
             ? ",min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure"
             : string.Empty;
         var sql = $@"
 ;WITH RankedRates AS
 (
-    SELECT category_id,planid,[date],rate,upload,baserate,uploadfrom,
-           ISNULL(stop_sell,0) AS stop_sell,
-           ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell
+    SELECT dr.category_id,dr.planid,dr.[date],
+           dr.rate,
+           dr.upload,
+           dr.baserate,
+           dr.uploadfrom,
+           CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3)
+                   OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NOT NULL
+                THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS is_price_override,
+           ISNULL(dr.stop_sell,0) AS stop_sell,
+           ISNULL(dr.cutoff_stop_sell,0) AS cutoff_stop_sell
            {restrictionColumns},
            ROW_NUMBER() OVER
            (
-               PARTITION BY hotel_id,CONVERT(nvarchar(100),category_id),CONVERT(nvarchar(50),planid),[date]
-               ORDER BY CASE WHEN TRY_CONVERT(int,uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
-                        CASE WHEN ISNULL(upload,0)=0 THEN 0 ELSE 1 END
+               PARTITION BY dr.hotel_id,CONVERT(nvarchar(100),dr.category_id),CONVERT(nvarchar(50),dr.planid),dr.[date]
+               ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3)
+                                   OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NOT NULL
+                              THEN 0 ELSE 1 END,
+                        CASE WHEN ISNULL(dr.upload,0)=0 THEN 0 ELSE 1 END
            ) AS rn
-    FROM dbo.datesrates
-    WHERE hotel_id=@hotel
-      AND [date] BETWEEN @start AND @end
-      AND category_id IN ({inClause})
+    FROM dbo.datesrates dr
+    WHERE dr.hotel_id=@hotel
+      AND dr.[date] BETWEEN @start AND @end
+      AND dr.category_id IN ({inClause})
 )
-SELECT category_id,planid,[date],rate,upload,baserate,uploadfrom,
+SELECT category_id,planid,[date],rate,upload,baserate,uploadfrom,is_price_override,
        stop_sell,cutoff_stop_sell
-       {restrictionColumns}
+       {outerRestrictionColumns}
 FROM RankedRates
 WHERE rn=1;";
 
@@ -1919,6 +1986,7 @@ WHERE rn=1;";
                 Rate = ToDecimal(reader["rate"]),
                 Upload = Convert.ToString(reader["upload"], CultureInfo.InvariantCulture) ?? string.Empty,
                 UploadFrom = Convert.ToString(reader["uploadfrom"], CultureInfo.InvariantCulture) ?? string.Empty,
+                IsExplicitPriceOverride = reader["is_price_override"] != DBNull.Value && Convert.ToBoolean(reader["is_price_override"], CultureInfo.InvariantCulture),
                 BaseRate = ToDecimal(reader["baserate"]),
                 StopSell = ToBool(reader["stop_sell"]),
                 CutoffStopSell = ToBool(reader["cutoff_stop_sell"]),

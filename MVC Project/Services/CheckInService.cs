@@ -1432,6 +1432,11 @@ WHERE Hotel_id=@hotel AND room_no=@room
             if (row == null) return CheckInOperationResult.Fail("Charge not found.");
             if (IsCheckedOut(row.ReservationStatus))
                 return CheckInOperationResult.Fail("Checked-out charges cannot be edited.");
+            // The Check-In grid permits rate edits before check-in as well as during the stay.
+            // Do not silently accept cancelled, no-show or otherwise inactive charges.
+            var rateStatus = NormalizeStatus(row.ReservationStatus);
+            if (rateStatus is not ("reservation" or "reserved" or "provisional" or "checkin" or "checkedin"))
+                return CheckInOperationResult.Fail("Only reserved or checked-in room rates can be edited.");
 
             var taxSettings = await LoadTaxSettingsAsync(cn, hotelId, ct, tx);
             var isRoomRent = row.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase);
@@ -1457,7 +1462,12 @@ WHERE ID=@id
   AND hotel_id=@hotel
   AND reg_id=@reg
   AND LTRIM(RTRIM(ISNULL(descr,'')))=LTRIM(RTRIM(@descr))
-  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check in','checked in','checkin');", cn, tx))
+  -- Reservations can be edited before check-in, too. Keep the original
+  -- status as an optimistic concurrency guard; do not modify a row whose
+  -- state changed while the user was saving.
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN
+      ('reservation','reserved','provisional','check in','checked in','checkin')
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,''))))=@expectedStatus;", cn, tx))
             {
                 // WebForms persists the full room-base amount in both Rate and Charge.
                 // request.Rate is the user-facing nightly rate, so multiply by Nights first.
@@ -1470,6 +1480,7 @@ WHERE ID=@id
                 cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
                 cmd.Parameters.Add("@descr", SqlDbType.VarChar, 150).Value = row.Description;
+                cmd.Parameters.Add("@expectedStatus", SqlDbType.VarChar, 50).Value = row.ReservationStatus.Trim().ToLowerInvariant();
                 var affected = await cmd.ExecuteNonQueryAsync(ct);
                 if (affected != 1)
                     throw new InvalidOperationException("The rate row changed before the update completed. Please try again.");
