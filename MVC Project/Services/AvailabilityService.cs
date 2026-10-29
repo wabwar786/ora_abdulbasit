@@ -977,6 +977,33 @@ ORDER BY created_at DESC;";
         var ssValues = new List<string>();
         var effectiveValues = new List<string>();
 
+        // Dated custom cutoffs can close following days whose own cutoff_days
+        // is NULL. Load only the small anchor history for this rate plan when
+        // displaying restrictions, including anchors outside the visible range.
+        var cutoffAnchors = new List<(DateTime Date, int Days)>();
+        await using (var anchorConnection = new SqlConnection(_connectionString))
+        await using (var anchorCommand = new SqlCommand(@"
+SELECT [date],TRY_CONVERT(int,cutoff_days) AS Days
+FROM dbo.datesrates
+WHERE hotel_id=@hotel
+  AND CONVERT(nvarchar(100),category_id)=@category
+  AND CONVERT(nvarchar(50),planid)=@plan
+  AND [date] BETWEEN DATEADD(DAY,-364,@start) AND @end
+  AND TRY_CONVERT(int,cutoff_days) BETWEEN 1 AND 365
+ORDER BY [date] DESC, ID DESC;", anchorConnection))
+        {
+            anchorCommand.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+            anchorCommand.Parameters.Add("@category", SqlDbType.NVarChar, 100).Value = request.CategoryId.Trim();
+            anchorCommand.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = request.PlanId.Trim();
+            anchorCommand.Parameters.Add("@start", SqlDbType.Date).Value = start;
+            anchorCommand.Parameters.Add("@end", SqlDbType.Date).Value = end;
+            await anchorConnection.OpenAsync(cancellationToken);
+            await using var anchorReader = await anchorCommand.ExecuteReaderAsync(cancellationToken);
+            while (await anchorReader.ReadAsync(cancellationToken))
+                cutoffAnchors.Add((Convert.ToDateTime(anchorReader["date"], CultureInfo.InvariantCulture).Date,
+                    Convert.ToInt32(anchorReader["Days"], CultureInfo.InvariantCulture)));
+        }
+
         for (var date = start; date <= end; date = date.AddDays(1))
         {
             rates.TryGetValue((request.CategoryId.Trim(), request.PlanId.Trim(), date), out var r);
@@ -985,10 +1012,29 @@ ORDER BY created_at DESC;";
             var maxStay = (r?.MaxStay ?? 0).ToString(CultureInfo.InvariantCulture);
             string cutoff;
             int effectiveCutoffDays;
+            // Explicit 0 (Disabled) on this date always wins; otherwise the
+            // newest overlapping custom cutoff from an earlier date applies.
+            int? inheritedDays = null;
+            if (r?.CutoffDays == null)
+            {
+                foreach (var anchor in cutoffAnchors)
+                {
+                    if (anchor.Date < date && date < anchor.Date.AddDays(anchor.Days))
+                    {
+                        inheritedDays = anchor.Days;
+                        break;
+                    }
+                }
+            }
             if (r?.CutoffDays != null)
             {
                 cutoff = r.CutoffDays.Value == 0 ? "Disabled" : r.CutoffDays.Value + "d";
                 effectiveCutoffDays = r.CutoffDays.Value;
+            }
+            else if (inheritedDays.HasValue)
+            {
+                cutoff = "Inherited " + inheritedDays.Value.ToString(CultureInfo.InvariantCulture) + "d";
+                effectiveCutoffDays = inheritedDays.Value;
             }
             else if (planCutoff?.Enabled == true && planCutoff.Days.GetValueOrDefault() > 0)
             {
@@ -1120,11 +1166,32 @@ ORDER BY created_at DESC;";
             return new(false, definition.Value.Label + " is not enabled for this hotel.");
 
         var systemName = Environment.MachineName;
+        var cutoffSyncDays = definition.Value.Key == "booking_cutoff"
+            ? Math.Max(1, intValue.GetValueOrDefault()) : 1;
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
             foreach (var date in dates)
             {
+                // Include the PREVIOUS custom range too: reducing 3 days to 1 or
+                // disabling the cutoff must reopen dates the old rule had closed.
+                if (definition.Value.Key == "booking_cutoff")
+                {
+                    await using var oldCutoffCommand = new SqlCommand(@"
+SELECT MAX(TRY_CONVERT(int,cutoff_days))
+FROM dbo.datesrates
+WHERE hotel_id=@hotel
+  AND CONVERT(nvarchar(100),category_id)=@category
+  AND CONVERT(nvarchar(50),planid)=@plan
+  AND [date]=@date;", connection, transaction);
+                    oldCutoffCommand.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
+                    oldCutoffCommand.Parameters.Add("@category", SqlDbType.NVarChar, 100).Value = request.CategoryId.Trim();
+                    oldCutoffCommand.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = request.PlanId.Trim();
+                    oldCutoffCommand.Parameters.Add("@date", SqlDbType.Date).Value = date;
+                    var oldValue = await oldCutoffCommand.ExecuteScalarAsync(cancellationToken);
+                    if (oldValue is not null && oldValue != DBNull.Value)
+                        cutoffSyncDays = Math.Max(cutoffSyncDays, Math.Clamp(Convert.ToInt32(oldValue, CultureInfo.InvariantCulture), 0, 365));
+                }
                 await UpsertRestrictionAsync(connection, transaction, hotelId, request.CategoryId.Trim(), request.PlanId.Trim(),
                     date, definition.Value.DbColumn, dbValue, definition.Value.IsBoolean, userName, systemName, ip, cancellationToken);
 
@@ -1156,8 +1223,11 @@ ORDER BY created_at DESC;";
             return new(false, "Restriction save failed; neither the change nor its history was committed. " + ex.Message);
         }
 
+        // The selected date carries the custom rule; the following days may
+        // have NULL cutoff_days but still need Stop Sell and Channex uploads.
+        var syncThrough = dates.Max().AddDays(cutoffSyncDays - 1);
         _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
-            AvailabilityChannelSyncKind.Restrictions, hotelId, dates.Min(), dates.Max(),
+            AvailabilityChannelSyncKind.Restrictions, hotelId, dates.Min(), syncThrough,
             new[] { request.PlanId.Trim() }, new[] { request.CategoryId.Trim() }));
 
         return new(true, $"{definition.Value.Label} saved for {dates.Count} day(s) and queued for channel upload.", dates.Count);
@@ -1472,10 +1542,26 @@ WHERE hotel_id=@hotel;";
 
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         var mergeCounts = (Updated: 0, Inserted: 0);
+        var cutoffSyncDays = updateCutoff ? Math.Max(1, cutoffDays.GetValueOrDefault()) : 1;
         try
         {
             await CreateBulkRestrictionTempTablesAsync(connection, transaction, cancellationToken);
             await BulkCopyRestrictionRowsAsync(connection, transaction, data, cancellationToken);
+            if (updateCutoff)
+            {
+                await using var oldCutoffCommand = new SqlCommand(@"
+SELECT MAX(TRY_CONVERT(int,dr.cutoff_days))
+FROM dbo.datesrates dr
+INNER JOIN #BulkRestrictionRows R
+ ON R.hotel_id=dr.hotel_id
+ AND R.category_id=CONVERT(nvarchar(50),dr.category_id)
+ AND R.planid=CONVERT(nvarchar(50),dr.planid)
+ AND R.[date]=dr.[date]
+WHERE R.update_cutoff_days=1;", connection, transaction);
+                var oldValue = await oldCutoffCommand.ExecuteScalarAsync(cancellationToken);
+                if (oldValue is not null && oldValue != DBNull.Value)
+                    cutoffSyncDays = Math.Max(cutoffSyncDays, Math.Clamp(Convert.ToInt32(oldValue, CultureInfo.InvariantCulture), 0, 365));
+            }
             mergeCounts = await MergeBulkRestrictionRowsAsync(connection, transaction, today, cancellationToken);
             await InsertBulkRestrictionHistoryAsync(
                 connection, transaction, hotelId, userId, userName, systemName, ip,
@@ -1510,7 +1596,7 @@ WHERE hotel_id=@hotel;";
             AvailabilityChannelSyncKind.Restrictions,
             hotelId,
             minSelectedDate,
-            maxSelectedDate,
+            maxSelectedDate.AddDays(cutoffSyncDays - 1),
             planIds,
             roomIds));
 
@@ -2862,9 +2948,23 @@ OUTER APPLY
     WHERE p.hotel_id=dr.hotel_id AND CONVERT(nvarchar(50),p.localplanid)=CONVERT(nvarchar(50),dr.planid)
     ORDER BY p.id DESC
 ) pc
+OUTER APPLY
+(
+    SELECT TOP 1 TRY_CONVERT(int,anchor.cutoff_days) AS InheritedDays
+    FROM dbo.datesrates anchor
+    WHERE anchor.hotel_id=dr.hotel_id
+      AND CONVERT(nvarchar(50),anchor.category_id)=CONVERT(nvarchar(50),dr.category_id)
+      AND CONVERT(nvarchar(50),anchor.planid)=CONVERT(nvarchar(50),dr.planid)
+      AND anchor.[date]<dr.[date]
+      AND anchor.[date]>=DATEADD(DAY,-364,dr.[date])
+      AND TRY_CONVERT(int,anchor.cutoff_days) BETWEEN 1 AND 365
+      AND dr.[date]<DATEADD(DAY,TRY_CONVERT(int,anchor.cutoff_days),anchor.[date])
+    ORDER BY anchor.[date] DESC, anchor.ID DESC
+) inherited
 CROSS APPLY
 (
     SELECT CASE WHEN dr.cutoff_days IS NOT NULL THEN ISNULL(TRY_CONVERT(int,dr.cutoff_days),0)
+                WHEN inherited.InheritedDays IS NOT NULL THEN inherited.InheritedDays
                 WHEN ISNULL(pc.enabled,0)=1 THEN ISNULL(pc.days,0) ELSE 0 END AS EffectiveDays
 ) ec
 CROSS APPLY
@@ -2916,9 +3016,23 @@ OUTER APPLY
     WHERE p.hotel_id=dr.hotel_id AND CONVERT(nvarchar(50),p.localplanid)=CONVERT(nvarchar(50),dr.planid)
     ORDER BY p.id DESC
 ) pc
+OUTER APPLY
+(
+    SELECT TOP 1 TRY_CONVERT(int,anchor.cutoff_days) AS InheritedDays
+    FROM dbo.datesrates anchor
+    WHERE anchor.hotel_id=dr.hotel_id
+      AND CONVERT(nvarchar(50),anchor.category_id)=CONVERT(nvarchar(50),dr.category_id)
+      AND CONVERT(nvarchar(50),anchor.planid)=CONVERT(nvarchar(50),dr.planid)
+      AND anchor.[date]<dr.[date]
+      AND anchor.[date]>=DATEADD(DAY,-364,dr.[date])
+      AND TRY_CONVERT(int,anchor.cutoff_days) BETWEEN 1 AND 365
+      AND dr.[date]<DATEADD(DAY,TRY_CONVERT(int,anchor.cutoff_days),anchor.[date])
+    ORDER BY anchor.[date] DESC, anchor.ID DESC
+) inherited
 CROSS APPLY
 (
     SELECT CASE WHEN dr.cutoff_days IS NOT NULL THEN ISNULL(TRY_CONVERT(int,dr.cutoff_days),0)
+                WHEN inherited.InheritedDays IS NOT NULL THEN inherited.InheritedDays
                 WHEN ISNULL(pc.enabled,0)=1 THEN ISNULL(pc.days,0) ELSE 0 END AS EffectiveDays
 ) ec
 CROSS APPLY
@@ -3394,9 +3508,23 @@ OUTER APPLY
     WHERE p.hotel_id=dr.hotel_id AND CONVERT(nvarchar(50),p.localplanid)=CONVERT(nvarchar(50),dr.planid)
     ORDER BY p.id DESC
 ) pc
+OUTER APPLY
+(
+    SELECT TOP 1 TRY_CONVERT(int,anchor.cutoff_days) AS InheritedDays
+    FROM dbo.datesrates anchor
+    WHERE anchor.hotel_id=dr.hotel_id
+      AND CONVERT(nvarchar(50),anchor.category_id)=CONVERT(nvarchar(50),dr.category_id)
+      AND CONVERT(nvarchar(50),anchor.planid)=CONVERT(nvarchar(50),dr.planid)
+      AND anchor.[date]<dr.[date]
+      AND anchor.[date]>=DATEADD(DAY,-364,dr.[date])
+      AND TRY_CONVERT(int,anchor.cutoff_days) BETWEEN 1 AND 365
+      AND dr.[date]<DATEADD(DAY,TRY_CONVERT(int,anchor.cutoff_days),anchor.[date])
+    ORDER BY anchor.[date] DESC, anchor.ID DESC
+) inherited
 CROSS APPLY
 (
     SELECT CASE WHEN dr.cutoff_days IS NOT NULL THEN ISNULL(TRY_CONVERT(int,dr.cutoff_days),0)
+                WHEN inherited.InheritedDays IS NOT NULL THEN inherited.InheritedDays
                 WHEN ISNULL(pc.enabled,0)=1 THEN ISNULL(pc.days,0) ELSE 0 END AS EffectiveDays
 ) ec
 CROSS APPLY

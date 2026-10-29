@@ -24,6 +24,10 @@ public sealed class CheckInPageViewModel
     public bool IsMonthWise { get; set; }
     public bool CanEditDates { get; set; } = true;
     public bool CanUpdateGuest { get; set; } = true;
+    // Explicit Edit Details After Checkout + Update Guest Info permissions for checked-out bookings.
+    public bool CanEditCheckedOutGuest { get; set; }
+    // Explicit Edit Details After Checkout + Update Guest Info: service adjustments only, not rooms or historical charges.
+    public bool CanAddCheckedOutService { get; set; }
     public bool CanDeleteRoom { get; set; } = true;
     public bool CanDeleteAfterCheckIn { get; set; } = true;
     public bool CanDeleteAfterCheckOut { get; set; } = true;

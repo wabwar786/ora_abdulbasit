@@ -258,9 +258,10 @@ DECLARE @insertedRows int=0, @updatedRows int=0;
     SELECT DATEADD(day,n,@from) AS [date] FROM N
 )
 INSERT INTO dbo.datesrates
-(hotel_id,planid,category_id,[date],baserate,rate,upload,uploadfrom,restr_upload,restr_uploadfrom,currentdate)
+(hotel_id,planid,category_id,[date],baserate,rate,upload,uploadfrom,restr_upload,restr_uploadfrom,currentdate,stop_sell)
 SELECT cp.hotel_id,cp.localplanid,cp.category_id,D.[date],
-       CONVERT(varchar(32),cp.baserate),CONVERT(varchar(32),cp.rate),0,0,0,0,GETDATE()
+       CONVERT(varchar(32),cp.baserate),CONVERT(varchar(32),cp.rate),0,0,0,0,GETDATE(),
+       CONVERT(bit,CASE WHEN ISNULL(TRY_CONVERT(int,cp.stopsell),0)=1 THEN 1 ELSE 0 END)
 FROM dbo.category_plan cp
 CROSS JOIN D
 OUTER APPLY
@@ -275,13 +276,26 @@ OUTER APPLY
 WHERE cp.hotel_id=@hotel
   {cpPlanFilter}
   {cpCategoryFilter}
-  -- Do not materialise 730 ordinary daily-rate rows just because a plan has
-  -- one custom cutoff date. Date-specific overrides already have datesrates
-  -- rows; create NEW rows only inside an active plan-default cutoff window.
-  AND ISNULL(planCutoff.enabled,0)=1
-  AND ISNULL(planCutoff.days,0)>0
+  -- Materialise only days affected by the plan default OR by a dated custom
+  -- cutoff. A 3-day custom cutoff on 29 Oct must reach 29, 30 and 31 Oct.
+  -- The following dates retain NULL cutoff_days (no explicit override).
   AND D.[date]>=@today
-  AND D.[date]<DATEADD(DAY,planCutoff.days,@today)
+  AND (
+       (ISNULL(planCutoff.enabled,0)=1
+        AND ISNULL(planCutoff.days,0)>0
+        AND D.[date]<DATEADD(DAY,planCutoff.days,@today))
+       OR EXISTS
+       (
+         SELECT 1 FROM dbo.datesrates anchor
+         WHERE anchor.hotel_id=cp.hotel_id
+           AND CONVERT(nvarchar(50),anchor.planid)=CONVERT(nvarchar(50),cp.localplanid)
+           AND CONVERT(nvarchar(100),anchor.category_id)=CONVERT(nvarchar(100),cp.category_id)
+           AND anchor.[date]<=D.[date]
+           AND anchor.[date]>=DATEADD(DAY,-364,D.[date])
+           AND TRY_CONVERT(int,anchor.cutoff_days) BETWEEN 1 AND 365
+           AND D.[date]<DATEADD(DAY,TRY_CONVERT(int,anchor.cutoff_days),anchor.[date])
+       )
+      )
   AND NOT EXISTS
   (
       SELECT 1
@@ -320,10 +334,24 @@ OUTER APPLY
       AND CONVERT(nvarchar(50),p.localplanid)=CONVERT(nvarchar(50),dr.planid)
     ORDER BY p.id DESC
 ) pc
+OUTER APPLY
+(
+    SELECT TOP 1 TRY_CONVERT(int,anchor.cutoff_days) AS InheritedDays
+    FROM dbo.datesrates anchor
+    WHERE anchor.hotel_id=dr.hotel_id
+      AND CONVERT(nvarchar(50),anchor.planid)=CONVERT(nvarchar(50),dr.planid)
+      AND CONVERT(nvarchar(100),anchor.category_id)=CONVERT(nvarchar(100),dr.category_id)
+      AND anchor.[date]<dr.[date]
+      AND anchor.[date]>=DATEADD(DAY,-364,dr.[date])
+      AND TRY_CONVERT(int,anchor.cutoff_days) BETWEEN 1 AND 365
+      AND dr.[date]<DATEADD(DAY,TRY_CONVERT(int,anchor.cutoff_days),anchor.[date])
+    ORDER BY anchor.[date] DESC, anchor.ID DESC
+) inherited
 CROSS APPLY
 (
     SELECT CASE
         WHEN dr.cutoff_days IS NOT NULL THEN ISNULL(TRY_CONVERT(int,dr.cutoff_days),0)
+        WHEN inherited.InheritedDays IS NOT NULL THEN inherited.InheritedDays
         WHEN ISNULL(pc.enabled,0)=1 THEN ISNULL(pc.days,0)
         ELSE 0
     END AS EffectiveDays

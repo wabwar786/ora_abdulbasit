@@ -273,14 +273,34 @@
     }
 
     function applyCheckedOutReadOnlyUi(statusValue = state.reservationStatus) {
-        const readOnly = isCheckedOutReadOnly(statusValue);
-        app.dataset.checkedOutReadonly = readOnly ? '1' : '0';
+        const checkedOut = isCheckedOutReadOnly(statusValue);
+        const allowGuestEdit = checkedOut && state.canEditCheckedOutGuest === true && state.canUpdateGuest === true;
+        const allowServiceAdjustment = checkedOut && state.canAddCheckedOutService === true;
+        app.dataset.checkedOutReadonly = checkedOut ? '1' : '0';
+        // Never make a checked-out reservation eligible for new room assignments.
+        byId('chargeCategory')?.querySelectorAll('option').forEach(option => {
+            if (option.value && option.value !== 'Services') option.disabled = checkedOut;
+        });
+        if (checkedOut && allowServiceAdjustment && byId('chargeCategory')?.value !== 'Services') {
+            byId('chargeCategory').value = 'Services';
+            updateChargeMode();
+        }
 
+        // Checked-out guests: Edit Details After Checkout + Update Guest Info.
+        // The server repeats this permission check on every update request.
+        const editableGuestFields = new Set([
+            'firstName', 'lastName', 'phone', 'email', 'passportNo', 'vatNo',
+            'country', 'city', 'address', 'source', 'company'
+        ]);
         const guestGrid = byId('guestRegistrationGrid');
         guestGrid?.querySelectorAll('input,select,textarea,button').forEach(el => {
             if (el.id === 'guestSearch' || el.id === 'guestSearchButton') return;
-            if (readOnly) {
-                if (!el.dataset.checkedOutPrevDisabled) el.dataset.checkedOutPrevDisabled = el.disabled ? '1' : '0';
+            const block = checkedOut && !(allowGuestEdit &&
+                (editableGuestFields.has(el.id) || el.id === 'updateGuest' ||
+                 (el.id === 'stayDateDisplay' && !isGroup())));
+            if (block) {
+                if (el.dataset.checkedOutPrevDisabled === undefined)
+                    el.dataset.checkedOutPrevDisabled = el.disabled ? '1' : '0';
                 el.disabled = true;
             } else if (el.dataset.checkedOutPrevDisabled !== undefined) {
                 el.disabled = el.dataset.checkedOutPrevDisabled === '1';
@@ -288,9 +308,12 @@
             }
         });
 
-        byId('updateGuest')?.classList.toggle('hidden', readOnly || state.canUpdateGuest === false);
-        byId('chargeEntry')?.classList.toggle('hidden', readOnly);
-        byId('addCharge')?.toggleAttribute('disabled', readOnly);
+        byId('updateGuest')?.classList.toggle('hidden', state.canUpdateGuest !== true || (checkedOut && !allowGuestEdit));
+        // Notes are outside guestRegistrationGrid; the rest of the checkout UI
+        // still obeys its existing read-only controls and financial permissions.
+        if (byId('notes')) byId('notes').disabled = checkedOut && !allowGuestEdit;
+        byId('chargeEntry')?.classList.toggle('hidden', checkedOut && !allowServiceAdjustment);
+        byId('addCharge')?.toggleAttribute('disabled', checkedOut && !allowServiceAdjustment);
 
         byId('chargeRows')?.querySelectorAll('tr[data-charge-id]').forEach(row => {
             const rowKey = statusKey(row.dataset.status || statusValue);
@@ -301,7 +324,7 @@
             const rateCell = row.querySelector('.rate-cell');
             if (guestCell) {
                 guestCell.dataset.canEditGuest = '0';
-                guestCell.title = 'Checked-out stay is read-only';
+                guestCell.title = 'Checked-out room details are read-only';
             }
             if (rateCell) {
                 rateCell.dataset.canEditRate = '0';
@@ -309,11 +332,15 @@
             }
         });
 
-        if (readOnly) {
-            canEditDates = false;
+        if (checkedOut) {
+            // Single reservations: departure-only correction, never arrival or room stays.
+            canEditDates = allowGuestEdit && !isGroup();
             const stayDisplay = byId('stayDateDisplay');
-            stayDisplay?.classList.add('is-disabled');
-            stayDisplay?.setAttribute('aria-disabled', 'true');
+            stayDisplay?.classList.toggle('is-disabled', !canEditDates);
+            if (canEditDates) {
+                stayDisplay?.removeAttribute('aria-disabled');
+                stayDisplay?.setAttribute('title', 'Edit departure date only (arrival remains locked)');
+            } else stayDisplay?.setAttribute('aria-disabled', 'true');
         }
     }
 
@@ -662,9 +689,9 @@
         }
         const hint = byId('calendarHint');
         if (hint) {
-            hint.textContent = calendarStage === 0
-                ? 'Choose arrival date'
-                : 'Now choose a departure date';
+            hint.textContent = isCheckedOutReadOnly()
+                ? 'Departure only — arrival date is locked after checkout'
+                : (calendarStage === 0 ? 'Choose arrival date' : 'Now choose a departure date');
             hint.classList.toggle('is-selecting-end', calendarStage === 1);
         }
     }
@@ -696,6 +723,10 @@
         const selected = parseIso(value);
         if (!selected) return;
 
+        if (isCheckedOutReadOnly()) {
+            // Always force departure selection for a completed stay.
+            calendarStage = 1;
+        }
         if (calendarStage === 0) {
             // A range selection always starts cleanly: first click = arrival,
             // second click = departure. Do not auto-create a departure date.
@@ -739,7 +770,7 @@
         calendarHoverDate = null;
         updateStayCount();
         setCalendarOpen(false);
-        loadRoomsAndPlans().catch(() => { });
+        if (!isCheckedOutReadOnly()) loadRoomsAndPlans().catch(() => { });
     }
 
     async function loadCities(preferredCity = '') {
@@ -1154,7 +1185,8 @@
     }
 
     async function quickSaveGuestName() {
-        if (!regId || state.canUpdateGuest === false) return true;
+        if (!regId || state.canUpdateGuest === false ||
+            (isCheckedOutReadOnly() && state.canEditCheckedOutGuest !== true)) return true;
         const firstName = (byId('firstName')?.value || '').trim();
         const lastName = (byId('lastName')?.value || '').trim();
         if (!firstName) {
@@ -1260,7 +1292,8 @@
     }
 
     async function updateGuest() {
-        if (isCheckedOutReadOnly()) return message('Checked-out guest details are read-only.', 'error');
+        if (isCheckedOutReadOnly() && state.canEditCheckedOutGuest !== true)
+            return message('Edit Details After Checkout and Update Guest Info permissions are required after checkout.', 'error');
         if (!regId || !validateGuest()) return;
 
         const guest = guestPayload();
@@ -1272,12 +1305,17 @@
         const isExtension = datesChanged && oldDep && nextDep && nextDep > oldDep;
 
         let dateTaxSelection = { confirmed: false, applyGst: false, applyBedTax: false };
-        if (isExtension && hasConfiguredDateChangeTax()) {
+        if (!isCheckedOutReadOnly() && isExtension && hasConfiguredDateChangeTax()) {
             const selected = await askDateChangeTaxSelection();
             if (!selected) return;
             dateTaxSelection = selected;
         }
 
+        if (isCheckedOutReadOnly() && datesChanged) {
+            if (newArrival !== loadedStayArrival)
+                return message('Arrival date is locked after checkout. Only departure may be corrected.', 'error');
+            if (!window.confirm('Correct this completed stay departure date? Room charges, payments and any issued fiscal invoice will remain unchanged.')) return;
+        }
         showBusy('Updating guest…');
         try {
             const result = await api(urls.updateGuest, {
@@ -1676,7 +1714,12 @@
     }
 
     async function addCharge() {
-        if (isCheckedOutReadOnly()) return message('Checked-out stays are read-only. Rooms/services cannot be added.', 'error');
+        if (isCheckedOutReadOnly()) {
+            if (state.canAddCheckedOutService !== true)
+                return message('This checked-out reservation cannot accept service adjustments. Check Edit Details After Checkout permission and fiscal invoice status.', 'error');
+            if (!isServiceChargeMode())
+                return message('Rooms cannot be added after checkout. Select Services / Charges.', 'error');
+        }
         if (!(await ensureGuestSaved())) return;
 
         const isRoom = isRoomChargeMode();
@@ -1695,6 +1738,14 @@
         if (amount === 0 && !['Complementary'].includes(byId('paymentMethod')?.value || '')) {
             const proceed = await askConfirm('Zero Amount', 'The selected charge total is 0. Continue?', 'Continue');
             if (!proceed) return;
+        }
+
+        if (isCheckedOutReadOnly()) {
+            const approved = await askConfirm(
+                'Post-checkout service adjustment',
+                'This will change the final reservation balance. Previously issued fiscal invoices cannot be changed here. Continue?',
+                'Add Adjustment');
+            if (!approved) return;
         }
 
         const addButton = byId('addCharge');

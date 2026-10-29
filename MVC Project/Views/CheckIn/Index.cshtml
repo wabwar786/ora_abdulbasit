@@ -532,7 +532,7 @@
 
                             <div class="field span-2 guest-address-field"><label for="address">Complete Address</label><input id="address" maxlength="200" value="@g.Address" /></div>
                             <div id="guestStayDatesField" class="field stay-date-field">
-                                <label for="stayDateDisplay">Stay Dates</label>
+                                <label for="stayDateDisplay">Stay Dates @if (isCheckedOutBooking && Model.CanEditDates) { <small class="text-muted">(departure only)</small> }</label>
                                 <div id="stayDatePicker" class="date-picker">
                                     <input id="stayDateDisplay" class="date-picker-input" readonly aria-haspopup="dialog" aria-expanded="false" aria-controls="dateCalendar" />
                                     <input id="checkIn" type="hidden" value="@DateValue(g.ArrivalDate)" />
@@ -576,7 +576,7 @@
 
                             <div id="guestActionRow" class="guest-inline-actions" aria-label="Guest actions">
                                 <button id="guestProceedCheckIn" type="button" class="btn btn-primary @((Model.IsExistingBooking) ? "hidden" : "")"><i class="fa-solid fa-arrow-right-to-bracket"></i>Proceed Check-In</button>
-                                <button id="updateGuest" type="button" class="btn btn-primary @((!Model.IsExistingBooking || !Model.CanUpdateGuest || isCheckedOutBooking) ? "hidden" : "")"><i class="fa-solid fa-user-pen"></i>Update Guest Info</button>
+                                <button id="updateGuest" type="button" class="btn btn-primary @((!Model.IsExistingBooking || !Model.CanUpdateGuest) ? "hidden" : "")"><i class="fa-solid fa-user-pen"></i>Update Guest Info</button>
                             </div>
                         </div>
 
@@ -607,7 +607,7 @@
                             <input id="chargeNights" type="hidden" value="@Math.Max(0, (g.DepartureDate.Date - g.ArrivalDate.Date).Days)" />
                         </div>
 
-                        <div id="chargeEntry" class="charge-row charge-row-mvc @(isCheckedOutBooking ? "hidden" : "")">
+                        <div id="chargeEntry" class="charge-row charge-row-mvc @(isCheckedOutBooking && !Model.CanAddCheckedOutService ? "hidden" : "")">
                             <div class="field charge-category-field">
                                 <label for="chargeCategory">Categories</label>
                                 <select id="chargeCategory">

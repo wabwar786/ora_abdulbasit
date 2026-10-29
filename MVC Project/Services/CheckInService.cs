@@ -125,7 +125,9 @@ public sealed class CheckInService : ICheckInService
             model.Laundry = (await LoadLaundryAsync(cn, hotelId, model.ReservationId, ct)).ToList();
             model.Discounts = (await LoadDiscountsAsync(cn, hotelId, model.ReservationId, ct)).ToList();
             model.Totals = await LoadTotalsAsync(cn, hotelId, model.ReservationId, model.IsRoundTotal, ct);
-            model.CanPostAndPrint = model.FbrEnabled && !await HasValidFbrInvoiceAsync(cn, hotelId, model.ReservationId, ct);
+            var hasPostedFiscalInvoice = await HasValidFbrInvoiceAsync(cn, hotelId, model.ReservationId, ct);
+            model.CanPostAndPrint = model.FbrEnabled && !hasPostedFiscalInvoice;
+            if (hasPostedFiscalInvoice) model.CanAddCheckedOutService = false;
             ApplyActionMenu(model);
         }
         else
@@ -216,7 +218,9 @@ public sealed class CheckInService : ICheckInService
         model.Laundry = (await laundryTask).ToList();
         model.Discounts = (await discountTask).ToList();
         model.Totals = await totalsTask;
-        model.CanPostAndPrint = model.FbrEnabled && !await fbrTask;
+        var hasPostedFiscalInvoice = await fbrTask;
+        model.CanPostAndPrint = model.FbrEnabled && !hasPostedFiscalInvoice;
+        if (hasPostedFiscalInvoice) model.CanAddCheckedOutService = false;
 
         var activeStay = IsReservation(model.ReservationStatus) || IsCheckIn(model.ReservationStatus);
         model.CanEditDates = activeStay;
@@ -829,13 +833,39 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
         if (!permissions.HasAction("btnUpdateGuest"))
             return CheckInOperationResult.Fail("You do not have permission to update guest details.");
         var currentStatus = await GetReservationStatusAsync(cn, null, hotelId, g.RegId, ct);
-        if (IsCheckedOut(currentStatus))
-            return CheckInOperationResult.Fail("Checked-out guest details are read-only.");
+        var editingCheckedOut = IsCheckedOut(currentStatus);
+        if (editingCheckedOut)
+        {
+            // Bypass the short-lived UI permission cache for sensitive post-checkout edits.
+            permissions = await LoadPermissionsCoreAsync(cn, hotelId, userId, ct);
+            if (!permissions.HasExplicitAction("btnUpdateGuest") || !permissions.HasExplicitAction("Edit Details After Checkout"))
+                return CheckInOperationResult.Fail("Edit Details After Checkout and Update Guest Info permissions are required after checkout.");
+        }
 
         var existingType = await GetReservationTypeForGuestUpdateAsync(cn, hotelId, g.RegId, ct);
-        var currentStay = await GetCurrentStayAsync(cn, hotelId, g.RegId, ct);
+        var currentStay = await GetCurrentStayAsync(cn, hotelId, g.RegId, ct, editingCheckedOut);
         if (!currentStay.Arrival.HasValue || !currentStay.Departure.HasValue)
             return CheckInOperationResult.Fail("Current reservation dates could not be determined.");
+
+        // After checkout arrival is locked, departure alone may be corrected.
+        // Historical charges, room rows, tax totals and the fiscal invoice are NOT recalculated.
+        if (editingCheckedOut)
+        {
+            if (!IsSingleReservationType(existingType))
+            {
+                // Preserve the existing ability to edit checked-out group guest
+                // details; only the master dates remain immutable for groups.
+                g.ArrivalDate = currentStay.Arrival.Value.Date;
+                g.DepartureDate = currentStay.Departure.Value.Date;
+            }
+            else
+            {
+                if (g.ArrivalDate.Date != currentStay.Arrival.Value.Date)
+                    return CheckInOperationResult.Fail("Arrival date is locked after checkout. Reload and change only departure.");
+                if (g.DepartureDate.Date <= currentStay.Arrival.Value.Date)
+                    return CheckInOperationResult.Fail("Departure date must be after the original arrival date.");
+            }
+        }
 
         var requestedArrival = g.ArrivalDate.Date;
         var requestedDeparture = g.DepartureDate.Date;
@@ -863,9 +893,61 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
+            // A concurrent checkout must not turn an active date/rate update into an
+            // unprotected post-checkout change (or vice versa).
+            var statusInTransaction = await GetReservationStatusAsync(cn, tx, hotelId, g.RegId, ct);
+            if (IsCheckedOut(statusInTransaction) != editingCheckedOut)
+            {
+                await tx.RollbackAsync(ct);
+                return CheckInOperationResult.Fail("The reservation checkout status changed. Reload and try again.");
+            }
             await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, g.RegId, ct);
             var dateTaxChoice = new DateChangeTaxChoice();
-            if (requestedDatesDiffer && !dateChangeIgnored)
+            if (editingCheckedOut && requestedDatesDiffer)
+            {
+                // Historical date CORRECTION only. Do not alter dbo.payments,
+                // stay prices, room availability, or a previously issued FBR/PRA invoice.
+                // Row-level lock plus old date comparison protect against competing edits.
+                await using var correction = new SqlCommand(@"
+UPDATE dbo.GuestInformationLogTB WITH (UPDLOCK)
+SET DepartureDate=@newDeparture, totalnights=@correctedNights
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(REPLACE(LTRIM(RTRIM(ISNULL(res_status,''))),' ','')) IN ('checkout','checkedout')
+  AND COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),
+               TRY_CONVERT(date,DepartureDate,101),TRY_CONVERT(date,DepartureDate,103),
+               TRY_CONVERT(date,DepartureDate))=@oldDeparture;
+
+UPDATE dbo.NewReservationsTB
+SET dept_date=@newDeparture, totalnights=@correctedNights
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(REPLACE(LTRIM(RTRIM(ISNULL(res_status,''))),' ','')) IN ('checkout','checkedout');", cn, tx);
+                correction.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                correction.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = g.RegId;
+                correction.Parameters.Add("@newDeparture", SqlDbType.VarChar, 50).Value = FmtLegacyDate(requestedDeparture);
+                correction.Parameters.Add("@oldDeparture", SqlDbType.Date).Value = currentStay.Departure.Value.Date;
+                correction.Parameters.Add("@correctedNights", SqlDbType.Int).Value = (requestedDeparture - currentStay.Arrival.Value.Date).Days;
+                // A separate check on the primary guest record guards against a
+                // zero-row update, which would otherwise silently report success.
+                await using (var ensure = new SqlCommand(@"
+SELECT COUNT(1) FROM dbo.GuestInformationLogTB WITH (UPDLOCK, HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(REPLACE(LTRIM(RTRIM(ISNULL(res_status,''))),' ','')) IN ('checkout','checkedout')
+  AND COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),
+               TRY_CONVERT(date,DepartureDate,101),TRY_CONVERT(date,DepartureDate,103),
+               TRY_CONVERT(date,DepartureDate))=@oldDeparture;", cn, tx))
+                {
+                    ensure.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    ensure.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = g.RegId;
+                    ensure.Parameters.Add("@oldDeparture", SqlDbType.Date).Value = currentStay.Departure.Value.Date;
+                    if (Convert.ToInt32(await ensure.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) == 0)
+                    {
+                        await tx.RollbackAsync(ct);
+                        return CheckInOperationResult.Fail("Checked-out guest dates changed or were not found. Reload and retry.");
+                    }
+                }
+                await correction.ExecuteNonQueryAsync(ct);
+            }
+            else if (requestedDatesDiffer && !dateChangeIgnored)
             {
                 var propertyTax = await LoadTaxSettingsAsync(cn, hotelId, ct, tx);
                 dateTaxChoice = new DateChangeTaxChoice
@@ -899,15 +981,15 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
             // changes above preserve Calendar Extend/Shrink payment segments.
             const string updateGuest = @"
 UPDATE dbo.GuestInformationLogTB
-SET ArrivalTime=@arrivalTime,
-    DepartureTime=@departureTime,
+SET ArrivalTime=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN ArrivalTime ELSE @arrivalTime END,
+    DepartureTime=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN DepartureTime ELSE @departureTime END,
     GuestName=@first,
     LastName=@last,
     Address=@address,
     Country=@country,
     City=@city,
-    NumberOfAdults=@adults,
-    NumberOfMinors=@minors,
+    NumberOfAdults=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN NumberOfAdults ELSE @adults END,
+    NumberOfMinors=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN NumberOfMinors ELSE @minors END,
     CNIC=@cnic,
     vatno=@vatno,
     VisaPassportNo=@passport,
@@ -924,8 +1006,8 @@ SET GuestName=@first,
     Address=@address,
     Country=@country,
     City=@city,
-    number_of_adult=@adults,
-    number_of_minor=@minors,
+    number_of_adult=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN number_of_adult ELSE @adults END,
+    number_of_minor=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN number_of_minor ELSE @minors END,
     cnic=@cnic,
     visa=@passport,
     Email=@email,
@@ -937,10 +1019,11 @@ WHERE hotel_id=@hotel AND reg_id=@reg;";
             await using (var cmd = new SqlCommand(updateGuest, cn, tx))
             {
                 AddGuestParameters(cmd, hotelId, g);
+                cmd.Parameters.Add("@preserveCheckedOutStay", SqlDbType.Bit).Value = editingCheckedOut;
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            if (requestedDatesDiffer && !dateChangeIgnored)
+            if (!editingCheckedOut && requestedDatesDiffer && !dateChangeIgnored)
                 await UpdatePaymentTotalsAsync(cn, tx, hotelId, g.RegId, ct);
 
             // ONE audit event for this Save action, including stay-date changes.
@@ -950,11 +1033,16 @@ WHERE hotel_id=@hotel AND reg_id=@reg;";
                 : string.Empty;
             await InsertReservationActionLogAsync(
                 cn, tx, hotelId, userId, userName, ip, g.RegId,
-                "UPDATE GUEST", "Guest/stay details saved" + dateAudit, ct);
+                editingCheckedOut ? (requestedDatesDiffer ? "CORRECT CHECKED-OUT DEPARTURE" : "UPDATE CHECKED-OUT GUEST") : "UPDATE GUEST",
+                editingCheckedOut
+                    ? (requestedDatesDiffer
+                        ? $"Authorized post-checkout departure correction: {currentStay.Departure:yyyy-MM-dd} -> {requestedDeparture:yyyy-MM-dd}. Arrival, room charges, taxes, fiscal invoice and checkout status preserved."
+                        : "Guest/contact information updated after checkout; stay dates, times, room charges and checkout status preserved.")
+                    : "Guest/stay details saved" + dateAudit, ct);
 
             await tx.CommitAsync(ct);
 
-            if (requestedDatesDiffer && !dateChangeIgnored)
+            if (!editingCheckedOut && requestedDatesDiffer && !dateChangeIgnored)
             {
                 var availabilityStart = currentStay.Arrival.Value.Date < requestedArrival
                     ? currentStay.Arrival.Value.Date
@@ -968,7 +1056,11 @@ WHERE hotel_id=@hotel AND reg_id=@reg;";
                     dateOutcome.CategoryId ?? string.Empty);
             }
 
-            var updateMessage = dateChangeIgnored
+            var updateMessage = editingCheckedOut
+                ? (requestedDatesDiffer
+                    ? "Departure date corrected after checkout. Historical room charges, payments, and fiscal invoice were not changed."
+                    : "Checked-out guest information updated successfully. Arrival, charges and checkout details were preserved.")
+                : dateChangeIgnored
                 ? "Guest information updated. Stay dates were kept unchanged because this booking uses multiple room/category dates or group room dates."
                 : requestedDatesDiffer && !dateChangeIgnored
                     ? "Guest information and stay dates updated successfully."
@@ -1009,12 +1101,23 @@ WHERE hotel_id=@hotel AND reg_id=@reg;";
         if (!permissions.HasAction("btnUpdateGuest"))
             return CheckInOperationResult.Fail("You do not have permission to update guest details.");
         var currentStatus = await GetReservationStatusAsync(cn, null, hotelId, request.RegId, ct);
-        if (IsCheckedOut(currentStatus))
-            return CheckInOperationResult.Fail("Checked-out guest details are read-only.");
+        var editingCheckedOut = IsCheckedOut(currentStatus);
+        if (editingCheckedOut)
+        {
+            permissions = await LoadPermissionsCoreAsync(cn, hotelId, userId, ct);
+            if (!permissions.HasExplicitAction("btnUpdateGuest") || !permissions.HasExplicitAction("Edit Details After Checkout"))
+                return CheckInOperationResult.Fail("Edit Details After Checkout and Update Guest Info permissions are required after checkout.");
+        }
 
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
         try
         {
+            var statusInTransaction = await GetReservationStatusAsync(cn, tx, hotelId, request.RegId, ct);
+            if (IsCheckedOut(statusInTransaction) != editingCheckedOut)
+            {
+                await tx.RollbackAsync(ct);
+                return CheckInOperationResult.Fail("The reservation checkout status changed. Reload and try again.");
+            }
             await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, request.RegId, ct);
             await using var cmd = new SqlCommand(@"
 UPDATE dbo.GuestInformationLogTB
@@ -1035,7 +1138,9 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
                 return CheckInOperationResult.Fail("Guest record was not found.");
             }
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip,
-                request.RegId, "UPDATE GUEST NAME", "Guest first/last name edited.", ct);
+                request.RegId,
+                editingCheckedOut ? "UPDATE CHECKED-OUT GUEST NAME" : "UPDATE GUEST NAME",
+                "Guest first/last name edited.", ct);
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Guest name updated.", request.RegId.Trim(),
                 data: new { firstName = first, lastName = last });
@@ -1060,9 +1165,18 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
         var reservationStatus = await GetReservationStatusAsync(cn, null, hotelId, request.RegId, ct);
-        if (IsCheckedOut(reservationStatus))
-            return CheckInOperationResult.Fail("Checked-out stays are read-only. Rooms/services cannot be added.");
+        var wasCheckedOut = IsCheckedOut(reservationStatus);
         var permissions = await LoadPermissionsAsync(cn, hotelId, userId, ct);
+        if (wasCheckedOut)
+        {
+            if (!permissions.HasExplicitAction("Edit Details After Checkout") || !permissions.HasExplicitAction("btnUpdateGuest"))
+                return CheckInOperationResult.Fail("Edit Details After Checkout and Update Guest Info permissions are required for post-checkout adjustments.");
+            if (!request.Description.Trim().Equals("Extras", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(request.Category?.Trim(), "Others", StringComparison.OrdinalIgnoreCase))
+                return CheckInOperationResult.Fail("After checkout, only standard Services / Charges adjustments are allowed. Room stays and security movements cannot be added.");
+            // Financial adjustments must never silently amend an already-issued fiscal invoice.
+            // The same check is repeated inside the transaction before inserting any charge.
+        }
         var hotelSettings = await GetHotelSettingsSnapshotAsync(cn, hotelId, ct);
 
         if (!permissions.HasAny("GST", "VAT", "gst", "gsttaxblock")) request.ApplyGst = false;
@@ -1154,6 +1268,11 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
         try
         {
             await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, request.RegId, ct);
+            var lockedStatus = await GetReservationStatusAsync(cn, tx, hotelId, request.RegId, ct);
+            if (IsCheckedOut(lockedStatus) != wasCheckedOut)
+                return CheckInOperationResult.Fail("Reservation status changed. Refresh the reservation and try again.");
+            if (wasCheckedOut && await HasIssuedFiscalInvoiceForChargeAsync(cn, tx, hotelId, request.RegId, ct))
+                return CheckInOperationResult.Fail("A fiscal invoice has already been issued. Reconcile or correct the invoice before changing charges.");
             if (type.Equals("Security Deduction", StringComparison.OrdinalIgnoreCase))
             {
                 var availableSecurity = await GetRoomSecurityBalanceAsync(cn, tx, hotelId, request.RegId, ct);
@@ -1262,10 +1381,13 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
                 cn, tx, hotelId, request.RegId, ct, roundTotalOverride: hotelSettings.IsRoundTotal);
             operationStage = "writing the detailed reservation history to Reserv_log";
             await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
-                isRoomRent ? "ADD ROOM" : "ADD SERVICE",
+                isRoomRent ? "ADD ROOM" : (wasCheckedOut ? "ADD SERVICE AFTER CHECK OUT" : "ADD SERVICE"),
                 $"{(isRoomRent ? "Room" : "Service")}: {request.RoomNo} ({request.Category}); " +
                 $"{arrival:dd MMM yyyy} to {departure:dd MMM yyyy}; " +
                 $"Rate plan: {request.RatePlanName}; Total: {total:0.00}", ct);
+
+            if (wasCheckedOut && refreshedTotals.GrandTotal < 0)
+                return CheckInOperationResult.Fail("This adjustment would make the reservation total negative.");
 
             // Build the response snapshot inside the same transaction.  This avoids a second
             // request after Add and guarantees the row/totals returned to the browser match
@@ -1281,7 +1403,7 @@ WHERE Hotel_id=@hotel AND room_no=@room;", cn, tx);
                     && addedRow.Description.Equals("Room Rent", StringComparison.OrdinalIgnoreCase)
                     && addedRow.RoomNo.Length > 0
                     && IsReservation(addedRow.ReservationStatus);
-                addedRow.CanDelete = permissions.HasAction("DeleteRoom") && CanDeleteByStatus(permissions, addedRow.ReservationStatus);
+                addedRow.CanDelete = !wasCheckedOut && permissions.HasAction("DeleteRoom") && CanDeleteByStatus(permissions, addedRow.ReservationStatus);
                 addedRow.DeleteLockTitle = addedRow.CanDelete ? string.Empty : DeleteLockTitle(permissions, addedRow.ReservationStatus);
             }
             operationStage = "committing the charge transaction";
@@ -4213,6 +4335,14 @@ SELECT TOP 1 * FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;", cn);
             if (string.IsNullOrWhiteSpace(action)) return false;
             return !All.Contains(action) || Allowed.Contains(action);
         }
+        // Unlike HasAction (legacy default-allow for missing actions), this
+        // permission is intentionally explicit. Post-checkout editing MUST have
+        // an active Edit Details After Checkout action assigned to this user for the Check-In menu.
+        public bool HasExplicitAction(string action)
+        {
+            return MenuId > 0 && !string.IsNullOrWhiteSpace(action)
+                && All.Contains(action) && Allowed.Contains(action);
+        }
         public bool HasAny(params string[] aliases)
         {
             if (MenuId <= 0) return true;
@@ -4295,6 +4425,8 @@ WHERE pa.menuid=@menuid AND ISNULL(pa.is_active,0)=1;", cn);
         model.CanChangeRoom = p.HasAny("ChangeRoom", "ChangeReservationRoom", "btnChangeReservationRoom");
         model.CanRefund = p.HasAction("Refund");
         model.CanUpdateGuest = p.HasAction("btnUpdateGuest");
+        model.CanEditCheckedOutGuest = p.HasExplicitAction("btnUpdateGuest") && p.HasExplicitAction("Edit Details After Checkout");
+        model.CanAddCheckedOutService = model.CanEditCheckedOutGuest;
         model.CanCardPayment = p.HasAction("pdq_payment");
         model.HasBedTaxPermission = p.HasAny("bedtaxblock", "BedTax", "bedtax");
         model.HasGstPermission = p.HasAny("gsttaxblock", "GST", "VAT", "gst");
@@ -4572,7 +4704,9 @@ ORDER BY s.ID DESC;";
                 // as the guest row rather than a second payments query.
                 var paymentArrival = DateAny(rd, "amin");
                 var paymentDeparture = DateAny(rd, "dmax");
-                if (paymentArrival.HasValue && paymentDeparture.HasValue && paymentDeparture.Value.Date > paymentArrival.Value.Date)
+                if (!IsCheckedOut(S(rd, "res_status")) &&
+                    paymentArrival.HasValue && paymentDeparture.HasValue &&
+                    paymentDeparture.Value.Date > paymentArrival.Value.Date)
                 {
                     g.ArrivalDate = paymentArrival.Value.Date;
                     g.DepartureDate = paymentDeparture.Value.Date;
@@ -5203,13 +5337,19 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(name,'')
     {
         if (!IsCheckedOut(model.ReservationStatus)) return;
 
-        model.CanEditDates = false;
+        // Date picker remains usable for one historical departure-date correction
+        // when both explicit permissions are granted. Group/room dates stay locked.
+        model.CanEditDates = model.CanEditCheckedOutGuest &&
+            IsSingleReservationType(model.ReservationType);
         model.CanExtendReservation = false;
         model.CanDeleteRoom = false;
         model.CanDeleteAfterCheckOut = false;
         model.CanUpdateRate = false;
         model.CanChangeRoom = false;
-        model.CanUpdateGuest = false;
+        // Edit Details After Checkout + Update Guest Info may edit guest/contact
+        // fields and correct the DEPARTURE date after checkout. Rates, room
+        // assignments, financial records, and checkout status stay protected.
+        model.CanUpdateGuest = model.CanEditCheckedOutGuest;
         model.ShowCheckInAction = false;
         model.ShowUndoCheckInAction = false;
         model.ShowCheckOutAction = false;
@@ -5238,6 +5378,34 @@ FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(name,'')
         model.ShowUndoCheckInAction = IsCheckIn(model.ReservationStatus);
         model.ShowCheckOutAction = IsCheckIn(model.ReservationStatus);
         model.CanExtendReservation = IsReservation(model.ReservationStatus) || IsCheckIn(model.ReservationStatus);
+    }
+
+    // Fail closed when FBR/PRA posting data is unavailable. Checked-out financial
+    // adjustments cannot bypass the issued-invoice check because of a SQL read failure.
+    private static async Task<bool> HasIssuedFiscalInvoiceForChargeAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(@"
+SELECT CONVERT(nvarchar(100), fbr_invoice_no) AS InvoiceNo,
+       CONVERT(nvarchar(30), fbr_post_status) AS PostStatus
+FROM dbo.GuestInformationLogTB WITH (UPDLOCK, HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg
+UNION ALL
+SELECT CONVERT(nvarchar(100), fbr_invoice_no), CONVERT(nvarchar(30), fbr_post_status)
+FROM dbo.NewReservationsTB WITH (UPDLOCK, HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId.Trim();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var invoiceNumber = reader.IsDBNull(0) ? string.Empty : Convert.ToString(reader.GetValue(0));
+            var postStatus = reader.IsDBNull(1) ? string.Empty : Convert.ToString(reader.GetValue(1));
+            if (IsValidFbrInvoice(invoiceNumber) ||
+                string.Equals(postStatus?.Trim(), "Posted", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     private async Task<bool> HasValidFbrInvoiceAsync(SqlConnection cn, string hotelId, string regId, CancellationToken ct)
@@ -6275,12 +6443,14 @@ END;", cn, tx);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task<StayInfo> GetCurrentStayAsync(SqlConnection cn, string hotelId, string regId, CancellationToken ct)
+    private async Task<StayInfo> GetCurrentStayAsync(SqlConnection cn, string hotelId, string regId, CancellationToken ct, bool checkedOutMasterFirst = false)
     {
         // WebForms parity: the current stay range is derived from Room Rent
         // payment segments first (MIN arrival / MAX departure). This is vital
         // after an Extend operation because the master guest row can lag behind
         // the split payment rows until synchronization finishes.
+        if (!checkedOutMasterFirst)
+        {
         try
         {
             await using var paymentRange = new SqlCommand(@"
@@ -6320,13 +6490,13 @@ WHERE hotel_id=@hotel
         {
             _logger.LogDebug(ex, "Unable to derive stay range from payment segments; using master rows.");
         }
+        }
 
-        foreach (var sql in new[]
-        {
-            // Exact WebForms fallback precedence after payment rows.
-            "SELECT TOP 1 ArrivalDate,dept_date AS DepartureDate FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC",
-            "SELECT TOP 1 ArrivalDate,DepartureDate FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC"
-        })
+        var newReservationStaySql = "SELECT TOP 1 ArrivalDate,dept_date AS DepartureDate FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC";
+        var checkedInStaySql = "SELECT TOP 1 ArrivalDate,DepartureDate FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY ID DESC";
+        foreach (var sql in checkedOutMasterFirst
+            ? new[] { checkedInStaySql, newReservationStaySql }
+            : new[] { newReservationStaySql, checkedInStaySql })
         {
             try
             {

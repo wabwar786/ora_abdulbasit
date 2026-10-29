@@ -1177,7 +1177,7 @@
             input.min = type === 'max_stay' ? '0' : '1'; input.max = '999';
             input.value = /^\d+$/.test(String(summary)) ? summary : '';
         }
-        if (isCutoff) setText('bulkRestrictionHint', 'Booking Cutoff controls last-minute arrivals. Custom 3 days blocks arrival dates today, tomorrow and the following day; later dates remain bookable unless another restriction applies. Default uses the rate plan setting; Disabled overrides it for these dates.');
+        if (isCutoff) setText('bulkRestrictionHint', 'Booking Cutoff controls last-minute arrivals. A custom 3-day cutoff set on 29 Oct covers 29–31 Oct for the selected rate plan. Following dates do not need their own cutoff value; each day is closed when it falls inside the hotel-date cutoff window. Default uses the rate plan setting; Disabled overrides it for these dates.');
         else if (isBool) setText('bulkRestrictionHint', 'Closed applies the manual restriction. Open removes it for the selected dates.');
         else setText('bulkRestrictionHint', type === 'max_stay' ? '0 removes the maximum stay restriction.' : 'Enter a whole number of nights.');
     }
