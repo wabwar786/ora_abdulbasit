@@ -2305,7 +2305,7 @@ ORDER BY TRY_CONVERT(int,p.room_no),p.room_no,p.ID;",cn);
         // represents the entire reservation and must not block a partial checkout.
 
         var permissions = await LoadPermissionsAsync(cn, hotelId, userId, ct);
-        var fbrEnabled = await ScalarBoolAsync(cn, "SELECT TOP 1 ISNULL(fbr_enabled,0) FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel", hotelId, ct);
+        var fbrEnabled = await FiscalIntegrationService.HasAnyEnabledIntegrationAsync(cn, hotelId, ct);
 
         // Normal checkout reuses the last payment method already recorded for the guest.
         // The user should not have to select a payment method again just to check out.
@@ -2452,7 +2452,10 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
                 var todayDb = hotelToday.ToString("MM-dd-yyyy", CultureInfo.InvariantCulture);
                 var security = totals.RoomSecurity.ToString(CultureInfo.InvariantCulture);
                 await using var cmd = new SqlCommand(@"
-UPDATE dbo.GuestInformationLogTB SET res_status='check out',room_security=@security,DepartureTime=@time
+UPDATE dbo.GuestInformationLogTB
+SET res_status='check out',room_security=@security,DepartureTime=@time,
+    payment_method=CASE WHEN NULLIF(LTRIM(RTRIM(@checkoutMethod)), '') IS NULL
+        THEN payment_method ELSE @checkoutMethod END
 WHERE hotel_id=@hotel AND reg_id=@reg;
 UPDATE dbo.GuestInformation SET DepartureTime=@time WHERE hotel_id=@hotel AND reg_id=@reg;
 UPDATE dbo.PaymentsLogTB SET status='check out',departure_date=@departure WHERE hotel_id=@hotel AND reg_id=@reg;
@@ -2462,6 +2465,7 @@ IF NOT EXISTS (SELECT 1 FROM dbo.guestfeedbackTB WHERE hotel_id=@hotel AND reg_i
 INSERT INTO dbo.guestfeedbackTB(reg_id,visit_id,email,phone,name,token,hotel_id,date)
 VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
                 cmd.Parameters.Add("@security", SqlDbType.VarChar, 50).Value = security;
+                cmd.Parameters.Add("@checkoutMethod", SqlDbType.NVarChar, 100).Value = effectivePaymentMethod;
                 cmd.Parameters.Add("@time", SqlDbType.VarChar, 20).Value = hotelNow.ToString("hh:mm tt", CultureInfo.InvariantCulture);
                 cmd.Parameters.Add("@departure", SqlDbType.VarChar, 50).Value = rooms.Last().DepartureDate.HasValue ? FmtLegacyDate(rooms.Last().DepartureDate!.Value) : todayDb;
                 cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
@@ -2496,14 +2500,23 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
             string fbrWarning = string.Empty;
             if (allRooms && fbrEnabled)
             {
+                try
+                {
                 var fbr = await PostToFbrAsync(hotelId, userId, userName, ip,
                     new FbrPostRequest
                     {
                         RegId = request.RegId,
                         VisitId = gsum?.VisitId ?? string.Empty,
-                        PaymentMethod = effectivePaymentMethod
+                        PaymentMethod = effectivePaymentMethod,
+                        FiscalAuthority = request.FiscalAuthority
                     }, ct);
                 if (!fbr.Success) fbrWarning = fbr.Message;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Fiscal posting warning after completed checkout for reservation {RegId}", request.RegId);
+                    fbrWarning = "Invoice was not posted: " + ex.Message;
+                }
                 fbrInvoiceNo = await GetExistingFbrInvoiceNoAsync(cn, hotelId, request.RegId, ct);
             }
 
@@ -3769,9 +3782,7 @@ VALUES(@reg,@external,@amount,@now,@hotel,@visit,@status);", cn);
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
 
-        var fbrEnabled = await ScalarBoolAsync(cn,
-            "SELECT TOP 1 ISNULL(fbr_enabled,0) FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel",
-            hotelId, ct);
+        var fbrEnabled = await FiscalIntegrationService.HasAnyEnabledIntegrationAsync(cn, hotelId, ct);
         if (!fbrEnabled)
             return CheckInOperationResult.Ok("FBR tax mode is not enabled for this hotel.", request.RegId);
 
@@ -3866,21 +3877,41 @@ INNER JOIN Calc c ON c.ID=p.ID;", cn, tx))
         FbrPostRequest request, CancellationToken ct = default)
     {
         if (request == null || string.IsNullOrWhiteSpace(request.RegId)) return CheckInOperationResult.Fail("Reservation ID is required.");
-        var taxModeResult = await ApplyFbrTaxModeAsync(hotelId, request, ct, userId, userName, ip);
-        if (!taxModeResult.Success) return taxModeResult;
+        // WebForms October 2026 checkout parity: do NOT recalculate tax or rewrite
+        // payment rows while posting. The separate ApplyFbrTaxModeAsync endpoint
+        // remains available and unchanged for explicit payment-method selection.
         await using var cn = new SqlConnection(_connectionString); await cn.OpenAsync(ct);
+        // Serialize checkout and manual retry posts for one hotel/reservation.
+        // The failed-invoice report owns a separate RETRY lock, so neither
+        // two manual retries nor a checkout+retry can submit concurrently.
+        var fiscalLockName = "ORA:FiscalPost:" + hotelId + ":" + request.RegId.Trim();
+        bool fiscalLockAcquired = false;
+        await using (var acquire = new SqlCommand(@"
+DECLARE @result int;
+EXEC @result=sys.sp_getapplock @Resource=@resource,@LockMode='Exclusive',
+    @LockOwner='Session',@LockTimeout=60000;
+SELECT @result;",cn))
+        {
+            acquire.CommandTimeout=65;
+            acquire.Parameters.Add("@resource",SqlDbType.NVarChar,255).Value=fiscalLockName;
+            fiscalLockAcquired=Convert.ToInt32(await acquire.ExecuteScalarAsync(ct))>=0;
+        }
+        if(!fiscalLockAcquired)
+            return CheckInOperationResult.Fail("Another fiscal invoice request is already in progress. Please check its status before retrying.");
+        try
+        {
         var existing = await GetExistingFbrInvoiceNoAsync(cn, hotelId, request.RegId, ct);
         if (IsValidFbrInvoice(existing)) return CheckInOperationResult.Ok("FBR invoice is already posted.", request.RegId, data: new { fbrInvoiceNo = existing });
 
-        var setting = await GetFbrSettingAsync(cn, hotelId, request.PaymentMethod, ct);
-        if (!setting.Enabled) return CheckInOperationResult.Fail("FBR is not enabled for this hotel.");
-        if (setting.PosId <= 0) return CheckInOperationResult.Fail("FBR POS ID is missing in HotelsSignUpTB.");
-        if (setting.ApiUrl.Length == 0) return CheckInOperationResult.Fail("FBR API URL is missing in HotelsSignUpTB.");
+        var setting = await GetFbrSettingAsync(cn, hotelId, request.PaymentMethod, request.FiscalAuthority, ct);
+        if (!setting.Enabled) return CheckInOperationResult.Fail("No enabled fiscal integration for this hotel.");
+        if (setting.PosId <= 0) return CheckInOperationResult.Fail("Fiscal POS ID is missing in HotelFiscalIntegrationTB.");
+        if (setting.ApiUrl.Length == 0) return CheckInOperationResult.Fail("Fiscal invoice URL is incomplete in the hotel integration settings.");
 
         var guest = await GetGuestSummaryAsync(cn, null, hotelId, request.RegId, ct);
         var lines = new List<FbrLine>();
         await using (var cmd = new SqlCommand(@"
-SELECT ID,ISNULL(room_no,'') room_no,ISNULL(guestname,'') guestname,ISNULL(descr,'') descr,
+SELECT ID,ISNULL(room_no,'') room_no,ISNULL(guestname,'') guestname,ISNULL(descr,'') descr,ISNULL(deductioninfo,'') deductioninfo,
  ISNULL(TRY_CONVERT(decimal(18,2),Nights),0) NightsValue,
  ISNULL(TRY_CONVERT(decimal(18,2),Rate),0) RateValue,
  ISNULL(TRY_CONVERT(decimal(18,2),GST),0) GstValue,
@@ -3895,26 +3926,30 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
             cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId.Trim();
             await using var rd = await cmd.ExecuteReaderAsync(ct);
             while (await rd.ReadAsync(ct))
-                lines.Add(new FbrLine { Id = I(rd, "ID"), RoomNo = S(rd, "room_no"), Description = S(rd, "descr"), Nights = M(rd, "NightsValue"), Rate = M(rd, "RateValue"), Gst = M(rd, "GstValue"), Bed = M(rd, "BedValue"), Discount = M(rd, "DiscountValue"), Total = M(rd, "TotalValue") });
+                lines.Add(new FbrLine { Id = I(rd, "ID"), RoomNo = S(rd, "room_no"), Description = S(rd, "descr"), DeductionInfo = S(rd, "deductioninfo"), Nights = M(rd, "NightsValue"), Rate = M(rd, "RateValue"), Gst = M(rd, "GstValue"), Bed = M(rd, "BedValue"), Discount = M(rd, "DiscountValue"), Total = M(rd, "TotalValue") });
         }
         if (lines.Count == 0) return CheckInOperationResult.Fail("No charge rows found for FBR posting.");
 
-        var saleValue = lines.Sum(x => Math.Max(0m, x.Total - x.Gst - x.Bed + x.Discount));
-        var tax = lines.Sum(x => Math.Max(0m, x.Gst + x.Bed));
-        var discount = lines.Sum(x => Math.Max(0m, x.Discount));
+        // FBR payload parity with the newer WebForms FbrInvoiceService.cs.
+        // Only fiscal serialization changes here; checkout/payment/tax workflows remain intact.
+        // The fiscal endpoint is resolved from the same enabled route as WebForms.
         var total = lines.Sum(x => x.Total);
-        var quantity = lines.Sum(x => x.Nights > 0 ? x.Nights : 1m);
-        var isCash = IsCashMethod(request.PaymentMethod);
+        var tax = lines.Sum(x => x.Gst);
+        var saleValue = lines.Sum(x => Math.Max(0m, x.Total - x.Gst - x.Bed));
+        var discount = lines.Sum(x => x.Discount);
+        var quantity = lines.Sum(x => x.Nights > 0m ? x.Nights : 1m);
         var items = lines.Select(x => new
         {
-            ItemCode = setting.ItemCode,
-            PCTCode = setting.PctCode,
-            ItemName = (x.Description.Length > 0 ? x.Description : "Room Rent") + (x.RoomNo.Length > 0 ? " - Room " + x.RoomNo : string.Empty),
-            Quantity = x.Nights > 0 ? x.Nights : 1m,
+            ItemCode = string.IsNullOrWhiteSpace(setting.ItemCode) ? "ROOM-RENT" : setting.ItemCode,
+            PCTCode = string.IsNullOrWhiteSpace(setting.PctCode) ? "99130000" : setting.PctCode,
+            ItemName = (x.DeductionInfo.Length > 0 ? x.DeductionInfo : (x.Description.Length > 0 ? x.Description : "Room Rent"))
+                + (x.RoomNo.Length > 0 && !((x.DeductionInfo.Length > 0 ? x.DeductionInfo : x.Description).Contains(x.RoomNo, StringComparison.OrdinalIgnoreCase))
+                    ? " - Room " + x.RoomNo : string.Empty),
+            Quantity = x.Nights > 0m ? x.Nights : 1m,
             TaxRate = setting.TaxRate,
-            SaleValue = Math.Max(0m, x.Total - x.Gst - x.Bed + x.Discount),
+            SaleValue = Math.Max(0m, x.Total - x.Gst - x.Bed),
             TotalAmount = x.Total,
-            TaxCharged = x.Gst + x.Bed,
+            TaxCharged = x.Gst,
             Discount = x.Discount,
             FurtherTax = 0m,
             InvoiceType = 1,
@@ -3922,10 +3957,12 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
         }).ToArray();
         var payload = new
         {
-            InvoiceNumber = "",
+            FBRInvoiceNumber = "",
             POSID = setting.PosId,
-            USIN = request.RegId.Trim(),
+            USIN = request.RegId.Trim() + (string.IsNullOrWhiteSpace(request.VisitId) ? "" : "-" + request.VisitId.Trim()),
             DateTime = _hotelClock.GetHotelNow(hotelId).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+            BuyerNTN = "",
+            BuyerCNIC = "",
             BuyerName = guest?.Name ?? string.Empty,
             BuyerPhoneNumber = guest?.Phone ?? string.Empty,
             TotalBillAmount = total,
@@ -3934,7 +3971,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
             TotalTaxCharged = tax,
             Discount = discount,
             FurtherTax = 0m,
-            PaymentMode = isCash ? 1 : 2,
+            PaymentMode = IsCashMethod(request.PaymentMethod) ? 1 : 2,
             RefUSIN = "",
             InvoiceType = 1,
             Items = items
@@ -3953,12 +3990,11 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
             try
             {
                 using var doc = JsonDocument.Parse(raw);
-                invoiceNo = FirstJsonString(doc.RootElement, "InvoiceNumber", "invoiceNumber", "FBRInvoiceNumber", "fbrInvoiceNo", "InvoiceNo");
-                var responseStatus = FirstJsonString(doc.RootElement, "Response", "response", "Status", "status");
-                if (!ok && responseStatus.Equals("Success", StringComparison.OrdinalIgnoreCase)) ok = true;
+                invoiceNo = FindFbrInvoiceNumber(doc.RootElement);
             }
             catch { }
-            if (invoiceNo.Length == 0 && ok) invoiceNo = "Not Found";
+            if (!IsValidFbrInvoice(invoiceNo)) ok = false;
+            if (invoiceNo.Length == 0) invoiceNo = "Not Found";
         }
         catch (Exception ex) { raw = ex.Message; ok = false; }
 
@@ -3966,6 +4002,58 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
         await InsertSystemLogAsync(cn, null, hotelId, userName, ip, $"(FBR Post),{request.RegId},{invoiceNo},{(ok ? "Posted" : "Failed")}", ct);
         if (!ok || !IsValidFbrInvoice(invoiceNo)) return CheckInOperationResult.Fail("FBR posting failed. " + ExtractApiError(raw, "No valid invoice number returned."));
         return CheckInOperationResult.Ok("FBR invoice posted successfully.", request.RegId, data: new { fbrInvoiceNo = invoiceNo, rawResponse = raw });
+        }
+        finally
+        {
+            if(fiscalLockAcquired && cn.State==ConnectionState.Open)
+            {
+                try
+                {
+                    await using var release=new SqlCommand(
+                        "EXEC sys.sp_releaseapplock @Resource=@resource,@LockOwner='Session';",cn);
+                    release.Parameters.Add("@resource",SqlDbType.NVarChar,255).Value=fiscalLockName;
+                    await release.ExecuteNonQueryAsync(CancellationToken.None);
+                }
+                catch(Exception ex) { _logger.LogWarning(ex,"Fiscal lock release failed; SQL session disposal releases it."); }
+            }
+        }
+    }
+
+    // The WebForms response parser recognizes invoice keys in nested payloads.
+    // Unlike the old substring fallback, this never treats arbitrary error text as an invoice.
+    private static string FindFbrInvoiceNumber(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.Name.Equals("FBRInvoiceNumber", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("InvoiceNumber", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("InvoiceNo", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("fbr_invoice_no", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("invoice_number", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (property.Value.ValueKind == JsonValueKind.String)
+                        return property.Value.GetString()?.Trim() ?? string.Empty;
+                    if (property.Value.ValueKind == JsonValueKind.Number)
+                        return property.Value.ToString();
+                }
+            }
+            foreach (var property in element.EnumerateObject())
+            {
+                var nested = FindFbrInvoiceNumber(property.Value);
+                if (nested.Length > 0) return nested;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var nested = FindFbrInvoiceNumber(item);
+                if (nested.Length > 0) return nested;
+            }
+        }
+        return string.Empty;
     }
 
     // -----------------------------------------------------------------
@@ -4086,6 +4174,9 @@ SELECT TOP 1 * FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;", cn);
         }
         catch (SqlException ex) { _logger.LogDebug(ex, "Hotel settings could not be loaded for check-in."); }
 
+        // The WebForms fiscal module uses enabled per-hotel integration routes.
+        // The legacy HotelsSignUpTB.fbr_enabled flag is no longer authoritative.
+        model.FbrEnabled = await FiscalIntegrationService.HasAnyEnabledIntegrationAsync(cn, model.HotelId, ct);
         var tax = await LoadTaxSettingsAsync(cn, model.HotelId, ct);
         model.GstPercent = tax.GstPercent;
         model.BedTaxPercent = tax.BedTaxPercent;
@@ -5403,7 +5494,7 @@ VALUES(@customerno,@arrival,@arrivalTime,@departure,@departureTime,@first,@last,
     private sealed class StripeSettings { public string Secret { get; set; } = string.Empty; public string AccountId { get; set; } = string.Empty; }
     private sealed class CloverSettings { public string AccessToken { get; set; } = string.Empty; public string MerchantId { get; set; } = string.Empty; public string DeviceId { get; set; } = string.Empty; }
     private sealed class FbrSetting { public bool Enabled { get; set; } public int PosId { get; set; } public string ApiUrl { get; set; } = string.Empty; public string ItemCode { get; set; } = string.Empty; public string PctCode { get; set; } = string.Empty; public decimal TaxRate { get; set; } }
-    private sealed class FbrLine { public int Id { get; set; } public string RoomNo { get; set; } = string.Empty; public string Description { get; set; } = string.Empty; public decimal Nights { get; set; } public decimal Rate { get; set; } public decimal Gst { get; set; } public decimal Bed { get; set; } public decimal Discount { get; set; } public decimal Total { get; set; } }
+    private sealed class FbrLine { public int Id { get; set; } public string RoomNo { get; set; } = string.Empty; public string Description { get; set; } = string.Empty; public string DeductionInfo { get; set; } = string.Empty; public decimal Nights { get; set; } public decimal Rate { get; set; } public decimal Gst { get; set; } public decimal Bed { get; set; } public decimal Discount { get; set; } public decimal Total { get; set; } }
 
     private async Task<string> GetReservationTypeForGuestUpdateAsync(
         SqlConnection cn, string hotelId, string regId, CancellationToken ct)
@@ -7339,25 +7430,27 @@ SELECT TOP 1 fbr_invoice_no FROM
  SELECT fbr_invoice_no,fbr_posted_at FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(fbr_invoice_no,'')<>''
  UNION ALL
  SELECT fbr_invoice_no,fbr_posted_at FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(fbr_invoice_no,'')<>''
-)x ORDER BY fbr_posted_at DESC;",cn);cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=regId;
+)x ORDER BY CASE
+ WHEN LOWER(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(fbr_invoice_no,''))),' ',''),'-',''))
+      IN ('notfound','notavailable','na','n/a','null')
+      OR fbr_invoice_no LIKE '%*Test*%' THEN 1 ELSE 0 END, fbr_posted_at DESC;",cn);cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=regId;
             return Convert.ToString(await cmd.ExecuteScalarAsync(ct))?.Trim()??string.Empty;
         }
         catch{return string.Empty;}
     }
 
-    private async Task<FbrSetting> GetFbrSettingAsync(SqlConnection cn,string hotelId,string paymentMethod,CancellationToken ct)
+    private async Task<FbrSetting> GetFbrSettingAsync(SqlConnection cn, string hotelId,
+        string paymentMethod, string? selectedAuthority, CancellationToken ct)
     {
-        var s=new FbrSetting();
-        try
+        var route = await FiscalIntegrationService.ResolveCheckoutRouteAsync(cn, hotelId, selectedAuthority, ct);
+        if (route == null) return new FbrSetting();
+        var tax = await LoadTaxSettingsAsync(cn, hotelId, ct);
+        return new FbrSetting
         {
-            await using var cmd=new SqlCommand(@"
-SELECT TOP 1 ISNULL(fbr_enabled,0) fbr_enabled,ISNULL(fbr_pos_id,0) fbr_pos_id,ISNULL(fbr_api_url,'') fbr_api_url,
- ISNULL(fbr_default_item_code,'') fbr_default_item_code,ISNULL(fbr_default_pct_code,'') fbr_default_pct_code
-FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;",cn);cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
-            await using var rd=await cmd.ExecuteReaderAsync(ct);if(await rd.ReadAsync(ct)){s.Enabled=B(rd,"fbr_enabled");s.PosId=I(rd,"fbr_pos_id");s.ApiUrl=S(rd,"fbr_api_url");s.ItemCode=S(rd,"fbr_default_item_code");s.PctCode=S(rd,"fbr_default_pct_code");}
-        }
-        catch{return s;}
-        var tax=await LoadTaxSettingsAsync(cn,hotelId,ct);s.TaxRate=IsCashMethod(paymentMethod)?tax.GstPercent:tax.BankTransferTaxPercent;return s;
+            Enabled = route.Enabled, PosId = route.PosId, ApiUrl = route.InvoiceUrl,
+            ItemCode = route.DefaultItemCode, PctCode = route.DefaultPctCode,
+            TaxRate = IsCashMethod(paymentMethod) ? tax.GstPercent : tax.BankTransferTaxPercent
+        };
     }
 
     private async Task SaveFbrResultAsync(SqlConnection cn,string hotelId,string regId,string invoiceNo,string status,string response,CancellationToken ct)
@@ -7376,7 +7469,7 @@ UPDATE dbo.NewReservationsTB SET fbr_invoice_no=@invoice,fbr_posted_at=GETDATE()
     private static bool IsValidFbrInvoice(string? invoice)
     {
         var s=(invoice??string.Empty).Trim();if(s.Length==0)return false;var n=s.Replace(" ","").Replace("-","").ToLowerInvariant();
-        if(n is "notfound" or "notavailable" or "na" or "n/a")return false;return s.IndexOf("*Test*",StringComparison.OrdinalIgnoreCase)<0;
+        if(n is "notfound" or "notavailable" or "na" or "n/a" or "null")return false;return s.IndexOf("*Test*",StringComparison.OrdinalIgnoreCase)<0;
     }
 
     private static TerminalPaymentResult TerminalFail(string message)=>new(){Success=false,Message=message};

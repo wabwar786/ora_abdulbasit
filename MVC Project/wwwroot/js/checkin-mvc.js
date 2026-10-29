@@ -2309,21 +2309,31 @@
             const selectAll = byId('checkoutSelectAll');
             selectAll.checked = true;
             selectAll.indeterminate = false;
+            const confirmButton = byId('checkoutConfirmSelected');
+            let checkoutSubmitting = false;
             const syncAll = () => {
                 const checks = $$('.mvc-checkout-room-check', list);
                 const chosen = checks.filter(c => c.checked).length;
                 selectAll.checked = chosen === checks.length;
                 selectAll.indeterminate = chosen > 0 && chosen < checks.length;
                 byId('checkoutSelectedCount').textContent = `${chosen} of ${checks.length} rooms selected`;
-                byId('checkoutConfirmSelected').disabled = chosen === 0;
+                confirmButton.disabled = checkoutSubmitting || chosen === 0;
             };
-            selectAll.onchange = () => { $$('.mvc-checkout-room-check', list).forEach(c => { c.checked = selectAll.checked; }); syncAll(); };
+            selectAll.onchange = () => { if (checkoutSubmitting) return; $$('.mvc-checkout-room-check', list).forEach(c => { c.checked = selectAll.checked; }); syncAll(); };
             list.onchange = syncAll;
-            byId('checkoutConfirmSelected').onclick = async () => {
+            confirmButton.onclick = async () => {
+                if (checkoutSubmitting) return; // Prevent duplicate checkout requests.
                 const ids = $$('.mvc-checkout-room-check:checked', list).map(c => Number(c.value));
                 if (!ids.length) return;
                 const method = byId('paymentMethod')?.value || '';
-                showBusy('Checking out selected rooms…');
+                checkoutSubmitting = true;
+                confirmButton.disabled = true;
+                confirmButton.setAttribute('aria-busy', 'true');
+                const originalLabel = confirmButton.innerHTML;
+                confirmButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Processing Checkout…';
+                const modalControls = [selectAll, ...$$('.mvc-checkout-room-check', list),
+                    ...$$('[data-close-modal="checkoutRoomsModal"]')];
+                modalControls.forEach(el => { el.disabled = true; });
                 try {
                     const r = await api(urls.checkOut, { method:'POST', body:{regId,paymentIds:ids,paymentMethod:method,force:false} });
                     if (!r.ok) return message(r.message, 'error');
@@ -2331,8 +2341,15 @@
                     message(r.message, 'success');
                     if (r.redirectUrl) window.open(r.redirectUrl, '_blank', 'noopener');
                     await refreshReservationUi(regId);
-                } catch(e) { message(e.message, 'error'); }
-                finally { hideBusy(); }
+                } catch(e) {
+                    message(e.message || 'Checkout could not be completed.', 'error');
+                } finally {
+                    checkoutSubmitting = false;
+                    confirmButton.innerHTML = originalLabel;
+                    confirmButton.removeAttribute('aria-busy');
+                    modalControls.forEach(el => { el.disabled = false; });
+                    syncAll();
+                }
             };
             syncAll();
             openModal('checkoutRoomsModal');

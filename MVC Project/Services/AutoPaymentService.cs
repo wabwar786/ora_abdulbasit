@@ -1069,8 +1069,7 @@ WHERE CONVERT(varchar(100), hotel_id)=@hotel_id
                 await ReservationAuditWriter.WriteAsync(
                     cn, null, reservation.HotelId, reservation.RegId,
                     "AutoPayment", "AutoPayment", "autopayment", "AUTO PAYMENT",
-                    $"Successful automatic card charge | Amount={paidAmount:0.00} {reservation.Currency}; " +
-                    $"PaymentIntent={outcome.PaymentIntentId}; Charge={outcome.ChargeId}",
+                    $"Automatic payment received | {paidAmount:0.00} {reservation.Currency}",
                     now, cancellationToken);
             }
             catch (Exception auditError)

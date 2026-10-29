@@ -954,24 +954,18 @@
   }
 
   function openHistoryPage(d){
-    if(!d?.regId){showToast('Reservation reference is missing.',true);return;}
-    const regB64=base64(d.regId);
-    const u=legacyPageUrl('Reservation_History');
+    const regId=String(d?.regId ?? '').trim();
+    if(!regId){showToast('Reservation reference is missing.',true);return;}
 
-    // Exact WebForms calendar navigation contract.
-    u.searchParams.set('UD',queryOrB64('UD',cfg.userId));
-    u.searchParams.set('UN',queryOrB64('UN',cfg.userName));
-    u.searchParams.set('cc',regB64);
-    u.searchParams.set('vs',regB64);
-    u.searchParams.set('hd',queryOrB64('hd',cfg.hotelId));
-    u.searchParams.set('rl',queryOrB64('rl',cfg.role));
-    u.searchParams.set('RS','');
-    u.searchParams.set('RI',regB64);
-    u.searchParams.set('hr',queryOrB64('hr',cfg.role));
-    u.searchParams.set('hn',queryOrB64('hn',cfg.hotelName));
+    // MVC reservation history expects the original reg_id in ?term=...
+    // The Razor view supplies an application-root-aware URL for virtual directories.
+    const u=new URL(cfg.reservationHistoryUrl || '/Reservation_History/Index',location.origin);
+    u.searchParams.set('term',regId);
 
-    const w=window.open(u.toString(),'ReservationHistoryTab','noopener');
-    if(!w) showToast('Please allow pop-ups for this website.',true);
+    // Keep Guest History in a separate reusable tab and do not leave the calendar.
+    const w=window.open(u.toString(),'ReservationHistoryTab');
+    if(!w){showToast('Please allow pop-ups for this website.',true);return;}
+    try{w.opener=null;}catch(_){/* cross-origin navigations are not needed here */}
   }
 
   function openDetailInvoiceWindow(){
@@ -1429,6 +1423,12 @@ ${tag}`:tag;
 
   async function bookingContextAction(action,item,button=null){
     if(!item?.regId) return;
+
+    if(action==='history'){
+      openHistoryPage(item);
+      closeContext(true);
+      return;
+    }
 
     // Detail Invoice must open a tab immediately from the user's click so popup
     // blockers do not stop it while the full Check-In reservation state loads.

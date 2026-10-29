@@ -11,11 +11,10 @@ namespace Orapmshms.Controllers;
 [Route("ChannexReviews")]
 public sealed class ChannexReviewsController : Controller
 {
-    // The supplied WebForms page calls ChannexService.BuildReviewsIframeUrl(...).
-    // That helper implementation was not included with the page, so this MVC
-    // conversion keeps the same Review-specific intent through the Channex
-    // headless exchange and opens the Reviews application route.
+    // The shared headless exchange is used by both Channex Reviews and Messages.
+    // Keep all existing Reviews routes and behavior while exposing Messages too.
     private const string ReviewsRedirectPath = "/reviews";
+    private const string MessagesRedirectPath = "/messages";
 
     private readonly string _connectionString;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -36,8 +35,27 @@ public sealed class ChannexReviewsController : Controller
     [HttpGet("Index")]
     [HttpGet("/ChannexReviews.aspx")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+    public Task<IActionResult> Index(CancellationToken cancellationToken) =>
+        RenderEmbeddedPageAsync(messages: false, cancellationToken: cancellationToken);
+
+    // Reuse Reviews' property lookup, connection, token exchange and audit logic.
+    // Absolute routes preserve the existing Reviews URLs and provide legacy-style Messages URLs.
+    [HttpGet("/ChannexMessages")]
+    [HttpGet("/ChannexMessages/Index")]
+    [HttpGet("/ChannexMessages.aspx")]
+    [HttpGet("/ChannexChats")]
+    [HttpGet("/ChannexChats.aspx")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public Task<IActionResult> Messages(CancellationToken cancellationToken) =>
+        RenderEmbeddedPageAsync(messages: true, cancellationToken: cancellationToken);
+
+    private async Task<IActionResult> RenderEmbeddedPageAsync(
+        bool messages,
+        CancellationToken cancellationToken)
     {
+        ViewData["ChannexApp"] = messages ? "messages" : "reviews";
+        string appName = messages ? "Messages" : "Reviews";
+        string auditActionName = messages ? "generate_messages_token" : "generate_reviews_token";
         var model = new ChannexReviewsViewModel();
 
         string hotelId = ResolveHotelId();
@@ -46,7 +64,7 @@ public sealed class ChannexReviewsController : Controller
         if (string.IsNullOrWhiteSpace(hotelId))
         {
             model.ErrorMessage = "Missing hotel_id.";
-            return View(model);
+            return View("Index", model);
         }
 
         PropertyRow? property = null;
@@ -60,7 +78,7 @@ public sealed class ChannexReviewsController : Controller
             if (property == null)
             {
                 model.ErrorMessage = "Property not found.";
-                return View(model);
+                return View("Index", model);
             }
 
             model.HotelName = property.HotelName;
@@ -69,7 +87,7 @@ public sealed class ChannexReviewsController : Controller
             if (string.IsNullOrWhiteSpace(property.PropertyId))
             {
                 model.ErrorMessage = "This property does not have a Channex property_id.";
-                return View(model);
+                return View("Index", model);
             }
 
             var channex = await LoadChannexConfigurationAsync(
@@ -88,27 +106,28 @@ public sealed class ChannexReviewsController : Controller
                 await TryLogActionAsync(
                     property.HotelId,
                     property.PropertyId,
-                    "generate_reviews_token",
+                    auditActionName,
                     "error",
                     "Empty token response",
                     currentUser,
                     cancellationToken);
 
-                model.ErrorMessage = "Failed to generate the Channex Reviews session.";
-                return View(model);
+                model.ErrorMessage = $"Failed to generate the Channex {appName} session.";
+                return View("Index", model);
             }
 
-            model.IframeUrl = BuildReviewsIframeUrl(
+            model.IframeUrl = BuildEmbeddedIframeUrl(
                 channex.BaseUrl,
                 tokenResponse.Token,
                 property.PropertyId,
+                messages ? MessagesRedirectPath : ReviewsRedirectPath,
                 "en");
 
             // Do not save tokenResponse.RawJson or model.IframeUrl in the audit log.
             await TryLogActionAsync(
                 property.HotelId,
                 property.PropertyId,
-                "generate_reviews_token",
+                auditActionName,
                 "success",
                 null,
                 currentUser,
@@ -122,24 +141,25 @@ public sealed class ChannexReviewsController : Controller
         {
             _logger.LogError(
                 ex,
-                "Unable to load Channex Reviews for hotel {HotelId}.",
+                "Unable to load Channex {AppName} for hotel {HotelId}.",
+                appName,
                 hotelId);
 
             // Keep logging best-effort and never allow an audit failure to hide
-            // the original Reviews error. Do not persist token/auth responses.
+            // the original Channex error. Do not persist token/auth responses.
             await TryLogActionAsync(
                 hotelId,
                 property?.PropertyId ?? string.Empty,
-                "generate_reviews_token",
+                auditActionName,
                 "error",
-                "Unable to load Channex Reviews.",
+                $"Unable to load Channex {appName}.",
                 currentUser,
                 cancellationToken);
 
-            model.ErrorMessage = "Unable to load Channex Reviews. Please contact support.";
+            model.ErrorMessage = $"Unable to load Channex {appName}. Please contact support.";
         }
 
-        return View(model);
+        return View("Index", model);
     }
 
     private async Task<PropertyRow?> LoadPropertyAsync(
@@ -287,16 +307,17 @@ ORDER BY id DESC;";
         return new TokenResponse(token);
     }
 
-    private static string BuildReviewsIframeUrl(
+    private static string BuildEmbeddedIframeUrl(
         string baseUrl,
         string oneTimeToken,
         string propertyId,
+        string redirectPath,
         string language)
     {
         var query = new StringBuilder();
         query.Append("oauth_session_key=").Append(Uri.EscapeDataString(oneTimeToken));
         query.Append("&app_mode=headless");
-        query.Append("&redirect_to=").Append(Uri.EscapeDataString(ReviewsRedirectPath));
+        query.Append("&redirect_to=").Append(Uri.EscapeDataString(redirectPath));
         query.Append("&property_id=").Append(Uri.EscapeDataString(propertyId));
 
         if (!string.IsNullOrWhiteSpace(language))

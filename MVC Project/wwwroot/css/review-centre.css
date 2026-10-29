@@ -1,0 +1,232 @@
+/* Ported from ReviewCentre.aspx; scoped to the MVC page. */
+
+
+  #oraReviewCentre{
+    --bg:#f1f4f9; --card:#ffffff; --text:#1b2333; --muted:#6b7385; --line:#e6e9f0; --soft:#f7f9fc;
+    --accent:#1677ff; --good:#16a34a; --warn:#f59e0b; --bad:#dc2626;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 4px 14px rgba(16,24,40,.06);
+  }
+  /* Keep the reset low-specificity. Using #oraReviewCentre * here would
+     OVERRIDE padding/margins on every .rc-* card and make the design collapse. */
+  :where(#oraReviewCentre *){box-sizing:border-box;margin:0;padding:0}
+  #oraReviewCentre{background:var(--bg);color:var(--text);padding:8px 12px 10px}
+  #oraReviewCentre button{font-family:inherit}
+
+  /* Header */
+  .rc-header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .rc-header h1{font-size:26px;font-weight:700;letter-spacing:.3px}
+  .rc-header p{font-size:14px;color:var(--muted);margin-top:2px}
+  .rc-tools{display:flex;gap:8px;flex-wrap:wrap}
+  .rc-tools input,.rc-tools select{height:38px;border:1px solid var(--line);border-radius:8px;padding:0 12px;
+    font-size:13.5px;background:#fff;color:var(--text);font-family:inherit;min-width:0}
+  .rc-tools input{width:220px}
+
+  /* KPI strip */
+  .rc-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:12px}
+  .rc-kpi{--c:var(--accent);position:relative;display:flex;align-items:center;gap:14px;background:var(--card);
+          border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);overflow:hidden}
+  .rc-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}
+  .rc-kpi-icon{width:46px;height:46px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;
+               background:color-mix(in srgb,var(--c) 12%,#fff);color:var(--c)}
+  .rc-kpi-icon svg{width:22px;height:22px}
+  .rc-kpi-body{min-width:0;flex:1}
+  .rc-kpi-label{font-size:12.5px;color:var(--muted);font-weight:500}
+  .rc-kpi-value{font-size:26px;font-weight:700;line-height:1.15;margin:2px 0 3px;color:var(--text)}
+  .rc-kpi-value em{font-style:normal;font-size:14px;font-weight:500;color:var(--muted);margin-left:3px}
+  .rc-kpi-sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rc-kpi-bar{height:5px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:6px}
+  .rc-kpi-bar i{display:block;height:100%;background:var(--c);border-radius:4px}
+  .rc-kpi.alert .rc-kpi-value{color:var(--bad)}
+
+  /* Board */
+  .rc-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+  .rc-col{flex:0 0 310px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+          display:flex;flex-direction:column;height:clamp(430px, calc(100vh - 250px), 930px);min-height:0;scroll-snap-align:start;overflow:hidden}
+
+  .rc-col-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--brand);color:#fff}
+  .rc-logo{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.18);font-weight:700;
+           display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+  .rc-col-head h2{font-size:16px;font-weight:600;flex:1}
+  .rc-pending{font-size:11.5px;background:#fff;color:var(--bad);font-weight:700;padding:2px 8px;border-radius:10px}
+
+  /* Score block */
+  .rc-score{display:flex;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .rc-ring{--p:0;width:78px;height:78px;border-radius:50%;flex-shrink:0;
+           background:conic-gradient(var(--brand) calc(var(--p)*1%),var(--line) 0);display:grid;place-items:center}
+  .rc-ring div{width:62px;height:62px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .rc-ring b{font-size:20px;font-weight:700;color:var(--brand);line-height:1}
+  .rc-ring small{font-size:10.5px;color:var(--muted)}
+  .rc-score-info{flex:1;font-size:13px}
+  .rc-score-info .lbl{font-weight:600}
+  .rc-stars{color:#f5b301;font-size:14px;letter-spacing:1px;margin:2px 0}
+  .rc-score-info .sub{color:var(--muted);font-size:12.5px}
+
+  /* Stats */
+  .rc-stats{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;border-bottom:1px solid var(--line)}
+  .rc-stats div{padding:8px 4px}
+  .rc-stats div+div{border-left:1px solid var(--line)}
+  .rc-stats b{display:block;font-size:17px}
+  .rc-stats span{font-size:11.5px;color:var(--muted)}
+  .rc-rate{padding:10px 16px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .rc-rate-row{display:flex;justify-content:space-between;margin-bottom:5px}
+  .rc-rate-row b{color:var(--text)}
+  .rc-bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden}
+  .rc-bar i{display:block;height:100%;background:var(--brand);border-radius:4px}
+
+  /* Tabs */
+  .rc-replies-title{padding:9px 14px 6px;font-size:14px;font-weight:600}
+  .rc-tabs{display:flex;margin:0 14px;background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:3px}
+  .rc-tab{flex:1;padding:7px 4px;border:0;background:transparent;font-size:13px;cursor:pointer;color:var(--muted);border-radius:7px}
+  .rc-tab.active{background:#fff;color:var(--accent);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .rc-count{display:inline-block;min-width:22px;padding:0 6px;margin-left:4px;border-radius:10px;font-size:11.5px;background:var(--line);color:var(--text)}
+  .rc-tab.active .rc-count{background:var(--accent);color:#fff}
+
+  /* List */
+  .rc-list{list-style:none;flex:1;overflow-y:auto;padding:6px 14px 12px}
+  .rc-item{padding:10px 0;border-bottom:1px solid var(--line)}
+  .rc-item-top{display:flex;align-items:center;gap:8px}
+  .rc-avatar{width:30px;height:30px;border-radius:50%;background:var(--soft);border:1px solid var(--line);
+             display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;color:var(--muted);flex-shrink:0}
+  .rc-who{flex:1;min-width:0}
+  .rc-who b{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rc-who time{font-size:11.5px;color:var(--muted)}
+  .rc-badge{font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;color:#fff;white-space:nowrap}
+  .rc-text{font-size:12.8px;color:#4a5263;margin-top:6px;line-height:1.45}
+  .rc-text.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .rc-more{border:0;background:none;color:var(--accent);font-size:12px;cursor:pointer;padding:2px 0}
+  .rc-meta{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:6px}
+  .rc-due{font-size:11.5px;padding:2px 8px;border-radius:10px;background:#fff4e5;color:#b45309;font-weight:600}
+  .rc-due.urgent{background:#fdecec;color:var(--bad)}
+  .rc-btn{border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:12px;font-weight:600;
+          padding:4px 12px;border-radius:7px;cursor:pointer}
+  .rc-btn.solid{background:var(--accent);color:#fff}
+  .rc-reply-box{margin-top:8px;display:none}
+  .rc-reply-box.open{display:block}
+  .rc-reply-box textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8px;padding:8px;
+                         font-size:12.8px;font-family:inherit;resize:vertical}
+  .rc-reply-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}
+  .rc-reply{margin-top:7px;background:var(--soft);border-left:3px solid var(--brand);border-radius:6px;padding:7px 10px;font-size:12.3px;color:#4a5263}
+  .rc-reply b{display:block;font-size:11.5px;color:var(--muted);margin-bottom:2px}
+  .rc-empty{text-align:center;color:var(--muted);font-size:13px;padding:28px 0}
+
+  @media (max-width:600px){ .rc-tools input{width:100%} .rc-tools{width:100%} .rc-col{flex-basis:88vw} }
+
+  #oraReviewCentre .rc-status { font-size:12px; color:#1d4ed8; background:#eff6ff; padding:9px 12px; margin-bottom:12px; border:1px solid #bfdbfe; border-radius:8px; }
+  #oraReviewCentre .rc-status-error { color:#b91c1c; background:#fef2f2; border-color:#fecaca; }
+  #oraReviewCentre .rc-disabled-reply { color:#64748b; font-size:10.5px; }
+  #oraReviewCentre .rc-reply-box textarea { height:74px; }
+  #oraReviewCentre .rc-col { scrollbar-color:#cbd5e1 transparent; }
+  #oraReviewCentre [hidden] { display:none !important; }
+  /* Local ORA PMS master-page integration (no iframe changes). */
+  #oraReviewCentre{width:100%;min-width:0;}
+  #oraReviewCentre .rc-header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:20px;}
+  #oraReviewCentre .rc-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:20px;}
+  #oraReviewCentre .rc-kpi{padding:16px 18px;min-height:88px;}
+  #oraReviewCentre .rc-kpi-icon{width:46px;height:46px;}
+  #oraReviewCentre .rc-board{display:flex;gap:16px;max-width:100%;overflow-x:auto;overflow-y:hidden;padding-bottom:10px;scroll-snap-type:x proximity;}
+  #oraReviewCentre .rc-col{flex:0 0 310px;width:310px;min-width:310px;}
+  #oraReviewCentre .rc-col-head{display:flex;align-items:center;gap:10px;padding:14px 16px;min-height:62px;}
+  #oraReviewCentre .rc-score{padding:16px;}
+  #oraReviewCentre .rc-stats > div{padding:10px 4px;}
+  #oraReviewCentre .rc-rate{padding:10px 16px 12px;}
+  #oraReviewCentre .rc-replies-title{padding:9px 14px 6px;}
+  #oraReviewCentre .rc-tabs{margin:0 16px;padding:3px;}
+  #oraReviewCentre .rc-tab{padding:7px 4px;}
+  #oraReviewCentre .rc-list{padding:6px 16px 16px;}
+  #oraReviewCentre .rc-item{padding:11px 0;}
+  #oraReviewCentre .rc-btn{padding:4px 12px;}
+  #oraReviewCentre .rc-tools input,#oraReviewCentre .rc-tools select{padding:0 12px;}
+  @media(max-width:600px){
+    #oraReviewCentre{padding:16px 12px;}
+    #oraReviewCentre .rc-header{align-items:flex-start;}
+    #oraReviewCentre .rc-tools{width:100%;}
+    #oraReviewCentre .rc-tools input{width:100%;}
+    #oraReviewCentre .rc-col{flex-basis:88vw;width:88vw;min-width:0;}
+  }
+
+
+  /* Latest compact layout. Scoped to this page; master and iframes remain untouched. */
+  #oraReviewCentre { padding:8px 12px 10px; }
+  #oraReviewCentre .rc-header { margin:0 0 10px; align-items:center; gap:10px; }
+  #oraReviewCentre .rc-header h1 { font-size:21px; line-height:1.2; }
+  #oraReviewCentre .rc-header p { margin-top:2px; font-size:12px;margin-bottom:0px; }
+  #oraReviewCentre .rc-tools input,#oraReviewCentre .rc-tools select { height:34px; }
+  #oraReviewCentre .rc-kpis { grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:0 0 12px; }
+  #oraReviewCentre .rc-kpi { padding:11px 14px; min-height:76px; border-radius:12px; }
+  #oraReviewCentre .rc-kpi-value { font-size:24px; }
+  #oraReviewCentre .rc-kpi-icon { width:40px; height:40px; }
+  #oraReviewCentre .rc-board { gap:12px; padding-bottom:6px; }
+  #oraReviewCentre .rc-col { height:clamp(420px,calc(100vh - 305px),930px); min-height:0; border-radius:12px; }
+  #oraReviewCentre .rc-col-head { padding:11px 14px; min-height:52px; }
+  #oraReviewCentre .rc-score { padding:12px 14px; }
+  #oraReviewCentre .rc-stats div { padding:7px 4px; }
+  #oraReviewCentre .rc-stats b { font-size:16px; }
+  #oraReviewCentre .rc-stats span { font-size:10.5px; }
+  #oraReviewCentre .rc-replies-title { padding:9px 14px 6px; }
+  #oraReviewCentre .rc-tabs { margin:0 14px; }
+  #oraReviewCentre .rc-list { padding:5px 14px 12px; overscroll-behavior:contain; }
+  #oraReviewCentre .rc-item { padding:10px 0; }
+  #oraReviewCentre .rc-text { line-height:1.5; overflow-wrap:anywhere; }
+  #oraReviewCentre .rc-text.clamp { -webkit-line-clamp:3; }
+  #oraReviewCentre .rc-review-content { padding-top:4px; }
+  #oraReviewCentre .rc-review-content.rc-compact { max-height:77px; overflow:hidden; }
+  #oraReviewCentre .rc-review-section + .rc-review-section { margin-top:7px; }
+  #oraReviewCentre .rc-review-label { display:block; font-size:10.5px; color:#64748b; font-weight:700; margin-bottom:2px; }
+  #oraReviewCentre .rc-review-section .rc-text { margin-top:0; white-space:pre-line; }
+  #oraReviewCentre .rc-review-section[data-kind="positive"] .rc-review-label { color:#15803d; }
+  #oraReviewCentre .rc-review-section[data-kind="negative"] .rc-review-label { color:#b45309; }
+  #oraReviewCentre .rc-more { margin-top:4px; }
+  #oraReviewCentre .rc-reply { line-height:1.5; overflow-wrap:anywhere; }
+  #oraReviewCentre .rc-reply-box textarea { height:auto; min-height:88px; }
+  #oraReviewCentre .rc-meta { margin-top:7px; }
+  #oraReviewCentre .rc-col button { transition:background-color .12s ease; }
+  @media(max-width:1050px) {
+    #oraReviewCentre .rc-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
+  @media(max-width:600px) {
+    #oraReviewCentre { padding:8px; }
+    #oraReviewCentre .rc-kpis { gap:8px; }
+    #oraReviewCentre .rc-header { align-items:flex-start; }
+    #oraReviewCentre .rc-col { height:calc(100dvh - 270px); min-height:430px; }
+  }
+  /* Four selected channels share the available desktop width evenly. */
+  @media(min-width:901px) {
+    #oraReviewCentre .rc-board { align-items:stretch; }
+    #oraReviewCentre .rc-col { flex:1 0 260px; width:auto; min-width:260px; }
+  }
+  @media(max-width:900px) {
+    #oraReviewCentre .rc-col { flex:0 0 310px; width:310px; min-width:310px; }
+  }
+  @media(max-width:600px) {
+    #oraReviewCentre .rc-col { flex:0 0 88vw; width:88vw; min-width:0; }
+  }
+  
+/* MVC top-right Channex sync */
+#oraReviewCentre .rc-sync {
+    border: 0;
+    background: #12233a;
+    color: #f1f7f6;
+    border-radius: 8px;
+    padding: 9px 15px;
+    font-weight: normal;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    display: inline-flex;
+    gap: 8px;
+    align-items: center
+}
+#oraReviewCentre .rc-sync:hover{background:#2eae8b}
+#oraReviewCentre .rc-sync:disabled{opacity:.55;cursor:wait}
+#oraReviewCentre .rc-sync svg{width:16px;height:16px}
+#oraReviewCentre .rc-status{margin-bottom:12px}
+#oraReviewCentre .rc-col .rc-item{min-height:0}
+#oraReviewCentre .rc-col .rc-list{flex:1;overflow-y:auto}
+#oraReviewCentre .rc-btn:hover{background:#f0fdfa}
+#oraReviewCentre .rc-reply-box.open{display:block}
+#oraReviewCentre .rc-footer{display:flex;justify-content:center;padding:12px}
+#oraReviewCentre .rc-more-reviews{border:1px solid #d6dfe7;background:#fff;padding:7px 15px;border-radius:8px;cursor:pointer;color:#1677ff;font-weight:650}
+#oraReviewCentre .rc-hint{font-size:12px;color:#64748b;padding:4px 0}
+#oraReviewCentre .rc-tools .rc-sync{height:34px}
+#oraReviewCentre .rc-refreshed{color:#6b7385;font-size:11px}
+#oraReviewCentre .rc-error-inline{font-size:12px;color:#b91c1c;margin-top:5px}

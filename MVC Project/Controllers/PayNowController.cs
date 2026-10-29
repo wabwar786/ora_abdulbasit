@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Globalization;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebUtilities;
@@ -24,6 +25,7 @@ public sealed class PayNowController : Controller
     private readonly ILogger<PayNowController> _logger;
     private readonly TerminalCardPaymentStripeClient _stripe = new();
     private readonly IDataProtector _payNowProtector;
+    private readonly string? _publicBaseUrl;
 
     private const string PayNowSharePurpose = "ORAPMS.PayNowShare.v1";
 
@@ -36,6 +38,18 @@ public sealed class PayNowController : Controller
             ?? throw new InvalidOperationException("ConnectionStrings:con is not configured.");
         _logger = logger;
         _payNowProtector = dataProtectionProvider.CreateProtector(PayNowSharePurpose);
+
+        // Optional deployment setting: PayNow:PublicBaseUrl = https://pay.example.com
+        // Keep unset on localhost. This affects URL generation, NOT token decryption.
+        var configuredUrl = configuration["PayNow:PublicBaseUrl"]?.Trim().TrimEnd('/');
+        if (!string.IsNullOrEmpty(configuredUrl))
+        {
+            if (!Uri.TryCreate(configuredUrl, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttps && !(uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)))
+                throw new InvalidOperationException("PayNow:PublicBaseUrl must be a valid HTTPS URL (HTTP allowed only for localhost).");
+
+            _publicBaseUrl = configuredUrl;
+        }
     }
 
 
@@ -142,7 +156,7 @@ ORDER BY
                     message = $"Amount cannot exceed the outstanding balance ({outstanding:0.00})."
                 });
 
-            var root = $"{Request.Scheme}://{Request.Host}{Request.PathBase}".TrimEnd('/');
+            var root = GetPublicBaseUrl();
 
             // Keep exactly the same PayNow values, but protect the complete payload
             // with ASP.NET Core Data Protection instead of exposing them in the URL.
@@ -252,12 +266,26 @@ ORDER BY
                 PaymentMode = Get("payment_mode").Trim().ToLowerInvariant()
             };
 
-            return !string.IsNullOrWhiteSpace(values.HotelId) &&
-                   !string.IsNullOrWhiteSpace(values.RegId);
+            if (string.IsNullOrWhiteSpace(values.HotelId) ||
+                string.IsNullOrWhiteSpace(values.RegId))
+            {
+                _logger.LogWarning("PayNow token decrypted but required booking identifiers are missing.");
+                return false;
+            }
+            return true;
         }
-        catch
+        catch (CryptographicException ex)
         {
-            // Invalid, truncated or tampered token.
+            // Key-ring or application-name mismatch, or a modified/truncated token.
+            // Never log the original token: it is a bearer credential.
+            _logger.LogWarning(ex,
+                "PayNow token decryption failed. Verify deployment Data Protection keys and application discriminator.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "PayNow token contents could not be parsed after decryption.");
             return false;
         }
     }
@@ -313,7 +341,7 @@ ORDER BY
                 platformFeeMinor = (long)Math.Round(fee, MidpointRounding.AwayFromZero);
             }
 
-            var origin = $"{Request.Scheme}://{Request.Host}{Request.PathBase}".TrimEnd('/');
+            var origin = GetPublicBaseUrl();
             var returnQuery =
                 $"hotel_id={Uri.EscapeDataString(hotelId)}&reg_id={Uri.EscapeDataString(regId)}&src={Uri.EscapeDataString(src)}&userid={Uri.EscapeDataString(userId)}";
             var commonReturn = $"{origin}/paymentsuccess.aspx?{returnQuery}";
@@ -412,6 +440,13 @@ ORDER BY
             _logger.LogError(ex, "PayNow MVC checkout creation failed.");
             return PaymentError("Payment link unavailable.");
         }
+    }
+
+    private string GetPublicBaseUrl()
+    {
+        // A fixed HTTPS URL avoids generating http://IP:port links behind a proxy.
+        // Existing environments without a setting keep the previous behavior.
+        return _publicBaseUrl ?? $"{Request.Scheme}://{Request.Host}{Request.PathBase}".TrimEnd('/');
     }
 
     private sealed class PayNowValues

@@ -1,0 +1,175 @@
+@model Orapmshms.Models.FbrFailedInvoiceReportViewModel
+@using System
+@using System.Text
+@using Microsoft.AspNetCore.WebUtilities
+@{
+    ViewData["Title"] = "FBR Invoice Posting Report";
+    string D(DateTime? value) => value.HasValue ? value.Value.ToString("yyyy-MM-dd") : "";
+    string B64(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? ""));
+    string HotelId = Context.Session.GetString("hotel") ?? "";
+    string UserId = Context.Session.GetString("UserId") ?? "";
+    string UserName = Context.Session.GetString("UserName") ?? "";
+    var currentQuery = new Dictionary<string, string?> { ["search"] = Model.Search, ["status"] = Model.Status, ["from"] = D(Model.From), ["to"] = D(Model.To) };
+    string ReportUrl(int page) => QueryHelpers.AddQueryString(Url.Action("Index","FbrFailedInvoiceReport") ?? "/FbrFailedInvoiceReport",
+        new Dictionary<string,string?> { ["search"]=Model.Search,["status"]=Model.Status,["from"]=D(Model.From),["to"]=D(Model.To),["page"]=page.ToString() });
+    string InvoiceUrl(Orapmshms.Models.FbrInvoiceReportRow r)
+    {
+        var fbrNo = r.InvoiceNo.Trim();
+        if (new[] { "Not Found", "Not Available", "N/A", "null" }.Contains(fbrNo, StringComparer.OrdinalIgnoreCase)
+            || fbrNo.IndexOf("*Test*",StringComparison.OrdinalIgnoreCase)>=0) fbrNo="";
+        return QueryHelpers.AddQueryString("/BookingConfirmationInvoice.aspx",new Dictionary<string,string?> {
+            ["reg_id"]=B64(r.RegId),["roomAmount"]=B64(r.RoomSecurity),["visit"]=B64(r.VisitId),
+            ["paidAmount"]=B64(r.PaidAmount),["payable"]=B64(r.RemainingAmount),
+            ["paymethod"]=B64(r.PaymentMethod),["hd"]=B64(HotelId),
+            ["UN"]=B64(UserName),["UD"]=B64(UserId),["PG"]=B64("CHECK-OUT"),["FBR"]=B64(fbrNo)
+        });
+    }
+}
+<link rel="stylesheet" href="~/css/fbr-report-mvc.css" asp-append-version="true" />
+<div class="fbr-rpt"><div class="rpt-wrap">
+    <header class="rpt-top">
+        <div><div class="eyebrow">ORA PMS / Fiscal reports</div>
+            <h1>FBR Invoice Posting Report</h1>
+            <p class="subheading">Review failed fiscal submissions and verify invoice posting.</p>
+        </div>
+        <div class="rpt-top-actions">
+            <a class="rpt-btn" asp-controller="FbrFailedInvoiceReport" asp-action="Export"
+               asp-route-search="@Model.Search" asp-route-status="@Model.Status"
+               asp-route-from="@D(Model.From)" asp-route-to="@D(Model.To)">Export CSV</a>
+            <a class="rpt-btn" href="@ReportUrl(Model.Page)">Refresh</a>
+        </div>
+    </header>
+    @if (ViewBag.Error != null) { <div class="banner danger" role="alert">@ViewBag.Error</div> }
+    <div class="panel" style="margin-bottom:17px">
+        <div class="filter-title">Find invoices</div>
+        <form method="get" asp-controller="FbrFailedInvoiceReport" asp-action="Index" id="fbrFilters" class="filters">
+            <div><label class="field-label" for="fbrSearch">Search</label><input id="fbrSearch" class="filter-input" type="search" name="search" maxlength="120" placeholder="Guest name, reservation ID or phone" value="@Model.Search" /></div>
+            <div><label class="field-label" for="fbrStatus">Posting status</label><select id="fbrStatus" class="filter-input" name="status">
+                <option value="ALL" selected="@(Model.Status == "ALL" ? "selected" : null)">Posted &amp; Failed</option>
+                <option value="FAILED" selected="@(Model.Status == "FAILED" ? "selected" : null)">Failed</option>
+                <option value="POSTED" selected="@(Model.Status == "POSTED" ? "selected" : null)">Posted</option></select></div>
+            <div><label class="field-label" for="fbrFrom">Posted from</label><input id="fbrFrom" class="filter-input" type="date" name="from" value="@D(Model.From)" /></div>
+            <div><label class="field-label" for="fbrTo">Posted to</label><input id="fbrTo" class="filter-input" type="date" name="to" value="@D(Model.To)" /></div>
+            <div class="filter-actions"><button class="rpt-btn" type="submit">Search</button><a class="rpt-btn" href="/FbrFailedInvoiceReport">Reset</a></div>
+        </form>
+    </div>
+    <div class="metrics">
+        <div class="metric is-failed"><div class="metric-icon">!</div><div><div class="metric-label">Failed Invoices</div><div class="metric-value">@Model.Failed</div></div></div>
+        <div class="metric is-success"><div class="metric-icon">✓</div><div><div class="metric-label">Successfully Posted</div><div class="metric-value">@Model.Posted</div></div></div>
+        <div class="metric"><div class="metric-icon">≡</div><div><div class="metric-label">Matching Records</div><div class="metric-value">@Model.Matching</div></div></div>
+    </div>
+    <div class="banner" role="status">Fiscal invoice routes are read from this hotel's enabled FBR/PRA integrations. Retry is audited and requires verifying any uncertain previous submission with the fiscal provider before resending.</div>
+    <section class="panel">
+        <div class="table-title"><div><h2>Guest invoice records</h2><p>Latest posting per reservation from GuestInformationLogTB.</p></div><span class="result-count">@Model.Matching.ToString("N0") records</span></div>
+        <div class="table-scroll"><table class="data-table">
+            <thead><tr><th>Guest</th><th>Reservation</th><th>Contact</th><th>Last posted</th><th>Invoice no.</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.Rows)
+            {
+                <tr><td><div class="guest-name">@r.GuestName</div></td>
+                    <td><a class="reservation-link" href="@InvoiceUrl(r)" target="_blank" rel="noopener noreferrer">@r.RegId</a></td>
+                    <td>@r.GuestPhone</td><td>@(r.PostedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                    <td><span class="mono">@(string.IsNullOrWhiteSpace(r.InvoiceNo) ? "—" : r.InvoiceNo)</span></td>
+                    <td><span class="state @(r.Status=="POSTED"?"posted":"failed")">@r.Status</span></td>
+                    <td>@if(r.Status=="FAILED") { <button type="button" class="row-action" data-fbr-retry="@r.RegId">Review retry</button> }
+                        else { <span class="row-action disabled">No action</span> }</td></tr>
+            }
+            </tbody>
+        </table></div>
+        @if(Model.Rows.Count==0) { <div class="empty"><strong>No invoices found</strong>There are no records matching the filters.</div> }
+        <div class="pager"><span class="page-text">Page @Model.Page of @Model.Pages</span><div class="pager-nav">
+            @if(Model.Page>1) { <a class="rpt-btn" href="@ReportUrl(Model.Page-1)">Previous</a> }
+            @if(Model.Page<Model.Pages) { <a class="rpt-btn" href="@ReportUrl(Model.Page+1)">Next</a> }
+        </div></div>
+    </section>
+    <p class="footnote">A timed-out fiscal request may already have succeeded. Verify it in the fiscal portal before attempting any retry. Posted dates are stored server timestamps.</p>
+</div></div>
+<form id="fbrRetryAntiforgery" hidden>@Html.AntiForgeryToken()</form>
+<div class="fbr-modal-backdrop" id="fbrRetryModal" role="dialog" aria-modal="true" aria-labelledby="fbrRetryTitle">
+  <div class="fbr-modal"><div class="fbr-modal-head"><div class="iconbox">!</div><div><h3 id="fbrRetryTitle">Fiscal invoice retry</h3><p class="caption">Review the reservation before sending</p></div><button type="button" class="x" data-close-retry aria-label="Close">×</button></div>
+    <div class="fbr-modal-body"><div class="fbr-modal-info"><div><span>Guest</span><strong id="fbrGuest">—</strong></div><div><span>Reservation ID</span><strong id="fbrReg">—</strong></div></div>
+      <div class="modal-field"><span class="field-label">Saved checkout payment method</span><strong id="fbrMethod">—</strong></div>
+      <div class="modal-field"><label class="field-label" for="fbrAuthority">Fiscal authority</label><select id="fbrAuthority" class="filter-input" style="width:100%"></select></div>
+      <div class="fbr-modal-warning">Retry sends an invoice to the enabled fiscal connection. Confirm in the fiscal portal that no invoice was accepted previously, especially after a timeout. Unconfirmed attempts will be held for reconciliation.</div>
+      <div id="fbrRetryError" class="banner danger" role="alert" hidden></div>
+    </div><div class="fbr-modal-footer"><button type="button" class="btn" data-close-retry>Close</button><button type="button" class="rpt-btn" id="fbrSendRetry" disabled>Confirm &amp; Retry</button></div>
+  </div>
+</div>
+<script>
+(function(){
+ const modal=document.getElementById('fbrRetryModal');
+ const retry=document.getElementById('fbrSendRetry');
+ const dropdown=document.getElementById('fbrAuthority');
+ const err=document.getElementById('fbrRetryError');
+ let currentRegId='';
+ const close=()=>{ if(retry.disabled && retry.dataset.sending==='1')return; modal.classList.remove('open');document.body.style.overflow=''; };
+ const fail=(text)=>{ err.hidden=false;err.textContent=text; };
+ document.querySelectorAll('[data-close-retry]').forEach(b=>b.addEventListener('click',close));
+ modal.addEventListener('click',e=>{if(e.target===modal)close();});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+ document.querySelectorAll('[data-fbr-retry]').forEach(b=>b.addEventListener('click',async()=>{
+    const regId=b.dataset.fbrRetry;
+    currentRegId='';retry.disabled=true;retry.dataset.blocked='1';err.hidden=true;
+    document.getElementById('fbrGuest').textContent='Loading…';
+    document.getElementById('fbrReg').textContent=regId;
+    document.getElementById('fbrMethod').textContent='Checking saved payment records…';
+    dropdown.replaceChildren();
+    dropdown.add(new Option('Loading enabled fiscal routes…', ''));
+    modal.classList.add('open');document.body.style.overflow='hidden';
+    try {
+      const r=await fetch('/FbrFailedInvoiceReport/RetryDetails?regId='+encodeURIComponent(regId),{credentials:'same-origin'});
+      const j=await r.json(); if(!r.ok||!j.ok)throw new Error(j.message||'Unable to verify reservation.');
+      currentRegId=regId;
+      document.getElementById('fbrGuest').textContent=j.data.guestName||'Guest';
+      const method=j.data.paymentMethod||'';
+      const source=j.data.paymentMethodSource||'';
+      document.getElementById('fbrMethod').textContent=method
+        ? method+(source ? ' ('+source+')' : '') : 'No recorded payment method';
+      dropdown.replaceChildren();
+      const authorities=j.data.availableAuthorities||[];
+      if(authorities.length===0) dropdown.add(new Option('No enabled fiscal authority',''));
+      else if(authorities.length>1) dropdown.add(new Option('Select fiscal authority',''));
+      authorities.forEach(v=>dropdown.add(new Option(v,v)));
+      if(authorities.length===1) dropdown.value=authorities[0];
+      const blocked=j.data.retryBlockedReason||'';
+      if(blocked)fail(blocked);
+      retry.disabled=Boolean(blocked)||!method||!dropdown.value;
+      currentRegId=regId;
+      retry.dataset.blocked=blocked ? '1' : '0';
+    } catch(e){
+      fail(e.message || 'Unable to verify reservation.');
+      if(document.getElementById('fbrGuest').textContent==='Loading…')
+        document.getElementById('fbrGuest').textContent='Unavailable';
+      document.getElementById('fbrMethod').textContent='Unable to verify';
+      dropdown.replaceChildren();dropdown.add(new Option('Unavailable',''));
+    }
+ }));
+ dropdown.addEventListener('change',()=>retry.disabled=retry.dataset.blocked==='1'||!dropdown.value);
+ retry.addEventListener('click',async()=>{
+    if(!currentRegId||!dropdown.value||retry.disabled)return;
+    if(!confirm('Have you checked the fiscal portal to ensure this reservation has NO accepted invoice? Resending may create a duplicate.'))return;
+    err.hidden=true;retry.disabled=true;retry.dataset.sending='1';
+    retry.innerHTML='<span class="fbr-btn-spinner" aria-hidden="true"></span> Posting invoice…';
+    retry.setAttribute('aria-busy','true');
+    try{
+      const token=document.querySelector('#fbrRetryAntiforgery input[name="__RequestVerificationToken"]')?.value;
+      const r=await fetch('/FbrFailedInvoiceReport/Retry',{
+        method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','RequestVerificationToken':token||''},
+        body:JSON.stringify({regId:currentRegId,authority:dropdown.value})
+      });
+      const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.message||'Invoice was not confirmed.');
+      alert(j.message||'Invoice posted successfully.');window.location.reload();
+    }catch(e){
+      fail((e.message || 'Fiscal posting could not be confirmed.') + ' Verify in the fiscal portal before attempting another retry.');
+      retry.disabled=true;retry.dataset.blocked='1';
+    }
+    finally{
+      retry.dataset.sending='0';retry.removeAttribute('aria-busy');
+      retry.textContent='Confirm & Retry';
+    }
+ });
+ let timer;document.getElementById('fbrSearch').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>document.getElementById('fbrFilters').requestSubmit(),550);});
+ ['fbrStatus','fbrFrom','fbrTo'].forEach(id=>document.getElementById(id).addEventListener('change',()=>document.getElementById('fbrFilters').requestSubmit()));
+})();
+</script>

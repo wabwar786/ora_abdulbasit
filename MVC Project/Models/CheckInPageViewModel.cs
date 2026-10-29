@@ -477,6 +477,7 @@ public sealed class FbrPostRequest
     public string RegId { get; set; } = string.Empty;
     public string VisitId { get; set; } = string.Empty;
     public string PaymentMethod { get; set; } = string.Empty;
+    public string FiscalAuthority { get; set; } = string.Empty;
 }
 
 public sealed class CheckoutRoomOption
@@ -498,6 +499,7 @@ public sealed class CheckOutRequest
     // Legacy callers can continue to send PaymentId for a single-room checkout.
     public List<int>? PaymentIds { get; set; }
     public string PaymentMethod { get; set; } = string.Empty;
+    public string FiscalAuthority { get; set; } = string.Empty;
     public bool Force { get; set; }
 }
 

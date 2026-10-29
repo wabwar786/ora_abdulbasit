@@ -1,0 +1,49 @@
+@model Orapmshms.Models.ReviewCentreViewModel
+@{
+    ViewData["Title"] = "Review Centre";
+    Layout = "_PmsLayout";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/review-centre.css" asp-append-version="true" />
+}
+
+<div id="oraReviewCentre" class="ora-review-centre"
+     data-dashboard-url="@Url.Action("Dashboard", "ReviewCentre")"
+     data-page-url="@Url.Action("Reviews", "ReviewCentre")"
+     data-sync-url="@Url.Action("Sync", "ReviewCentre")"
+     data-reply-url="@Url.Action("Reply", "ReviewCentre")">
+    @Html.AntiForgeryToken()
+    <header class="rc-header">
+        <div>
+            <h1>Review Centre</h1>
+            <p id="rcHotelName">@Model.HotelName</p>
+        </div>
+        <div class="rc-tools">
+            <input id="search" type="search" aria-label="Search guest or review"
+                   placeholder="Search guest or review…" />
+            <select id="scoreFilter" aria-label="Filter by score">
+                <option value="all">All scores</option>
+                <option value="good">Good (85%+)</option>
+                <option value="avg">Average (70–85%)</option>
+                <option value="low">Low (&lt;70%)</option>
+            </select>
+            @if (Model.CanSyncReviews)
+            {
+                <button type="button" class="rc-sync" id="rcSyncReviews"
+                        title="Import this property's latest reviews from connected channels">
+                    Sync Reviews
+                </button>
+            }
+        </div>
+    </header>
+    @if (!string.IsNullOrWhiteSpace(Model.Warning))
+    {
+        <p class="rc-hint">@Model.Warning</p>
+    }
+    <div id="rcStatus" class="rc-status" role="status" aria-live="polite" hidden></div>
+    <section class="rc-kpis" id="kpis" aria-label="Review statistics"></section>
+    <main class="rc-board" id="board" aria-label="Reviews by platform"></main>
+</div>
+@section Scripts {
+    <script defer src="~/js/review-centre.js" asp-append-version="true"></script>
+}

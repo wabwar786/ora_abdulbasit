@@ -1,0 +1,153 @@
+@model Orapmshms.Models.InvoiceFooterSettingsViewModel
+@{
+    ViewData["Title"] = "Invoice Footer Settings";
+    Layout = "_PmsLayout";
+    var savedMessage = TempData["InvoiceFooterSuccess"]?.ToString();
+    var propertyName = string.IsNullOrWhiteSpace(Model.HotelName) ? "Property unavailable" : Model.HotelName;
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/invoice-footer-settings.css" asp-append-version="true" />
+}
+
+<div class="ifs-page" id="invoiceFooterPage" data-save-error="@(string.IsNullOrWhiteSpace(Model.ErrorMessage) ? "0" : "1")">
+    <div class="ifs-shell">
+        <div class="ifs-breadcrumb"><i class="fa-solid fa-gear" aria-hidden="true"></i> Property Settings <i class="fa-solid fa-chevron-right" aria-hidden="true"></i> Invoices</div>
+
+        <form id="ifsForm" asp-controller="InvoiceFooterSettings" asp-action="Save" method="post" autocomplete="off" novalidate>
+            @Html.AntiForgeryToken()
+
+            <header class="ifs-heading-row">
+                <div class="ifs-heading-left">
+                    <span class="ifs-title-icon"><i class="fa-regular fa-file-lines" aria-hidden="true"></i></span>
+                    <div>
+                        <h1>Invoice Footer Instructions</h1>
+                        <p>Set clear, consistent information guests see at the bottom of their invoice.</p>
+                    </div>
+                </div>
+                <div class="ifs-heading-actions">
+                    <span class="ifs-save-state" id="ifsSaveState" role="status" aria-live="polite">
+                        <i class="fa-solid fa-circle-check" aria-hidden="true"></i> All changes saved
+                    </span>
+                    <button type="submit" class="ifs-btn ifs-btn-primary ifs-save-button" disabled="@(!Model.CanEdit)">
+                        <i class="fa-regular fa-floppy-disk ifs-save-icon" aria-hidden="true"></i>
+                        <span class="ifs-save-label">Save changes</span>
+                        <i class="fa-solid fa-circle-notch ifs-spinner" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(savedMessage))
+            {
+                <div class="ifs-notice ifs-notice-success" role="status">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    <span>@savedMessage</span>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+            {
+                <div class="ifs-notice ifs-notice-error" role="alert">
+                    <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+                    <span>@Model.ErrorMessage</span>
+                </div>
+            }
+
+            <div class="ifs-content">
+                <section class="ifs-card ifs-editor-card" aria-labelledby="ifsEditorHeading">
+                    <div class="ifs-card-heading">
+                        <span class="ifs-card-symbol ifs-card-symbol-edit"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></span>
+                        <div>
+                            <h2 id="ifsEditorHeading">Edit footer content</h2>
+                            <p>Instructions can include paragraphs, numbered steps or bullet points.</p>
+                        </div>
+                    </div>
+                    <div class="ifs-editor-body">
+                        <div class="ifs-property-strip">
+                            <span class="ifs-property-icon"><i class="fa-regular fa-building" aria-hidden="true"></i></span>
+                            <div>
+                                <span class="ifs-property-caption">Selected property</span>
+                                <strong>@propertyName</strong>
+                            </div>
+                            <span class="ifs-property-tag">Active property</span>
+                        </div>
+
+                        <div class="ifs-field-head">
+                            <label for="ifsInstructions">Footer instructions</label>
+                            <span class="ifs-field-optional">Plain text</span>
+                        </div>
+                        <div class="ifs-toolbar" role="group" aria-label="Insert formatting">
+                            <button type="button" class="ifs-btn ifs-btn-tool" id="ifsInsertBullet" disabled="@(!Model.CanEdit)">
+                                <i class="fa-solid fa-list-ul" aria-hidden="true"></i> Bullet
+                            </button>
+                            <button type="button" class="ifs-btn ifs-btn-tool" id="ifsInsertNumber" disabled="@(!Model.CanEdit)">
+                                <i class="fa-solid fa-list-ol" aria-hidden="true"></i> Numbered list
+                            </button>
+                            <span class="ifs-toolbar-spacer"></span>
+                            <button type="button" class="ifs-btn ifs-btn-quiet" id="ifsReset" disabled="@(!Model.CanEdit)">
+                                <i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> Reset edits
+                            </button>
+                            <button type="button" class="ifs-btn ifs-btn-quiet ifs-clear" id="ifsClear" disabled="@(!Model.CanEdit)">
+                                <i class="fa-regular fa-trash-can" aria-hidden="true"></i> Clear
+                            </button>
+                        </div>
+                        <textarea id="ifsInstructions" name="instructions" class="ifs-textarea"
+                                  rows="13" maxlength="5000" spellcheck="true"
+                                  placeholder="For example:&#10;• Please retain this invoice for your records.&#10;• Contact the reception team if you have any questions."
+                                  aria-describedby="ifsHelp ifsCount" disabled="@(!Model.CanEdit)">@Model.Instructions</textarea>
+                        <div class="ifs-help-row">
+                            <p id="ifsHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Your line breaks, bullets and spacing will be preserved.</p>
+                            <span id="ifsCount" class="ifs-count">0 / 5,000</span>
+                        </div>
+                        <div class="ifs-form-foot">
+                            <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Saved to this property only</span>
+                            <button type="submit" class="ifs-btn ifs-btn-primary ifs-save-button" disabled="@(!Model.CanEdit)">
+                                <i class="fa-regular fa-floppy-disk ifs-save-icon" aria-hidden="true"></i>
+                                <span class="ifs-save-label">Save instructions</span>
+                                <i class="fa-solid fa-circle-notch ifs-spinner" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <aside class="ifs-side" aria-label="Preview and guidance">
+                    <section class="ifs-card ifs-preview-card">
+                        <div class="ifs-card-heading">
+                            <span class="ifs-card-symbol ifs-card-symbol-preview"><i class="fa-regular fa-eye" aria-hidden="true"></i></span>
+                            <div>
+                                <h2>Live invoice preview</h2>
+                                <p>Updates as you type. Nothing is saved until you click Save.</p>
+                            </div>
+                            <span class="ifs-preview-live"><span></span> Live</span>
+                        </div>
+                        <div class="ifs-preview-body">
+                            <div class="ifs-paper">
+                                <div class="ifs-paper-header">
+                                    <div><span class="ifs-paper-kicker">INVOICE</span><strong>@propertyName</strong></div>
+                                    <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+                                </div>
+                                <div class="ifs-paper-lines" aria-hidden="true"><span></span><span></span><span></span></div>
+                                <div class="ifs-paper-divider"></div>
+                                <h3 id="ifsPreviewHeading">Instructions</h3>
+                                <div id="ifsPreviewText" class="ifs-preview-text"></div>
+                                <p id="ifsPreviewPlaceholder" class="ifs-placeholder">Start typing to preview your invoice instructions here.</p>
+                            </div>
+                            <p class="ifs-preview-disclaimer"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Formatting preview only; the actual invoice layout may differ.</p>
+                        </div>
+                    </section>
+
+                    <section class="ifs-hint-card">
+                        <div class="ifs-hint-title"><i class="fa-regular fa-lightbulb" aria-hidden="true"></i> Tips for clear instructions</div>
+                        <ul>
+                            <li>Keep each instruction short and easy to understand.</li>
+                            <li>Use separate lines for payment, refunds or guest contact details.</li>
+                            <li>To remove the footer entirely, clear the editor and save.</li>
+                        </ul>
+                    </section>
+                </aside>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/invoice-footer-settings.js" asp-append-version="true"></script>
+}
