@@ -18,6 +18,8 @@ public sealed class CheckInPageViewModel
     public string ReservationStatus { get; set; } = string.Empty;
     public string ReservationType { get; set; } = "Individual";
     public string ReservationDateMode { get; set; } = "single";
+    // True when 2+ booked rooms have different date ranges, even for Individual bookings.
+    public bool HasMixedRoomDates { get; set; }
     public string BookingId { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
     public bool IsExistingBooking => !string.IsNullOrWhiteSpace(ReservationId);
@@ -56,6 +58,9 @@ public sealed class CheckInPageViewModel
 
     public bool ShowCheckInAction { get; set; } = true;
     public bool ShowUndoCheckInAction { get; set; }
+    public bool ShowUndoCheckOutAction { get; set; }
+    public bool UndoCheckoutBlockedByFiscal { get; set; }
+    public bool CanUndoCheckOut { get; set; }
     public bool ShowCheckOutAction { get; set; }
     public bool CanExtendReservation { get; set; }
 
@@ -492,6 +497,13 @@ public sealed class CheckoutRoomOption
     public string GuestName { get; set; } = string.Empty;
     public DateTime? Arrival { get; set; }
     public DateTime? Departure { get; set; }
+}
+
+public sealed class UndoCheckoutRequest
+{
+    public string RegId { get; set; } = string.Empty;
+    // Exact selected Room Rent payment rows: never undo an entire reservation implicitly.
+    public List<int> PaymentIds { get; set; } = new();
 }
 
 public sealed class CheckOutRequest

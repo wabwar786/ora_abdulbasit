@@ -562,7 +562,7 @@
     </div>`:'';
 
     return `${securityPanel}<div class="fdc-panel"><h4>Booking information</h4>
-        ${row('Reference #',esc(d.regId||'—'))}
+        ${row('Reference #',esc(d.regId||'—') + ` <button type="button" data-copy-reg="${esc(d.regId||'')}" title="Copy reservation ID" aria-label="Copy reservation ID" style="border:1px solid #cbd5e1;background:#f8fafc;border-radius:5px;padding:3px 7px;cursor:pointer;font-size:11px">Copy</button>`)}
         ${row('Booking #',esc(d.bookingNo||'—'))}
         ${row('Contact #',esc(d.phone||'—'))}
         ${row('Email',esc(d.email||'—'))}
@@ -794,6 +794,7 @@
     if(Number(d.balance||0)>0.005){
       actions.push(action('£','Record Payment','payment','payment-action'));
     }
+    actions.push(action('⧉','Copy reservation ID','copy-reg'));
     actions.push(action('✉','Send Email','sendpaylink','payment-action'));
 
     // Room assignment and checkout are terminal actions and stay at the bottom.
@@ -844,6 +845,7 @@
       openCheckInEditor(d,button);
       return;
     }
+    if(action==='copy-reg'){ navigator.clipboard.writeText(String(d.regId)).then(()=>showToast('Reservation ID copied: '+d.regId)).catch(()=>showToast('Cannot copy: '+d.regId,true));return;}
     if(action==='history'){openHistoryPage(d);return;}
     if(action==='payment'){openPayment(d,button);return;}
     if(action==='cardpayment' || action==='pdqpayment'){openPayment(d);return;}
@@ -1388,6 +1390,7 @@ ${tag}`:tag;
     if(Number(item.balance||0)>0.005){
       actions.push(bookingMenuItem('£','Record Payment','payment','payment-action'));
     }
+    actions.push(bookingMenuItem('⧉','Copy reservation ID','copy-reg'));
     actions.push(bookingMenuItem('✉','Send Email','sendpaylink','payment-action'));
     const segments=(state.payload?.bookings||[]).filter(x=>
       String(x.regId||'')===String(item.regId||'') &&
@@ -1423,6 +1426,11 @@ ${tag}`:tag;
 
   async function bookingContextAction(action,item,button=null){
     if(!item?.regId) return;
+    if(action==='copy-reg') {
+      try { await navigator.clipboard.writeText(String(item.regId)); showToast('Reservation ID copied: ' + item.regId); }
+      catch (_) { showToast('Could not copy automatically. Reservation ID: ' + item.regId,true); }
+      closeContext(true); return;
+    }
 
     if(action==='history'){
       openHistoryPage(item);
@@ -2070,6 +2078,13 @@ ${tag}`:tag;
   document.addEventListener('pointerup',resizeEnd);
 
   drawerBody.addEventListener('click',e=>{
+    const copy=e.target.closest('[data-copy-reg]');
+    if(copy){
+      e.preventDefault();
+      const value=copy.getAttribute('data-copy-reg')||'';
+      if(value) navigator.clipboard.writeText(value).then(()=>showToast('Reservation ID copied: '+value)).catch(()=>showToast('Copy this reservation ID: '+value,true));
+      return;
+    }
     const refundButton=e.target.closest('[data-payment-refund]');
     if(refundButton){
       e.preventDefault();

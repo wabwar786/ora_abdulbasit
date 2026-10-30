@@ -1,0 +1,121 @@
+@model Orapmshms.Models.BreakfastGuestOccupancyViewModel
+@{
+    Layout = null;
+    var rows = Model.Rows;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Breakfast Guest Occupancy · @Model.HotelName · @Model.ReportDate.ToString("dd MMM yyyy")</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { background:#eff3f8; color:#182d47; margin:0; font-family:Arial,Helvetica,sans-serif; }
+  .toolbar { margin:10px auto; max-width:277mm; padding:9px 14px; display:flex; justify-content:space-between; gap:12px; align-items:center; background:#fff; border:1px solid #d7e0ed; border-radius:8px; }
+  .toolbar p {margin:0;font-size:12px;color:#51677f}
+  .toolbar button {cursor:pointer;border:0;background:#153c70;color:white;border-radius:6px;padding:9px 16px;font-weight:700;}
+  .sheet {max-width:277mm; margin:12px auto; padding:9mm; background:white; box-shadow:0 6px 24px #112b4922; }
+  .topline {display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #163d71;padding-bottom:9px;margin-bottom:11px;gap:20px;}
+  .hotel {font-size:18px;font-weight:800;line-height:1.15;color:#163d71;}
+  .report-title {font-size:13px;font-weight:700;margin-top:5px;}
+  .subtitle {font-size:10px;color:#52657b;margin-top:4px;}
+  .report-meta {text-align:right;white-space:nowrap;font-size:10px;line-height:1.5;}
+  .report-meta b {display:block;font-size:12px;color:#163d71;}
+  .totals {display:flex;gap:9px;margin:10px 0 13px;}
+  .total {border:1px solid #cdd9e8;border-left:3px solid #153c70;border-radius:4px;padding:7px 11px;flex:1;min-width:0;}
+  .total span {display:block;font-size:9px;color:#607189;font-weight:700;letter-spacing:.3px;}
+  .total b {display:block;font-size:17px;margin-top:3px;}
+  .section-heading {display:flex;justify-content:space-between;gap:10px;align-items:center;margin:6px 0 7px;font-size:10px;}
+  .section-heading strong {font-size:11px;color:#173b6d;}
+  table {width:100%;table-layout:fixed;border-collapse:collapse;font-size:9px;}
+  thead {display:table-header-group;}
+  th {border-bottom:2px solid #173b6d;border-top:1px solid #b8c9dc;padding:7px 4px;text-align:left;line-height:1.1;}
+  td {border-bottom:1px solid #dce4ed;padding:6px 4px;vertical-align:top;line-height:1.3;overflow-wrap:anywhere;}
+  tr {break-inside:avoid;page-break-inside:avoid;}
+  tfoot {display:table-row-group;}
+  tfoot td {border-top:2px solid #173b6d;font-weight:700;font-size:9px;padding-top:8px;}
+  .center {text-align:center;}
+  .guest {font-weight:700;}
+  .muted {color:#51647c;}
+  .foot {margin-top:10px;padding-top:7px;border-top:1px solid #cbd6e4;display:flex;justify-content:space-between;gap:10px;color:#64748b;font-size:9px;}
+  @@page {size:A4 landscape;margin:9mm;}
+  @@media print {
+    html,body{background:white;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .toolbar{display:none!important;}
+    .sheet{width:auto;max-width:none;margin:0;padding:0;box-shadow:none;}
+    .topline{margin-bottom:9px;padding-bottom:8px;}
+    .totals{margin:9px 0 10px;}
+    td{padding:5px 4px;}
+  }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <p>Print-ready A4 landscape report — without the PMS navigation or controls.</p>
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
+</div>
+<main class="sheet">
+  <header class="topline">
+    <div>
+      <div class="hotel">@Model.HotelName</div>
+      <div class="report-title">Breakfast Guest Occupancy</div>
+      <div class="subtitle">In-house room occupancy report</div>
+    </div>
+    <div class="report-meta">
+      <span>REPORT DATE</span>
+      <b>@Model.ReportDate.ToString("dd MMM yyyy")</b>
+      <span>@rows.Count room entries</span>
+    </div>
+  </header>
+  <section class="totals" aria-label="Occupancy totals">
+    <div class="total"><span>ADULTS</span><b>@Model.TotalAdults</b></div>
+    <div class="total"><span>CHILDREN</span><b>@Model.TotalChildren</b></div>
+    <div class="total"><span>INFANTS</span><b>@Model.TotalInfants</b></div>
+  </section>
+  <div class="section-heading">
+    <strong>In-house guest list</strong>
+    <span class="muted">@Model.ReportDate.ToString("dd MMM yyyy")</span>
+  </div>
+  <table>
+    <colgroup>
+      <col style="width:3%"/><col style="width:12%"/><col style="width:18%"/>
+      <col style="width:7%"/><col style="width:5%"/><col style="width:6%"/>
+      <col style="width:5%"/><col style="width:14%"/><col style="width:13%"/><col style="width:17%"/>
+    </colgroup>
+    <thead><tr>
+      <th>#</th><th>Reservation</th><th>Guest</th><th>Room</th>
+      <th class="center">Adults</th><th class="center">Children</th><th class="center">Infants</th>
+      <th>Category</th><th>Rate plan</th><th>Stay</th>
+    </tr></thead>
+    <tbody>
+      @if (!rows.Any())
+      {
+        <tr><td colspan="10" class="center muted" style="padding:18px">No checked-in guests on this date.</td></tr>
+      }
+      @for (var i = 0; i < rows.Count; i++)
+      {
+        var r = rows[i];
+        <tr>
+          <td>@(i+1)</td><td>@r.RegId</td><td class="guest">@r.GuestName</td><td>@r.RoomNo</td>
+          <td class="center">@r.Adults</td><td class="center">@r.Children</td><td class="center">@r.Infants</td>
+          <td>@r.RoomCategory</td><td>@r.RatePlanName</td>
+          <td>@(r.ArrivalDate?.ToString("dd MMM yyyy") ?? "—") – @(r.DepartureDate?.ToString("dd MMM yyyy") ?? "—")</td>
+        </tr>
+      }
+    </tbody>
+    <tfoot><tr>
+      <td colspan="4" style="text-align:right">TOTAL OCCUPANCY</td>
+      <td class="center">@Model.TotalAdults</td><td class="center">@Model.TotalChildren</td>
+      <td class="center">@Model.TotalInfants</td><td colspan="3"></td>
+    </tr></tfoot>
+  </table>
+  <footer class="foot">
+    <span>ORA PMS · Breakfast Guest Occupancy</span>
+    <span>Report generated for @Model.HotelName</span>
+  </footer>
+</main>
+<script>window.addEventListener('load',function(){window.setTimeout(function(){window.print();},200);});</script>
+</body>
+</html>

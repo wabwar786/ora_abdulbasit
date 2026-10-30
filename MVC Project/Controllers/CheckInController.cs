@@ -216,6 +216,15 @@ public sealed class CheckInController : Controller
     public Task<IActionResult> UndoCheckIn([FromBody] RegRequest request, CancellationToken ct)
         => Run(() => _service.UndoCheckInAsync(HotelId, UserId, UserName, ClientIp(), request.RegId, request.PaymentId, ct));
 
+    [HttpGet("UndoCheckoutRooms")]
+    public async Task<IActionResult> UndoCheckoutRooms(string regId, CancellationToken ct)
+        => HasSession() ? Json(await _service.GetUndoCheckoutRoomsAsync(HotelId, UserId, regId, ct)) : UnauthorizedJson();
+
+    [HttpPost("UndoCheckout")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> UndoCheckout([FromBody] UndoCheckoutRequest request, CancellationToken ct)
+        => Run(() => _service.UndoCheckoutAsync(HotelId, UserId, UserName, ClientIp(), request, ct));
+
     [HttpGet("CheckoutRooms")]
     public async Task<IActionResult> CheckoutRooms(string regId, CancellationToken ct)
         => HasSession() ? Json(await _service.GetCheckoutRoomsAsync(HotelId, regId, ct)) : UnauthorizedJson();

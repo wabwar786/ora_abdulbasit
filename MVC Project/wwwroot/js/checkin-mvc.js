@@ -37,6 +37,8 @@
         refundPayment: '/CheckIn/RefundPayment',
         completeCheckIn: '/CheckIn/CompleteCheckIn',
         undoCheckIn: '/CheckIn/UndoCheckIn',
+        undoCheckoutRooms: '/CheckIn/UndoCheckoutRooms',
+        undoCheckout: '/CheckIn/UndoCheckout',
         checkOut: '/CheckIn/CheckOut',
         checkoutRooms: '/CheckIn/CheckoutRooms',
         extend: '/CheckIn/Extend',
@@ -259,7 +261,7 @@
     // Active reservations and checked-in stays can always open the main Stay Dates picker.
     // This intentionally overrides older server-side type/shape locks that were preventing
     // multi-room active stays from being extended or shortened from this page.
-    let canEditDates = state.canEditDates !== false || activeStayAllowsDateEdit;
+    let canEditDates = (state.canEditDates !== false || activeStayAllowsDateEdit) && state.hasMixedRoomDates !== true;
     let loadedStayArrival = byId('checkIn')?.value || '';
     let loadedStayDeparture = byId('checkOut')?.value || '';
 
@@ -297,7 +299,7 @@
             if (el.id === 'guestSearch' || el.id === 'guestSearchButton') return;
             const block = checkedOut && !(allowGuestEdit &&
                 (editableGuestFields.has(el.id) || el.id === 'updateGuest' ||
-                 (el.id === 'stayDateDisplay' && !isGroup())));
+                 (el.id === 'stayDateDisplay' && !isGroup() && state.hasMixedRoomDates !== true)));
             if (block) {
                 if (el.dataset.checkedOutPrevDisabled === undefined)
                     el.dataset.checkedOutPrevDisabled = el.disabled ? '1' : '0';
@@ -334,7 +336,7 @@
 
         if (checkedOut) {
             // Single reservations: departure-only correction, never arrival or room stays.
-            canEditDates = allowGuestEdit && !isGroup();
+            canEditDates = allowGuestEdit && !isGroup() && state.hasMixedRoomDates !== true;
             const stayDisplay = byId('stayDateDisplay');
             stayDisplay?.classList.toggle('is-disabled', !canEditDates);
             if (canEditDates) {
@@ -612,7 +614,7 @@
     }
 
     function syncChargeDatesFromMain() {
-        if (dateMode() === 'groupDifferent') return;
+        if (dateMode() === 'groupDifferent' || state.hasMixedRoomDates === true) return;
         if (byId('chargeArrival')) byId('chargeArrival').value = byId('checkIn')?.value || '';
         if (byId('chargeDeparture')) byId('chargeDeparture').value = byId('checkOut')?.value || '';
     }
@@ -630,15 +632,15 @@
         const group = isGroup();
         $$('.group-only').forEach(x => x.classList.toggle('hidden', !group));
 
-        // Group reservations are room-led on Check-In. Keep the master dates in the DOM
-        // for existing calculations/availability, but do not show Stay Dates / Nights in
-        // Guest & Registration. Individual reservations continue to show both fields.
-        byId('guestStayDatesField')?.classList.toggle('hidden', group);
-        byId('guestStayCountField')?.classList.toggle('hidden', group);
-        byId('guestRegistrationGrid')?.classList.toggle('group-reservation-mode', group);
-        if (group) setCalendarOpen(false);
+        // Individual reservations can have 2+ rooms with DIFFERENT dates.
+        // In that case, use the same room-led date presentation as Group.
+        const roomLedDates = group || state.hasMixedRoomDates === true;
+        byId('guestStayDatesField')?.classList.toggle('hidden', roomLedDates);
+        byId('guestStayCountField')?.classList.toggle('hidden', roomLedDates);
+        byId('guestRegistrationGrid')?.classList.toggle('group-reservation-mode', roomLedDates);
+        if (roomLedDates) setCalendarOpen(false);
 
-        const different = group && dateMode() === 'groupDifferent' && isRoomChargeMode();
+        const different = (group && dateMode() === 'groupDifferent' || state.hasMixedRoomDates === true) && isRoomChargeMode();
         $$('.room-date-col').forEach(x => x.classList.toggle('hidden', !different));
         byId('chargeRoomDatesRow')?.classList.toggle('room-different-mode', different);
         if (!different) syncChargeDatesFromMain();
@@ -1007,6 +1009,7 @@
     function bindFixedActionButtons() {
         bindClickOnce('complete', () => completeCheckIn(false));
         bindClickOnce('undoCheckIn', undoCheckIn);
+        bindClickOnce('undoCheckOut', undoCheckOut);
         bindClickOnce('checkOutAction', checkOut);
         bindClickOnce('printInvoice', () => openLegacyInvoice('CHECK-IN'));
     }
@@ -1100,7 +1103,7 @@
 
         const status = String(fresh.reservationStatus || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
         const active = ['reservation', 'reserved', 'provisional', 'check in', 'checkin', 'checked in'].includes(status);
-        canEditDates = fresh.canEditDates !== false || active;
+        canEditDates = (fresh.canEditDates !== false || active) && fresh.hasMixedRoomDates !== true;
         const stayDisplay = byId('stayDateDisplay');
         stayDisplay?.classList.toggle('is-disabled', !canEditDates);
         if (canEditDates) stayDisplay?.removeAttribute('aria-disabled');
@@ -1110,6 +1113,14 @@
         setVisible('updateGuest', !!regId && fresh.canUpdateGuest !== false);
         setVisible('complete', !!fresh.showCheckInAction);
         setVisible('undoCheckIn', !!fresh.showUndoCheckInAction);
+        setVisible('undoCheckOut', !!fresh.showUndoCheckOutAction);
+        if (byId('undoCheckOut')) {
+            const blocked = !!fresh.undoCheckoutBlockedByFiscal;
+            byId('undoCheckOut').disabled = blocked;
+            byId('undoCheckOut').title = blocked
+                ? 'Fiscal invoice already issued. Reconcile FBR/PRA before undoing checkout.'
+                : 'Select checked-out rooms to reopen';
+        }
         setVisible('checkOutAction', !!fresh.showCheckOutAction);
         setVisible('printInvoice', !!regId);
         applyCheckedOutReadOnlyUi(fresh.reservationStatus);
@@ -1311,10 +1322,13 @@
             dateTaxSelection = selected;
         }
 
+        if (state.hasMixedRoomDates === true && datesChanged)
+            return message('Rooms have different stay dates; use room-level dates, not the master Guest Details dates.', 'error');
+
         if (isCheckedOutReadOnly() && datesChanged) {
             if (newArrival !== loadedStayArrival)
                 return message('Arrival date is locked after checkout. Only departure may be corrected.', 'error');
-            if (!window.confirm('Correct this completed stay departure date? Room charges, payments and any issued fiscal invoice will remain unchanged.')) return;
+            if (!window.confirm('Correct this completed stay departure date? Only Room Rent dates and nights will be corrected. Charged amounts, payment transactions and any issued fiscal invoice remain unchanged.')) return;
         }
         showBusy('Updating guest…');
         try {
@@ -2405,6 +2419,58 @@
             syncAll();
             openModal('checkoutRoomsModal');
         } catch (e) { message(e.message || 'Unable to load checked-in rooms.', 'error'); }
+    }
+
+    async function undoCheckOut() {
+        if (!regId) return message('Open a reservation first.', 'error');
+        try {
+            const rooms = await api(`${urls.undoCheckoutRooms}?regId=${encodeURIComponent(regId)}`);
+            const list = byId('undoCheckoutRoomList');
+            if (!Array.isArray(rooms) || !rooms.length)
+                return message('No checked-out rooms are available, or Undo Checkout permission is not assigned.', 'error');
+            const escapeHtml = v => String(v == null ? '' : v).replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+            // Show each selected room's ORIGINAL stay dates so staff can tell
+            // a historical checkout from a different guest's later booking.
+            list.innerHTML = rooms.map(r=>{
+                const arrival = formatDate(String(r.arrival || '').slice(0, 10)) || 'Unknown';
+                const departure = formatDate(String(r.departure || '').slice(0, 10)) || 'Unknown';
+                return `<label class="mvc-checkout-room-option">
+                    <input type="checkbox" class="mvc-undo-checkout-room-check" value="${Number(r.paymentId)}" />
+                    <span><b>Room ${escapeHtml(r.roomNo||'Unassigned')}</b>
+                    <small>${escapeHtml(r.category||'')} · ${escapeHtml(r.guestName||'Guest')}</small>
+                    <small>Stay: ${escapeHtml(arrival)} – ${escapeHtml(departure)}</small></span>
+                </label>`;
+            }).join('');
+            const all=byId('undoCheckoutSelectAll'), confirmButton=byId('undoCheckoutConfirm');
+            let pending=false;
+            const sync=()=>{
+                const boxes=$$('.mvc-undo-checkout-room-check',list), count=boxes.filter(x=>x.checked).length;
+                all.checked=count===boxes.length;
+                all.indeterminate=count>0 && count<boxes.length;
+                byId('undoCheckoutSelectedCount').textContent=`${count} of ${boxes.length} rooms selected`;
+                confirmButton.disabled=pending || !count;
+            };
+            all.checked=false;
+            all.onchange=()=>{$$('.mvc-undo-checkout-room-check',list).forEach(x=>x.checked=all.checked);sync();};
+            list.onchange=sync;
+            confirmButton.onclick=async()=>{
+                if(pending) return;
+                const ids=$$('.mvc-undo-checkout-room-check:checked',list).map(x=>Number(x.value));
+                if(!ids.length || !confirm(`Undo checkout for ${ids.length} selected room(s)? This does not reverse payments or fiscal invoices.`)) return;
+                pending=true; const saved=confirmButton.innerHTML;
+                confirmButton.disabled=true;
+                confirmButton.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Reopening rooms…';
+                try {
+                    const response=await api(urls.undoCheckout,{method:'POST',body:{regId,paymentIds:ids}});
+                    if(!response.ok) return message(response.message||'Undo Checkout failed.','error');
+                    closeModal('undoCheckoutRoomsModal');
+                    await refreshReservationUi(regId);
+                    message(response.message,'success');
+                }catch(e){message(e.message||'Undo Checkout failed.','error');}
+                finally{pending=false;confirmButton.innerHTML=saved;sync();}
+            };
+            sync(); openModal('undoCheckoutRoomsModal');
+        }catch(e){message(e.message||'Unable to load checked-out rooms.','error');}
     }
 
     async function extendReservation() {

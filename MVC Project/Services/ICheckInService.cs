@@ -28,6 +28,8 @@ public interface ICheckInService
     Task<CheckInOperationResult> RefundPaymentAsync(string hotelId, string userId, string userName, string ip, RefundPaymentRequest request, CancellationToken ct = default);
     Task<CheckInOperationResult> SaveGuestAndCheckInAsync(string hotelId, string userId, string userName, string ip, SaveCheckInRequest request, CancellationToken ct = default);
     Task<CheckInOperationResult> UndoCheckInAsync(string hotelId, string userId, string userName, string ip, string regId, int paymentId = 0, CancellationToken ct = default);
+    Task<IReadOnlyList<CheckoutRoomOption>> GetUndoCheckoutRoomsAsync(string hotelId, string userId, string regId, CancellationToken ct = default);
+    Task<CheckInOperationResult> UndoCheckoutAsync(string hotelId, string userId, string userName, string ip, UndoCheckoutRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<CheckoutRoomOption>> GetCheckoutRoomsAsync(string hotelId, string regId, CancellationToken ct = default);
     Task<CheckInOperationResult> CheckOutAsync(string hotelId, string userId, string userName, string ip, CheckOutRequest request, CancellationToken ct = default);
     Task<CheckInOperationResult> ExtendReservationAsync(string hotelId, string hotelName, string userId, string userName, string ip, ExtendReservationRequest request, CancellationToken ct = default);

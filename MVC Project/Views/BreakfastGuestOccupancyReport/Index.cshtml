@@ -1,0 +1,41 @@
+@model Orapmshms.Models.BreakfastGuestOccupancyViewModel
+@{
+    ViewData["Title"] = "Breakfast Guest Occupancy";
+}
+<style>
+    .bko-shell{padding:18px;max-width:1580px;margin:auto;color:#19314f}.bko-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}.bko-title h1{font-size:22px;font-weight:800;color:#113764;margin:0}.bko-title p{font-size:13px;color:#65748b;margin:4px 0 0}.bko-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.bko-btn{padding:9px 15px;border:1px solid #c9d8eb;background:white;color:#163961;border-radius:8px;text-decoration:none;font-weight:700;font-size:12px;cursor:pointer}.bko-btn-primary{background:#153d73;border-color:#153d73;color:white}.bko-tools input{border:1px solid #cbd8e5;border-radius:8px;padding:8px 10px;min-height:36px}.bko-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-bottom:16px}.bko-card{background:#fff;border:1px solid #e0e7f0;border-radius:12px;padding:19px;box-shadow:0 2px 10px #143c6810}.bko-card span{font-size:12px;color:#64748b;font-weight:700}.bko-card b{display:block;font-size:30px;color:#103b72;margin-top:5px}.bko-card:nth-child(1){border-left:4px solid #169c7e}.bko-card:nth-child(2){border-left:4px solid #ec9a20}.bko-card:nth-child(3){border-left:4px solid #805cd8}.bko-panel{background:#fff;border:1px solid #e0e7f0;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px #143c6810}.bko-bar{background:#f7faff;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 17px;border-bottom:1px solid #e2e8f0;color:#536780;font-size:12px}.bko-table-wrap{overflow:auto}.bko-table{border-collapse:collapse;width:100%;min-width:980px}.bko-table th{font-size:11px;font-weight:800;color:#fff;background:#153d73;text-align:left;padding:12px 10px;white-space:nowrap}.bko-table td{padding:12px 10px;font-size:12px;border-bottom:1px solid #ecf1f7}.bko-table tbody tr:nth-child(even){background:#f9fbff}.bko-table tbody tr:hover{background:#eef6ff}.bko-table .num{text-align:center;font-variant-numeric:tabular-nums;font-weight:700}.bko-table tfoot td{background:#edf4fc;font-weight:800;border-top:2px solid #b9cde7}.bko-room{display:inline-block;background:#e8f2ff;color:#174477;padding:4px 9px;border-radius:6px;font-weight:700}.bko-empty{padding:32px!important;text-align:center;color:#7b889b}.bko-error{background:#fff1f1;border:1px solid #f5b5b5;border-radius:8px;color:#b32323;padding:12px;margin-bottom:12px}.bko-print-heading{display:none}
+    @@media(max-width:760px){.bko-shell{padding:10px}.bko-cards{grid-template-columns:1fr}.bko-tools{width:100%}.bko-title h1{font-size:19px}}
+    @@media print{@@page{size:A4 landscape;margin:11mm}.bko-shell{padding:0;max-width:none}.bko-tools,.bko-noprint{display:none!important}.bko-print-heading{display:block!important;padding-bottom:12px;border-bottom:2px solid #153d73;margin-bottom:14px}.bko-cards{grid-template-columns:repeat(3,1fr)}.bko-card{padding:10px;box-shadow:none}.bko-card b{font-size:22px}.bko-table{min-width:0}.bko-table th,.bko-table td{padding:6px;font-size:9px}.bko-table th{background:#153d73!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.bko-panel{border:0;box-shadow:none}.bko-table tr{break-inside:avoid}}
+</style>
+<div class="bko-shell">
+    <div class="bko-header">
+        <div class="bko-title"><h1>Breakfast Guest Occupancy</h1><p>Room-wise headcount for checked-in guests · @Model.HotelName</p></div>
+        <form class="bko-tools" method="get" action="@Url.Action("Index","BreakfastGuestOccupancyReport")">
+            <label for="breakfastDate" style="font-size:12px;font-weight:700">Report date</label>
+            <input id="breakfastDate" type="date" name="date" value="@Model.ReportDate.ToString("yyyy-MM-dd")" />
+            <button class="bko-btn bko-btn-primary" type="submit">View Report</button>
+            <a class="bko-btn" href="@Url.Action("Export","BreakfastGuestOccupancyReport",new{date=Model.ReportDate.ToString("yyyy-MM-dd")})">Export CSV</a>
+            <a class="bko-btn" target="_blank" rel="noopener" href="@Url.Action("Print","BreakfastGuestOccupancyReport",new{date=Model.ReportDate.ToString("yyyy-MM-dd")})">Print</a>
+        </form>
+    </div>
+    <div class="bko-print-heading"><strong style="font-size:18px">@Model.HotelName · Breakfast Occupancy</strong><div>@Model.ReportDate.ToString("dd MMM yyyy") · @Model.UserName</div></div>
+    @if(ViewBag.Error != null){<div class="bko-error" role="alert">@ViewBag.Error</div>}
+    <div class="bko-cards">
+        <div class="bko-card"><span>ADULTS</span><b>@Model.TotalAdults</b></div>
+        <div class="bko-card"><span>CHILDREN</span><b>@Model.TotalChildren</b></div>
+        <div class="bko-card"><span>INFANTS</span><b>@Model.TotalInfants</b></div>
+    </div>
+    <section class="bko-panel">
+        <div class="bko-bar"><strong>In-house guest list</strong><span>As of @Model.ReportDate.ToString("dd MMM yyyy") · @Model.Rows.Count room entries</span></div>
+        <div class="bko-table-wrap"><table class="bko-table"><thead><tr><th>#</th><th>Reservation #</th><th>Guest</th><th>Room</th><th class="num">Adults</th><th class="num">Children</th><th class="num">Infants</th><th>Category</th><th>Rate Plan</th><th>Stay</th></tr></thead>
+            <tbody>
+            @if(!Model.Rows.Any()){<tr><td colspan="10" class="bko-empty">No checked-in guests found for this date.</td></tr>}
+            @for(int i=0;i<Model.Rows.Count;i++){
+                var r=Model.Rows[i];
+                <tr><td>@(i+1)</td><td>@r.RegId</td><td><strong>@r.GuestName</strong></td><td><span class="bko-room">@r.RoomNo</span></td><td class="num">@r.Adults</td><td class="num">@r.Children</td><td class="num">@r.Infants</td><td>@r.RoomCategory</td><td>@r.RatePlanName</td><td>@(r.ArrivalDate?.ToString("dd MMM yyyy") ?? "—") – @(r.DepartureDate?.ToString("dd MMM yyyy") ?? "—")</td></tr>
+            }
+            </tbody>
+            <tfoot><tr><td colspan="4" style="text-align:right">TOTAL OCCUPANCY</td><td class="num">@Model.TotalAdults</td><td class="num">@Model.TotalChildren</td><td class="num">@Model.TotalInfants</td><td colspan="3"></td></tr></tfoot>
+        </table></div>
+    </section>
+</div>

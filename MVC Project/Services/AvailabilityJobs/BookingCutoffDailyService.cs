@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using System.Diagnostics;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Services;
 
@@ -45,6 +46,10 @@ public sealed class BookingCutoffDailyRunSummary
 public sealed class BookingCutoffDailyService
 {
     private const string ApplicationLockName = "hotelsoftware.BookingCutoffDailyService";
+
+    // Restriction recalculation is date-local. Limiting each SQL statement to one
+    // month avoids the 730-day correlated UPDATE that timed out at 45 seconds.
+    private const int PreparationBatchDays = 31;
 
     private readonly IConfiguration _configuration;
     private readonly IHttpClientFactory _clientFactory;
@@ -101,6 +106,8 @@ public sealed class BookingCutoffDailyService
                 var result = new BookingCutoffDailyHotelResult { HotelId = hotelId };
                 summary.Hotels.Add(result);
 
+                string currentStage = "loading affected plans";
+                var hotelTimer = Stopwatch.StartNew();
                 try
                 {
                     var plans = await LoadAffectedPlansAsync(lockConnection, hotelId, cancellationToken);
@@ -114,12 +121,25 @@ public sealed class BookingCutoffDailyService
                             _clientFactory.CreateClient("ChannelManager"),
                             _loggerFactory.CreateLogger<AvailabilityChannexUploadService>());
 
-                        var preparation = await uploader.PrepareBookingCutoffRowsWithCountsAsync(
-                            hotelId, today, through, plans, Array.Empty<string>(),
-                            "BookingCutoffDailyJob", today, cancellationToken);
-                        result.UpdatedRows = preparation.UpdatedRows;
-                        result.InsertedRows = preparation.InsertedRows;
+                        // Process dates in inclusive 31-day batches. Each statement commits
+                        // separately; a subsequent retry safely rechecks the same rows.
+                        // Never shorten the configured horizon or skip old cutoff markers.
+                        for (var batchStart = today; batchStart <= through;)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            var batchEnd = batchStart.AddDays(PreparationBatchDays - 1);
+                            if (batchEnd > through) batchEnd = through;
+                            currentStage = $"preparing {batchStart:yyyy-MM-dd} to {batchEnd:yyyy-MM-dd}";
 
+                            var preparation = await uploader.PrepareBookingCutoffRowsWithCountsAsync(
+                                hotelId, batchStart, batchEnd, plans, Array.Empty<string>(),
+                                "BookingCutoffDailyJob", today, cancellationToken);
+                            result.UpdatedRows += preparation.UpdatedRows;
+                            result.InsertedRows += preparation.InsertedRows;
+                            batchStart = batchEnd.AddDays(1);
+                        }
+
+                        currentStage = "counting pending restrictions";
                         var pendingBefore = await ReadPendingAsync(
                             lockConnection, hotelId, today, through, plans, cancellationToken);
                         result.PendingUploadRows = pendingBefore.Pending;
@@ -127,11 +147,14 @@ public sealed class BookingCutoffDailyService
                         if (pendingBefore.Pending != 0)
                         {
                             // Existing MVC sync path; preserves Channex mapping and upload rules.
+                            currentStage = "ensuring Channex rate-plan mappings";
                             await uploader.EnsureRatePlansAsync(
                                 hotelId, plans, Array.Empty<string>(), cancellationToken);
+                            currentStage = "uploading Channex restrictions";
                             await uploader.UploadRestrictionsAsync(
                                 hotelId, today, through, plans, Array.Empty<string>(), cancellationToken);
 
+                            currentStage = "verifying uploaded restrictions";
                             var pendingAfter = await ReadPendingAsync(
                                 lockConnection, hotelId, today, through, plans, cancellationToken);
                             result.UploadedRows = Math.Max(0, pendingBefore.Pending - pendingAfter.Pending);
@@ -144,6 +167,12 @@ public sealed class BookingCutoffDailyService
                             }
                         }
                     }
+
+                    _logger.LogInformation(
+                        "Booking cutoff hotel completed. Hotel={HotelId}, ElapsedMs={ElapsedMs}, " +
+                        "Updated={UpdatedRows}, Inserted={InsertedRows}, Pending={PendingRows}",
+                        hotelId, hotelTimer.ElapsedMilliseconds, result.UpdatedRows,
+                        result.InsertedRows, result.PendingUploadRows);
 
                     result.Success = true;
                     result.HasWarnings = result.Warnings.Count > 0;
@@ -162,9 +191,11 @@ public sealed class BookingCutoffDailyService
                 catch (Exception ex)
                 {
                     result.Success = false;
-                    result.Error = $"{ex.GetType().Name}: {ex.Message}";
+                    result.Error = $"{currentStage}: {ex.GetType().Name}: {ex.Message}";
                     summary.FailedHotels++;
-                    _logger.LogError(ex, "Booking cutoff processing failed for hotel {HotelId}", hotelId);
+                    _logger.LogError(ex,
+                        "Booking cutoff failed. Hotel={HotelId}, Stage={Stage}, ElapsedMs={ElapsedMs}",
+                        hotelId, currentStage, hotelTimer.ElapsedMilliseconds);
                 }
             }
         }

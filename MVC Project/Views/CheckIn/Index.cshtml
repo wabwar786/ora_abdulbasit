@@ -531,7 +531,7 @@
                             </div>
 
                             <div class="field span-2 guest-address-field"><label for="address">Complete Address</label><input id="address" maxlength="200" value="@g.Address" /></div>
-                            <div id="guestStayDatesField" class="field stay-date-field">
+                            <div id="guestStayDatesField" class="field stay-date-field @(Model.HasMixedRoomDates ? "hidden" : "")">
                                 <label for="stayDateDisplay">Stay Dates @if (isCheckedOutBooking && Model.CanEditDates) { <small class="text-muted">(departure only)</small> }</label>
                                 <div id="stayDatePicker" class="date-picker">
                                     <input id="stayDateDisplay" class="date-picker-input" readonly aria-haspopup="dialog" aria-expanded="false" aria-controls="dateCalendar" />
@@ -550,7 +550,7 @@
                                 </div>
                             </div>
 
-                            <div id="guestStayCountField" class="field"><label for="stayCount">@(Model.IsMonthWise ? "Months" : "Nights")</label><input id="stayCount" readonly /></div>
+                            <div id="guestStayCountField" class="field @(Model.HasMixedRoomDates ? "hidden" : "")"><label for="stayCount">@(Model.IsMonthWise ? "Months" : "Nights")</label><input id="stayCount" readonly /></div>
                             <div class="field">
                                 <label for="source">Booking Source</label><div class="select-with-button">
                                     <select id="source">
@@ -1115,6 +1115,7 @@
 
             <div class="checkin-footer-right">
                 <button id="complete" type="button" class="footer-action-btn footer-checkin @(!Model.ShowCheckInAction ? "hidden" : "")"><i class="fa-solid fa-right-to-bracket"></i>Check-In</button>
+                <button id="undoCheckOut" type="button" class="footer-action-btn footer-undo @(!Model.ShowUndoCheckOutAction ? "hidden" : "")" disabled="@Model.UndoCheckoutBlockedByFiscal" title="@(Model.UndoCheckoutBlockedByFiscal ? "Fiscal invoice already issued. Reconcile FBR/PRA before undoing checkout." : "Select checked-out rooms to reopen")"><i class="fa-solid fa-rotate-left"></i>Undo Checkout</button>
                 <button id="undoCheckIn" type="button" class="footer-action-btn footer-undo @(!Model.ShowUndoCheckInAction ? "hidden" : "")"><i class="fa-solid fa-rotate-left"></i>Undo Check-In</button>
                 <button id="printInvoice" type="button" class="footer-action-btn footer-print @(!Model.IsExistingBooking ? "hidden" : "")"><i class="fa-solid fa-print"></i>Print</button>
             </div>
@@ -1131,6 +1132,19 @@
                 <div id="checkoutRoomList" class="mvc-checkout-list"></div>
                 <div id="checkoutSelectedCount" class="mvc-checkout-count" aria-live="polite"></div>
                 <div class="modal-actions"><button type="button" class="btn btn-outline" data-close-modal="checkoutRoomsModal">Cancel</button><button type="button" id="checkoutConfirmSelected" class="btn btn-primary">Confirm Checkout</button></div>
+            </div>
+        </section>
+    </div>
+
+    <div id="undoCheckoutRoomsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="undoCheckoutRoomsTitle">
+        <section class="dialog mvc-checkout-dialog">
+            <div class="modal-head"><i class="modal-dot"></i><h2 id="undoCheckoutRoomsTitle">UNDO CHECKOUT — SELECT ROOMS</h2><button type="button" class="modal-close" data-close-modal="undoCheckoutRoomsModal" aria-label="Close">×</button></div>
+            <div class="modal-body">
+                <p class="mvc-checkout-help">Only selected checked-out room entries will return to Check-In. Payments are not reversed. Fiscal-posted reservations cannot be reopened here.</p>
+                <label class="mvc-checkout-select-all"><input id="undoCheckoutSelectAll" type="checkbox" /> Select all rooms</label>
+                <div id="undoCheckoutRoomList" class="mvc-checkout-list"></div>
+                <div id="undoCheckoutSelectedCount" class="mvc-checkout-count" aria-live="polite"></div>
+                <div class="modal-actions"><button type="button" class="btn btn-outline" data-close-modal="undoCheckoutRoomsModal">Cancel</button><button type="button" id="undoCheckoutConfirm" class="btn btn-primary" disabled>Confirm Undo Checkout</button></div>
             </div>
         </section>
     </div>

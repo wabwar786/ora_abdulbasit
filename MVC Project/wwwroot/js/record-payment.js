@@ -218,8 +218,9 @@
     root.dispatchEvent(new CustomEvent('recordpayment:closed',{detail:previous||{}}));
   }
 
+  let onlineLinkPending = false;
   async function launchOnline(mode){
-    if(!current) return;
+    if(!current || onlineLinkPending) return;
     if(current.showOnlineCard!==true){showToast('Online Card is not enabled for this property.',true);return;}
 
     const amount=Number(els.amount?.value||0);
@@ -228,65 +229,82 @@
     const cleanMode=mode==='hold'?'hold':'charge';
     const urls=optionsFor(current);
     const button=cleanMode==='hold'?els.onlineHold:els.onlineCharge;
-
-    // Open a tab during the user gesture (before fetch) so pop-up blockers do not
-    // prevent Charge Now from navigating straight to the hosted Stripe Checkout.
-    // Hold card retains its existing link-only behaviour; Copy/Open stay available.
-    let chargeWindow = null;
-    if(cleanMode==='charge'){
-      try{
-        chargeWindow = window.open('about:blank','_blank');
-        if(chargeWindow) chargeWindow.opener = null;
-      }catch(_){chargeWindow=null;}
-    }
+    // Start the network request while the original page is still active.
+    // Do NOT await requestAnimationFrame after opening a new tab: Chrome
+    // suspends animation frames in background tabs, which prevented this
+    // request from starting until the user switched back.
+    onlineLinkPending=true;
+    if(els.onlineCharge) els.onlineCharge.disabled=true;
+    if(els.onlineHold) els.onlineHold.disabled=true;
     if(els.onlineLink) els.onlineLink.hidden=true;
     if(els.onlineLinkValue) els.onlineLinkValue.value='';
     if(els.onlineLinkHint) els.onlineLinkHint.textContent='';
+    setBusy(button,true,cleanMode==='hold'?'Generating hold link…':'Generating payment link…');
 
-    setBusy(button,true,cleanMode==='hold'?'Generating hold link…':'Generating charge link…');
-    await waitForPaint();
+    // Calling api() here starts fetch synchronously, before window.open()
+    // transfers focus to the new tab. No await is allowed before window.open(),
+    // otherwise browsers may block the popup (lost user activation).
+    const linkRequest=api(urls.payNowLinkUrl,{
+      method:'POST',
+      body:JSON.stringify({
+        regId:String(current.regId||'').trim(),
+        paymentMode:cleanMode,
+        source:String(current.source||'NR').trim(),
+        amount:Number(amount.toFixed(2))
+      })
+    });
+
+    let checkoutTab=null;
+    if(cleanMode==='charge'){
+      checkoutTab=window.open('', '_blank');
+      if(checkoutTab){
+        try{
+          checkoutTab.document.open();
+          checkoutTab.document.write('<!doctype html><html><head><title>Preparing PayNow checkout</title><meta charset="utf-8"><style>body{font:16px system-ui;background:#f6f8fc;color:#14345a;display:grid;place-items:center;min-height:90vh;text-align:center}.spin{width:32px;height:32px;border:4px solid #d6e2f2;border-top-color:#174579;border-radius:50%;animation:spin 1s linear infinite;margin:auto}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><main><div class="spin"></div><h2>Preparing secure checkout…</h2><p>Your payment link is being generated.</p></main></body></html>');
+          checkoutTab.document.close();
+        }catch(_){ /* Keep the new tab available for navigation. */ }
+      }
+    }
 
     try{
-      const j=await api(urls.payNowLinkUrl,{
-        method:'POST',
-        body:JSON.stringify({
-          regId:String(current.regId||'').trim(),
-          paymentMode:cleanMode,
-          source:String(current.source||'NR').trim(),
-          amount:Number(amount.toFixed(2))
-        })
-      });
-
+      const j=await linkRequest;
       if(j?.ok===false) throw new Error(j.message||'Unable to prepare the PayNow link.');
-
       const rawPaymentUrl=String(j?.data?.paymentUrl||'').trim();
       if(!rawPaymentUrl) throw new Error('Payment link is not available for this reservation.');
-      const paymentUrl=new URL(rawPaymentUrl,window.location.origin).href;
-
-      if(els.onlineLinkValue) els.onlineLinkValue.value=paymentUrl;
+      const paymentUrl=new URL(rawPaymentUrl,window.location.origin);
+      // GenerateLink produces the secure PayNow route. The PMS may use a
+      // separately configured public PayNow domain; do not require same-origin.
+      if(!/^https?:$/.test(paymentUrl.protocol) || !/^\/PayNow\/p\//i.test(paymentUrl.pathname))
+        throw new Error('The generated payment link is not a valid PayNow URL.');
+      if(els.onlineLinkValue) els.onlineLinkValue.value=paymentUrl.href;
       if(els.onlineLinkHint){
         els.onlineLinkHint.textContent=cleanMode==='hold'
           ? 'Hold PayNow link generated. Copy it for the guest or press Open to test it.'
-          : 'Charge PayNow link generated. Copy it for the guest or press Open to test it.';
+          : 'Payment link generated. Opening secure checkout…';
       }
-      if(els.onlineLink){
-        els.onlineLink.hidden=false;
-        els.onlineLink.scrollIntoView({behavior:'smooth',block:'nearest'});
-      }
+      if(els.onlineLink) els.onlineLink.hidden=false;
 
-      if(cleanMode==='charge' && chargeWindow){
-        try{chargeWindow.location.replace(paymentUrl);chargeWindow.focus();}
-        catch(_){try{chargeWindow.location.href=paymentUrl;}catch(__){showToast('Use Open to continue to Stripe Checkout.',true);}}
+      if(cleanMode==='charge'){
+        setBusy(button,true,'Opening secure checkout…');
+        if(checkoutTab && !checkoutTab.closed){
+          checkoutTab.location.replace(paymentUrl.href);
+        }else{
+          // Popup blocked/closed: retain the generated link in this modal.
+          // The existing Open link lets the user navigate with another click.
+          showToast('Payment link ready. Allow pop-ups or use Open to launch PayNow in a new tab.',true);
+        }
+        return;
       }
-      showToast(cleanMode==='hold'?'Hold PayNow link generated.':
-        (chargeWindow?'Stripe Checkout opened. Copy link is also available.':'Payment link generated. Press Open to launch Stripe Checkout.'));
+      els.onlineLink?.scrollIntoView({behavior:'smooth',block:'nearest'});
+      showToast('Hold PayNow link generated.');
     }catch(e){
-      if(chargeWindow){try{chargeWindow.close();}catch(_){}}
-
-      if(els.onlineLink) els.onlineLink.hidden=true;
+      if(checkoutTab && !checkoutTab.closed) { try{checkoutTab.close();}catch(_){} }
       showToast(e.message||'Unable to prepare the PayNow link.',true);
     }finally{
+      onlineLinkPending=false;
       setBusy(button,false);
+      if(els.onlineCharge) els.onlineCharge.disabled=false;
+      if(els.onlineHold) els.onlineHold.disabled=false;
     }
   }
 

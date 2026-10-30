@@ -381,7 +381,14 @@ CROSS APPLY
 WHERE dr.hotel_id=@hotel
   AND dr.[date] BETWEEN @from AND @to
   {drPlanFilter}
-  {drCategoryFilter};
+  {drCategoryFilter}
+  -- Never rewrite rows whose Stop Sell state is already correct. The prior
+  -- full-range UPDATE wrote every datesrates row and caused excessive logging,
+  -- locks, and repeated upload-source changes during daily reconciliation.
+  AND (
+        ISNULL(dr.stop_sell,0) <> NewState.NewStopSell
+        OR ISNULL(dr.cutoff_stop_sell,0) <> NewState.NewCutoffStopSell
+      );
 SET @updatedRows = @@ROWCOUNT;
 SELECT @updatedRows AS UpdatedRows, @insertedRows AS InsertedRows;";
 
