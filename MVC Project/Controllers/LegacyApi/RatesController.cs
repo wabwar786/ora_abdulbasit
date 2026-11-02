@@ -118,7 +118,7 @@ namespace Orapmshms.Controllers
 
         private readonly string _connString =
             LegacyApiRuntime.ConnectionString;
-        private const int MaxNights = 15;
+        private const int MaxNights = 1;
 
         [HttpPost]
 
@@ -757,6 +757,7 @@ OPTION (MAXRECURSION 0);";
         public IActionResult GetCategoryAvailabilityRatesAll([FromBody] CategoryAvailabilityRateRequest request)
 
         {
+            return BadRequest("Currently Unavailable.");
 
             if (request == null)
 
