@@ -25,6 +25,11 @@ public sealed class DashboardService : IDashboardService
     private static readonly SemaphoreSlim[] CacheMissLocks = Enumerable.Range(0, 64)
         .Select(_ => new SemaphoreSlim(1, 1)).ToArray();
 
+    // Snapshot loaders call other CachedAsync methods. They MUST NOT use the
+    // same striped locks or one colliding stripe could deadlock a dashboard.
+    private static readonly SemaphoreSlim[] SnapshotCacheLocks = Enumerable.Range(0, 64)
+        .Select(_ => new SemaphoreSlim(1, 1)).ToArray();
+
 
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;
@@ -50,11 +55,40 @@ public sealed class DashboardService : IDashboardService
         return GetAsync(hotelId, end.AddDays(-29), end, cancellationToken);
     }
 
+    // Keep snapshots short-lived: simultaneous users from the same hotel/date
+    // share one calculation instead of launching 13 SQL workloads per request.
+    // The cache key includes hotel AND date range; it never mixes hotel data.
     public async Task<DashboardViewModel> GetAsync(
         string hotelId,
         DateTime periodStart,
         DateTime periodEnd,
         CancellationToken cancellationToken = default)
+    {
+        hotelId = Clean(hotelId, 50);
+        if (string.IsNullOrWhiteSpace(hotelId))
+            throw new UnauthorizedAccessException("Hotel context is missing.");
+        var start = periodStart.Date;
+        var end = periodEnd.Date;
+        if (start > end || end >= start.AddMonths(6))
+            throw new ArgumentOutOfRangeException(nameof(periodStart),
+                "Dashboard date range must be shorter than six calendar months.");
+
+        // Deliberately let the one shared load complete if its first browser
+        // disconnects. Otherwise the next 14 hotel sessions repeatedly restart it.
+        // Only dashboard reporting data is affected; operational services are not.
+        var cacheKey = $"dashboard:page-snapshot:v1:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}:{_hotelClock.GetHotelToday(hotelId):yyyyMMdd}";
+        var model = await CachedAsync(cacheKey, TimeSpan.FromSeconds(20),
+            () => BuildPageSnapshotAsync(hotelId, start, end, CancellationToken.None),
+            SnapshotCacheLocks);
+        cancellationToken.ThrowIfCancellationRequested();
+        return model;
+    }
+
+    private async Task<DashboardViewModel> BuildPageSnapshotAsync(
+        string hotelId,
+        DateTime periodStart,
+        DateTime periodEnd,
+        CancellationToken cancellationToken)
     {
         hotelId = Clean(hotelId, 50);
         if (string.IsNullOrWhiteSpace(hotelId))
@@ -457,6 +491,31 @@ ORDER BY MonthNumber, Source;";
         DateTime periodStart,
         DateTime periodEnd,
         CancellationToken cancellationToken = default)
+    {
+        hotelId = Clean(hotelId, 50);
+        if (string.IsNullOrWhiteSpace(hotelId))
+            throw new UnauthorizedAccessException("Hotel context is missing.");
+        var start = periodStart.Date;
+        var end = periodEnd.Date;
+        if (start > end || end >= start.AddMonths(6))
+            throw new ArgumentOutOfRangeException(nameof(periodStart),
+                "Dashboard date range must be shorter than six calendar months.");
+
+        // Analytics is lower on the page. Prevent repeated summary assembly and
+        // SQL work as multiple users scroll to it; keep each hotel's data isolated.
+        var analyticsKey = $"dashboard:analytics-snapshot:v1:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}";
+        var result = await CachedAsync(analyticsKey, TimeSpan.FromSeconds(60),
+            () => BuildAnalyticsSnapshotAsync(hotelId, start, end, CancellationToken.None),
+            SnapshotCacheLocks);
+        cancellationToken.ThrowIfCancellationRequested();
+        return result;
+    }
+
+    private async Task<DashboardAnalyticsResult> BuildAnalyticsSnapshotAsync(
+        string hotelId,
+        DateTime periodStart,
+        DateTime periodEnd,
+        CancellationToken cancellationToken)
     {
         hotelId = Clean(hotelId, 50);
         if (string.IsNullOrWhiteSpace(hotelId))
@@ -4146,14 +4205,16 @@ ORDER BY CategoryName;";
     private async Task<T> CachedAsync<T>(
         string key,
         TimeSpan lifetime,
-        Func<Task<T>> factory)
+        Func<Task<T>> factory,
+        SemaphoreSlim[]? lockPool = null)
     {
         if (_cache.TryGetValue(key, out object? cachedValue) && cachedValue is T cached)
             return cached;
 
         // Cold cache / expired entries: only one request per cache key runs the
         // SQL query; other requests wait and then reuse that same result.
-        var stripe = CacheMissLocks[(int)((uint)StringComparer.Ordinal.GetHashCode(key) % (uint)CacheMissLocks.Length)];
+        var stripes = lockPool ?? CacheMissLocks;
+        var stripe = stripes[(int)((uint)StringComparer.Ordinal.GetHashCode(key) % (uint)stripes.Length)];
         await stripe.WaitAsync();
         try
         {

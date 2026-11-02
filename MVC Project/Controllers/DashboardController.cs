@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,6 +8,7 @@ using Orapmshms.Services;
 namespace Orapmshms.Controllers;
 
 [Authorize]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class DashboardController : Controller
 {
     private readonly IServiceProvider _serviceProvider;
@@ -36,10 +38,16 @@ public sealed class DashboardController : Controller
             return Redirect("/LoginHMS");
 
         var (start, end) = ResolveDateRange(hotelId, startDate, endDate);
+        var started = Stopwatch.GetTimestamp();
         try
         {
             var model = await DashboardService.GetAsync(hotelId, start, end, cancellationToken);
             return View(model);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A closed browser must not be treated as a database error.
+            return new EmptyResult();
         }
         catch (Exception ex)
         {
@@ -55,6 +63,13 @@ public sealed class DashboardController : Controller
                 FilterEndDate = end,
                 Message = "Some dashboard data could not be loaded. Please refresh or check the database connection."
             });
+        }
+        finally
+        {
+            var elapsed = Stopwatch.GetElapsedTime(started);
+            if (elapsed >= TimeSpan.FromSeconds(3))
+                _logger.LogWarning("Dashboard page for hotel {HotelId} ({Start:yyyy-MM-dd} to {End:yyyy-MM-dd}) took {Milliseconds}ms",
+                    hotelId, start, end, elapsed.TotalMilliseconds);
         }
     }
 

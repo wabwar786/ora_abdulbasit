@@ -1,6 +1,32 @@
 (function () {
     'use strict';
 
+    // Dashboard reports are background work; never let one browser submit
+    // several expensive SQL reports at the same time. User-triggered room
+    // and KPI detail requests continue to use fetch() directly.
+    var reportRequestsInFlight = 0;
+    var reportRequestQueue = [];
+    function pumpReportRequests() {
+        while (reportRequestsInFlight < 2 && reportRequestQueue.length) {
+            var pending = reportRequestQueue.shift();
+            if (pending.options && pending.options.signal && pending.options.signal.aborted) {
+                pending.reject(new DOMException('Request cancelled', 'AbortError'));
+                continue;
+            }
+            reportRequestsInFlight++;
+            fetch(pending.url, pending.options).then(pending.resolve, pending.reject).finally(function () {
+                reportRequestsInFlight--;
+                pumpReportRequests();
+            });
+        }
+    }
+    function fetchBackgroundReport(url, options) {
+        return new Promise(function (resolve, reject) {
+            reportRequestQueue.push({ url: url, options: options, resolve: resolve, reject: reject });
+            pumpReportRequests();
+        });
+    }
+
     function readJson(id) {
         var node = document.getElementById(id);
         if (!node) return [];
@@ -1386,7 +1412,7 @@
         if (!url) return;
         var period = selectedPeriod();
         try {
-            var response = await fetch(url + '?startDate=' + encodeURIComponent(period.start)
+            var response = await fetchBackgroundReport(url + '?startDate=' + encodeURIComponent(period.start)
                 + '&endDate=' + encodeURIComponent(period.end), {
                 credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' }
             });
@@ -1670,7 +1696,7 @@
         var period = selectedPeriod();
         url += '?startDate=' + encodeURIComponent(period.start) + '&endDate=' + encodeURIComponent(period.end);
         try {
-            var response = await fetch(url, {
+            var response = await fetchBackgroundReport(url, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
                 credentials: 'same-origin'
             });
@@ -1752,7 +1778,7 @@
             annualRequestGroup.push(controller);
             var timedOut = false;
             var timeout = window.setTimeout(function () { timedOut = true; controller.abort(); }, 65000);
-            return fetch(url + '?year=' + encodeURIComponent(year) + '&section=' + encodeURIComponent(section), {
+            return fetchBackgroundReport(url + '?year=' + encodeURIComponent(year) + '&section=' + encodeURIComponent(section), {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin', signal: controller.signal
             }).then(async function (response) {
                 var payload;
@@ -1775,7 +1801,9 @@
             }).finally(function () { window.clearTimeout(timeout); });
         }
 
-        loadSection('occupancy', 'dashboardOccupancyChart', function (charts) {
+        whenDashboardSectionNear('dashboardOccupancyChart', function () {
+            if (version !== annualRequestVersion) return;
+            loadSection('occupancy', 'dashboardOccupancyChart', function (charts) {
             yearlyCharts.occupancyMonths = charts.occupancyMonths || [];
             var rows = yearlyCharts.occupancyMonths;
             var supplied = rows.reduce(function (s, p) { return s + Number(p.supply || 0); }, 0);
@@ -1793,13 +1821,19 @@
                     if (version === annualRequestVersion) setOccupancyBusy(false);
                 });
             });
+            });
         });
         // The monthly calendar has its own request so it cannot hold the annual chart open.
-        loadSection('calendar', 'dashboardOccupancyChart', function (charts) {
+        whenDashboardSectionNear('dashboardOccupancyTrendChart', function () {
+            if (version !== annualRequestVersion) return;
+            loadSection('calendar', 'dashboardOccupancyChart', function (charts) {
             yearlyCharts.monthDaily = charts.monthDaily || [];
             drawOccupancyTrend();
+            });
         });
-        loadSection('financial', 'dashboardRevenueChart', function (charts) {
+        whenDashboardSectionNear('dashboardRevenueChart', function () {
+            if (version !== annualRequestVersion) return;
+            loadSection('financial', 'dashboardRevenueChart', function (charts) {
             yearlyCharts.financialMonths = charts.financialMonths || [];
             var rows = yearlyCharts.financialMonths;
             var revenue = rows.reduce(function (s, p) { return s + Number(p.revenue || 0); }, 0);
@@ -1808,8 +1842,11 @@
             setHtmlText('dashboardProfit30', money0(profit));
             setHtmlText('dashboardProfitMargin30', (revenue ? 100 * profit / revenue : 0).toFixed(1) + '%');
             drawRevenueTrend();
+            });
         });
-        loadSection('exceptions', 'dashboardExceptionChart', function (charts) {
+        whenDashboardSectionNear('dashboardExceptionChart', function () {
+            if (version !== annualRequestVersion) return;
+            loadSection('exceptions', 'dashboardExceptionChart', function (charts) {
             yearlyCharts.exceptionMonths = charts.exceptionMonths || [];
             var rows = yearlyCharts.exceptionMonths;
             var cancelled = rows.reduce(function (s, p) { return s + Number(p.cancellations || 0); }, 0);
@@ -1824,6 +1861,7 @@
                 }
             });
             drawExceptionChart();
+            });
         });
     }
 
@@ -2017,7 +2055,7 @@
         selector.disabled = true;
         try {
             var url = selector.getAttribute('data-bookings-url') + '?year=' + encodeURIComponent(year);
-            var response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
+            var response = await fetchBackgroundReport(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
             var payload = await response.json();
             if (!response.ok || !payload.ok) throw new Error(payload.message || 'Unable to load bookings.');
             if (Number(selector.value) !== year) return;
