@@ -179,9 +179,9 @@ public sealed class DashboardService : IDashboardService
 
         var receivablesTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:receivables:{hotelId}:{today:yyyyMMdd}",
-                TimeSpan.FromSeconds(10),
-                () => LoadReceivablesAsync(hotelId, today, cancellationToken)),
+                $"dashboard:receivables:v2:{hotelId}:{rangeKey}",
+                TimeSpan.FromSeconds(15),
+                () => LoadReceivablesAsync(hotelId, today, cancellationToken, rangeStart)),
             new DashboardReceivableData(),
             "receivables headline");
 
@@ -206,11 +206,6 @@ public sealed class DashboardService : IDashboardService
                 TimeSpan.FromSeconds(15),
                 () => LoadFinancialSnapshotAsync(hotelId, businessToday, cancellationToken, businessToday)),
             new DashboardFinancialSnapshot(), "today revenue");
-        var periodReceivablesTask = SafeLoadAsync(
-            () => CachedAsync($"dashboard:receivables-period:{hotelId}:{rangeKey}",
-                TimeSpan.FromSeconds(20),
-                () => LoadReceivableArrivalRangeAsync(hotelId, rangeStart, today, cancellationToken)),
-            0m, "period receivables");
 
         await Task.WhenAll(
             hotelTask,
@@ -224,8 +219,7 @@ public sealed class DashboardService : IDashboardService
             receivablesTask,
             exceptionsTask,
             todayOccupancyTask,
-            todayFinancialTask,
-            periodReceivablesTask);
+            todayFinancialTask);
 
         var hotel = await hotelTask;
         var rooms = await roomTask;
@@ -240,7 +234,7 @@ public sealed class DashboardService : IDashboardService
         var exceptions = await exceptionsTask;
         var todayOcc = (await todayOccupancyTask).FirstOrDefault(x => x.Date.Date == businessToday);
         var todayFinancial = await todayFinancialTask;
-        var periodReceivables = await periodReceivablesTask;
+        var periodReceivables = receivables.Total;
 
         var model = new DashboardViewModel
         {
@@ -414,7 +408,7 @@ ORDER BY MonthNumber, Source;";
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection);
         command.CommandTimeout = 45;
-        command.Parameters.Add("@HotelId", SqlDbType.NVarChar, 50).Value = hotelId;
+        command.Parameters.Add("@HotelId", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@YearStart", SqlDbType.Date).Value = new DateTime(year, 1, 1);
         command.Parameters.Add("@YearEnd", SqlDbType.Date).Value = new DateTime(year + 1, 1, 1);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -690,7 +684,7 @@ FROM dbo.taxes t WHERE t.hotel_id=@hotel ORDER BY t.id DESC;";
         await using var c = new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, c) { CommandTimeout = 25 };
-        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         cmd.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
         cmd.Parameters.Add("@end", SqlDbType.Date).Value = end.Date;
         await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -752,7 +746,7 @@ FROM relevant r LEFT JOIN guest_one g ON g.reg_id=r.reg_id;";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(ct);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
         command.Parameters.Add("@endExclusive", SqlDbType.Date).Value = end.Date.AddDays(1);
         var value = await command.ExecuteScalarAsync(ct);
@@ -839,7 +833,7 @@ ORDER BY m.month_start OPTION (MAXRECURSION 0);";
         await using var c = new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql,c) { CommandTimeout = 45 };
-        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value=hotelId;
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value=hotelId;
         cmd.Parameters.Add("@first", SqlDbType.Date).Value=new DateTime(year-1,1,1);
         await using var reader=await cmd.ExecuteReaderAsync(ct);
         while(await reader.ReadAsync(ct)) {
@@ -887,7 +881,7 @@ FROM events WHERE d>=@first AND d<@last GROUP BY YEAR(d),MONTH(d);";
         await using var c=new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
         await using var cmd=new SqlCommand(sql,c){ CommandTimeout=45 };
-        cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+        cmd.Parameters.Add("@hotel",SqlDbType.VarChar,20).Value=hotelId;
         cmd.Parameters.Add("@first",SqlDbType.Date).Value=new DateTime(year-1,1,1);
         cmd.Parameters.Add("@last",SqlDbType.Date).Value=new DateTime(year+1,1,1);
         await using var rdr=await cmd.ExecuteReaderAsync(ct);
@@ -1062,7 +1056,7 @@ GROUP BY ExceptionType, MONTH(EventDate);";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 45 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@start", SqlDbType.Date).Value = new DateTime(year, 1, 1);
         command.Parameters.Add("@end", SqlDbType.Date).Value = new DateTime(year + 1, 1, 1);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1152,7 +1146,7 @@ SELECT TOP (1)
             ELSE 0
         END
 FROM dbo.HotelsSignUpTB
-WHERE CONVERT(varchar(50),hotel_id) = @hotel;
+WHERE hotel_id = @hotel;
 
 WITH RevenueRows AS
 (
@@ -1177,7 +1171,7 @@ WITH RevenueRows AS
         ) AS paid_amount,
         pl.ID
     FROM dbo.PaymentsLogTB AS pl
-    WHERE CONVERT(varchar(50),pl.hotel_id) = @hotel
+    WHERE pl.hotel_id = @hotel
       AND (@isClosing = 0 OR LTRIM(RTRIM(CONVERT(varchar(20),pl.cb_status))) = '2')
 )
 SELECT transaction_date, [status], COALESCE(paid_amount,0) AS paid_amount
@@ -1205,7 +1199,7 @@ ORDER BY ID DESC;";
             CommandTimeout = 20
         };
 
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
         command.Parameters.Add("@date", SqlDbType.Date).Value = date.Date;
         command.Parameters.Add("@startdate", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
 
@@ -1240,7 +1234,7 @@ ORDER BY ID DESC;";
 ;WITH Unified AS
 (
     SELECT
-        LTRIM(RTRIM(g.hotel_id)) AS hotel_id,
+        g.hotel_id AS hotel_id,
         LTRIM(RTRIM(g.reg_id)) AS reg_id,
         LTRIM(RTRIM(ISNULL(g.GuestName,''))) AS guest_name,
         COALESCE(
@@ -1259,7 +1253,7 @@ ORDER BY ID DESC;";
     UNION ALL
 
     SELECT
-        LTRIM(RTRIM(g.hotel_id)),
+        g.hotel_id,
         LTRIM(RTRIM(g.reg_id)),
         LTRIM(RTRIM(ISNULL(g.GuestName,''))),
         COALESCE(
@@ -1306,7 +1300,7 @@ OUTER APPLY
         p.currentdate,
         p.id
     FROM dbo.PaymentsUpdateTB p
-    WHERE LTRIM(RTRIM(CONVERT(varchar(100),p.hotel_id))) = r.hotel_id
+    WHERE p.hotel_id = @hotel
       AND LTRIM(RTRIM(p.reg_id)) = r.reg_id
     ORDER BY p.currentdate DESC, p.id DESC
 ) pu
@@ -1327,7 +1321,7 @@ ORDER BY r.arr_date, r.reg_id;";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@startdate", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
         command.Parameters.Add("@enddate", SqlDbType.Date).Value = date.Date;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1369,7 +1363,7 @@ SELECT
     CONVERT(varchar(100),e.currentdate) AS TransactionDate,
     COALESCE(TRY_CONVERT(decimal(18,2),e.amount),0) AS Amount
 FROM dbo.ExpenseDetailTB e
-WHERE CONVERT(varchar(50),e.hotel_id) = @hotel
+WHERE e.hotel_id = @hotel
   AND COALESCE(
         TRY_CONVERT(date, CONVERT(varchar(100),e.currentdate), 101),
         TRY_CONVERT(date, CONVERT(varchar(100),e.currentdate), 103),
@@ -1407,7 +1401,7 @@ ORDER BY
             CommandTimeout = 20
         };
 
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
         command.Parameters.Add("@date", SqlDbType.Date).Value = date.Date;
         command.Parameters.Add("@startdate", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
 
@@ -1494,7 +1488,7 @@ ORDER BY
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 25 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@day", SqlDbType.Date).Value = date.Date;
         command.Parameters.Add("@start", SqlDbType.Date).Value = periodStart?.Date ?? date.Date;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1618,7 +1612,7 @@ WITH MovementRows AS
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''))
         ) AS departure_date
     FROM dbo.payments p
-    WHERE LTRIM(RTRIM(CONVERT(varchar(50),p.hotel_id))) = @hotel
+    WHERE p.hotel_id = @hotel
       AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.descr),'')))) = 'room rent'
       AND NULLIF(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))), '') IS NOT NULL
       AND UPPER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),'')))) <> 'UNASSIGNED'
@@ -1637,7 +1631,7 @@ OUTER APPLY
             ISNULL(CONVERT(varchar(100),gi.LastName),'')
         )) AS GuestName
     FROM dbo.GuestInformationLogTB gi
-    WHERE LTRIM(RTRIM(CONVERT(varchar(50),gi.hotel_id))) = @hotel
+    WHERE gi.hotel_id = @hotel
       AND LTRIM(RTRIM(CONVERT(varchar(100),gi.reg_id))) = mr.reg_id
 ) g
 WHERE
@@ -1673,7 +1667,7 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
             CommandTimeout = 15
         };
 
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
         command.Parameters.Add("@date", SqlDbType.Date).Value = date.Date;
         command.Parameters.Add("@isCheckIn", SqlDbType.Bit).Value = checkIn;
 
@@ -1787,7 +1781,7 @@ WHERE hotel_id = @hotel;";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 15 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
             return new DashboardHotelInfo(string.Empty, "£");
@@ -1930,7 +1924,7 @@ ChargeTotals AS
     FROM dbo.payments p
     INNER JOIN ActiveRegIds a
         ON a.reg_id = LTRIM(RTRIM(p.reg_id))
-    WHERE LTRIM(RTRIM(CONVERT(varchar(100),p.hotel_id))) = @hotel
+    WHERE p.hotel_id = @hotel
     GROUP BY LTRIM(RTRIM(p.reg_id))
 ),
 PaidTotals AS
@@ -1952,7 +1946,7 @@ PaidTotals AS
     FROM dbo.PaymentsLogTB pl
     INNER JOIN ActiveRegIds a
         ON a.reg_id = LTRIM(RTRIM(pl.reg_id))
-    WHERE LTRIM(RTRIM(CONVERT(varchar(100),pl.hotel_id))) = @hotel
+    WHERE pl.hotel_id = @hotel
     GROUP BY LTRIM(RTRIM(pl.reg_id))
 ),
 PaymentSummary AS
@@ -1978,8 +1972,8 @@ BlockRanked AS
     FROM dbo.RoomBlocksTB
     WHERE HotelID = @hotel
       AND IsActive = 1
-      AND CAST(BlockStartDate AS date) <= @day
-      AND @day < DATEADD(day, 1, CAST(ISNULL(BlockEndDate, '9999-12-31') AS date))
+      AND TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(BlockStartDate)), '')) <= @day
+      AND (BlockEndDate IS NULL OR TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(BlockEndDate)), '')) >= @day)
 )
 SELECT
     r.room_no,
@@ -2007,7 +2001,7 @@ ORDER BY r.room_category, TRY_CONVERT(int, r.room_no), r.room_no;";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@day", SqlDbType.Date).Value = date.Date;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2155,7 +2149,7 @@ WITH RoomMovements AS
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''))
         ) AS departure_date
     FROM dbo.payments p
-    WHERE LTRIM(RTRIM(CONVERT(varchar(50),p.hotel_id))) = @hotel
+    WHERE p.hotel_id = @hotel
       AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.descr),'')))) = 'room rent'
       AND NULLIF(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))), '') IS NOT NULL
       AND UPPER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),'')))) <> 'UNASSIGNED'
@@ -2192,7 +2186,7 @@ FROM RoomMovements;";
             CommandTimeout = 15
         };
 
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2267,7 +2261,7 @@ WITH ActivePaymentRows AS
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''))
         ) AS departure_date
     FROM dbo.payments p
-    WHERE LTRIM(RTRIM(CONVERT(varchar(50),p.hotel_id))) = @hotel
+    WHERE p.hotel_id = @hotel
       AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.descr),'')))) = 'room rent'
       AND NULLIF(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))), '') IS NOT NULL
       AND UPPER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),'')))) <> 'UNASSIGNED'
@@ -2382,7 +2376,7 @@ LatestGuest AS
             ORDER BY g.id DESC
         ) AS rn
     FROM dbo.GuestInformationLogTB g
-    WHERE LTRIM(RTRIM(CONVERT(varchar(50),g.hotel_id))) = @hotel
+    WHERE g.hotel_id = @hotel
 ),
 CurrentGuests AS
 (
@@ -2421,7 +2415,7 @@ RepeatFlags AS
             (
                 SELECT 1
                 FROM dbo.GuestInformationLogTB h
-                WHERE LTRIM(RTRIM(CONVERT(varchar(50),h.hotel_id))) = @hotel
+                WHERE h.hotel_id = @hotel
                   AND LTRIM(RTRIM(CONVERT(varchar(100),h.reg_id))) <> cg.reg_id
                   AND
                   (
@@ -2512,7 +2506,7 @@ FROM ActiveStays;";
             CommandTimeout = 20
         };
 
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2653,7 +2647,7 @@ ORDER BY rw.departure_date, TRY_CONVERT(int, rw.room_no), rw.room_no;";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -2708,8 +2702,8 @@ ooo AS
         ON rb.HotelID = rt.Hotel_id
        AND rb.RoomNo = rt.room_no
        AND rb.IsActive = 1
-       AND CAST(rb.BlockStartDate AS date) <= dd.d
-       AND dd.d < DATEADD(day, 1, CAST(ISNULL(rb.BlockEndDate, '9999-12-31') AS date))
+       AND TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(rb.BlockStartDate)), '')) <= dd.d
+       AND (rb.BlockEndDate IS NULL OR TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(rb.BlockEndDate)), '')) >= dd.d)
     GROUP BY dd.d
 ),
 p_clean AS
@@ -2795,7 +2789,7 @@ OPTION (MAXRECURSION 0);";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
         command.Parameters.Add("@end", SqlDbType.Date).Value = end.Date;
 
@@ -2909,7 +2903,7 @@ WHERE e.hotel_id = @hotel;
 ;WITH Unified AS
 (
     SELECT
-        LTRIM(RTRIM(g.hotel_id)) AS hotel_id,
+        g.hotel_id AS hotel_id,
         LTRIM(RTRIM(g.reg_id)) AS reg_id,
         COALESCE(
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
@@ -2927,7 +2921,7 @@ WHERE e.hotel_id = @hotel;
     UNION ALL
 
     SELECT
-        LTRIM(RTRIM(g.hotel_id)),
+        g.hotel_id,
         LTRIM(RTRIM(g.reg_id)),
         COALESCE(
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
@@ -2952,21 +2946,20 @@ Res AS
 LatestRem AS
 (
     SELECT
-        r.hotel_id,
-        r.reg_id,
+        p.hotel_id,
+        LTRIM(RTRIM(p.reg_id)) AS reg_id,
         TRY_CONVERT(decimal(18,2),
             NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(CONVERT(varchar(100),p.remaining_amount))), ',', ''), '£', ''), '$', ''), '')
         ) AS remaining_dec,
         TRY_CONVERT(date, CONVERT(varchar(100),p.currentdate), 101) AS current_date,
         ROW_NUMBER() OVER
         (
-            PARTITION BY LTRIM(RTRIM(CONVERT(varchar(100),p.hotel_id))), LTRIM(RTRIM(p.reg_id))
+            PARTITION BY LTRIM(RTRIM(p.reg_id))
             ORDER BY p.currentdate DESC, p.id DESC
         ) AS rn
-    FROM Res r
-    INNER JOIN dbo.PaymentsUpdateTB p
-        ON LTRIM(RTRIM(CONVERT(varchar(100),p.hotel_id))) = r.hotel_id
-       AND LTRIM(RTRIM(p.reg_id)) = r.reg_id
+    FROM dbo.PaymentsUpdateTB p
+    WHERE p.hotel_id = @hotel
+      AND NULLIF(LTRIM(RTRIM(p.reg_id)), '') IS NOT NULL
 )
 SELECT
     COALESCE(SUM(CASE WHEN r.arr_date >= @today AND r.arr_date <= @today AND lr.remaining_dec > 0
@@ -3061,8 +3054,8 @@ BlockedRoomList AS
         ON rb.HotelID=@hotel
        AND LTRIM(RTRIM(rb.RoomNo))=rbBase.room_no
        AND rb.IsActive=1
-       AND CAST(rb.BlockStartDate AS date) < DATEADD(day,1,@today)
-       AND @today < DATEADD(day,1,CAST(ISNULL(rb.BlockEndDate,'9999-12-31') AS date))
+       AND TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(rb.BlockStartDate)), '')) <= @today
+       AND (rb.BlockEndDate IS NULL OR TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(rb.BlockEndDate)), '')) >= @today)
 ),
 UnavailableRoomList AS
 (
@@ -3093,7 +3086,7 @@ SELECT
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 35 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
         command.Parameters.Add("@lastYearToday", SqlDbType.Date).Value = lastYearToday.Date;
         command.Parameters.Add("@monthStart", SqlDbType.Date).Value = monthStart.Date;
@@ -3225,7 +3218,7 @@ SELECT TOP (1)
             ELSE 0
         END
 FROM dbo.HotelsSignUpTB
-WHERE CONVERT(varchar(50),hotel_id) = @hotel;
+WHERE hotel_id = @hotel;
 
 WITH RevenueRows AS
 (
@@ -3247,7 +3240,7 @@ WITH RevenueRows AS
             )
         ) AS amount
     FROM dbo.PaymentsLogTB AS pl
-    WHERE CONVERT(varchar(50),pl.hotel_id) = @hotel
+    WHERE pl.hotel_id = @hotel
       AND (@isClosing = 0 OR LTRIM(RTRIM(CONVERT(varchar(20),pl.cb_status))) = '2')
 )
 SELECT
@@ -3270,7 +3263,7 @@ FROM RevenueRows;";
             CommandTimeout = 20
         };
 
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
         command.Parameters.Add("@lastYearToday", SqlDbType.Date).Value = lastYearToday;
         command.Parameters.Add("@monthStart", SqlDbType.Date).Value = monthStart.Date;
@@ -3318,7 +3311,7 @@ WITH ExpenseRows AS
         ) AS tx_date,
         TRY_CONVERT(decimal(18,2),e.amount) AS amount
     FROM dbo.ExpenseDetailTB AS e
-    WHERE CONVERT(varchar(50),e.hotel_id) = @hotel
+    WHERE e.hotel_id = @hotel
       AND LTRIM(RTRIM(ISNULL(e.transaction_type,''))) = 'Credit'
 )
 SELECT
@@ -3341,7 +3334,7 @@ FROM ExpenseRows;";
             CommandTimeout = 20
         };
 
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
         command.Parameters.Add("@lastYearToday", SqlDbType.Date).Value = lastYearToday;
         command.Parameters.Add("@monthStart", SqlDbType.Date).Value = monthStart.Date;
@@ -3448,7 +3441,7 @@ OPTION (MAXRECURSION 0);";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 45 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@start", SqlDbType.Date).Value = start;
         command.Parameters.Add("@end", SqlDbType.Date).Value = today;
         command.Parameters.Add("@ly_start", SqlDbType.Date).Value = lyStart;
@@ -3474,170 +3467,89 @@ OPTION (MAXRECURSION 0);";
         return result;
     }
 
+    // Compute today's, 30-day and selected-period outstanding receivables in one
+    // filtered SQL pass instead of three expensive reservation/payment joins.
     private async Task<DashboardReceivableData> LoadReceivablesAsync(
         string hotelId,
         DateTime today,
-        CancellationToken cancellationToken)
-    {
-        // Keep this identical to the WebForms GetPendingPay business rule.
-        // We run the same formula for two explicit ranges so the card is easy
-        // to verify against the old Dashboard:
-        //   1) Today's arrivals
-        //   2) Arrivals in the last 30 hotel-local days
-        //
-        // Both requests run in parallel, so the extra clarity does not block
-        // the rest of the Dashboard.
-        var todayTask = LoadReceivableArrivalRangeAsync(
-            hotelId,
-            today.Date,
-            today.Date,
-            cancellationToken);
-
-        var last30Task = LoadReceivableArrivalRangeAsync(
-            hotelId,
-            today.Date.AddDays(-29),
-            today.Date,
-            cancellationToken);
-
-        await Task.WhenAll(todayTask, last30Task);
-
-        var todayAmount = await todayTask;
-        var last30Amount = await last30Task;
-
-        return new DashboardReceivableData
-        {
-            Today = todayAmount,
-            Last30Arrivals = last30Amount,
-            Total = last30Amount,
-            Over30Days = 0m
-        };
-    }
-
-    private async Task<decimal> LoadReceivableArrivalRangeAsync(
-        string hotelId,
-        DateTime startDate,
-        DateTime endDate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? selectedStart = null)
     {
         const string sql = @"
-WITH Unified AS
+;WITH Unified AS
 (
-    SELECT
-        LTRIM(RTRIM(CONVERT(varchar(50),g.hotel_id))) AS hotel_id,
-        LTRIM(RTRIM(g.reg_id)) AS reg_id,
-        COALESCE(
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 103),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''))
-        ) AS arr_date,
-        COALESCE(
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.dept_date)), ''), 110),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.dept_date)), ''), 103),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.dept_date)), ''))
-        ) AS dept_date
+    SELECT g.hotel_id,
+           LTRIM(RTRIM(g.reg_id)) AS reg_id,
+           COALESCE(TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
+                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 103),
+                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''))) AS arr_date
     FROM dbo.NewReservationsTB g
-    WHERE CONVERT(varchar(50),g.hotel_id) = @hotel
-
+    WHERE g.hotel_id = @hotel
     UNION ALL
-
-    SELECT
-        LTRIM(RTRIM(CONVERT(varchar(50),g.hotel_id))) AS hotel_id,
-        LTRIM(RTRIM(g.reg_id)) AS reg_id,
-        COALESCE(
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 103),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''))
-        ) AS arr_date,
-        COALESCE(
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.DepartureDate)), ''), 110),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.DepartureDate)), ''), 103),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.DepartureDate)), ''))
-        ) AS dept_date
+    SELECT g.hotel_id,
+           LTRIM(RTRIM(g.reg_id)),
+           COALESCE(TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
+                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 103),
+                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), '')))
     FROM dbo.GuestInformationLogTB g
-    WHERE CONVERT(varchar(50),g.hotel_id) = @hotel
+    WHERE g.hotel_id = @hotel
 ),
 Res AS
 (
-    SELECT
-        hotel_id,
-        reg_id,
-        MIN(arr_date) AS arr_date,
-        MAX(dept_date) AS dept_date
+    SELECT hotel_id, reg_id, MIN(arr_date) AS arr_date
     FROM Unified
-    WHERE NULLIF(reg_id,'') IS NOT NULL
+    WHERE NULLIF(reg_id, '') IS NOT NULL
     GROUP BY hotel_id, reg_id
 ),
 LatestRem AS
 (
-    SELECT
-        r.hotel_id,
-        r.reg_id,
-        TRY_CONVERT(
-            decimal(18,2),
-            NULLIF(
-                REPLACE(
-                    REPLACE(
-                        REPLACE(
-                            LTRIM(RTRIM(CONVERT(varchar(100),p.remaining_amount))),
-                            ',',
-                            ''
-                        ),
-                        '£',
-                        ''
-                    ),
-                    '$',
-                    ''
-                ),
-                ''
-            )
-        ) AS remaining_dec,
-        ROW_NUMBER() OVER
-        (
-            PARTITION BY
-                LTRIM(RTRIM(CONVERT(varchar(100),p.hotel_id))),
-                LTRIM(RTRIM(p.reg_id))
-            ORDER BY p.currentdate DESC, p.id DESC
-        ) AS rn
-    FROM Res r
-    INNER JOIN dbo.PaymentsUpdateTB p
-        ON LTRIM(RTRIM(CONVERT(varchar(100),p.hotel_id))) = r.hotel_id
-       AND LTRIM(RTRIM(p.reg_id)) = r.reg_id
+    SELECT p.hotel_id,
+           LTRIM(RTRIM(p.reg_id)) AS reg_id,
+           TRY_CONVERT(decimal(18,2),
+               NULLIF(REPLACE(REPLACE(REPLACE(
+                   LTRIM(RTRIM(CONVERT(varchar(100),p.remaining_amount))),
+                   ',', ''), '£', ''), '$', ''), '')) AS remaining_dec,
+           ROW_NUMBER() OVER
+           (
+               PARTITION BY LTRIM(RTRIM(p.reg_id))
+               ORDER BY p.currentdate DESC, p.id DESC
+           ) AS rn
+    FROM dbo.PaymentsUpdateTB p
+    WHERE p.hotel_id = @hotel
+      AND NULLIF(LTRIM(RTRIM(p.reg_id)), '') IS NOT NULL
 )
 SELECT
-    COALESCE(SUM(x.remaining_dec),0) AS Pending_Pay
-FROM
-(
-    SELECT
-        r.hotel_id,
-        r.reg_id,
-        lr.remaining_dec
-    FROM Res r
-    LEFT JOIN LatestRem lr
-        ON lr.hotel_id = r.hotel_id
-       AND lr.reg_id = r.reg_id
-       AND lr.rn = 1
-    WHERE r.arr_date >= @startdate
-      AND r.arr_date <= @enddate
-      AND r.hotel_id = @hotel
-) x
-WHERE x.remaining_dec IS NOT NULL
-  AND x.remaining_dec > CAST(0.00 AS decimal(18,2));";
+    COALESCE(SUM(CASE WHEN r.arr_date = @today AND lr.remaining_dec > 0
+        THEN lr.remaining_dec ELSE 0 END), 0) AS TodayAmount,
+    COALESCE(SUM(CASE WHEN r.arr_date BETWEEN @last30start AND @today
+                      AND lr.remaining_dec > 0
+        THEN lr.remaining_dec ELSE 0 END), 0) AS Last30Amount,
+    COALESCE(SUM(CASE WHEN r.arr_date BETWEEN @selectedstart AND @today
+                      AND lr.remaining_dec > 0
+        THEN lr.remaining_dec ELSE 0 END), 0) AS SelectedAmount
+FROM Res r
+LEFT JOIN LatestRem lr ON lr.hotel_id = r.hotel_id
+                      AND lr.reg_id = r.reg_id
+                      AND lr.rn = 1
+WHERE r.hotel_id = @hotel;";
 
-        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
+        using var lease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
-
-        await using var command = new SqlCommand(sql, connection)
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 20 };
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
+        command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
+        command.Parameters.Add("@last30start", SqlDbType.Date).Value = today.Date.AddDays(-29);
+        command.Parameters.Add("@selectedstart", SqlDbType.Date).Value = selectedStart?.Date ?? today.Date.AddDays(-29);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return new DashboardReceivableData();
+        return new DashboardReceivableData
         {
-            CommandTimeout = 20
+            Today = ToDecimal(reader["TodayAmount"]),
+            Last30Arrivals = ToDecimal(reader["Last30Amount"]),
+            Total = ToDecimal(reader["SelectedAmount"]),
+            Over30Days = 0m // Preserve the original dashboard behaviour.
         };
-
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId.Trim();
-        command.Parameters.Add("@startdate", SqlDbType.Date).Value = startDate.Date;
-        command.Parameters.Add("@enddate", SqlDbType.Date).Value = endDate.Date;
-
-        var scalar = await command.ExecuteScalarAsync(cancellationToken);
-        return ToDecimal(scalar);
     }
 
     private async Task<List<DashboardRevenueSourceItem>> LoadRevenueSourcesAsync(
@@ -3746,7 +3658,7 @@ OPTION (MAXRECURSION 0);";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@start", SqlDbType.Date).Value = start.Date;
         command.Parameters.Add("@end", SqlDbType.Date).Value = end.Date;
 
@@ -3798,8 +3710,8 @@ ooo AS
         ON rb.HotelID = rt.Hotel_id
        AND rb.RoomNo = rt.room_no
        AND rb.IsActive = 1
-       AND CAST(rb.BlockStartDate AS date) <= dd.d
-       AND dd.d < DATEADD(day,1,CAST(ISNULL(rb.BlockEndDate,'9999-12-31') AS date))
+       AND TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(rb.BlockStartDate)), '')) <= dd.d
+       AND (rb.BlockEndDate IS NULL OR TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(rb.BlockEndDate)), '')) >= dd.d)
     GROUP BY LTRIM(RTRIM(ISNULL(rt.room_category,''))), dd.d
 ),
 p AS
@@ -3875,7 +3787,7 @@ OPTION (MAXRECURSION 0);";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
         command.Parameters.Add("@start", SqlDbType.Date).Value = periodStart?.Date ?? today.Date.AddDays(-29);
 
@@ -3929,7 +3841,7 @@ WHERE hotel_id=@hotel
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@start", SqlDbType.Date).Value = start;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today;
 
@@ -4028,7 +3940,7 @@ ORDER BY CategoryName;";
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
         command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

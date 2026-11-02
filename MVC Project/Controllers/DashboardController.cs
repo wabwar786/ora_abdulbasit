@@ -67,7 +67,7 @@ public sealed class DashboardController : Controller
         finally
         {
             var elapsed = Stopwatch.GetElapsedTime(started);
-            if (elapsed >= TimeSpan.FromSeconds(3))
+            if (elapsed >= TimeSpan.FromSeconds(1))
                 _logger.LogWarning("Dashboard page for hotel {HotelId} ({Start:yyyy-MM-dd} to {End:yyyy-MM-dd}) took {Milliseconds}ms",
                     hotelId, start, end, elapsed.TotalMilliseconds);
         }

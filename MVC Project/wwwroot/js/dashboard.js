@@ -7,7 +7,7 @@
     var reportRequestsInFlight = 0;
     var reportRequestQueue = [];
     function pumpReportRequests() {
-        while (reportRequestsInFlight < 2 && reportRequestQueue.length) {
+        while (reportRequestsInFlight < 1 && reportRequestQueue.length) {
             var pending = reportRequestQueue.shift();
             if (pending.options && pending.options.signal && pending.options.signal.aborted) {
                 pending.reject(new DOMException('Request cancelled', 'AbortError'));
