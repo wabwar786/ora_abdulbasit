@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Data;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
@@ -12,6 +14,17 @@ public sealed class DashboardService : IDashboardService
     // One in-flight room-type query per hotel, shared by the quick graph and
     // lower-page analytics, avoids duplicate SQL work on a cold load.
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> RoomTypeQueryLocks = new();
+
+    // This applies ONLY to Dashboard SQL, not checkout, booking, posting or
+    // other hotel operations. Prevents dashboard requests from monopolizing SQL
+    // when multiple hotels/users open the page simultaneously.
+    private static readonly SemaphoreSlim DashboardDatabaseSlots = new(3, 3);
+
+    // Fixed-size striped locks prevent cache stampedes without retaining one
+    // SemaphoreSlim forever for every hotel/date/year cache key.
+    private static readonly SemaphoreSlim[] CacheMissLocks = Enumerable.Range(0, 64)
+        .Select(_ => new SemaphoreSlim(1, 1)).ToArray();
+
 
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;
@@ -316,6 +329,13 @@ public sealed class DashboardService : IDashboardService
         if (year < 2000 || year > 2100)
             throw new ArgumentOutOfRangeException(nameof(year));
 
+        return await CachedAsync($"dashboard:bookings:v1:{hotelId}:{year}", TimeSpan.FromMinutes(5),
+            () => LoadBookingsChartCoreAsync(hotelId, year, cancellationToken));
+    }
+
+    private async Task<DashboardBookingsChartResult> LoadBookingsChartCoreAsync(
+        string hotelId, int year, CancellationToken cancellationToken)
+    {
         var result = new DashboardBookingsChartResult
         {
             Year = year,
@@ -355,6 +375,7 @@ GROUP BY MONTH(ArrivalDay), Source
 ORDER BY MonthNumber, Source;";
 
         var bySource = new Dictionary<string, DashboardBookingSourceSeries>(StringComparer.OrdinalIgnoreCase);
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection);
@@ -606,6 +627,7 @@ SELECT TOP 1 CAST(CASE
      + COALESCE(TRY_CONVERT(decimal(9,4),NULLIF(LTRIM(RTRIM(t.bedtax)),'')),0)
   ELSE TRY_CONVERT(decimal(9,4),NULLIF(LTRIM(RTRIM(t.vat)),'')) END AS decimal(9,4)) AS TaxPct
 FROM dbo.taxes t WHERE t.hotel_id=@hotel ORDER BY t.id DESC;";
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(ct);
         await using var c = new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, c) { CommandTimeout = 25 };
@@ -667,6 +689,7 @@ FROM dbo.taxes t WHERE t.hotel_id=@hotel ORDER BY t.id DESC;";
 SELECT COALESCE(SUM(CONVERT(bigint,COALESCE(g.adults,0)+COALESCE(g.minors,0)) *
        DATEDIFF(day,r.first_night,r.last_night)),0) AS guest_nights
 FROM relevant r LEFT JOIN guest_one g ON g.reg_id=r.reg_id;";
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(ct);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(ct);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
@@ -753,6 +776,7 @@ LEFT JOIN capacity c ON c.month_start=m.month_start
 ORDER BY m.month_start OPTION (MAXRECURSION 0);";
         var current = new Dictionary<int,(int sold,int supply)>();
         var prior = new Dictionary<int,(int sold,int supply)>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(ct);
         await using var c = new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql,c) { CommandTimeout = 45 };
@@ -800,6 +824,7 @@ SELECT TOP 1 @isClosing=CASE WHEN TRY_CONVERT(int,ISNULL(isClosing,0))=1 THEN 1 
 SELECT YEAR(d) AS yr, MONTH(d) AS mo, SUM(revenue) AS revenue, SUM(expense) AS expense
 FROM events WHERE d>=@first AND d<@last GROUP BY YEAR(d),MONTH(d);";
         var months=new Dictionary<(int year,int month),(decimal revenue,decimal expense)>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(ct);
         await using var c=new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
         await using var cmd=new SqlCommand(sql,c){ CommandTimeout=45 };
@@ -974,6 +999,7 @@ GROUP BY ExceptionType, MONTH(EventDate);";
         var results = Enumerable.Range(1, 12).Select(month => new DashboardExceptionPoint {
             Label = new DateTime(year, month, 1).ToString("MMM", CultureInfo.InvariantCulture)
         }).ToList();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 45 };
@@ -1111,6 +1137,7 @@ ORDER BY ID DESC;";
 
         decimal total = 0m;
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -1237,6 +1264,7 @@ ORDER BY r.arr_date, r.reg_id;";
             + " – " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
         decimal total = 0m;
         decimal todayTotal = 0m;
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
@@ -1311,6 +1339,7 @@ ORDER BY
 
         decimal total = 0m;
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -1402,6 +1431,7 @@ ORDER BY
         var title = cancellations ? "Cancellations" : "No shows";
         var result = NewDetail(title, date, "Count", "0",
             "Reservation", "Guest", "Room", "Arrival", "Departure");
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 25 };
@@ -1575,6 +1605,7 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
             "Category",
             "Reservation");
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -1693,6 +1724,7 @@ SELECT TOP (1)
 FROM dbo.HotelsSignUpTB
 WHERE hotel_id = @hotel;";
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 15 };
@@ -1912,6 +1944,7 @@ LEFT JOIN BlockRanked b ON b.room_no = r.room_no AND b.rn = 1
 ORDER BY r.room_category, TRY_CONVERT(int, r.room_no), r.room_no;";
 
         var result = new List<DashboardRoomStatusItem>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
@@ -2091,6 +2124,7 @@ FROM RoomMovements;";
 
         var result = new DashboardOperationsData();
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -2410,6 +2444,7 @@ FROM ActiveStays;";
 
         var result = new DashboardOperationsData();
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -2555,6 +2590,7 @@ WHERE rw.rn = 1
 ORDER BY rw.departure_date, TRY_CONVERT(int, rw.room_no), rw.room_no;";
 
         var result = new List<DashboardGuestItem>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
@@ -2696,6 +2732,7 @@ ORDER BY dd.d
 OPTION (MAXRECURSION 0);";
 
         var result = new List<DashboardDailyPoint>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
@@ -2993,6 +3030,7 @@ SELECT
         var rawExceptions = new List<(string Type, DateTime Date)>();
         var reservationCount = 0;
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 35 };
@@ -3164,6 +3202,7 @@ FROM RevenueRows;";
 
         var result = new DashboardFinancialSnapshot();
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -3234,6 +3273,7 @@ FROM ExpenseRows;";
 
         var result = new DashboardFinancialSnapshot();
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -3345,6 +3385,7 @@ ORDER BY dd.d
 OPTION (MAXRECURSION 0);";
 
         var result = new List<DashboardFinancialPoint>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 45 };
@@ -3523,6 +3564,7 @@ FROM
 WHERE x.remaining_dec IS NOT NULL
   AND x.remaining_dec > CAST(0.00 AS decimal(18,2));";
 
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -3641,6 +3683,7 @@ ORDER BY Revenue DESC, AgencyName
 OPTION (MAXRECURSION 0);";
 
         var result = new List<DashboardRevenueSourceItem>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
@@ -3769,6 +3812,7 @@ ORDER BY category
 OPTION (MAXRECURSION 0);";
 
         var result = new List<DashboardRoomTypeItem>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
@@ -3822,6 +3866,7 @@ WHERE hotel_id=@hotel
 
         var raw = new List<(string Type, DateTime Date)>();
         var reservations = 0;
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
@@ -3920,6 +3965,7 @@ WHERE rn=1
 ORDER BY CategoryName;";
 
         var result = new List<DashboardCurrentRate>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
@@ -4105,12 +4151,69 @@ ORDER BY CategoryName;";
         if (_cache.TryGetValue(key, out object? cachedValue) && cachedValue is T cached)
             return cached;
 
-        var loaded = await factory();
-        _cache.Set(key, loaded, new MemoryCacheEntryOptions
+        // Cold cache / expired entries: only one request per cache key runs the
+        // SQL query; other requests wait and then reuse that same result.
+        var stripe = CacheMissLocks[(int)((uint)StringComparer.Ordinal.GetHashCode(key) % (uint)CacheMissLocks.Length)];
+        await stripe.WaitAsync();
+        try
         {
-            AbsoluteExpirationRelativeToNow = lifetime
-        });
-        return loaded;
+            if (_cache.TryGetValue(key, out cachedValue) && cachedValue is T warmed)
+                return warmed;
+
+            var started = Stopwatch.GetTimestamp();
+            var loaded = await factory();
+            _cache.Set(key, loaded, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = lifetime
+            });
+            var elapsed = Stopwatch.GetElapsedTime(started);
+            if (elapsed >= TimeSpan.FromSeconds(3))
+                _logger.LogWarning("Slow dashboard cache miss: {CacheKey} took {Milliseconds}ms", key, elapsed.TotalMilliseconds);
+            return loaded;
+        }
+        finally
+        {
+            stripe.Release();
+        }
+    }
+
+    private async Task<IDisposable> EnterDashboardSqlAsync(
+        CancellationToken cancellationToken,
+        [CallerMemberName] string operation = "")
+    {
+        var queuedAt = Stopwatch.GetTimestamp();
+        await DashboardDatabaseSlots.WaitAsync(cancellationToken);
+        var queuedFor = Stopwatch.GetElapsedTime(queuedAt);
+        if (queuedFor >= TimeSpan.FromSeconds(2))
+            _logger.LogWarning("Dashboard SQL queue: {Operation} waited {Milliseconds}ms",
+                operation, queuedFor.TotalMilliseconds);
+        return new DashboardSqlLease(DashboardDatabaseSlots, _logger, operation);
+    }
+
+    private sealed class DashboardSqlLease : IDisposable
+    {
+        private SemaphoreSlim? _semaphore;
+        private readonly ILogger<DashboardService> _logger;
+        private readonly string _operation;
+        private readonly long _started;
+
+        public DashboardSqlLease(SemaphoreSlim semaphore, ILogger<DashboardService> logger, string operation)
+        {
+            _semaphore = semaphore;
+            _logger = logger;
+            _operation = operation;
+            _started = Stopwatch.GetTimestamp();
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _semaphore, null) is not { } semaphore) return;
+            var elapsed = Stopwatch.GetElapsedTime(_started);
+            semaphore.Release();
+            if (elapsed >= TimeSpan.FromSeconds(3))
+                _logger.LogWarning("Slow dashboard SQL operation: {Operation} took {Milliseconds}ms",
+                    _operation, elapsed.TotalMilliseconds);
+        }
     }
 
     private async Task<T> SafeLoadAsync<T>(Func<Task<T>> loader, T fallback, string operation)
