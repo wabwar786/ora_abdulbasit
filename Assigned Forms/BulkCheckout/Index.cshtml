@@ -1,0 +1,258 @@
+@model BulkCheckoutPageViewModel
+@using System.Globalization
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Bulk Check-out";
+    var resultJson = Model.Result is null ? null : JsonSerializer.Serialize(Model.Result);
+    var today = Model.HotelToday.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/bulk-checkout.css" asp-append-version="true" />
+}
+
+<div class="bco" data-currency="@Model.CurrencySymbol" data-today="@today">
+
+    <!-- ============ HEADER ============ -->
+    <section class="bco-head">
+        <div class="bco-title">
+            <svg class="bco-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+            <div>
+                <h1>Bulk Check-out</h1>
+                <p>Select rooms and check them out together</p>
+            </div>
+        </div>
+        <form class="bco-search" role="search" method="get" asp-controller="BulkCheckout" asp-action="Index" id="bcoSearchForm">
+            <label class="bco-sr" for="bcoDate">Departure date</label>
+            <input type="date" class="bco-date" id="bcoDate" name="date" value="@Model.DateIso" title="Departure date"
+                   min="@Model.HotelToday.AddYears(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                   max="@Model.HotelToday.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" />
+            <label class="bco-search-box">
+                <span class="bco-sr">Search departures</span>
+                <svg class="bco-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="text" name="q" value="@Model.Search" class="bco-inp" data-bco="search" autocomplete="off" maxlength="100"
+                       placeholder="Search guest, room or res #" />
+                <button type="button" class="bco-sclear" id="bcoSClear" aria-label="Clear search" hidden>&times;</button>
+            </label>
+            <button type="submit" class="bco-btn bco-btn-primary" data-bco="show" title="Search on the server (also finds ID / CNIC)">Show</button>
+        </form>
+    </section>
+
+    @if (Model.LoadFailed)
+    {
+        <div class="bco-notice" role="alert">The departures list could not be loaded. Please try again.</div>
+    }
+
+    <!-- ============ KPI STRIP ============ -->
+    <section class="bco-kpis four" aria-label="Summary">
+        <div class="bco-card bco-kpi"><span>Departures</span><b id="bcoKDep">@Model.Rows.Count</b></div>
+        <div class="bco-card bco-kpi is-sel"><span>Selected rooms</span><b id="bcoKSel">0</b></div>
+        <div class="bco-card bco-kpi is-due"><span>Balance due</span><b id="bcoKDue">@Model.Money(Model.TotalRemaining)</b></div>
+        <div class="bco-card bco-kpi is-ref"><span>Security held</span><b id="bcoKSec">@Model.Money(Model.TotalSecurity)</b></div>
+    </section>
+
+    <form id="bcoForm" method="post" asp-controller="BulkCheckout" asp-action="CheckOut">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="date" value="@Model.DateIso" />
+        <input type="hidden" name="q" value="@Model.Search" />
+
+        <!-- ============ TABLE ============ -->
+        <section class="bco-card bco-table-card">
+            <div class="bco-tools">
+                <div class="bco-chips" id="bcoChips" role="group" aria-label="Filter">
+                    <button type="button" class="bco-chip" data-f="all" aria-pressed="true">All <b id="bcoCAll">0</b></button>
+                    <button type="button" class="bco-chip" data-f="due" aria-pressed="false"><i class="d-due"></i>Balance due <b id="bcoCDue">0</b></button>
+                    <button type="button" class="bco-chip" data-f="paid" aria-pressed="false"><i class="d-paid"></i>Settled <b id="bcoCPaid">0</b></button>
+                    <button type="button" class="bco-chip" data-f="sec" aria-pressed="false"><i class="d-sec"></i>Security held <b id="bcoCSec">0</b></button>
+                </div>
+                <div class="bco-tools-r">
+                    <button type="button" class="bco-btn bco-btn-ghost bco-btn-sm" id="bcoExport" title="Download the rows on screen as a CSV file">
+                        <svg class="bco-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Export
+                    </button>
+                </div>
+            </div>
+
+            <div class="bco-scroll">
+                <table class="bco-grid">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="chk"><input type="checkbox" id="bcoAll" aria-label="Select all rooms" /></th>
+                            <th scope="col" class="sort" data-sort="room" aria-sort="none">Room<span class="arr"></span></th>
+                            <th scope="col">Res #</th>
+                            <th scope="col" class="sort" data-sort="guest" aria-sort="none">Guest<span class="arr"></span></th>
+                            <th scope="col">Category</th>
+                            <th scope="col">Stay</th>
+                            <th scope="col" class="num sort c-nights-h" data-sort="nights" aria-sort="none">Nights Stay<span class="arr"></span></th>
+                            <th scope="col" class="num">Total</th>
+                            <th scope="col" class="num">Paid</th>
+                            <th scope="col" class="num sort" data-sort="rem" aria-sort="none">Balance<span class="arr"></span></th>
+                            <th scope="col" class="num sort" data-sort="sec" aria-sort="none">Security<span class="arr"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="bcoBody">
+                        @foreach (var row in Model.Rows)
+                        {
+                            var dep = row.DepartureIso;
+                            <tr class="bco-row"
+                                data-reg="@row.RegId"
+                                data-room="@row.RoomNo"
+                                data-guest="@row.FullName"
+                                data-cat="@row.RoomCategory"
+                                data-find="@(row.PhoneNo + " " + row.Email)"
+                                data-arr="@row.ArrivalDisplay"
+                                data-dep="@row.DepartureDisplay"
+                                data-nights="@row.Nights"
+                                data-total="@row.GrandTotal.ToString("0.00", CultureInfo.InvariantCulture)"
+                                data-paid="@row.PaidAmount.ToString("0.00", CultureInfo.InvariantCulture)"
+                                data-rem="@row.RemainingAmount.ToString("0.00", CultureInfo.InvariantCulture)"
+                                data-sec="@row.SecurityBalance.ToString("0.00", CultureInfo.InvariantCulture)"
+                                data-method="@row.SecurityMethod"
+                                data-currency-code="@row.SecurityCurrency">
+                                <td class="chk">
+                                    <input type="checkbox" class="bco-row-check" name="rooms" value="@row.Key"
+                                           aria-label="@("Select room " + row.RoomNo + " – " + row.FullName)" />
+                                </td>
+                                <td class="c-room">
+                                    <span class="bco-room plain">@row.RoomNo</span>
+                                    @if (!string.IsNullOrEmpty(dep) && string.CompareOrdinal(dep, today) < 0)
+                                    {
+                                        <span class="bco-tag over">Overdue</span>
+                                    }
+                                    else if (!string.IsNullOrEmpty(dep) && string.CompareOrdinal(dep, today) > 0)
+                                    {
+                                        <span class="bco-tag early">Early departure</span>
+                                    }
+                                </td>
+                                <td class="c-res">
+                                    <a class="bco-res" target="_blank" rel="noopener noreferrer"
+                                       href="@(Model.LegacyBaseUrl + "RegistrationCard.aspx?reg_id=" + Uri.EscapeDataString(row.RegId))">@row.RegId</a>
+                                </td>
+                                <td class="c-guest bco-guest">@row.FullName</td>
+                                <td class="c-cat">@row.RoomCategory</td>
+                                <td class="c-stay bco-stay">@row.ArrivalDisplay &rarr; @row.DepartureDisplay</td>
+                                <td class="num c-nights"><span class="bco-nights">@row.Nights @(row.Nights == 1 ? "Night" : "Nights")</span></td>
+                                <td class="num c-total">@Model.Money(row.GrandTotal)</td>
+                                <td class="num c-paid">@Model.Money(row.PaidAmount)</td>
+                                <td class="num c-bal">
+                                    @if (row.RemainingAmount > 0)
+                                    {
+                                        <span class="bco-pill due" title="Balance due">@Model.Money(row.RemainingAmount)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="bco-pill paid">Settled</span>
+                                    }
+                                </td>
+                                <td class="num c-sec">
+                                    @if (row.SecurityBalance > 0)
+                                    {
+                                        <button type="button" class="security-btn" data-settle
+                                                title="@(Model.SecuritySettlementAvailable ? "Settle room security" : "Security settlement is not connected in this page yet")">@Model.Money(row.SecurityBalance)</button>
+                                    }
+                                    else
+                                    {
+                                        <span class="security-zero dash" aria-label="No security">&mdash;</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot id="bcoFoot" @(Model.Rows.Count == 0 ? "hidden" : null)>
+                        <tr>
+                            <td class="sp" colspan="6"></td>
+                            <td class="lbl">Totals</td>
+                            <td class="num" id="bcoFTot">@Model.Money(Model.TotalGrand)</td>
+                            <td class="num" id="bcoFPaid">@Model.Money(Model.TotalPaid)</td>
+                            <td class="num" id="bcoFDue">@Model.Money(Model.TotalRemaining)</td>
+                            <td class="num" id="bcoFSec">@Model.Money(Model.TotalSecurity)</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <div class="bco-empty @(Model.Rows.Count == 0 ? "show" : null)" id="bcoEmpty" role="status">
+                    <svg class="bco-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                    <b id="bcoEmptyTitle">@(string.IsNullOrEmpty(Model.Search) ? "No departures for this date" : "No departures match “" + Model.Search + "”")</b>
+                    <span id="bcoEmptyHint">@(string.IsNullOrEmpty(Model.Search) ? "Everyone due to leave on this date has already checked out. Try another date above." : "Try a room number, surname, phone or email.")</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ STICKY ACTION BAR ============ -->
+        <div class="bco-bar" id="bcoBar" role="region" aria-label="Selected rooms">
+            <div class="bco-bar-info" id="bcoBarInfo" aria-live="polite"></div>
+            <label class="bco-toggle" id="bcoRefTg" title="Refund the full room security (amount read from the database) when the last room of a reservation checks out">
+                <input type="checkbox" name="refundSecurity" value="true" id="bcoRefund" aria-label="Refund security" />
+                <span class="sw" aria-hidden="true"></span>Refund security
+            </label>
+            <button type="button" class="bco-btn bco-btn-link" id="bcoClear">Clear</button>
+            <button type="button" class="bco-btn bco-bulk" id="bcoBulk">Check out</button>
+        </div>
+    </form>
+</div>
+
+<!-- ============ ONE OVERLAY + MODALS ============ -->
+<div class="bco-portal">
+    <div class="bco-overlay" id="bcoOverlay"></div>
+
+    <div class="bco-modal" id="bcoConfirm" role="dialog" aria-modal="true" aria-labelledby="bcoCTitle">
+        <div class="bco-mhead">
+            <div><h3 id="bcoCTitle">Check out rooms?</h3><p>Review the rooms below before continuing.</p></div>
+            <button type="button" class="bco-x" data-bco-close aria-label="Close">&times;</button>
+        </div>
+        <div class="bco-mbody" id="bcoCBody"></div>
+        <div class="bco-mfoot">
+            <button type="button" class="bco-btn bco-btn-ghost" data-bco-close>Cancel</button>
+            <button type="button" class="bco-btn bco-btn-primary" id="bcoConfirmBtn">Confirm check-out</button>
+        </div>
+    </div>
+
+    <div class="bco-modal" id="bcoResult" role="dialog" aria-modal="true" aria-labelledby="bcoRTitle">
+        <div class="bco-mhead">
+            <div><h3 id="bcoRTitle">Check-out result</h3><p id="bcoRSub"></p></div>
+            <button type="button" class="bco-x" data-bco-close aria-label="Close">&times;</button>
+        </div>
+        <div class="bco-mbody" id="bcoRBody"></div>
+        <div class="bco-mfoot"><button type="button" class="bco-btn bco-btn-primary" data-bco-close>Done</button></div>
+    </div>
+
+    <div class="bco-modal" id="bcoSecurity" role="dialog" aria-modal="true" aria-labelledby="bcoSTitle"
+         data-available="@(Model.SecuritySettlementAvailable ? "1" : "0")">
+        <div class="bco-mhead">
+            <div><h3 id="bcoSTitle">Room security settlement</h3><p>Release security back to the guest or deduct part of it.</p></div>
+            <button type="button" class="bco-x" data-bco-close aria-label="Close">&times;</button>
+        </div>
+        <div class="bco-mbody">
+            <div class="bco-secinfo">
+                <span>Guest</span><b id="bcoSecGuest">-</b>
+                <span>Reservation</span><b id="bcoSecReg">-</b>
+                <span>Method</span><b id="bcoSecMethod">-</b>
+            </div>
+            <div class="bco-fld">
+                <label for="bcoSecRelease">Amount to release back to guest</label>
+                <input type="number" step="0.01" min="0" id="bcoSecRelease" inputmode="decimal" />
+            </div>
+            <div class="bco-secgrid">
+                <div><small>Total held</small><b id="bcoSecHold">0.00</b></div>
+                <div><small>Release</small><b id="bcoSecRel">0.00</b></div>
+                <div><small>Deduct</small><b id="bcoSecCap">0.00</b></div>
+            </div>
+            <div id="bcoSecError" class="bco-err" role="alert"></div>
+        </div>
+        <div class="bco-mfoot">
+            <button type="button" class="bco-btn bco-btn-ghost" data-bco-close>Cancel</button>
+            <button type="button" id="bcoSecOk" class="bco-btn bco-btn-primary">Settle security</button>
+        </div>
+    </div>
+
+    <div class="bco-loading" id="bcoLoading" role="status" aria-live="polite">
+        <div><span class="bco-spin"></span><span id="bcoLoadingText">Loading...</span></div>
+    </div>
+</div>
+
+@if (resultJson is not null)
+{
+    <script type="application/json" id="bcoResultData">@Html.Raw(resultJson)</script>
+}
+
+@section Scripts {
+    <script src="~/js/bulk-checkout.js" asp-append-version="true"></script>
+}
