@@ -173,7 +173,7 @@ ORDER BY
                 $"payment_mode={Uri.EscapeDataString(mode)}";
 
             var token = _payNowProtector.Protect(protectedPayload);
-            var paymentUrl = $"{root}/PayNow/p/{Uri.EscapeDataString(token)}";
+            var paymentUrl = $"{root}/PayNow/p?t={Uri.EscapeDataString(token)}";
 
             return Json(new
             {
@@ -227,14 +227,27 @@ ORDER BY
     }
 
     /// <summary>
-    /// New customer-facing PayNow URL. The path contains one protected token only.
-    /// reg_id, hotel_id, guest, amount, source and payment mode are recovered
-    /// server-side and are never exposed in the browser URL.
+    /// Customer-facing PayNow URL using a query parameter instead of a long path segment.
+    /// This avoids the HTTP.sys/IIS per-segment URL length limit on Windows hosting.
+    /// The encrypted payload is still validated and decrypted server-side.
+    /// </summary>
+    [HttpGet("/PayNow/p")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public Task<IActionResult> Secure([FromQuery(Name = "t")] string? token, CancellationToken cancellationToken)
+        => OpenSecureLinkAsync(token, cancellationToken);
+
+    /// <summary>
+    /// Compatibility for links generated before the query-parameter change.
+    /// Windows HTTP.sys may still reject an overly long legacy path before MVC runs.
     /// </summary>
     [HttpGet("/PayNow/p/{token}")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    public Task<IActionResult> Secure(string token, CancellationToken cancellationToken)
+    public Task<IActionResult> SecureLegacy([FromRoute] string token, CancellationToken cancellationToken)
+        => OpenSecureLinkAsync(token, cancellationToken);
+
+    private Task<IActionResult> OpenSecureLinkAsync(string? token, CancellationToken cancellationToken)
     {
+        Response.Headers["Referrer-Policy"] = "no-referrer";
         if (!TryReadProtectedPayNow(token, out var values))
             return Task.FromResult<IActionResult>(NotFound("Payment link is invalid or has been changed."));
 

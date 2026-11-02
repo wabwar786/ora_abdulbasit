@@ -272,9 +272,14 @@
       const rawPaymentUrl=String(j?.data?.paymentUrl||'').trim();
       if(!rawPaymentUrl) throw new Error('Payment link is not available for this reservation.');
       const paymentUrl=new URL(rawPaymentUrl,window.location.origin);
-      // GenerateLink produces the secure PayNow route. The PMS may use a
-      // separately configured public PayNow domain; do not require same-origin.
-      if(!/^https?:$/.test(paymentUrl.protocol) || !/^\/PayNow\/p\//i.test(paymentUrl.pathname))
+      // GenerateLink now uses /PayNow/p?t=<protected-token> to avoid the
+      // IIS/HTTP.sys per-path-segment length limit. Continue accepting older
+      // /PayNow/p/<protected-token> links for backward compatibility.
+      // A separately configured public PayNow domain may be used.
+      const isQueryPayNow=/^\/PayNow\/p\/?$/i.test(paymentUrl.pathname)
+        && Boolean(paymentUrl.searchParams.get('t'));
+      const isLegacyPayNow=/^\/PayNow\/p\/[^/]+\/?$/i.test(paymentUrl.pathname);
+      if(!/^https?:$/.test(paymentUrl.protocol) || !(isQueryPayNow || isLegacyPayNow))
         throw new Error('The generated payment link is not a valid PayNow URL.');
       if(els.onlineLinkValue) els.onlineLinkValue.value=paymentUrl.href;
       if(els.onlineLinkHint){

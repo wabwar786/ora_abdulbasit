@@ -20,6 +20,7 @@ public sealed class FrontDeskCalendarController : Controller
     private readonly IDataProtector _payNowShareProtector;
     private readonly RestaurantGuestLinkTokens _restaurantGuestLinks;
     private readonly string _connectionString;
+    private readonly string? _payNowPublicBaseUrl;
 
     private const string InvoiceSharePurpose = "ORAPMS.InvoiceShare.v1";
     private const string PayNowSharePurpose = "ORAPMS.PayNowShare.v1";
@@ -44,6 +45,21 @@ public sealed class FrontDeskCalendarController : Controller
         _restaurantGuestLinks = new RestaurantGuestLinkTokens(dataProtectionProvider);
         _connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is missing.");
+
+        // Optional public site origin used by PayNowController as well. When the
+        // Calendar runs behind a proxy, the internal Request.Host may not be
+        // reachable by guests. Keep the previous Request origin as the default.
+        var configuredPayNowBase = configuration["PayNow:PublicBaseUrl"]?.Trim().TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(configuredPayNowBase))
+        {
+            if (!Uri.TryCreate(configuredPayNowBase, UriKind.Absolute, out var publicUri) ||
+                (publicUri.Scheme != Uri.UriSchemeHttps &&
+                 !(publicUri.Scheme == Uri.UriSchemeHttp && publicUri.IsLoopback)))
+                throw new InvalidOperationException(
+                    "PayNow:PublicBaseUrl must be a valid HTTPS URL (HTTP only for localhost).");
+
+            _payNowPublicBaseUrl = configuredPayNowBase;
+        }
         var connectionString = _connectionString;
         _dbLogger = new FrontDeskCalendarDbLogger(connectionString, hotelClock, _logger);
 
@@ -459,8 +475,11 @@ WHERE hotel_id = @hotel_id;", connection);
 
             string token = _payNowShareProtector.Protect(payload);
 
-            return BaseUrl().TrimEnd('/') +
-                   "/PayNow/p/" +
+            // Put the protected token in the query string, not a URL path
+            // segment. HTTP.sys/IIS can reject long path segments before MVC
+            // receives the request (400 Bad Request - Invalid URL).
+            return (_payNowPublicBaseUrl ?? BaseUrl().TrimEnd('/')) +
+                   "/PayNow/p?t=" +
                    Uri.EscapeDataString(token);
         }
         catch
