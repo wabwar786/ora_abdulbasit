@@ -1,333 +1,82 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Orapmshms.Services.AvailabilityJobs;
-using Orapmshms.Services.LegacyApi;
-using Microsoft.Extensions.DependencyInjection;
-using System;
-
-using System.Collections.Generic;
-
-using System.ComponentModel.DataAnnotations;
-
-
-using System.Data;
-
 using Microsoft.Data.SqlClient;
-
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Orapmshms.Services.LegacyApi;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Data;
 using System.Globalization;
-using Microsoft.AspNetCore.Authorization ;
-
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Orapmshms.Controllers
-
 {
-
+    /// <summary>
+    /// Website / BNB UK rate lookup. Public routes, HTTP POST body and response
+    /// properties are intentionally unchanged for existing callers.
+    /// </summary>
     [Route("smartapi/api/rooms")]
-
     [AllowAnonymous]
     public class RatesController : LegacyApiControllerBase
-
     {
-
         public class CategoryAvailabilityRateResponse
-
         {
-
             public string HotelId { get; set; }
-
             public DateTime FromDate { get; set; }
-
             public DateTime ToDate { get; set; }
-
             public int Nights { get; set; }
-
             public List<CategoryAvailabilityRateDto> Data { get; set; } = new List<CategoryAvailabilityRateDto>();
-
         }
-
-
 
         public class CategoryAvailabilityRateDto
-
         {
-
             public string Category { get; set; }
-
             public string PlanName { get; set; }
-
             public string Currency { get; set; }
-
             public string CategoryId { get; set; }
-
             public string LocalPlanId { get; set; }
-
             public int AvailableRooms { get; set; }
-
             public int AdultSpaces { get; set; }
-
             public int ChildrenSpaces { get; set; }
-
             public int CotSpaces { get; set; }
-
-
-
             public decimal TotalRate { get; set; }
-
             public decimal TaxAmount { get; set; }
-
             public decimal TotalRateWithTax { get; set; }
-
-
-
-            public string TaxType { get; set; }          // VAT / GST / None
-
-            public decimal TaxPercent { get; set; }      // VAT or GST %
-
-            public decimal BedTaxPerNight { get; set; }  // flat bed tax
-
-
-
+            public string TaxType { get; set; }
+            public decimal TaxPercent { get; set; }
+            public decimal BedTaxPerNight { get; set; }
             public int Nights { get; set; }
-
         }
-
-
 
         public class CategoryAvailabilityRateRequest
-
         {
-
             [Required]
-
             public string HotelId { get; set; }
-
-
-
             [Required]
-
-            public string FromDate { get; set; } // yyyy-MM-dd
-
-
-
+            public string FromDate { get; set; }
             [Required]
-
-            public string ToDate { get; set; }   // yyyy-MM-dd
-
+            public string ToDate { get; set; }
         }
 
-
-
-        private readonly string _connString =
-            LegacyApiRuntime.ConnectionString;
-        private const int MaxNights = 1;
-
-        [HttpPost]
-
-        [Route("category-availability-rates")]
-
-        public IActionResult GetCategoryAvailabilityRates([FromBody] CategoryAvailabilityRateRequest request)
-
-        {
-
-            if (request == null)
-
-                return BadRequest("Request body is required.");
-
-
-
-            if (string.IsNullOrWhiteSpace(request.HotelId))
-
-                return BadRequest("HotelId is required.");
-
-           
-
-            DateTime fromDate;
-
-            if (!DateTime.TryParseExact(
-
-                    request.FromDate,
-
-                    "yyyy-MM-dd",
-
-                    CultureInfo.InvariantCulture,
-
-                    DateTimeStyles.None,
-
-                    out fromDate))
-
-            {
-
-                return BadRequest("FromDate must be in yyyy-MM-dd format.");
-
-            }
-
-
-
-            DateTime toDate;
-
-            if (!DateTime.TryParseExact(
-
-                    request.ToDate,
-
-                    "yyyy-MM-dd",
-
-                    CultureInfo.InvariantCulture,
-
-                    DateTimeStyles.None,
-
-                    out toDate))
-
-            {
-
-                return BadRequest("ToDate must be in yyyy-MM-dd format.");
-
-            }
-
-
-
-            if (toDate <= fromDate)
-
-                return BadRequest("ToDate must be greater than FromDate.");
-
-
-
-            int nights = (toDate.Date - fromDate.Date).Days;
-
-            if (nights > MaxNights)
-                return BadRequest("Date range cannot exceed " + MaxNights + " nights.");
-            try
-
-            {
-
-                var rows = new List<CategoryAvailabilityRateDto>();
-
-
-
-                using (var conn = new SqlConnection(_connString))
-
-                using (var cmd = new SqlCommand(GetSql(), conn))
-
-                {
-
-                    cmd.CommandType = CommandType.Text;
-
-                    cmd.CommandTimeout = 120;
-
-
-
-                    cmd.Parameters.AddWithValue("@HotelId", request.HotelId.Trim());
-
-                    cmd.Parameters.AddWithValue("@FromDate", fromDate.Date);
-
-                    cmd.Parameters.AddWithValue("@ToDate", toDate.Date);
-
-
-
-                    conn.Open();
-
-
-
-                    using (var rdr = cmd.ExecuteReader())
-
-                    {
-
-                        while (rdr.Read())
-
-                        {
-
-                            rows.Add(new CategoryAvailabilityRateDto
-
-                            {
-
-                                Category = rdr["Category"] == DBNull.Value ? "" : Convert.ToString(rdr["Category"]),
-
-                                PlanName = rdr["PlanName"] == DBNull.Value ? "" : Convert.ToString(rdr["PlanName"]),
-
-                                Currency = rdr["Currency"] == DBNull.Value ? "" : Convert.ToString(rdr["Currency"]),
-
-                                CategoryId = rdr["CategoryId"] == DBNull.Value ? "" : Convert.ToString(rdr["CategoryId"]),
-
-                                LocalPlanId = rdr["LocalPlanId"] == DBNull.Value ? "" : Convert.ToString(rdr["LocalPlanId"]),
-
-                                AvailableRooms = rdr["AvailableRooms"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["AvailableRooms"]),
-
-                                AdultSpaces = rdr["AdultSpaces"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["AdultSpaces"]),
-
-                                ChildrenSpaces = rdr["ChildrenSpaces"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["ChildrenSpaces"]),
-
-                                CotSpaces = rdr["CotSpaces"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["CotSpaces"]),
-
-
-
-                                TotalRate = rdr["TotalRateBeforeTax"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TotalRateBeforeTax"]),
-
-                                TaxAmount = rdr["TaxAmount"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TaxAmount"]),
-
-                                TotalRateWithTax = rdr["TotalRateWithTax"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TotalRateWithTax"]),
-
-
-
-                                TaxType = rdr["TaxType"] == DBNull.Value ? "None" : Convert.ToString(rdr["TaxType"]),
-
-                                TaxPercent = rdr["TaxPercent"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TaxPercent"]),
-
-                                BedTaxPerNight = rdr["BedTaxPerNight"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["BedTaxPerNight"]),
-
-
-
-
-
-                                Nights = nights
-
-                            });
-
-                        }
-
-                    }
-
-                }
-
-
-
-                var response = new CategoryAvailabilityRateResponse
-
-                {
-
-                    HotelId = request.HotelId.Trim(),
-
-                    FromDate = fromDate.Date,
-
-                    ToDate = toDate.Date,
-
-                    Nights = nights,
-
-                    Data = rows
-
-                };
-
-
-
-                return Ok(response);
-
-            }
-
-            catch (Exception ex)
-
-            {
-
-                return InternalServerError(
-
-                    new Exception("Error fetching category rates, availability and tax: " + ex.Message, ex)
-
-                );
-
-            }
-
-        }
-        private string GetSql()
-
-        {
-
-            return @"
+        private readonly string _connString = LegacyApiRuntime.ConnectionString;
+
+        // Existing one-night limit is preserved for both website clients.
+        private const int MaxNights = 15;
+
+        // Limit SQL pressure per application process, not across all servers.
+        private const int MaxConcurrentRateQueries = 2;
+        private static readonly SemaphoreSlim RateQuerySlots =
+            new SemaphoreSlim(MaxConcurrentRateQueries, MaxConcurrentRateQueries);
+
+        // Bound resource use without changing any rate/availability/tax calculation.
+        private const int SqlTimeoutSeconds = 15;
+        // Unmodified SQL copied from the original, prior to the optimization rewrite.
+        // Preserves matching, duplicate daily-row aggregation, plan ranking and tax math.
+        private static readonly string FeaturedRateSql = @"
 
 ;WITH DateRange AS
 
@@ -747,203 +496,7 @@ OUTER APPLY
 ORDER BY ra.Category, ra.PlanName, ra.LocalPlanId
 
 OPTION (MAXRECURSION 0);";
-
-        }
-     
-        [HttpPost]
-
-        [Route("category-availability-allrates")]
-
-        public IActionResult GetCategoryAvailabilityRatesAll([FromBody] CategoryAvailabilityRateRequest request)
-
-        {
-            return BadRequest("Currently Unavailable.");
-
-            if (request == null)
-
-                return BadRequest("Request body is required.");
-
- 
-
-
-
-            if (string.IsNullOrWhiteSpace(request.HotelId))
-
-                return BadRequest("HotelId is required.");
-
-
-
-            DateTime fromDate;
-
-            if (!DateTime.TryParseExact(
-
-                    request.FromDate,
-
-                    "yyyy-MM-dd",
-
-                    CultureInfo.InvariantCulture,
-
-                    DateTimeStyles.None,
-
-                    out fromDate))
-
-            {
-
-                return BadRequest("FromDate must be in yyyy-MM-dd format.");
-
-            }
-
-
-
-            DateTime toDate;
-
-            if (!DateTime.TryParseExact(
-
-                    request.ToDate,
-
-                    "yyyy-MM-dd",
-
-                    CultureInfo.InvariantCulture,
-
-                    DateTimeStyles.None,
-
-                    out toDate))
-
-            {
-
-                return BadRequest("ToDate must be in yyyy-MM-dd format.");
-
-            }
-
-
-
-            if (toDate <= fromDate)
-
-                return BadRequest("ToDate must be greater than FromDate.");
-
-
-
-            int nights = (toDate.Date - fromDate.Date).Days;
-
-            if (nights > MaxNights)
-                return BadRequest("Date range cannot exceed " + MaxNights + " nights.");
-
-            try
-
-            {
-                var rows = new List<CategoryAvailabilityRateDto>();
-                using (var conn = new SqlConnection(_connString))
-
-                using (var cmd = new SqlCommand(GetSql1(), conn))
-
-                {
-
-                    cmd.CommandType = CommandType.Text;
-                    cmd.CommandTimeout = 120;
-                    cmd.Parameters.Add("@HotelId",
-    SqlDbType.VarChar,
-    20
-).Value = request.HotelId.Trim();
-                    cmd.Parameters.AddWithValue("@FromDate", fromDate.Date);
-                    cmd.Parameters.AddWithValue("@ToDate", toDate.Date);
-
-
-
-                    conn.Open();
-
-
-
-                    using (var rdr = cmd.ExecuteReader())
-
-                    {
-
-                        while (rdr.Read())
-
-                        {
-
-                            rows.Add(new CategoryAvailabilityRateDto
-
-                            {
-
-                                Category = rdr["Category"] == DBNull.Value ? "" : Convert.ToString(rdr["Category"]),
-
-                                PlanName = rdr["PlanName"] == DBNull.Value ? "" : Convert.ToString(rdr["PlanName"]),
-
-                                Currency = rdr["Currency"] == DBNull.Value ? "" : Convert.ToString(rdr["Currency"]),
-
-                                CategoryId = rdr["CategoryId"] == DBNull.Value ? "" : Convert.ToString(rdr["CategoryId"]),
-
-                                LocalPlanId = rdr["LocalPlanId"] == DBNull.Value ? "" : Convert.ToString(rdr["LocalPlanId"]),
-
-                                AvailableRooms = rdr["AvailableRooms"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["AvailableRooms"]),
-
-                                AdultSpaces = rdr["AdultSpaces"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["AdultSpaces"]),
-
-                                ChildrenSpaces = rdr["ChildrenSpaces"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["ChildrenSpaces"]),
-
-                                CotSpaces = rdr["CotSpaces"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["CotSpaces"]),
-                                TotalRate = rdr["TotalRateBeforeTax"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TotalRateBeforeTax"]),
-
-                                TaxAmount = rdr["TaxAmount"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TaxAmount"]),
-
-                                TotalRateWithTax = rdr["TotalRateWithTax"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TotalRateWithTax"]),
-                                TaxType = rdr["TaxType"] == DBNull.Value ? "None" : Convert.ToString(rdr["TaxType"]),
-
-                                TaxPercent = rdr["TaxPercent"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["TaxPercent"]),
-
-                                BedTaxPerNight = rdr["BedTaxPerNight"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["BedTaxPerNight"]),
-                                Nights = nights
-
-                            });
-
-                        }
-
-                    }
-
-                }
-
-
-
-                var response = new CategoryAvailabilityRateResponse
-
-                {
-
-                    HotelId = request.HotelId.Trim(),
-
-                    FromDate = fromDate.Date,
-
-                    ToDate = toDate.Date,
-
-                    Nights = nights,
-
-                    Data = rows
-
-                };
-
-
-
-                return Ok(response);
-
-            }
-
-            catch (Exception ex)
-
-            {
-
-                return InternalServerError(
-
-                    new Exception("Error fetching category rates, availability and tax: " + ex.Message, ex)
-
-                );
-
-            }
-
-        }
-        private string GetSql1()
-
-        {
-
-            return @"
+        private static readonly string AllRateSql = @"
 
 ;WITH DateRange AS
 
@@ -1369,8 +922,163 @@ ORDER BY ra.Category, ra.PlanName, ra.LocalPlanId
 
 OPTION (MAXRECURSION 0);";
 
+        [HttpPost]
+        [Route("category-availability-rates")]
+        public Task<IActionResult> GetCategoryAvailabilityRates(
+            [FromBody] CategoryAvailabilityRateRequest request)
+        {
+            // Only Website Rate / RO Flexi, as in the original controller.
+            return FetchRatesAsync(request, featuredOnly: true);
         }
 
-    }
+        [HttpPost]
+        [Route("category-availability-allrates")]
+        public Task<IActionResult> GetCategoryAvailabilityRatesAll(
+            [FromBody] CategoryAvailabilityRateRequest request)
+        {
+            // The uploaded original action returned "Currently Unavailable" before SQL.
+            // The previous performance package activated it. Keep it active here,
+            // but run the ORIGINAL all-rates SQL exactly (not the rewritten SQL).
+            return FetchRatesAsync(request, featuredOnly: false);
+        }
 
+        private async Task<IActionResult> FetchRatesAsync(
+            CategoryAvailabilityRateRequest request, bool featuredOnly)
+        {
+            if (request == null)
+                return BadRequest("Request body is required.");
+            if (string.IsNullOrWhiteSpace(request.HotelId))
+                return BadRequest("HotelId is required.");
+
+            string hotelId = request.HotelId.Trim();
+            if (hotelId.Length > 50)
+                return BadRequest("HotelId is too long.");
+
+            if (!DateTime.TryParseExact(request.FromDate, "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var fromDate))
+                return BadRequest("FromDate must be in yyyy-MM-dd format.");
+
+            if (!DateTime.TryParseExact(request.ToDate, "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var toDate))
+                return BadRequest("ToDate must be in yyyy-MM-dd format.");
+
+            if (toDate <= fromDate)
+                return BadRequest("ToDate must be greater than FromDate.");
+
+            int nights = (toDate.Date - fromDate.Date).Days;
+            if (nights > MaxNights)
+                return BadRequest("Date range cannot exceed " + MaxNights + " nights.");
+
+            bool acquired = false;
+            CancellationToken cancellationToken = HttpContext.RequestAborted;
+
+            try
+            {
+                // Keep a short queue; do not allow unlimited parallel expensive SQL.
+                acquired = await RateQuerySlots.WaitAsync(800, cancellationToken);
+                if (!acquired)
+                    return RetryableFailure("Rate service is busy. Please retry shortly.");
+
+                var rows = new List<CategoryAvailabilityRateDto>();
+                using (var conn = new SqlConnection(_connString))
+                using (var cmd = new SqlCommand(featuredOnly ? FeaturedRateSql : AllRateSql, conn))
+                {
+                    cmd.CommandType = CommandType.Text;
+                    cmd.CommandTimeout = SqlTimeoutSeconds;
+                    // Match original SQL parameter types and coercion behavior.
+                    if (featuredOnly)
+                    {
+                        // The original featured route used AddWithValue (nvarchar).
+                        cmd.Parameters.AddWithValue("@HotelId", hotelId);
+                    }
+                    else
+                    {
+                        // The original all-rates SQL branch used varchar(20).
+                        cmd.Parameters.Add("@HotelId", SqlDbType.VarChar, 20).Value = hotelId;
+                    }
+                    cmd.Parameters.AddWithValue("@FromDate", fromDate.Date);
+                    cmd.Parameters.AddWithValue("@ToDate", toDate.Date);
+
+                    await conn.OpenAsync(cancellationToken);
+                    using (var rdr = await cmd.ExecuteReaderAsync(cancellationToken))
+                    {
+                        while (await rdr.ReadAsync(cancellationToken))
+                        {
+                            rows.Add(new CategoryAvailabilityRateDto
+                            {
+                                Category = AsString(rdr["Category"]),
+                                PlanName = AsString(rdr["PlanName"]),
+                                Currency = AsString(rdr["Currency"]),
+                                CategoryId = AsString(rdr["CategoryId"]),
+                                LocalPlanId = AsString(rdr["LocalPlanId"]),
+                                AvailableRooms = AsInt(rdr["AvailableRooms"]),
+                                AdultSpaces = AsInt(rdr["AdultSpaces"]),
+                                ChildrenSpaces = AsInt(rdr["ChildrenSpaces"]),
+                                CotSpaces = AsInt(rdr["CotSpaces"]),
+                                TotalRate = AsDecimal(rdr["TotalRateBeforeTax"]),
+                                TaxAmount = AsDecimal(rdr["TaxAmount"]),
+                                TotalRateWithTax = AsDecimal(rdr["TotalRateWithTax"]),
+                                TaxType = rdr["TaxType"] == DBNull.Value ? "None" : AsString(rdr["TaxType"]),
+                                TaxPercent = AsDecimal(rdr["TaxPercent"]),
+                                BedTaxPerNight = AsDecimal(rdr["BedTaxPerNight"]),
+                                Nights = nights
+                            });
+                        }
+                    }
+                }
+
+                return Ok(new CategoryAvailabilityRateResponse
+                {
+                    HotelId = hotelId,
+                    FromDate = fromDate.Date,
+                    ToDate = toDate.Date,
+                    Nights = nights,
+                    Data = rows
+                });
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Request cancelled: SQL call is cancelled/disposed.
+                return new EmptyResult();
+            }
+            catch (SqlException ex) when (ex.Number == -2 || ex.Number == 1205)
+            {
+                HttpContext.RequestServices.GetService<ILoggerFactory>()?
+                    .CreateLogger<RatesController>()
+                    .LogWarning(ex,
+                        "Rate lookup timed out or deadlocked for HotelId={HotelId}, FromDate={FromDate}, Featured={Featured}",
+                        hotelId, fromDate, featuredOnly);
+                return RetryableFailure("Rates are temporarily busy. Please retry shortly.");
+            }
+            catch (Exception ex)
+            {
+                return InternalServerError(new Exception(
+                    "Error fetching category rates, availability and tax: " + ex.Message, ex));
+            }
+            finally
+            {
+                if (acquired)
+                    RateQuerySlots.Release();
+            }
+        }
+
+        private IActionResult RetryableFailure(string message)
+        {
+            Response.Headers["Retry-After"] = "2";
+            // Success JSON and DTO naming are unchanged. Busy failures are HTTP 503.
+            return new ContentResult
+            {
+                Content = JsonConvert.SerializeObject(new { Message = message }),
+                ContentType = "application/json; charset=utf-8",
+                StatusCode = 503
+            };
+        }
+
+        private static string AsString(object value) =>
+            value == DBNull.Value ? string.Empty : Convert.ToString(value) ?? string.Empty;
+        private static int AsInt(object value) =>
+            value == DBNull.Value ? 0 : Convert.ToInt32(value);
+        private static decimal AsDecimal(object value) =>
+            value == DBNull.Value ? 0m : Convert.ToDecimal(value);
+    }
 }
