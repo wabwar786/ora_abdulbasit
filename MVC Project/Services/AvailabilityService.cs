@@ -154,9 +154,9 @@ public sealed class AvailabilityService : IAvailabilityService
         var rates = await ratesTask;
         var occupied = await occupiedTask;
 
-        // Resolve generated daily rows using current plan defaults. This is a
-        // READ-ONLY operation: dated Bulk/Cell/Yield overrides and restrictions
-        // are not modified, while derived plans follow the effective parent.
+        // Resolve only SYNTHETIC defaults for missing days. An actual datesrates
+        // row must retain its stored selling price, even when a legacy row has
+        // uploadfrom=0. Restrictions and source flags are never modified here.
         ApplyEffectivePlanRates(plans, rates, startDate, endDate);
 
         // The live grid query already contains restriction columns. Prime a short-lived
@@ -1906,9 +1906,12 @@ ORDER BY cp.category_id, ISNULL(p.orderid,999999), cp.planname;";
         return result;
     }
 
-    // Rate Plans saves change category_plan only. A datesrates row marked
-    // uploadfrom=0 is generated/default data, even if it contains an older
-    // numerical rate. Resolve it at read time; preserve all dated restrictions.
+    // Inventory must show the saved price of an existing dated row. The
+    // uploadfrom flag records origin, not permission to silently replace the
+    // stored price on the page. category_plan fills ONLY dates without a row;
+    // derived synthetic defaults inherit the effective daily parent price.
+    // Note: automatic uploadfrom=0 data still has default/source semantics in
+    // writers, so users must audit mismatched legacy 0 rows before re-tagging.
     private static void ApplyEffectivePlanRates(
         IReadOnlyList<AvailabilityDbPlan> plans,
         Dictionary<(string CategoryId, string PlanId, DateTime Date), AvailabilityDbRate> rates,
@@ -1932,7 +1935,10 @@ ORDER BY cp.category_id, ISNULL(p.orderid,999999), cp.planname;";
                     var key = (plan.CategoryId, plan.PlanId, day);
                     if (!rates.TryGetValue(key, out var daily))
                         return plan.DefaultRate;
-                    if (daily.IsExplicitPriceOverride)
+                    // Do not replace a persisted date-specific price with
+                    // category_plan, regardless of its uploadfrom source flag.
+                    // This also keeps collapsed restriction row prices stable.
+                    if (!daily.IsSyntheticDefault)
                         return resolved[plan.PlanId] = daily.Rate;
 
                     if (!visiting.Add(plan.PlanId))
@@ -2024,7 +2030,7 @@ WHERE hotel_id=@hotel
         var sql = $@"
 ;WITH RankedRates AS
 (
-    SELECT dr.category_id,dr.planid,dr.[date],
+    SELECT dr.category_id,dr.planid,CONVERT(date,dr.[date]) AS [date],
            dr.rate,
            dr.upload,
            dr.baserate,
@@ -2037,15 +2043,16 @@ WHERE hotel_id=@hotel
            {restrictionColumns},
            ROW_NUMBER() OVER
            (
-               PARTITION BY dr.hotel_id,CONVERT(nvarchar(100),dr.category_id),CONVERT(nvarchar(50),dr.planid),dr.[date]
+               PARTITION BY dr.hotel_id,CONVERT(nvarchar(100),dr.category_id),CONVERT(nvarchar(50),dr.planid),CONVERT(date,dr.[date])
                ORDER BY CASE WHEN TRY_CONVERT(int,dr.uploadfrom) IN (1,2,3)
                                    OR NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NOT NULL
                               THEN 0 ELSE 1 END,
-                        CASE WHEN ISNULL(dr.upload,0)=0 THEN 0 ELSE 1 END
+                        CASE WHEN ISNULL(dr.upload,0)=0 THEN 0 ELSE 1 END,
+                        dr.ID DESC
            ) AS rn
     FROM dbo.datesrates dr
     WHERE dr.hotel_id=@hotel
-      AND dr.[date] BETWEEN @start AND @end
+      AND dr.[date]>=@start AND dr.[date]<DATEADD(day,1,@end)
       AND dr.category_id IN ({inClause})
 )
 SELECT category_id,planid,[date],rate,upload,baserate,uploadfrom,is_price_override,
@@ -2121,6 +2128,7 @@ WHERE hotel_id=@hotel
                             BaseRate = baseRate,
                             Upload = "1",
                             UploadFrom = "0",
+                            IsSyntheticDefault = true,
                             StopSell = stopped
                         });
                 }
@@ -2153,22 +2161,23 @@ ORDER BY id DESC;
 
 ;WITH RankedRates AS
 (
-    SELECT [date],rate,upload,baserate,uploadfrom,
+    SELECT CONVERT(date,[date]) AS [date],rate,upload,baserate,uploadfrom,
            ISNULL(stop_sell,0) AS stop_sell,
            ISNULL(cutoff_stop_sell,0) AS cutoff_stop_sell,
            min_los,min_stay_through,max_los,cutoff_days,
            closed_to_arrival,closed_to_departure,
            ROW_NUMBER() OVER
            (
-               PARTITION BY hotel_id,CONVERT(nvarchar(100),category_id),CONVERT(nvarchar(50),planid),[date]
+               PARTITION BY hotel_id,CONVERT(nvarchar(100),category_id),CONVERT(nvarchar(50),planid),CONVERT(date,[date])
                ORDER BY CASE WHEN TRY_CONVERT(int,uploadfrom) IN (1,2,3) THEN 0 ELSE 1 END,
-                        CASE WHEN ISNULL(upload,0)=0 THEN 0 ELSE 1 END
+                        CASE WHEN ISNULL(upload,0)=0 THEN 0 ELSE 1 END,
+                        ID DESC
            ) AS rn
     FROM dbo.datesrates
     WHERE hotel_id=@hotel
       AND category_id=@category
       AND planid=@plan
-      AND [date] BETWEEN @start AND @end
+      AND [date]>=@start AND [date]<DATEADD(day,1,@end)
 )
 SELECT [date],rate,upload,baserate,uploadfrom,stop_sell,cutoff_stop_sell,
        min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure
@@ -2248,7 +2257,8 @@ ORDER BY id DESC;", connection))
                         BaseRate = baseRate,
                         StopSell = stopSell,
                         Upload = "1",
-                        UploadFrom = "0"
+                        UploadFrom = "0",
+                        IsSyntheticDefault = true
                     });
                 }
             }
@@ -2902,11 +2912,11 @@ WHEN MATCHED THEN
                T.restr_upload=0,T.restr_uploadfrom=1
 WHEN NOT MATCHED THEN
     INSERT ([date],rate,baserate,ip,systemName,username,category_id,hotel_id,currentdate,planid,
-            [{dbColumn}],restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom)
+            [{dbColumn}],restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom,uploadfrom)
     VALUES (S.[date],
      COALESCE(TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
      COALESCE(TRY_CONVERT(decimal(18,4),S.cp_baserate),TRY_CONVERT(decimal(18,4),S.prev_baserate),CONVERT(decimal(18,4),0)),
-            @ip,@system,@username,S.category_id,S.hotel_id,GETDATE(),S.planid,@value,GETDATE(),@username,0,1);";
+            @ip,@system,@username,S.category_id,S.hotel_id,GETDATE(),S.planid,@value,GETDATE(),@username,0,1,0);";
 
         await using var command = new SqlCommand(sql, connection, transaction);
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
@@ -3471,7 +3481,7 @@ WHEN MATCHED THEN UPDATE SET
 WHEN NOT MATCHED THEN INSERT
     ([date],rate,baserate,ip,systemName,username,category_id,hotel_id,currentdate,planid,
      min_los,min_stay_through,max_los,cutoff_days,closed_to_arrival,closed_to_departure,stop_sell,
-     restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom)
+     restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom,uploadfrom)
 VALUES
     (S.[date],
      COALESCE(TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
@@ -3484,7 +3494,7 @@ VALUES
      CASE WHEN S.update_closed_to_arrival=1 THEN S.closed_to_arrival ELSE NULL END,
      CASE WHEN S.update_closed_to_departure=1 THEN S.closed_to_departure ELSE NULL END,
      CASE WHEN S.update_stop_sell=1 THEN S.stop_sell ELSE NULL END,
-     GETDATE(),S.username,0,1)
+     GETDATE(),S.username,0,1,0)
 OUTPUT $action INTO #BulkRestrictionMergeOut(MergeAction);
 
 -- Keep Booking Cutoff and manual Stop Sell compatible with the existing Availability engine.

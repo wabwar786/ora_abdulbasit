@@ -1123,19 +1123,10 @@ WHERE dr.hotel_id=@hotel
 SELECT CONVERT(nvarchar(50),dr.planid) AS planid,
        CONVERT(nvarchar(50),dr.category_id) AS category_id,
        dr.[date],
-       -- A queued upload of an old generated row must never send an
-       -- obsolete simple-plan price after category_plan has changed.
-       CASE WHEN ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
-                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NULL
-                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),cp.parent_planid))),N'') IS NULL
-                 AND TRY_CONVERT(decimal(18,2),cp.rate) IS NOT NULL
-            THEN TRY_CONVERT(decimal(18,2),cp.rate)
-            ELSE TRY_CONVERT(decimal(18,2),dr.rate) END AS rate
+       -- A daily-rate upload transmits the persisted daily price. Rate Plan
+       -- default-only uploads are handled by UploadPlanDefaultsAsync.
+       TRY_CONVERT(decimal(18,2),dr.rate) AS rate
 FROM dbo.datesrates dr
-LEFT JOIN dbo.category_plan cp
-  ON cp.hotel_id=dr.hotel_id
- AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
- AND CONVERT(nvarchar(100),cp.category_id)=CONVERT(nvarchar(100),dr.category_id)
 WHERE dr.hotel_id=@hotel
   AND dr.[date] BETWEEN @from AND @to
   AND ISNULL(dr.upload,0)=0

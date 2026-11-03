@@ -145,6 +145,8 @@ internal sealed class AvailabilityDbRate
     public string Upload { get; set; } = string.Empty;
     public string UploadFrom { get; set; } = string.Empty;
     internal bool IsExplicitPriceOverride { get; set; }
+    // True only when the value was supplied by category_plan for a missing datesrates row.
+    internal bool IsSyntheticDefault { get; set; }
     public decimal BaseRate { get; set; }
     public bool StopSell { get; set; }
     public bool CutoffStopSell { get; set; }

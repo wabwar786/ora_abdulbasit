@@ -51,19 +51,10 @@ namespace Orapmshms.Services.LegacyApi
 SELECT dr.planid      AS localplanid,
        dr.category_id AS localcategoryid,
        dr.[date],
-       -- Legacy Yield uploader must not resend old generated simple-plan
-       -- prices after Rate Plans changed category_plan defaults.
-       CASE WHEN ISNULL(TRY_CONVERT(int,dr.uploadfrom),0)=0
-                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),dr.yeildruleid))),N'') IS NULL
-                 AND NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),cp.parent_planid))),N'') IS NULL
-                 AND TRY_CONVERT(decimal(18,2),cp.rate) IS NOT NULL
-            THEN TRY_CONVERT(decimal(18,2),cp.rate)
-            ELSE TRY_CONVERT(decimal(18,2),dr.rate) END AS rate
+       -- Upload the persisted daily rate. Default-only Plan uploads use
+       -- the category_plan path, not this daily-rate uploader.
+       TRY_CONVERT(decimal(18,2),dr.rate) AS rate
 FROM dbo.datesrates dr
-LEFT JOIN dbo.category_plan cp
-  ON cp.hotel_id=dr.hotel_id
- AND CONVERT(nvarchar(50),cp.localplanid)=CONVERT(nvarchar(50),dr.planid)
- AND CONVERT(nvarchar(100),cp.category_id)=CONVERT(nvarchar(100),dr.category_id)
 WHERE dr.hotel_id=@hid
   AND dr.[date] >= @fromDate AND dr.[date] <= @toDate
   AND dr.upload = 0
