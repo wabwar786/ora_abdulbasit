@@ -191,7 +191,7 @@ public static class ReservationChangeAudit
         "phoneno" => "Phone", "arrivaldate" => "Arrival", "departuredate" => "Departure",
         "numberofadults" or "number_of_adult" or "room_adults" => "Adults",
         "numberofminors" or "number_of_minor" or "room_children" => "Children",
-        "room_infants" => "Infants", "agency" => "Company", "status" => "Booking source",
+        "room_infants" => "Infants", "agency" => "Booking source", "status" => "Company",
         "res_status" => "Reservation status", "country" => "Country", "city" => "City",
         "address" => "Address", "notes" => "Guest notes", "room_no" => "Room",
         "type" => "Room type", "nights" => "Nights", "rateplan" or "rateplanname" => "Rate plan",

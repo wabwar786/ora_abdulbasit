@@ -104,6 +104,13 @@
     let lastQuickNameSnapshot = '';
     let dateTaxResolver = null;
 
+    // User-selected payment method must survive an AJAX reservation refresh.
+    // The stored value in PaymentsUpdateTB can be empty ("Select") until paid.
+    let pendingPaymentMethod = null;
+    let pendingPaymentMethodRegId = '';
+    let fbrTaxMethodVersion = 0;
+    let fbrTaxMethodQueue = Promise.resolve();
+
     const money = value => `${currency}${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const amountOnly = value => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const toNumber = value => {
@@ -920,6 +927,11 @@
     async function reloadReservation(targetRegId = regId) {
         const target = String(targetRegId || '').trim();
         if (!target) return;
+        // An explicitly chosen different reservation must not inherit the last
+        // reservation's unsaved payment-method selection.
+        pendingPaymentMethod = null;
+        pendingPaymentMethodRegId = '';
+        ++fbrTaxMethodVersion;
         byId('searchResults')?.classList.add('hidden');
         document.querySelector('.search-wrap')?.classList.add('is-loading');
         showBusy('Loading reservation details…');
@@ -1037,6 +1049,7 @@
 
     async function applyReservationState(root, fresh) {
         if (!fresh || typeof fresh !== 'object') throw new Error('Reservation data is invalid.');
+        const regIdBeforeRefresh = regId;
 
         Object.keys(state).forEach(key => delete state[key]);
         Object.assign(state, fresh);
@@ -1092,7 +1105,18 @@
         });
 
         applyTotalsSnapshot(fresh.totals || {});
-        setSelectValue('paymentMethod', fresh.totals?.paymentMethod || '');
+        const freshRegId = String(fresh.reservationId || fresh.guest?.regId || '').trim();
+        const samePaymentSelection = pendingPaymentMethod !== null &&
+            (pendingPaymentMethodRegId === freshRegId ||
+             (!regIdBeforeRefresh && !pendingPaymentMethodRegId));
+        if (samePaymentSelection) {
+            pendingPaymentMethodRegId = freshRegId;
+        } else {
+            pendingPaymentMethod = null;
+            pendingPaymentMethodRegId = '';
+        }
+        setSelectValue('paymentMethod', samePaymentSelection
+            ? pendingPaymentMethod : (fresh.totals?.paymentMethod || ''));
         setFieldValue('paidAmount', '0');
 
         replaceFromTemplate(root, 'chargeRows', 'reservationChargeRowsTemplate');
@@ -1277,6 +1301,8 @@
             const result = await api(urls.saveGuest, { method: 'POST', body: { guest: guestPayload(), legacyReservationId: '' } });
             if (!result.ok) { message(result.message || 'Unable to save guest.', 'error'); return false; }
             regId = result.regId || regId;
+            if (pendingPaymentMethod !== null && !pendingPaymentMethodRegId)
+                pendingPaymentMethodRegId = regId;
             app.dataset.regId = regId;
             if (byId('guestSearch')) byId('guestSearch').value = regId;
             if (result.id) visitId = String(result.id);
@@ -1294,6 +1320,8 @@
             const result = await api(endpoint, { method: 'POST', body });
             if (!result.ok) return message(result.message || 'Guest could not be saved.', 'error');
             regId = result.regId || regId;
+            if (pendingPaymentMethod !== null && !pendingPaymentMethodRegId)
+                pendingPaymentMethodRegId = regId;
             app.dataset.regId = regId;
             if (byId('guestSearch')) byId('guestSearch').value = regId;
             message(result.message || 'Guest saved successfully.', 'success');
@@ -3171,15 +3199,34 @@
         } catch (e) { message(e.message, 'error'); } finally { hideBusy(); }
     }
 
-    async function applyFbrTaxModeFromPaymentMethod() {
-        if (app.dataset.fbr !== '1' || !regId) return;
+    function applyFbrTaxModeFromPaymentMethod() {
         const method = byId('paymentMethod')?.value?.trim() || '';
-        if (!method) return;
-        try {
-            const r = await api(urls.fbrApplyTaxMode, { method: 'POST', body: { regId, visitId, paymentMethod: method } });
-            if (!r.ok) return message(r.message || 'Unable to apply payment-method tax mode.', 'error');
-            await refreshReservationUi(regId);
-        } catch (e) { message(e.message, 'error'); }
+        pendingPaymentMethod = method;
+        pendingPaymentMethodRegId = regId;
+        const selectedRegId = regId;
+        const selectedVisitId = visitId;
+        const version = ++fbrTaxMethodVersion;
+
+        if (app.dataset.fbr !== '1' || !selectedRegId || !method) return;
+
+        // Serialize FBR tax recalculations so quick consecutive changes cannot
+        // finish out of order and overwrite newer tax settings.
+        fbrTaxMethodQueue = fbrTaxMethodQueue.catch(() => {}).then(async () => {
+            if (selectedRegId !== regId || version !== fbrTaxMethodVersion) return;
+            try {
+                const r = await api(urls.fbrApplyTaxMode, {
+                    method: 'POST',
+                    body: { regId: selectedRegId, visitId: selectedVisitId, paymentMethod: method }
+                });
+                if (selectedRegId !== regId || version !== fbrTaxMethodVersion) return;
+                if (!r.ok) return message(r.message || 'Unable to apply payment-method tax mode.', 'error');
+                await refreshReservationUi(selectedRegId);
+            } catch (e) {
+                if (selectedRegId === regId && version === fbrTaxMethodVersion && e?.name !== 'AbortError')
+                    message(e.message || 'Unable to apply payment-method tax mode.', 'error');
+            }
+        });
+        return fbrTaxMethodQueue;
     }
 
     async function postFbr() {

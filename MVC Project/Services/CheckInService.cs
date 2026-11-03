@@ -480,7 +480,7 @@ ORDER BY id DESC;";
         {
             FirstName = S(rd, "GuestName"), LastName = S(rd, "LastName"), Phone = S(rd, "PhoneNo"),
             Email = S(rd, "Email"), Address = S(rd, "Address"), Country = S(rd, "Country"), City = S(rd, "City"),
-            VatNo = S(rd, "CNIC"), PassportNo = S(rd, "VisaPassportNo"), Company = S(rd, "Agency"), Source = S(rd, "Status")
+            VatNo = S(rd, "CNIC"), PassportNo = S(rd, "VisaPassportNo"), Company = S(rd, "Status"), Source = S(rd, "Agency")
         };
     }
 
@@ -1058,8 +1058,8 @@ SET ArrivalTime=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(
     VisaPassportNo=@passport,
     Email=@email,
     PhoneNo=@phone,
-    Agency=@company,
-    Status=@source,
+    Agency=@source,
+    Status=@company,
     notes=@notes
 WHERE hotel_id=@hotel AND reg_id=@reg;
 
@@ -1075,8 +1075,8 @@ SET GuestName=@first,
     visa=@passport,
     Email=@email,
     PhoneNo=@phone,
-    Agency=@company,
-    Status=@source,
+    Agency=@source,
+    Status=@company,
     notes=@notes
 WHERE hotel_id=@hotel AND reg_id=@reg;";
             await using (var cmd = new SqlCommand(updateGuest, cn, tx))
@@ -4885,9 +4885,38 @@ ORDER BY CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(res_status,''))))='check in' THEN 0
 SELECT TOP (1)
        s.*,
        ResolvedVisitId = {resolvedVisitSql},
+       ResolvedBookingSource = CASE
+           WHEN sourceLookup.StatusIsSource = 1
+                AND sourceLookup.AgencyIsSource = 0
+                AND (sourceLookup.AgencyIsCompany = 1 OR NULLIF(LTRIM(RTRIM(ISNULL(s.Agency,''))),'') IS NULL)
+           THEN s.Status ELSE s.Agency END,
+       ResolvedCompany = CASE
+           WHEN sourceLookup.StatusIsSource = 1
+                AND sourceLookup.AgencyIsSource = 0
+                AND (sourceLookup.AgencyIsCompany = 1 OR NULLIF(LTRIM(RTRIM(ISNULL(s.Agency,''))),'') IS NULL)
+           THEN s.Agency ELSE s.Status END,
        span.amin,
        span.dmax
 FROM dbo.{source} s
+-- Correct schema: Agency is the booking source; Status holds the company selection
+-- used by the Check-In guest editor. Older Check-In builds wrote them in reverse.
+-- Repair those old rows for display only when source/company lookup data confirms it.
+OUTER APPLY
+(
+    SELECT
+       AgencyIsSource = CASE WHEN EXISTS
+         (SELECT 1 FROM dbo.SourceTB st
+          WHERE st.hotel_id=s.hotel_id
+            AND LOWER(LTRIM(RTRIM(st.source)))=LOWER(LTRIM(RTRIM(ISNULL(s.Agency,''))))) THEN 1 ELSE 0 END,
+       StatusIsSource = CASE WHEN EXISTS
+         (SELECT 1 FROM dbo.SourceTB st
+          WHERE st.hotel_id=s.hotel_id
+            AND LOWER(LTRIM(RTRIM(st.source)))=LOWER(LTRIM(RTRIM(ISNULL(s.Status,''))))) THEN 1 ELSE 0 END,
+       AgencyIsCompany = CASE WHEN EXISTS
+         (SELECT 1 FROM dbo.CompaniesTB co
+          WHERE co.hotel_id=s.hotel_id
+            AND LOWER(LTRIM(RTRIM(co.company)))=LOWER(LTRIM(RTRIM(ISNULL(s.Agency,''))))) THEN 1 ELSE 0 END
+) sourceLookup
 OUTER APPLY
 (
     SELECT
@@ -4926,7 +4955,7 @@ ORDER BY s.ID DESC;";
                     DepartureTime = NormalizeTime(S(rd, "DepartureTime"), "12:00"),
                     Adults = Math.Max(1, isNewReservation ? I(rd, "number_of_adult") : I(rd, "NumberOfAdults")),
                     Children = Math.Max(0, isNewReservation ? I(rd, "number_of_minor") : I(rd, "NumberOfMinors")),
-                    Company = S(rd, "Agency"), Source = S(rd, "Status"), Notes = S(rd, "notes"),
+                    Company = S(rd, "ResolvedCompany"), Source = S(rd, "ResolvedBookingSource"), Notes = S(rd, "notes"),
                     Reason = S(rd, "reason"), CouncilId = S(rd, "council_id"),
                     ReservationType = S(rd, "reservtype"), BookingId = S(rd, "Bookid"), GroupName = S(rd, "groupname"),
                     RoomCategory = S(rd, "room_category"), RoomNo = S(rd, "room_no"),
@@ -5746,13 +5775,13 @@ WHERE hotel_id=@hotel AND (PhoneNo=@phone OR Email=@email) AND GuestName=@first 
 IF EXISTS(SELECT 1 FROM dbo.GuestInformation WHERE hotel_id=@hotel AND (PhoneNo=@phone OR Email=@email) AND GuestName=@first AND LastName=@last)
 BEGIN
  UPDATE dbo.GuestInformation SET customerno=@customerno,Address=@address,Country=@country,City=@city,CNIC=@cnic,VisaPassportNo=@passport,
- Email=@email,PhoneNo=@phone,Agency=@company,Status=@source,reg_id=@reg,visit_id=@visit,user_id=@user
+ Email=@email,PhoneNo=@phone,Agency=@source,Status=@company,reg_id=@reg,visit_id=@visit,user_id=@user
  WHERE hotel_id=@hotel AND (PhoneNo=@phone OR Email=@email) AND GuestName=@first AND LastName=@last;
 END
 ELSE
 BEGIN
  INSERT INTO dbo.GuestInformation(customerno,GuestName,LastName,Address,Country,City,CNIC,VisaPassportNo,Email,PhoneNo,Agency,Status,reg_id,hotel_id,council_id,user_id,visit_id,ipAddress,systemUser,systemName)
- VALUES(@customerno,@first,@last,@address,@country,@city,@cnic,@passport,@email,@phone,@company,@source,@reg,@hotel,@council,@user,@visit,@ip,@systemUser,@systemName);
+ VALUES(@customerno,@first,@last,@address,@country,@city,@cnic,@passport,@email,@phone,@source,@company,@reg,@hotel,@council,@user,@visit,@ip,@systemUser,@systemName);
 END", cn, tx);
             cmd.Parameters.Add("@customerno", SqlDbType.Int).Value = customNo;
             cmd.Parameters.Add("@first", SqlDbType.VarChar, 200).Value = g.FirstName;
@@ -5797,7 +5826,7 @@ END", cn, tx);
             await using var update = new SqlCommand(@"
 UPDATE dbo.GuestInformationLogTB SET ArrivalDate=@arrival,ArrivalTime=@arrivalTime,DepartureDate=@departure,DepartureTime=@departureTime,
  GuestName=@first,LastName=@last,Address=@address,Country=@country,City=@city,NumberOfAdults=@adults,NumberOfMinors=@minors,
- CNIC=@cnic,vatno=@vatno,VisaPassportNo=@passport,Email=@email,PhoneNo=@phone,Agency=@company,Status=@source,totalnights=@nights,
+ CNIC=@cnic,vatno=@vatno,VisaPassportNo=@passport,Email=@email,PhoneNo=@phone,Agency=@source,Status=@company,totalnights=@nights,
  council_id=@council,user_id=@user,visit_id=@visit,reason=@reason,notes=@notes,reservtype=@reservtype,Bookid=@bookid,groupname=@groupname
 WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(res_status,''))) IN ('reservation','check in','checked in','checkin');", cn, tx);
             AddGuestLogParameters(update, hotelId, userId, regId, visitId, customNo, userName, ip, g);
@@ -5815,7 +5844,7 @@ INSERT INTO dbo.GuestInformationLogTB
  booking_id,is_virtual,paymentid,chargeid,receipturl,paymentstatus,paymessage,isguerentee,payduration,cetogory_id,Bookid,createdRole,Complementary)
 SELECT TOP 1
  @customerno,@arrival,@arrivalTime,@departure,@departureTime,@first,@last,@address,@country,@city,@adults,@minors,@cnic,@vatno,@passport,@email,@phone,
- COALESCE(NULLIF(@company,''),NR.Agency),COALESCE(NULLIF(@source,''),NR.Status),@nights,@reg,'reservation',@hotel,COALESCE(NULLIF(@council,''),NR.council_id),@user,@visit,@ip,@systemUser,@systemName,
+ COALESCE(NULLIF(@source,''),NR.Agency),COALESCE(NULLIF(@company,''),NR.Status),@nights,@reg,'reservation',@hotel,COALESCE(NULLIF(@council,''),NR.council_id),@user,@visit,@ip,@systemUser,@systemName,
  COALESCE(NULLIF(@reason,''),NR.reason),NR.room_no,NR.shuffle_type,NR.isupdateavailibilty,NR.room_category,NR.noofrooms,NR.iscouncilreservationaccepted,NR.rateplan_id,NR.rateplanname,
  NR.groupname,COALESCE(NULLIF(@reservtype,''),NR.reservtype),NR.maxadults,NR.maxminors,NR.billlist,COALESCE(NULLIF(@notes,''),NR.notes),NR.advance_paid,NR.total_amount,NR.payment_method,
  NR.booking_id,NR.is_virtual,NR.paymentid,NR.chargeid,NR.receipturl,NR.paymentstatus,NR.paymessage,NR.isguerentee,NR.payduration,NR.cetogory_id,NR.Bookid,NR.createdRole,NR.Complementary
@@ -5830,7 +5859,7 @@ INSERT INTO dbo.GuestInformationLogTB
 (customerno,ArrivalDate,ArrivalTime,DepartureDate,DepartureTime,GuestName,LastName,Address,Country,City,NumberOfAdults,NumberOfMinors,CNIC,vatno,VisaPassportNo,Email,PhoneNo,
  Agency,Status,totalnights,reg_id,res_status,hotel_id,council_id,user_id,visit_id,ipAddress,systemUser,systemName,reason,notes,reservtype,Bookid,groupname,Complementary)
 VALUES(@customerno,@arrival,@arrivalTime,@departure,@departureTime,@first,@last,@address,@country,@city,@adults,@minors,@cnic,@vatno,@passport,@email,@phone,
- @company,@source,@nights,@reg,'reservation',@hotel,@council,@user,@visit,@ip,@systemUser,@systemName,@reason,@notes,@reservtype,@bookid,@groupname,@complementary);", cn, tx);
+ @source,@company,@nights,@reg,'reservation',@hotel,@council,@user,@visit,@ip,@systemUser,@systemName,@reason,@notes,@reservtype,@bookid,@groupname,@complementary);", cn, tx);
         AddGuestLogParameters(insert, hotelId, userId, regId, visitId, customNo, userName, ip, g);
         await insert.ExecuteNonQueryAsync(ct);
     }
