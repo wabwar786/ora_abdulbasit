@@ -1593,6 +1593,115 @@ WHERE hotel_id=@hotel
         }
     }
 
+    /// <summary>
+    /// Confirm the entire provisional booking without checking in the guest.
+    /// Update the master records and all provisional charge rows atomically:
+    /// the calendar renders its booking bars from payments.res_status.
+    /// </summary>
+    public async Task<FrontDeskOperationResult> ConfirmReservationAsync(
+        string hotelId, string userId, string userName, string ip,
+        FrontDeskConfirmReservationRequest request, CancellationToken ct = default)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId))
+            return FrontDeskOperationResult.Fail("Reservation ID is required.");
+
+        var regId = NormalizeRegId(request.RegId);
+        if (string.IsNullOrWhiteSpace(regId))
+            return FrontDeskOperationResult.Fail("Reservation ID is required.");
+
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        try
+        {
+            // A stale browser click must never confirm an unrelated booking or
+            // change a reservation which has already been checked in/cancelled.
+            const string verifySql = @"
+SELECT CASE WHEN
+    EXISTS (SELECT 1 FROM dbo.GuestInformationLogTB WITH (UPDLOCK, HOLDLOCK)
+            WHERE hotel_id=@hotel AND reg_id=@reg)
+    OR EXISTS (SELECT 1 FROM dbo.NewReservationsTB WITH (UPDLOCK, HOLDLOCK)
+               WHERE hotel_id=@hotel AND reg_id=@reg)
+    THEN 1 ELSE 0 END;
+SELECT COUNT_BIG(1) FROM dbo.payments WITH (UPDLOCK, HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('provisional','tentative')
+  AND (@paymentId<=0 OR ID=@paymentId);";
+            bool masterExists;
+            long provisionalRoomRows;
+            await using (var verify = new SqlCommand(verifySql, cn, tx))
+            {
+                verify.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                verify.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                verify.Parameters.Add("@paymentId", SqlDbType.Int).Value = request.PaymentId;
+                await using var reader = await verify.ExecuteReaderAsync(ct);
+                masterExists = await reader.ReadAsync(ct) && Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture) == 1;
+                await reader.NextResultAsync(ct);
+                provisionalRoomRows = await reader.ReadAsync(ct) ? Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture) : 0;
+            }
+            if (!masterExists || provisionalRoomRows == 0)
+            {
+                await tx.RollbackAsync(ct);
+                return FrontDeskOperationResult.Fail(
+                    "This booking is no longer provisional or could not be found. Please refresh the calendar.");
+            }
+
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
+
+            // This is a status-only transition. Do not create a check-in,
+            // change room assignments, affect balances, or release inventory.
+            const string confirmSql = @"
+UPDATE dbo.payments
+SET res_status='reservation'
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('provisional','tentative');
+SELECT @@ROWCOUNT;
+
+UPDATE dbo.NewReservationsTB
+SET res_status='reservation'
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('provisional','tentative');
+
+UPDATE dbo.GuestInformationLogTB
+SET res_status='reservation'
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('provisional','tentative');
+
+UPDATE dbo.PaymentsUpdateTB
+SET status='reservation'
+WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LOWER(LTRIM(RTRIM(ISNULL(status,'')))) IN ('provisional','tentative');";
+            int changedRows;
+            await using (var confirm = new SqlCommand(confirmSql, cn, tx))
+            {
+                confirm.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                confirm.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                await using var reader = await confirm.ExecuteReaderAsync(ct);
+                changedRows = await reader.ReadAsync(ct)
+                    ? Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture) : 0;
+                // Dispose the reader before writing the reservation audit log.
+                while (await reader.NextResultAsync(ct)) { }
+            }
+            if (changedRows <= 0)
+            {
+                await tx.RollbackAsync(ct);
+                return FrontDeskOperationResult.Fail("Reservation status has already changed. Refresh the calendar.");
+            }
+
+            await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
+                "CONFIRM RESERVATION", "Provisional reservation confirmed; status changed to reservation.", ct);
+            await tx.CommitAsync(ct);
+            return FrontDeskOperationResult.Ok("Reservation confirmed successfully.", new { regId, status = "reservation" });
+        }
+        catch (Exception ex)
+        {
+            try { await tx.RollbackAsync(CancellationToken.None); } catch { }
+            _logger.Error(ex, "Confirm provisional reservation failed for hotel {HotelId}, reg {RegId}.", hotelId, regId);
+            await _dbLogger.LogExceptionAsync(ex, "Front Desk Calendar", "Confirm Reservation", hotelId, userId, userName, ip, ct);
+            return FrontDeskOperationResult.Fail("Unable to confirm the reservation. " + ex.Message);
+        }
+    }
+
     public async Task<FrontDeskOperationResult> DirectCheckInAsync(
         string hotelId, string hotelName, string userId, string userName, string ip,
         FrontDeskDirectCheckInRequest request, CancellationToken ct = default)

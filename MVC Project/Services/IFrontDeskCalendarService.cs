@@ -54,6 +54,10 @@ public interface IFrontDeskCalendarService
         string hotelId, string hotelName, string userId, string userName, string ip,
         FrontDeskBookingResizeRequest request, CancellationToken ct = default);
 
+    Task<FrontDeskOperationResult> ConfirmReservationAsync(
+        string hotelId, string userId, string userName, string ip,
+        FrontDeskConfirmReservationRequest request, CancellationToken ct = default);
+
     Task<FrontDeskOperationResult> DirectCheckInAsync(
         string hotelId, string hotelName, string userId, string userName, string ip,
         FrontDeskDirectCheckInRequest request, CancellationToken ct = default);

@@ -288,6 +288,12 @@ public sealed class FrontDeskBookingResizeRequest
     public bool IncludeTaxOnExtension { get; set; }
 }
 
+public sealed class FrontDeskConfirmReservationRequest
+{
+    [Required, StringLength(100)] public string RegId { get; set; } = string.Empty;
+    public int PaymentId { get; set; }
+}
+
 public sealed class FrontDeskDirectCheckInRequest
 {
     [Required, StringLength(100)] public string RegId { get; set; } = string.Empty;

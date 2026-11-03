@@ -290,6 +290,10 @@ WHERE hotel_id = @hotel_id;", connection);
     public Task<IActionResult> ResizeBooking([FromBody] FrontDeskBookingResizeRequest request, CancellationToken ct) => Mutate(
         () => _calendar.ResizeBookingAsync(SessionValue("hotel"), SessionValue("HotelName"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
 
+    [HttpPost("ConfirmReservation"), ValidateAntiForgeryToken]
+    public Task<IActionResult> ConfirmReservation([FromBody] FrontDeskConfirmReservationRequest request, CancellationToken ct) => Mutate(
+        () => _calendar.ConfirmReservationAsync(SessionValue("hotel"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
+
     [HttpPost("DirectCheckIn"), ValidateAntiForgeryToken]
     public Task<IActionResult> DirectCheckIn([FromBody] FrontDeskDirectCheckInRequest request, CancellationToken ct) => Mutate(
         () => _calendar.DirectCheckInAsync(SessionValue("hotel"), SessionValue("HotelName"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));

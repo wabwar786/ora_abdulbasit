@@ -856,7 +856,12 @@
     if(action==='detail-invoice'){await openDetailInvoice(d,button);return;}
     if(action==='guest-name'){openRoomGuestNameEditor(d,button);return;}
     if(action==='confirm'){
-      openCheckInEditor(d);
+      try {
+        await mutate(cfg.confirmReservationUrl||calendarActionUrl('ConfirmReservation'),
+          {regId:d.regId,paymentId:d.paymentId||0},'Confirming…',button);
+        closeDrawer();
+        await loadCalendar(state.start,true);
+      } catch (_) { /* mutate already displays the failure */ }
       return;
     }
     if(action==='note'){openNote(d);return;}
@@ -1469,7 +1474,7 @@ ${tag}`:tag;
     const labels={
       checkin:'Checking in…', edit:'Opening…', cancel:'Opening…', 'no-show':'Marking No Show…', undo:'Undoing…',
       note:'Loading…', history:'Loading…', payment:'Loading…', security:'Loading security…', holds:'Loading holds…', sendpaylink:'Preparing…',
-      autopay:'Opening…', invoice:'Opening…', 'detail-invoice':'Opening…', 'guest-name':'Loading…', confirm:'Opening…', checkout:'Loading…',
+      autopay:'Opening…', invoice:'Opening…', 'detail-invoice':'Opening…', 'guest-name':'Loading…', confirm:'Confirming…', checkout:'Loading…',
       unassign:'Moving…'
     };
     const label=labels[action]||'Working…';
@@ -1512,6 +1517,12 @@ ${tag}`:tag;
       }
       else if(action==='checkin'){
         await mutate(cfg.directCheckinUrl,{regId:item.regId,paymentId:item.paymentId||0},'Checking in…',null);
+        await loadCalendar(state.start,true);
+        closeAfter=true;
+      }
+      else if(action==='confirm'){
+        await mutate(cfg.confirmReservationUrl||calendarActionUrl('ConfirmReservation'),
+          {regId:item.regId,paymentId:item.paymentId||0},'Confirming…',null);
         await loadCalendar(state.start,true);
         closeAfter=true;
       }
@@ -1559,11 +1570,6 @@ ${tag}`:tag;
         else if(action==='invoice'){closeAfter=true;deferredAction=()=>openInvoice(d);}
         else if(action==='detail-invoice'){closeAfter=true;deferredAction=()=>openDetailInvoice(d,null);}
         else if(action==='guest-name'){closeAfter=true;deferredAction=()=>openRoomGuestNameEditor(d,null);}
-        else if(action==='confirm'){
-          samePageNavigation=true;
-          await waitMin();
-          openCheckInEditor(d,null);
-        }
         else if(action==='checkout'){closeAfter=true;deferredAction=()=>openCheckout(d);}
       }
 
