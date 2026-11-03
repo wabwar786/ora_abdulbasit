@@ -6,6 +6,7 @@
 
     const previewUrl = page.dataset.previewUrl || "";
     const saveUrl = page.dataset.saveUrl || "";
+    const restrictionImpactUrl = page.dataset.restrictionImpactUrl || "";
     const historyUrl = page.dataset.historyUrl || "";
     const hotelTodayIso = page.dataset.hotelToday || "";
     const canUpdate = String(page.dataset.canUpdate || "false").toLowerCase() === "true";
@@ -23,6 +24,7 @@
     const rangeCount = document.getElementById("bulkRestrictionRangeCount");
     const estimatedRows = document.getElementById("bulkRestrictionEstimatedRows");
     const clearAll = document.getElementById("bulkRestrictionClearAll");
+    const includeDerived = document.getElementById("bulkRestrictionIncludeDerived");
 
     const minArrivalEnabled = document.getElementById("bulkRestrictionMinArrivalEnabled");
     const minArrival = document.getElementById("bulkRestrictionMinArrival");
@@ -221,6 +223,7 @@
             ranges: completeRanges(),
             days: selectedDays(),
             clearAll: isClear,
+            confirmDerivedUpdate: !!includeDerived?.checked,
             minStayArrival: isClear ? null : nullableInt(minArrivalEnabled, minArrival),
             minStayThrough: isClear ? null : nullableInt(minThroughEnabled, minThrough),
             maxStay: isClear ? null : nullableInt(maxStayEnabled, maxStay),
@@ -402,11 +405,14 @@
             return;
         }
 
-        const rows = selectedIsoDates(request.ranges, request.days).size * request.rooms.length * request.plans.length;
-        const actionText = request.clearAll
-            ? `Clear supported restrictions for ${rows.toLocaleString()} room/rate-plan/date row(s)?`
-            : `Save restriction changes for ${rows.toLocaleString()} room/rate-plan/date row(s)?`;
-        if (!window.confirm(actionText)) return;
+        // Derived propagation is controlled exclusively by the unchecked-by-default checkbox.
+        // A separate confirmation is retained for the destructive Clear All operation only.
+        if (request.clearAll) {
+            const scope = request.confirmDerivedUpdate
+                ? 'selected plans and their derived plans'
+                : 'selected plans only';
+            if (!window.confirm(`Clear restrictions for ${scope} on the selected dates?`)) return;
+        }
 
         if (saveButton) {
             saveButton.disabled = true;
@@ -458,6 +464,7 @@
 
     function resetRestrictions() {
         if (clearAll) clearAll.checked = false;
+        if (includeDerived) includeDerived.checked = false;
         if (minArrivalEnabled) minArrivalEnabled.checked = false;
         if (minArrival) minArrival.value = "1";
         if (minThroughEnabled) minThroughEnabled.checked = false;
@@ -789,6 +796,11 @@
         }
         if (event.target.matches(".bulkrestrict-room-choice")) {
             updateMultiDisplay("rooms");
+            schedulePreview();
+            return;
+        }
+        if (event.target.matches("#bulkRestrictionIncludeDerived")) {
+            // Update Preview immediately so it matches the chosen save scope.
             schedulePreview();
             return;
         }

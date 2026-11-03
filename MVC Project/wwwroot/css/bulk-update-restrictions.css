@@ -476,3 +476,47 @@
 @media (max-width: 680px) {
     .bulkrestrict-calendar-legend { gap: 8px 12px; }
 }
+
+/* Derived-plan checkbox: plain single-line option, with no card/background. */
+.bulkrestrict-derived-choice {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
+    width: auto;
+    max-width: 100%;
+    min-height: 20px;
+    margin: 11px 0 14px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    cursor: pointer;
+    color: #3e526b;
+}
+.bulkrestrict-derived-choice > input[type="checkbox"] {
+    display: block;
+    flex: 0 0 16px;
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    border-radius: 3px;
+    accent-color: #194d85;
+    cursor: pointer;
+}
+.bulkrestrict-derived-choice > strong {
+    display: inline;
+    margin: 0 !important;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+.bulkrestrict-derived-choice:has(input:checked) {
+    background: transparent;
+    border-color: transparent;
+}

@@ -1,4 +1,4 @@
-using Orapmshms.Models;
+﻿using Orapmshms.Models;
 
 namespace Orapmshms.Services;
 
@@ -22,6 +22,12 @@ public interface IAvailabilityService
         string ip,
         AvailabilitySaveRequest request,
         CancellationToken cancellationToken = default, string pcName = "");
+
+    Task<IReadOnlyList<AvailabilityRestrictionImpactItem>> GetRestrictionImpactAsync(
+        string hotelId,
+        string userId,
+        AvailabilityRestrictionImpactRequest request,
+        CancellationToken cancellationToken = default);
 
     Task<AvailabilitySaveResult> SaveRestrictionAsync(
         string hotelId,

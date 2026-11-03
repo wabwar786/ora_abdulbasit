@@ -104,6 +104,30 @@
  let currentRegId='';
  const close=()=>{ if(retry.disabled && retry.dataset.sending==='1')return; modal.classList.remove('open');document.body.style.overflow=''; };
  const fail=(text)=>{ err.hidden=false;err.textContent=text; };
+ const detailsUrl='@Url.Action("RetryDetails", "FbrFailedInvoiceReport")';
+ const retryUrl='@Url.Action("Retry", "FbrFailedInvoiceReport")';
+ // Some PMS middleware/hosting error pages return HTML instead of JSON. Do not
+ // call response.json() blindly: surface a meaningful error and never retry.
+ const readJson=async(response,description)=>{
+    const type=(response.headers.get('content-type')||'').toLowerCase();
+    if(response.redirected || /\/LoginHMS(?:\/|\?|$)/i.test(response.url||''))
+       throw new Error('Your session has expired. Please sign in again and reopen this report.');
+    if(response.status===401)
+       throw new Error('Your session has expired. Please sign in again and reopen this report.');
+    if(response.status===403)
+       throw new Error('Access denied. Check your permission for this hotel and sign in again if needed.');
+    if(!type.includes('json')){
+       if(response.status===404) throw new Error(description+' endpoint was not found (HTTP 404). Rebuild/publish the MVC application.');
+       throw new Error(description+' returned a web page instead of JSON (HTTP '+response.status+'). Check the server logs for the underlying error.');
+    }
+    let data;
+    try { data=await response.json(); }
+    catch { throw new Error(description+' returned invalid JSON (HTTP '+response.status+').'); }
+    if(!data || typeof data!=='object') throw new Error(description+' returned an unexpected response.');
+    if(!response.ok || data.ok!==true)
+       throw new Error(data.message||description+' failed (HTTP '+response.status+').');
+    return data;
+ };
  document.querySelectorAll('[data-close-retry]').forEach(b=>b.addEventListener('click',close));
  modal.addEventListener('click',e=>{if(e.target===modal)close();});
  document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
@@ -117,8 +141,10 @@
     dropdown.add(new Option('Loading enabled fiscal routes…', ''));
     modal.classList.add('open');document.body.style.overflow='hidden';
     try {
-      const r=await fetch('/FbrFailedInvoiceReport/RetryDetails?regId='+encodeURIComponent(regId),{credentials:'same-origin'});
-      const j=await r.json(); if(!r.ok||!j.ok)throw new Error(j.message||'Unable to verify reservation.');
+      const r=await fetch(detailsUrl+'?regId='+encodeURIComponent(regId),{
+        credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+      });
+      const j=await readJson(r,'Fiscal retry details');
       currentRegId=regId;
       document.getElementById('fbrGuest').textContent=j.data.guestName||'Guest';
       const method=j.data.paymentMethod||'';
@@ -153,12 +179,13 @@
     retry.setAttribute('aria-busy','true');
     try{
       const token=document.querySelector('#fbrRetryAntiforgery input[name="__RequestVerificationToken"]')?.value;
-      const r=await fetch('/FbrFailedInvoiceReport/Retry',{
-        method:'POST',credentials:'same-origin',
-        headers:{'Content-Type':'application/json','RequestVerificationToken':token||''},
+      const r=await fetch(retryUrl,{
+        method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Content-Type':'application/json','Accept':'application/json',
+                 'X-Requested-With':'XMLHttpRequest','RequestVerificationToken':token||''},
         body:JSON.stringify({regId:currentRegId,authority:dropdown.value})
       });
-      const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.message||'Invoice was not confirmed.');
+      const j=await readJson(r,'Fiscal retry');
       alert(j.message||'Invoice posted successfully.');window.location.reload();
     }catch(e){
       fail((e.message || 'Fiscal posting could not be confirmed.') + ' Verify in the fiscal portal before attempting another retry.');

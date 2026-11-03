@@ -1,4 +1,4 @@
-namespace Orapmshms.Models;
+﻿namespace Orapmshms.Models;
 
 public sealed class BulkRestrictionUpdateModel
 {
@@ -22,6 +22,7 @@ public sealed class BulkRestrictionUpdateModel
     public List<string> Rooms { get; set; } = new();
     public List<BulkRestrictionUpdateModel> Ranges { get; set; } = new();
     public List<int> Days { get; set; } = new();
+    public bool ConfirmDerivedUpdate { get; set; }
     public bool ClearAll { get; set; }
     public int? MinStayArrival { get; set; }
     public int? MinStayThrough { get; set; }

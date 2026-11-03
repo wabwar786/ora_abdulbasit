@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
@@ -458,6 +458,82 @@ public sealed class AvailabilityService : IAvailabilityService
         }
     }
 
+    private sealed record RestrictionTarget(AvailabilityDbPlan Plan, bool AddedAsDerived);
+
+    // Resolves all descendants, including derived-of-derived plans, per room category.
+    // Uses the same plan-name relationship as BuildAffectedRates for normal rate edits.
+    // Existing descendants explicitly selected are not duplicated in a bulk request.
+    private static List<RestrictionTarget> ExpandRestrictionPlans(
+        IReadOnlyList<AvailabilityDbPlan> plans,
+        string categoryId,
+        IReadOnlyCollection<string> selectedPlanIds,
+        bool includeDerived = true)
+    {
+        var inCategory = plans.Where(p => p.CategoryId.Equals(categoryId, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(p => p.PlanId, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
+        var explicitIds = new HashSet<string>(selectedPlanIds, StringComparer.OrdinalIgnoreCase);
+        var missing = explicitIds.Where(id => !inCategory.Any(p => p.PlanId.Equals(id, StringComparison.OrdinalIgnoreCase))).ToList();
+        if (missing.Count > 0)
+            throw new ArgumentException("One or more selected rate plans are not configured for this room category.");
+
+        var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<RestrictionTarget>();
+        var queue = new Queue<AvailabilityDbPlan>();
+        foreach (var plan in inCategory.Where(p => explicitIds.Contains(p.PlanId)))
+        {
+            if (!added.Add(plan.PlanId)) continue;
+            result.Add(new RestrictionTarget(plan, false));
+            queue.Enqueue(plan);
+        }
+        // The checkbox is opt-in: without it, only the explicitly selected plans are saved.
+        // Explicitly selected derived plans are still updated even when this is false.
+        if (!includeDerived) return result;
+        while (queue.Count > 0)
+        {
+            var parent = queue.Dequeue();
+            foreach (var child in inCategory.Where(p => !string.IsNullOrWhiteSpace(p.ParentPlanName) &&
+                         p.ParentPlanName.Equals(parent.PlanName, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!added.Add(child.PlanId)) continue; // Also guards invalid cycles.
+                result.Add(new RestrictionTarget(child, !explicitIds.Contains(child.PlanId)));
+                queue.Enqueue(child);
+            }
+        }
+        return result;
+    }
+
+    public async Task<IReadOnlyList<AvailabilityRestrictionImpactItem>> GetRestrictionImpactAsync(
+        string hotelId,
+        string userId,
+        AvailabilityRestrictionImpactRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        var rooms = (request?.Rooms ?? new()).Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var selected = (request?.Plans ?? new()).Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (rooms.Count == 0 || selected.Count == 0 || rooms.Count > 100 || selected.Count > 100)
+            throw new ArgumentException("Select valid room types and rate plans.");
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        var permissions = await LoadAvailabilityPermissionsAsync(connection, hotelId, userId, cancellationToken);
+        if (!(permissions.HasAction("RestrictionUpdate") || permissions.HasAction("RestrictionsUpdate") || permissions.HasAction("RateUpdate")))
+            throw new UnauthorizedAccessException("You do not have permission to update restrictions.");
+        var validation = await ValidateBulkRestrictionSelectionsAsync(connection, hotelId, selected, rooms, cancellationToken);
+        if (validation != null) throw new ArgumentException(validation);
+        var plans = await LoadPlansAsync(connection, hotelId, rooms, cancellationToken);
+        return rooms.SelectMany(room => ExpandRestrictionPlans(plans, room, selected)
+            .Select(x => new AvailabilityRestrictionImpactItem
+            {
+                CategoryId = room,
+                PlanId = x.Plan.PlanId,
+                PlanName = x.Plan.PlanName,
+                AddedAsDerived = x.AddedAsDerived
+            })).ToList();
+    }
+
     public Task<AvailabilitySaveResult> SaveRestrictionAsync(
         string hotelId,
         string userId,
@@ -480,6 +556,7 @@ public sealed class AvailabilityService : IAvailabilityService
                 StartDate = request.StartDate,
                 EndDate = request.EndDate,
                 Value = request.Value,
+                ConfirmDerivedUpdate = request.ConfirmDerivedUpdate,
                 Days = new List<int> { 0, 1, 2, 3, 4, 5, 6 }
             },
             cancellationToken);
@@ -1165,6 +1242,20 @@ ORDER BY [date] DESC, ID DESC;", anchorConnection))
         if (!IsRestrictionFeatureEnabled(features, definition.Value.Key))
             return new(false, definition.Value.Label + " is not enabled for this hotel.");
 
+        var categoryId = request.CategoryId.Trim();
+        var plans = await LoadPlansAsync(connection, hotelId, new[] { categoryId }, cancellationToken);
+        var targets = ExpandRestrictionPlans(plans, categoryId, new[] { request.PlanId.Trim() },
+            includeDerived: request.ConfirmDerivedUpdate);
+        var addedDerived = targets.Count(x => x.AddedAsDerived);
+        if ((long)targets.Count * dates.Count > 250000L)
+            return new(false, "Too many derived plan / date updates. Use smaller date ranges.");
+
+        // Existing prices (including uploadfrom=0) are NEVER recalculated by a
+        // restriction edit. New derived rows inherit their calculated daily parent price.
+        var effectiveRates = await LoadRatesAsync(connection, hotelId, new[] { categoryId },
+            dates.Min(), dates.Max(), cancellationToken, includeRestrictionDetails: false);
+        ApplyEffectivePlanRates(plans, effectiveRates, dates.Min(), dates.Max());
+
         var systemName = Environment.MachineName;
         var cutoffSyncDays = definition.Value.Key == "booking_cutoff"
             ? Math.Max(1, intValue.GetValueOrDefault()) : 1;
@@ -1173,6 +1264,9 @@ ORDER BY [date] DESC, ID DESC;", anchorConnection))
         {
             foreach (var date in dates)
             {
+                foreach (var target in targets)
+                {
+                var targetPlanId = target.Plan.PlanId;
                 // Include the PREVIOUS custom range too: reducing 3 days to 1 or
                 // disabling the cutoff must reopen dates the old rule had closed.
                 if (definition.Value.Key == "booking_cutoff")
@@ -1186,34 +1280,47 @@ WHERE hotel_id=@hotel
   AND [date]=@date;", connection, transaction);
                     oldCutoffCommand.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
                     oldCutoffCommand.Parameters.Add("@category", SqlDbType.NVarChar, 100).Value = request.CategoryId.Trim();
-                    oldCutoffCommand.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = request.PlanId.Trim();
+                    oldCutoffCommand.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = targetPlanId;
                     oldCutoffCommand.Parameters.Add("@date", SqlDbType.Date).Value = date;
                     var oldValue = await oldCutoffCommand.ExecuteScalarAsync(cancellationToken);
                     if (oldValue is not null && oldValue != DBNull.Value)
                         cutoffSyncDays = Math.Max(cutoffSyncDays, Math.Clamp(Convert.ToInt32(oldValue, CultureInfo.InvariantCulture), 0, 365));
                 }
-                await UpsertRestrictionAsync(connection, transaction, hotelId, request.CategoryId.Trim(), request.PlanId.Trim(),
-                    date, definition.Value.DbColumn, dbValue, definition.Value.IsBoolean, userName, systemName, ip, cancellationToken);
+                decimal? initialRate = null;
+                decimal? initialBaseRate = null;
+                if (target.Plan.IsDerived && effectiveRates.TryGetValue((categoryId, targetPlanId, date), out var price)
+                    && price.IsSyntheticDefault)
+                {
+                    initialRate = price.Rate;
+                    initialBaseRate = price.BaseRate;
+                }
+                await UpsertRestrictionAsync(connection, transaction, hotelId, categoryId, targetPlanId,
+                    date, definition.Value.DbColumn, dbValue, definition.Value.IsBoolean, userName, systemName, ip,
+                    initialRate, initialBaseRate, cancellationToken);
 
                 if (definition.Value.Key == "booking_cutoff")
                 {
-                    await ApplyBookingCutoffStateAsync(connection, transaction, hotelId, request.CategoryId.Trim(), request.PlanId.Trim(),
+                    await ApplyBookingCutoffStateAsync(connection, transaction, hotelId, request.CategoryId.Trim(), targetPlanId,
                         date, date, today, userName, cancellationToken);
                 }
                 else if (definition.Value.Key == "stop_sell")
                 {
-                    await ApplyManualStopSellStateAsync(connection, transaction, hotelId, request.CategoryId.Trim(), request.PlanId.Trim(),
+                    await ApplyManualStopSellStateAsync(connection, transaction, hotelId, request.CategoryId.Trim(), targetPlanId,
                         date, date, today, boolValue.GetValueOrDefault(), userName, cancellationToken);
+                }
                 }
             }
             // The restriction and its history are one atomic operation. Previously the
             // history insert happened after Commit and silently swallowed SQL errors,
             // leaving a saved restriction with no audit record.
-            await InsertRestrictionHistoryAsync(connection, transaction, hotelId, userId, userName, systemName, ip,
-                request.CategoryId.Trim(), request.PlanId.Trim(), dates.Min(), dates.Max(), daySet,
-                definition.Value, intValue, boolValue,
-                definition.Value.Key == "booking_cutoff" && dbValue == DBNull.Value,
-                cancellationToken);
+            foreach (var target in targets)
+            {
+                await InsertRestrictionHistoryAsync(connection, transaction, hotelId, userId, userName, systemName, ip,
+                    categoryId, target.Plan.PlanId, dates.Min(), dates.Max(), daySet,
+                    definition.Value, intValue, boolValue,
+                    definition.Value.Key == "booking_cutoff" && dbValue == DBNull.Value,
+                    cancellationToken);
+            }
             await transaction.CommitAsync(cancellationToken);
         }
         catch (Exception ex)
@@ -1228,9 +1335,11 @@ WHERE hotel_id=@hotel
         var syncThrough = dates.Max().AddDays(cutoffSyncDays - 1);
         _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
             AvailabilityChannelSyncKind.Restrictions, hotelId, dates.Min(), syncThrough,
-            new[] { request.PlanId.Trim() }, new[] { request.CategoryId.Trim() }));
+            targets.Select(t => t.Plan.PlanId).ToArray(), new[] { categoryId }));
 
-        return new(true, $"{definition.Value.Label} saved for {dates.Count} day(s) and queued for channel upload.", dates.Count);
+        foreach (var target in targets)
+            _cache.Remove(RestrictionRangeCacheKey(hotelId, categoryId, target.Plan.PlanId, start, end));
+        return new(true, $"{definition.Value.Label} saved for {dates.Count} day(s) across {targets.Count} plan(s) (including {addedDerived} derived). Channel upload queued.", dates.Count * targets.Count);
     }
 
     public async Task<BulkRestrictionUpdateModel> GetBulkRestrictionPageAsync(
@@ -1376,7 +1485,17 @@ WHERE hotel_id=@hotel;";
         var ctdText = clearAll ? "Allowed" : BulkStatusPreview(request.ClosedToDepartureStatus, "Closed", "Allowed");
         var stopSellText = clearAll ? "Open" : BulkStatusPreview(request.SellingStatus, "Closed", "Open");
 
-        var rows = new List<BulkRestrictionUpdateModel>((int)Math.Max(1L, previewCount));
+        // Preview the SAME checkbox-controlled parent/descendant scope that Save applies.
+        await using var impactConnection = new SqlConnection(_connectionString);
+        await impactConnection.OpenAsync(cancellationToken);
+        var availablePlans = await LoadPlansAsync(impactConnection, hotelId, rooms, cancellationToken);
+        var previewTargets = rooms.ToDictionary(room => room,
+            room => ExpandRestrictionPlans(availablePlans, room, plans,
+                includeDerived: request.ConfirmDerivedUpdate), StringComparer.OrdinalIgnoreCase);
+        var affectedCombinations = previewTargets.Values.Sum(x => x.Count);
+        if ((long)parsedRanges.Count * affectedCombinations > 5000L)
+            throw new ArgumentException("The preview includes too many derived plans. Reduce the date ranges, room types or plans.");
+        var rows = new List<BulkRestrictionUpdateModel>(Math.Max(1, parsedRanges.Count * affectedCombinations));
         for (var i = 0; i < parsedRanges.Count; i++)
         {
             var range = parsedRanges[i];
@@ -1386,9 +1505,11 @@ WHERE hotel_id=@hotel;";
             foreach (var roomId in rooms)
             {
                 var roomText = roomNames.TryGetValue(roomId, out var roomName) && roomName.Length > 0 ? roomName : roomId;
-                foreach (var planId in plans)
+                foreach (var target in previewTargets[roomId])
                 {
-                    var planText = planNames.TryGetValue(planId, out var planName) && planName.Length > 0 ? planName : planId;
+                    var planId = target.Plan.PlanId;
+                    var planText = (planNames.TryGetValue(planId, out var planName) && planName.Length > 0 ? planName : planId)
+                        + (target.AddedAsDerived ? " (derived, included automatically)" : string.Empty);
                     var cutoffText = cutoffMode switch
                     {
                         "None" => "No Change",
@@ -1489,39 +1610,7 @@ WHERE hotel_id=@hotel;";
 
         var systemName = Environment.MachineName;
         var batchId = Guid.NewGuid();
-        var data = BuildBulkRestrictionTable();
-        foreach (var date in selectedDates)
-        {
-            foreach (var roomId in roomIds)
-            {
-                foreach (var planId in planIds)
-                {
-                    var row = data.NewRow();
-                    row["hotel_id"] = hotelId;
-                    row["date"] = date;
-                    row["category_id"] = roomId;
-                    row["planid"] = planId;
-                    SetNullable(row, "min_los", minArrival);
-                    SetNullable(row, "min_stay_through", minThrough);
-                    SetNullable(row, "max_los", maxStay);
-                    SetNullable(row, "cutoff_days", cutoffDays);
-                    SetNullable(row, "closed_to_arrival", cta);
-                    SetNullable(row, "closed_to_departure", ctd);
-                    SetNullable(row, "stop_sell", stopSell);
-                    row["update_min_los"] = updateMinArrival;
-                    row["update_min_stay_through"] = updateMinThrough;
-                    row["update_max_los"] = updateMaxStay;
-                    row["update_cutoff_days"] = updateCutoff;
-                    row["update_closed_to_arrival"] = updateCta;
-                    row["update_closed_to_departure"] = updateCtd;
-                    row["update_stop_sell"] = updateStopSell;
-                    row["username"] = userName ?? string.Empty;
-                    row["systemName"] = systemName;
-                    row["ip"] = ip ?? string.Empty;
-                    data.Rows.Add(row);
-                }
-            }
-        }
+        DataTable data; // Built after expanding and validating parent/derived plans.
 
         await TryInsertBulkRestrictionActionLogAsync(
             hotelId, userId, userName, systemName, ip,
@@ -1539,6 +1628,54 @@ WHERE hotel_id=@hotel;";
         var selectionError = await ValidateBulkRestrictionSelectionsAsync(
             connection, hotelId, planIds, roomIds, cancellationToken);
         if (selectionError != null) return new(false, selectionError);
+
+        var categoryPlans = await LoadPlansAsync(connection, hotelId, roomIds, cancellationToken);
+        var allTargets = roomIds.ToDictionary(room => room,
+            room => ExpandRestrictionPlans(categoryPlans, room, planIds,
+                includeDerived: request.ConfirmDerivedUpdate), StringComparer.OrdinalIgnoreCase);
+        var addedDerived = allTargets.Values.SelectMany(x => x).Count(x => x.AddedAsDerived);
+        var effectiveRows = (long)selectedDates.Count * allTargets.Values.Sum(x => x.Count);
+        if (effectiveRows > 250000L)
+            return new(false, "This update exceeds 250,000 parent/derived/date rows. Split it into smaller ranges.");
+        var effectiveRates = await LoadRatesAsync(connection, hotelId, roomIds,
+            selectedDates.First(), selectedDates.Last(), cancellationToken, includeRestrictionDetails: false);
+        ApplyEffectivePlanRates(categoryPlans, effectiveRates, selectedDates.First(), selectedDates.Last());
+
+        data = BuildBulkRestrictionTable();
+        foreach (var date in selectedDates)
+        foreach (var roomId in roomIds)
+        foreach (var target in allTargets[roomId])
+        {
+            var row = data.NewRow();
+            row["hotel_id"] = hotelId;
+            row["date"] = date;
+            row["category_id"] = roomId;
+            row["planid"] = target.Plan.PlanId;
+            SetNullable(row, "min_los", minArrival);
+            SetNullable(row, "min_stay_through", minThrough);
+            SetNullable(row, "max_los", maxStay);
+            SetNullable(row, "cutoff_days", cutoffDays);
+            SetNullable(row, "closed_to_arrival", cta);
+            SetNullable(row, "closed_to_departure", ctd);
+            SetNullable(row, "stop_sell", stopSell);
+            row["update_min_los"] = updateMinArrival;
+            row["update_min_stay_through"] = updateMinThrough;
+            row["update_max_los"] = updateMaxStay;
+            row["update_cutoff_days"] = updateCutoff;
+            row["update_closed_to_arrival"] = updateCta;
+            row["update_closed_to_departure"] = updateCtd;
+            row["update_stop_sell"] = updateStopSell;
+            row["username"] = userName ?? string.Empty;
+            row["systemName"] = systemName;
+            row["ip"] = ip ?? string.Empty;
+            if (target.Plan.IsDerived && effectiveRates.TryGetValue((roomId, target.Plan.PlanId, date), out var price)
+                && price.IsSyntheticDefault)
+            {
+                row["initial_rate"] = price.Rate;
+                row["initial_baserate"] = price.BaseRate;
+            }
+            data.Rows.Add(row);
+        }
 
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         var mergeCounts = (Updated: 0, Inserted: 0);
@@ -1565,7 +1702,7 @@ WHERE R.update_cutoff_days=1;", connection, transaction);
             mergeCounts = await MergeBulkRestrictionRowsAsync(connection, transaction, today, cancellationToken);
             await InsertBulkRestrictionHistoryAsync(
                 connection, transaction, hotelId, userId, userName, systemName, ip,
-                request, parsedRanges, daySet, batchId,
+                request, allTargets, parsedRanges, daySet, batchId,
                 updateMinArrival, minArrival, updateMinThrough, minThrough,
                 updateMaxStay, maxStay, updateCutoff, cutoffDays,
                 updateCta, cta, updateCtd, ctd, updateStopSell, stopSell,
@@ -1583,28 +1720,31 @@ WHERE R.update_cutoff_days=1;", connection, transaction);
         }
 
         foreach (var range in parsedRanges)
-        {
             foreach (var roomId in roomIds)
-                foreach (var planId in planIds)
-                    _cache.Remove(RestrictionRangeCacheKey(hotelId, roomId, planId, range.Start, range.End));
-        }
+                foreach (var target in allTargets[roomId])
+                    _cache.Remove(RestrictionRangeCacheKey(hotelId, roomId, target.Plan.PlanId, range.Start, range.End));
 
         var minSelectedDate = selectedDates.First();
         var maxSelectedDate = selectedDates.Last();
 
-        _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
-            AvailabilityChannelSyncKind.Restrictions,
-            hotelId,
-            minSelectedDate,
-            maxSelectedDate.AddDays(cutoffSyncDays - 1),
-            planIds,
-            roomIds));
+        // Queue each room with only the plans actually configured/updated in that room.
+        // A single cross-room plan union could queue nonexistent room/plan combinations.
+        foreach (var roomId in roomIds)
+        {
+            _channelSyncQueue.Queue(new AvailabilityChannelSyncJob(
+                AvailabilityChannelSyncKind.Restrictions,
+                hotelId,
+                minSelectedDate,
+                maxSelectedDate.AddDays(cutoffSyncDays - 1),
+                allTargets[roomId].Select(x => x.Plan.PlanId).ToArray(),
+                new[] { roomId }));
+        }
 
         await TryInsertBulkRestrictionActionLogAsync(
             hotelId, userId, userName, systemName, ip,
-            "Restrictions_Saved", $"Batch={batchId} | Rows={data.Rows.Count} | Updated={mergeCounts.Updated} | Inserted={mergeCounts.Inserted} | Range={minSelectedDate:yyyy-MM-dd}->{maxSelectedDate:yyyy-MM-dd}", cancellationToken);
+            "Restrictions_Saved", $"Batch={batchId} | Rows={data.Rows.Count} | DerivedPairs={addedDerived} | Updated={mergeCounts.Updated} | Inserted={mergeCounts.Inserted} | Range={minSelectedDate:yyyy-MM-dd}->{maxSelectedDate:yyyy-MM-dd}", cancellationToken);
 
-        return new(true, $"Saved {data.Rows.Count:N0} restriction row(s). Updated={mergeCounts.Updated:N0}, Inserted={mergeCounts.Inserted:N0}. Channel upload queued.", data.Rows.Count);
+        return new(true, $"Saved {data.Rows.Count:N0} restriction row(s) across parent and derived plans ({addedDerived} additional derived plan/room combinations). Updated={mergeCounts.Updated:N0}, Inserted={mergeCounts.Inserted:N0}. Channel upload queued.", data.Rows.Count);
     }
 
     public async Task<BulkRestrictionUpdateModel> GetBulkRestrictionHistoryAsync(
@@ -2875,6 +3015,8 @@ WHEN NOT MATCHED THEN
         string userName,
         string systemName,
         string ip,
+        decimal? initialRate,
+        decimal? initialBaseRate,
         CancellationToken cancellationToken)
     {
         var allowedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -2914,8 +3056,8 @@ WHEN NOT MATCHED THEN
     INSERT ([date],rate,baserate,ip,systemName,username,category_id,hotel_id,currentdate,planid,
             [{dbColumn}],restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom,uploadfrom)
     VALUES (S.[date],
-     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
-     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_baserate),TRY_CONVERT(decimal(18,4),S.prev_baserate),CONVERT(decimal(18,4),0)),
+     COALESCE(@initialRate,TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
+     COALESCE(@initialBaseRate,TRY_CONVERT(decimal(18,4),S.cp_baserate),TRY_CONVERT(decimal(18,4),S.prev_baserate),CONVERT(decimal(18,4),0)),
             @ip,@system,@username,S.category_id,S.hotel_id,GETDATE(),S.planid,@value,GETDATE(),@username,0,1,0);";
 
         await using var command = new SqlCommand(sql, connection, transaction);
@@ -2923,6 +3065,12 @@ WHEN NOT MATCHED THEN
         command.Parameters.Add("@category", SqlDbType.NVarChar, 50).Value = categoryId;
         command.Parameters.Add("@plan", SqlDbType.NVarChar, 50).Value = planId;
         command.Parameters.Add("@date", SqlDbType.Date).Value = date;
+        var initialRateParam = command.Parameters.Add("@initialRate", SqlDbType.Decimal);
+        initialRateParam.Precision = 18; initialRateParam.Scale = 4;
+        initialRateParam.Value = initialRate.HasValue ? initialRate.Value : DBNull.Value;
+        var initialBaseParam = command.Parameters.Add("@initialBaseRate", SqlDbType.Decimal);
+        initialBaseParam.Precision = 18; initialBaseParam.Scale = 4;
+        initialBaseParam.Value = initialBaseRate.HasValue ? initialBaseRate.Value : DBNull.Value;
         command.Parameters.Add("@value", isBoolean ? SqlDbType.Bit : SqlDbType.Int).Value = value;
         command.Parameters.Add("@username", SqlDbType.NVarChar, 200).Value = userName ?? string.Empty;
         command.Parameters.Add("@system", SqlDbType.NVarChar, 200).Value = systemName ?? string.Empty;
@@ -3303,6 +3451,8 @@ VALUES
         data.Columns.Add("date", typeof(DateTime));
         data.Columns.Add("category_id", typeof(string));
         data.Columns.Add("planid", typeof(string));
+        data.Columns.Add("initial_rate", typeof(decimal));
+        data.Columns.Add("initial_baserate", typeof(decimal));
         data.Columns.Add("min_los", typeof(int));
         data.Columns.Add("min_stay_through", typeof(int));
         data.Columns.Add("max_los", typeof(int));
@@ -3388,6 +3538,8 @@ CREATE TABLE #BulkRestrictionRows
     [date] DATE NOT NULL,
     category_id NVARCHAR(50) NOT NULL,
     planid NVARCHAR(50) NOT NULL,
+    initial_rate DECIMAL(18,4) NULL,
+    initial_baserate DECIMAL(18,4) NULL,
     min_los INT NULL,
     min_stay_through INT NULL,
     max_los INT NULL,
@@ -3484,8 +3636,8 @@ WHEN NOT MATCHED THEN INSERT
      restr_updated_at,restr_updated_by,restr_upload,restr_uploadfrom,uploadfrom)
 VALUES
     (S.[date],
-     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
-     COALESCE(TRY_CONVERT(decimal(18,4),S.cp_baserate),TRY_CONVERT(decimal(18,4),S.prev_baserate),CONVERT(decimal(18,4),0)),
+     COALESCE(S.initial_rate,TRY_CONVERT(decimal(18,4),S.cp_rate),TRY_CONVERT(decimal(18,4),S.prev_rate),CONVERT(decimal(18,4),0)),
+     COALESCE(S.initial_baserate,TRY_CONVERT(decimal(18,4),S.cp_baserate),TRY_CONVERT(decimal(18,4),S.prev_baserate),CONVERT(decimal(18,4),0)),
      S.ip,S.systemName,S.username,S.category_id,S.hotel_id,GETDATE(),S.planid,
      CASE WHEN S.update_min_los=1 THEN S.min_los ELSE NULL END,
      CASE WHEN S.update_min_stay_through=1 THEN S.min_stay_through ELSE NULL END,
@@ -3593,6 +3745,7 @@ FROM #BulkRestrictionMergeOut;";
         string systemName,
         string ip,
         BulkRestrictionUpdateModel request,
+        IReadOnlyDictionary<string, List<RestrictionTarget>> appliedTargets,
         IReadOnlyList<(DateTime Start, DateTime End)> ranges,
         ISet<int> days,
         Guid batchId,
@@ -3667,14 +3820,13 @@ VALUES
         command.Parameters.Add("@stopSell", SqlDbType.Bit);
         command.Parameters.Add("@clearAll", SqlDbType.Bit);
 
-        var plans = request.Plans.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase);
-        var rooms = request.Rooms.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase);
         foreach (var range in ranges)
         {
-            foreach (var roomId in rooms)
+            foreach (var (roomId, targets) in appliedTargets)
             {
-                foreach (var planId in plans)
+                foreach (var target in targets)
                 {
+                    var planId = target.Plan.PlanId;
                     command.Parameters["@hotel"].Value = hotelId;
                     command.Parameters["@batch"].Value = batchId;
                     command.Parameters["@user"].Value = userId ?? string.Empty;
@@ -3743,7 +3895,7 @@ VALUES
         var plans = request.Plans == null ? string.Empty : string.Join(",", request.Plans.Take(50));
         var rooms = request.Rooms == null ? string.Empty : string.Join(",", request.Rooms.Take(50));
         var days = request.Days == null ? string.Empty : string.Join(",", request.Days.Distinct().OrderBy(x => x));
-        return $"Batch={batchId} | Plans=[{plans}] | Rooms=[{rooms}] | Ranges={request.Ranges?.Count ?? 0} | Days=[{days}] | ClearAll={request.ClearAll} | " +
+        return $"Batch={batchId} | Plans=[{plans}] | Rooms=[{rooms}] | Ranges={request.Ranges?.Count ?? 0} | Days=[{days}] | ClearAll={request.ClearAll} | IncludeDerived={request.ConfirmDerivedUpdate} | " +
                $"MinArrival={request.MinStayArrival?.ToString(CultureInfo.InvariantCulture) ?? "NoChange"} | " +
                $"MinThrough={request.MinStayThrough?.ToString(CultureInfo.InvariantCulture) ?? "NoChange"} | " +
                $"MaxStay={request.MaxStay?.ToString(CultureInfo.InvariantCulture) ?? "NoChange"} | " +

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Orapmshms.Models;
 using Orapmshms.Services;
@@ -276,6 +276,35 @@ public sealed class AvailabilityController : Controller
         var result = await _availabilityService.LoadRestrictionRangeAsync(
             SessionValue("hotel"), SessionValue("UserId"), request, cancellationToken);
         return Json(new { ok = result.Success, message = result.Message, summary = result.Summary, rows = result.Rows });
+    }
+
+    // Read-only impact preview. Server-side Save requires this explicit confirmation
+    // whenever a selected plan has dependent/derived rate plans.
+    [HttpPost("RestrictionImpact")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RestrictionImpact(
+        [FromBody] AvailabilityRestrictionImpactRequest request,
+        CancellationToken cancellationToken)
+    {
+        var hotelId = SessionValue("hotel");
+        var userId = SessionValue("UserId");
+        if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { ok = false, message = "Your session has expired." });
+        try
+        {
+            var items = await _availabilityService.GetRestrictionImpactAsync(
+                hotelId, userId, request, cancellationToken);
+            return Json(new
+            {
+                ok = true,
+                affected = items,
+                derived = items.Where(x => x.AddedAsDerived).ToList()
+            });
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            return BadRequest(new { ok = false, message = ex.Message });
+        }
     }
 
     [HttpPost("SaveRestriction")]

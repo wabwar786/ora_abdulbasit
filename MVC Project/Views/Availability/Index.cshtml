@@ -24,6 +24,7 @@
      data-restriction-log-url="@Url.Action("RestrictionChangeLog", "Availability")"
      data-bulk-preview-url="@Url.Action("PreviewBulkRate", "Availability")"
      data-bulk-rate-save-url="@Url.Action("SaveBulkRates", "Availability")"
+     data-restriction-impact-url="@Url.Action("RestrictionImpact", "Availability")"
      data-restriction-range-url="@Url.Action("RestrictionRange", "Availability")"
      data-bulk-restriction-save-url="@Url.Action("SaveBulkRestriction", "Availability")">
 
@@ -204,6 +205,10 @@
                         <label class="bulk-field" id="bulkCutoffDaysWrap" hidden><span>Custom days</span><input type="number" id="bulkCutoffDays" min="1" max="365" step="1" /></label>
                     </div>
                     <p class="bulk-hint" id="bulkRestrictionHint"></p>
+                    <label class="inventory-derived-choice" for="bulkApplyDerivedRestrictions">
+                        <input type="checkbox" id="bulkApplyDerivedRestrictions" />
+                        <strong>Also update derived rate plans</strong>
+                    </label>
                     <p class="bulk-hint" id="bookingCutoffMeaning" hidden>
                         A cutoff of 4 days closes an arrival date only when fewer than 4 days remain before arrival.
                         It does not activate Stop Sell immediately when saved. Existing manual Stop Sell remains in force.

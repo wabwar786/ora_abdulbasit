@@ -62,8 +62,22 @@ public sealed class FbrFailedInvoiceReportService
             throw new UnauthorizedAccessException("Hotel session is missing.");
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
+        // Match the master PMS hotel-access rules: assigned hotel, cross-property
+        // users (hotel_id=-1), and explicit UserHotelAccess grants.
         await using var cmd = new SqlCommand(
-            "SELECT TOP (1) 1 FROM dbo.Hms_accounts WHERE hotel_id=@h AND user_id=@u", cn);
+            @"SELECT TOP(1) 1
+FROM dbo.Hms_accounts a
+WHERE CONVERT(varchar(100),a.user_id)=@u
+  AND UPPER(LTRIM(RTRIM(ISNULL(a.activestatus,''))))='ACTIVE'
+  AND (
+       CONVERT(varchar(100),a.hotel_id)=@h
+    OR CONVERT(varchar(100),a.hotel_id)='-1'
+    OR EXISTS (
+        SELECT 1 FROM dbo.UserHotelAccess uha
+        WHERE CONVERT(varchar(100),uha.userid)=@u
+          AND CONVERT(varchar(100),uha.HotelId)=@h
+    )
+  );", cn);
         cmd.Parameters.Add("@h", SqlDbType.VarChar, 50).Value = hotelId;
         cmd.Parameters.Add("@u", SqlDbType.VarChar, 100).Value = userId;
         if (await cmd.ExecuteScalarAsync(ct) is null)

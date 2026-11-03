@@ -15,6 +15,7 @@
     const bulkRateSaveUrl = page.dataset.bulkRateSaveUrl || '';
     const restrictionRangeUrl = page.dataset.restrictionRangeUrl || '';
     const bulkRestrictionSaveUrl = page.dataset.bulkRestrictionSaveUrl || '';
+    const restrictionImpactUrl = page.dataset.restrictionImpactUrl || '';
 
     const saveButton = document.getElementById('saveChangesButton');
     const dirtyCount = document.getElementById('dirtyCount');
@@ -1111,6 +1112,7 @@
     // =============================================================
     const bulkModal = document.getElementById('bulkEditorModal');
     const bulkSaveButton = document.getElementById('bulkSaveButton');
+    const applyDerivedRestrictions = document.getElementById('bulkApplyDerivedRestrictions');
     const drag = { active: false, moved: false, start: null, current: null, cells: [] };
     let suppressCellClickUntil = 0;
     let previewTimer = null;
@@ -1289,6 +1291,8 @@
         } else {
             if (title) title.textContent = 'Bulk Restriction Update';
             configureRestrictionEditor(type, summary);
+            // The user must opt in on each new restriction edit.
+            if (applyDerivedRestrictions) applyDerivedRestrictions.checked = false;
             if (bulkSaveButton) bulkSaveButton.textContent = 'Save Restriction';
         }
         openModal(bulkModal);
@@ -1349,10 +1353,10 @@
                 return;
             }
         }
-        setLoading(bulkSaveButton, true, 'Saving');
         try {
             let data;
             if (type === 'rate') {
+                setLoading(bulkSaveButton, true, 'Saving');
                 const baseRate = Number(document.getElementById('bulkBaseRate')?.value || 0);
                 if (!(baseRate > 0)) throw new Error('Enter Base Rate.');
                 data = await postJson(bulkRateSaveUrl, { categoryId, planId, startDate, endDate, baseRate, days });
@@ -1371,8 +1375,11 @@
                     value = String(document.getElementById('bulkRestrictionNumber')?.value || '').trim();
                     if (!/^\d+$/.test(value)) throw new Error('Enter a valid whole number.');
                 }
-                data = await postJson(bulkRestrictionSaveUrl, { categoryId, planId, restrictionKey: type, startDate, endDate, value, days });
-                clearRestrictionRangeCache(categoryId, planId);
+                // Checkbox is the explicit opt-in; unchecked must NEVER propagate to derived plans.
+                const confirmDerivedUpdate = !!applyDerivedRestrictions?.checked;
+                setLoading(bulkSaveButton, true, 'Saving');
+                data = await postJson(bulkRestrictionSaveUrl, { categoryId, planId, restrictionKey: type, startDate, endDate, value, days, confirmDerivedUpdate });
+                restrictionRangeCache.clear();
                 setRestrictionGroup(categoryId, planId, true);
             }
             showToast(data.message || 'Changes saved.', 'success');

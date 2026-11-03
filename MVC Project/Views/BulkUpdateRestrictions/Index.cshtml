@@ -14,6 +14,7 @@
      class="bulkrate-root bulkrestrict-root"
      data-preview-url="@Url.Action("Preview", "BulkUpdateRestrictions")"
      data-save-url="@Url.Action("Save", "BulkUpdateRestrictions")"
+     data-restriction-impact-url="@Url.Action("RestrictionImpact", "Availability")"
      data-history-url="@Url.Action("History", "BulkUpdateRestrictions")"
      data-hotel-today="@Model.HotelTodayIso"
      data-can-update="@(Model.CanUpdate ? "true" : "false")">
@@ -43,7 +44,7 @@
             <span class="bulkrate-heading-icon"><i class="fa-solid fa-sliders"></i></span>
             <div>
                 <h1 id="bulkRestrictionTitle">Bulk Update Restrictions</h1>
-                <p>Apply stay rules and selling controls across multiple rate plans, room types and dates.</p>
+                <p>Apply stay rules and selling controls across selected rate plans, room types and dates. Updating derived plans is optional.</p>
             </div>
         </div>
 
@@ -130,6 +131,11 @@
                 </div>
             </div>
         </div>
+
+        <label class="bulkrestrict-derived-choice" for="bulkRestrictionIncludeDerived">
+            <input type="checkbox" id="bulkRestrictionIncludeDerived" />
+            <strong>Also update derived rate plans</strong>
+        </label>
 
         <div class="bulkrate-setup-lower">
             <div class="bulkrate-ranges-section">

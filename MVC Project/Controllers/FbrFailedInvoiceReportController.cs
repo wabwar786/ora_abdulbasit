@@ -81,24 +81,38 @@ public sealed class FbrFailedInvoiceReportController : Controller
     }
 
     [HttpGet("RetryDetails")]
-    public async Task<IActionResult> RetryDetails(string regId,CancellationToken ct)
+    public async Task<IActionResult> RetryDetails(string regId, CancellationToken ct)
     {
-        if (!SignedIn) return Unauthorized(new {ok=false,message="Session expired."});
+        Response.Headers.CacheControl = "no-store";
+        if (!SignedIn) return Unauthorized(new { ok = false, message = "Session expired. Please sign in again." });
         try
         {
-            await _report.VerifyHotelMembershipAsync(HotelId,UserId,ct);
-            var data = await _report.GetRetryContextAsync(HotelId,regId,ct);
-            return Json(new {ok=true,data});
+            await _report.VerifyHotelMembershipAsync(HotelId, UserId, ct);
+            var data = await _report.GetRetryContextAsync(HotelId, regId, ct);
+            return Json(new { ok = true, data });
         }
-        catch(UnauthorizedAccessException) { return Forbid(); }
-        catch(Exception ex) { return BadRequest(new {ok=false,message=ex.Message}); }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Fiscal retry details access denied: hotel {HotelId}, user {UserId}", HotelId, UserId);
+            return StatusCode(403, new { ok = false, message = ex.Message });
+        }
+        catch (ArgumentException ex) { return BadRequest(new { ok = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { ok = false, message = ex.Message }); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fiscal retry details failed for hotel {HotelId}, reservation {RegId}, trace {TraceId}",
+                HotelId, regId, HttpContext.TraceIdentifier);
+            return StatusCode(500, new { ok = false,
+                message = "Unable to load fiscal retry details. Ask support to check server logs (request " + HttpContext.TraceIdentifier + ")." });
+        }
     }
 
     [HttpPost("Retry")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Retry([FromBody] FbrRetryRequest request,CancellationToken ct)
     {
-        if (!SignedIn) return Unauthorized(new {ok=false,message="Session expired."});
+        Response.Headers.CacheControl = "no-store";
+        if (!SignedIn) return Unauthorized(new {ok=false,message="Session expired. Please sign in again."});
         try
         {
             await _report.VerifyHotelMembershipAsync(HotelId,UserId,ct);
@@ -108,11 +122,19 @@ public sealed class FbrFailedInvoiceReportController : Controller
                 info.RegId, request.Authority, ct);
             return Json(new {ok=true,message=result});
         }
-        catch(UnauthorizedAccessException) { return Forbid(); }
-        catch(Exception ex)
+        catch (UnauthorizedAccessException ex)
         {
-            _logger.LogWarning(ex,"Fiscal retry unavailable for hotel {HotelId}",HotelId);
-            return BadRequest(new {ok=false,message=ex.Message});
+            _logger.LogWarning("Fiscal retry access denied for hotel {HotelId}, user {UserId}", HotelId, UserId);
+            return StatusCode(403, new { ok = false, message = ex.Message });
+        }
+        catch (ArgumentException ex) { return BadRequest(new { ok = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { ok = false, message = ex.Message }); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fiscal retry failed for hotel {HotelId}, reservation {RegId}, trace {TraceId}",
+                HotelId, request?.RegId, HttpContext.TraceIdentifier);
+            return StatusCode(500, new { ok = false,
+                message = "Unable to complete fiscal retry. The outcome may be uncertain; verify the fiscal portal and contact support (request " + HttpContext.TraceIdentifier + ")." });
         }
     }
 }

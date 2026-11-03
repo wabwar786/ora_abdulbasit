@@ -39,7 +39,6 @@ else
                     {
                         var availabilityRow = category.Rows.FirstOrDefault(x => x.RowType == "availability");
                         var rateRows = category.Rows.Where(x => x.RowType == "rate").ToList();
-                        var netRow = category.Rows.FirstOrDefault(x => x.RowType == "net");
 
                         if (availabilityRow != null)
                         {
@@ -132,16 +131,6 @@ else
 
                         }
 
-                        if (netRow != null)
-                        {
-                            <tr class="inventory-net-row" data-rowtype="net" data-category="@category.CategoryId">
-                                <th class="sticky-col inventory-net-label">Net Booking</th>
-                                @foreach (var cell in netRow.Cells)
-                                {
-                                    <td class="inventory-value-cell net-value-cell @(cell.IsWeekend ? "weekend" : "") @(cell.IsToday ? "today" : "")"><span>@cell.Value</span></td>
-                                }
-                            </tr>
-                        }
                     }
                 </tbody>
             </table>

@@ -103,8 +103,23 @@ public sealed class AvailabilityCellChange
     public string Value { get; set; } = string.Empty;
 }
 
+public sealed class AvailabilityRestrictionImpactRequest
+{
+    public List<string> Rooms { get; set; } = new();
+    public List<string> Plans { get; set; } = new();
+}
+
+public sealed class AvailabilityRestrictionImpactItem
+{
+    public string CategoryId { get; set; } = string.Empty;
+    public string PlanId { get; set; } = string.Empty;
+    public string PlanName { get; set; } = string.Empty;
+    public bool AddedAsDerived { get; set; }
+}
+
 public sealed class AvailabilityRestrictionSaveRequest
 {
+    public bool ConfirmDerivedUpdate { get; set; }
     public string CategoryId { get; set; } = string.Empty;
     public string PlanId { get; set; } = string.Empty;
     public string RestrictionKey { get; set; } = string.Empty;
@@ -232,6 +247,7 @@ public sealed record AvailabilityRestrictionRangeResult(
 
 public sealed class AvailabilityBulkRestrictionSaveRequest
 {
+    public bool ConfirmDerivedUpdate { get; set; }
     public string CategoryId { get; set; } = string.Empty;
     public string PlanId { get; set; } = string.Empty;
     public string RestrictionKey { get; set; } = string.Empty;
