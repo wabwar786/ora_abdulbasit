@@ -43,7 +43,10 @@ public sealed class AutoChargeWorkerLegacyController :  LegacyApiControllerBase
         try
         {
             // Use the original migrated payment business logic; no second payment implementation.
-            var result = await new VirtualCardInstantChargeService().ProcessDueScheduledChargesAsync(25);
+            var hotelId = Request.Query["hotelId"].ToString().Trim();
+            if (hotelId.Length > 50) return BadRequest(new { ok = false, message = "Invalid hotelId." });
+            var result = await new VirtualCardInstantChargeService()
+                .ProcessDueScheduledChargesAsync(25, hotelId: hotelId.Length == 0 ? null : hotelId);
             return Ok(new { ok = true, processedAt = DateTime.Now, result });
         }
         catch (Exception ex)

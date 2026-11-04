@@ -17,7 +17,6 @@ public sealed class LoginService : ILoginService
     private const int LoginLockMinutes = 15;
     private const int ForgotMaxAttempts = 3;
     private const int ForgotLockMinutes = 20;
-
     private readonly string _connectionString;
     private readonly IConfiguration _configuration;
     private readonly IMemoryCache _cache;
@@ -25,7 +24,6 @@ public sealed class LoginService : ILoginService
     private readonly ILegacyUrlSigner _urlSigner;
     private readonly ILoginBackgroundQueue _backgroundQueue;
     private readonly ILogger<LoginService> _logger;
-
     public LoginService(
         IConfiguration configuration,
         IMemoryCache cache,
@@ -43,7 +41,6 @@ public sealed class LoginService : ILoginService
         _backgroundQueue = backgroundQueue;
         _logger = logger;
     }
-
     public async Task<LoginResult> AuthenticateAsync(
         string loginText,
         string plainPassword,
@@ -109,9 +106,9 @@ public sealed class LoginService : ILoginService
             clientIp,
             Environment.MachineName);
 
-        // Same successful-login side effect as Web Forms, now executed by a hosted queue so
-        // it cannot delay the Login response and duplicate concurrent triggers are prevented.
-        _backgroundQueue.QueueAutoChargeWorker();
+        // Queue ONLY the authenticated user's hotel. This never performs SQL or HTTP
+        // on the login request thread. The background worker coalesces repeated logins.
+        _backgroundQueue.QueueHotelJobs(user.HotelId);
 
         return new LoginResult(true, string.Empty, user, redirectUrl);
     }

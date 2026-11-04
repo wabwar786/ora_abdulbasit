@@ -1,0 +1,77 @@
+@model Orapmshms.Models.FbrFailedInvoiceReportViewModel
+@using System
+@using System.Text
+@using Microsoft.AspNetCore.WebUtilities
+@{
+    string D(DateTime? value) => value?.ToString("yyyy-MM-dd") ?? "";
+    string B64(string? value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? ""));
+    var hotelId = Context.Session.GetString("hotel") ?? "";
+    var userId = Context.Session.GetString("UserId") ?? "";
+    var userName = Context.Session.GetString("UserName") ?? "";
+    string PageUrl(int page) => QueryHelpers.AddQueryString(Url.Action("Index", "FbrFailedInvoiceReport") ?? "/FbrFailedInvoiceReport",
+        new Dictionary<string, string?> { ["search"] = Model.Search, ["status"] = Model.Status,
+            ["from"] = D(Model.From), ["to"] = D(Model.To), ["page"] = page.ToString() });
+    string InvoiceUrl(Orapmshms.Models.FbrInvoiceReportRow r)
+    {
+        var invoiceNo = (r.InvoiceNo ?? "").Trim();
+        if (new[] { "Not Found", "Not Available", "N/A", "null" }.Contains(invoiceNo, StringComparer.OrdinalIgnoreCase)
+            || invoiceNo.IndexOf("*Test*", StringComparison.OrdinalIgnoreCase) >= 0) invoiceNo = "";
+        return QueryHelpers.AddQueryString("/BookingConfirmationInvoice.aspx", new Dictionary<string,string?>
+        {
+            ["reg_id"] = B64(r.RegId), ["roomAmount"] = B64(r.RoomSecurity), ["visit"] = B64(r.VisitId),
+            ["paidAmount"] = B64(r.PaidAmount), ["payable"] = B64(r.RemainingAmount),
+            ["paymethod"] = B64(r.PaymentMethod), ["hd"] = B64(hotelId), ["UN"] = B64(userName),
+            ["UD"] = B64(userId), ["PG"] = B64("CHECK-OUT"), ["FBR"] = B64(invoiceNo)
+        });
+    }
+}
+<div class="fbr-dynamic" data-search="@Model.Search" data-status="@Model.Status"
+     data-from="@D(Model.From)" data-to="@D(Model.To)" data-page="@Model.Page">
+    <div class="metrics">
+        <div class="metric"><span class="metric-label">Invoices</span><strong class="metric-value">@Model.Matching.ToString("N0")</strong></div>
+        <div class="metric"><span class="metric-label">Posted</span><strong class="metric-value good">@Model.Posted.ToString("N0")</strong></div>
+        <div class="metric"><span class="metric-label">Failed</span><strong class="metric-value bad">@Model.Failed.ToString("N0")</strong></div>
+        <div class="metric total"><span class="metric-label">Invoice total</span><strong class="metric-value">@Model.TotalInvoiceAmount.ToString("N2")</strong></div>
+        <div class="metric total"><span class="metric-label">Tax</span><strong class="metric-value">@Model.TotalTaxAmount.ToString("N2")</strong></div>
+    </div>
+    <section class="panel fbr-table-panel">
+        <div class="table-title"><h2>Invoices</h2><span class="result-count">@Model.Matching.ToString("N0") records</span></div>
+        <div class="table-scroll"><table class="data-table">
+            <thead><tr><th>Guest</th><th>Reservation</th><th>Phone</th><th>Last attempt</th><th>Invoice no.</th>
+                <th class="money-head">Invoice total</th><th class="money-head">Tax</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.Rows)
+            {
+                <tr>
+                    <td class="guest-name">@r.GuestName</td>
+                    <td><a class="reservation-link" href="@InvoiceUrl(r)" target="_blank" rel="noopener noreferrer">@r.RegId</a></td>
+                    <td>@r.GuestPhone</td>
+                    <td class="date">@(r.PostedAt?.ToString("dd MMM yyyy HH:mm") ?? "—")</td>
+                    <td class="mono">@(string.IsNullOrWhiteSpace(r.InvoiceNo) ? "—" : r.InvoiceNo)</td>
+                    <td class="money">@(r.InvoiceTotal?.ToString("N2") ?? "—")</td>
+                    <td class="money">@(r.TaxAmount?.ToString("N2") ?? "—")</td>
+                    <td><span class="state @(r.Status == "POSTED" ? "posted" : "failed")">@r.Status</span></td>
+                    <td>@if (r.Status == "FAILED") { <button type="button" class="row-action" data-fbr-retry="@r.RegId">Retry</button> } else { <span class="muted">—</span> }</td>
+                </tr>
+            }
+            </tbody>
+            @if (Model.Rows.Count > 0)
+            {
+                <tfoot>
+                    @if (Model.Pages > 1)
+                    {
+                        <tr class="subtotal"><td colspan="5">Page total (@Model.Rows.Count.ToString("N0") records)</td>
+                            <td class="money">@Model.PageInvoiceAmount.ToString("N2")</td><td class="money">@Model.PageTaxAmount.ToString("N2")</td><td colspan="2"></td></tr>
+                    }
+                    <tr class="grand-total"><td colspan="5">Filtered total (@Model.Matching.ToString("N0") records)</td>
+                        <td class="money">@Model.TotalInvoiceAmount.ToString("N2")</td><td class="money">@Model.TotalTaxAmount.ToString("N2")</td><td colspan="2"></td></tr>
+                </tfoot>
+            }
+        </table></div>
+        @if (Model.Rows.Count == 0) { <div class="empty">No invoices found for these filters.</div> }
+        <div class="pager"><span>Page @Model.Page of @Model.Pages</span><div class="pager-nav">
+            @if (Model.Page > 1) { <a class="rpt-btn" href="@PageUrl(Model.Page-1)" data-fbr-page>Previous</a> }
+            @if (Model.Page < Model.Pages) { <a class="rpt-btn" href="@PageUrl(Model.Page+1)" data-fbr-page>Next</a> }
+        </div></div>
+    </section>
+</div>

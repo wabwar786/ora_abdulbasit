@@ -33,10 +33,10 @@ public sealed class FbrFailedInvoiceReportController : Controller
     public async Task<IActionResult> Index(string? search, string? status, DateTime? from,
         DateTime? to, int page = 1, CancellationToken ct = default)
     {
-        //if (!SignedIn) return RedirectToAction("Index", "LoginHMS");
+        if (!SignedIn) return RedirectToAction("Index", "LoginHMS");
         try
         {
-           // await _report.VerifyHotelMembershipAsync(HotelId, UserId, ct);
+            await _report.VerifyHotelMembershipAsync(HotelId, UserId, ct);
             var now = _hotelClock.GetHotelNow(HotelId);
             var model = new FbrFailedInvoiceReportViewModel
             {
@@ -52,6 +52,44 @@ public sealed class FbrFailedInvoiceReportController : Controller
             _logger.LogError(ex,"Failed to load FBR report for hotel {HotelId}",HotelId);
             ViewBag.Error="Unable to load fiscal invoice report: " + ex.Message;
             return View("~/Views/FbrFailedInvoiceReport/Index.cshtml",new FbrFailedInvoiceReportViewModel());
+        }
+    }
+
+    // JSON is not needed for a read-only report: return only the report fragment.
+    // The full Index route remains available to links and non-JavaScript clients.
+    [HttpGet("Results")]
+    public async Task<IActionResult> Results(string? search, string? status, DateTime? from,
+        DateTime? to, int page = 1, CancellationToken ct = default)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (!SignedIn)
+            return Unauthorized(new { ok = false, message = "Session expired. Please sign in again." });
+        try
+        {
+            await _report.VerifyHotelMembershipAsync(HotelId, UserId, ct);
+            var now = _hotelClock.GetHotelNow(HotelId);
+            var model = new FbrFailedInvoiceReportViewModel
+            {
+                Search = search ?? "", Status = status ?? "ALL",
+                From = from ?? new DateTime(now.Year, now.Month, 1),
+                To = to ?? new DateTime(now.Year, now.Month, 1).AddMonths(1).AddDays(-1),
+                Page = page
+            };
+            await _report.SearchAsync(HotelId, model, ct);
+            return PartialView("~/Views/FbrFailedInvoiceReport/_Results.cshtml", model);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { ok = false, message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { ok = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "FBR report AJAX failed for hotel {HotelId} (trace {TraceId})", HotelId, HttpContext.TraceIdentifier);
+            return StatusCode(500, new { ok = false, message = "Unable to refresh report. Please try again." });
         }
     }
 
@@ -119,7 +157,7 @@ public sealed class FbrFailedInvoiceReportController : Controller
             var info=await _report.GetRetryContextAsync(HotelId,request.RegId,ct);
             var result=await _report.RetryAsync(HotelId, UserId,
                 HttpContext.Session.GetString("UserName") ?? "", HttpContext.Connection.RemoteIpAddress?.ToString() ?? "",
-                info.RegId, request.Authority, ct);
+                info.RegId, request.Authority, request.ConfirmedNoInvoice, ct);
             return Json(new {ok=true,message=result});
         }
         catch (UnauthorizedAccessException ex)

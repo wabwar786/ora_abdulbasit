@@ -46,7 +46,11 @@ public sealed class BookingCutoffDailyJobController : ControllerBase
             var configuredHorizon = _configuration["BookingCutoffDailyHorizonDays"];
             int horizonDays = int.TryParse(configuredHorizon, out var parsed) ? parsed : 730;
             horizonDays = Math.Clamp(horizonDays, 1, 1095);
-            var summary = await _job.RunAsync(horizonDays, cancellationToken);
+            var hotelId = Request.Query["hotelId"].ToString().Trim();
+            if (hotelId.Length > 50)
+                return JsonBody(400, new { ok = false, message = "Invalid hotelId." });
+            var summary = await _job.RunAsync(horizonDays, cancellationToken,
+                hotelId: hotelId.Length == 0 ? null : hotelId);
 
             if (summary.AlreadyRunning)
                 return JsonBody(409, new

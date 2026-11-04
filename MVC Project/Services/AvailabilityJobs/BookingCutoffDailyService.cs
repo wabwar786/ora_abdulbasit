@@ -72,13 +72,18 @@ public sealed class BookingCutoffDailyService
 
     public async Task<BookingCutoffDailyRunSummary> RunAsync(
         int horizonDays = 730,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? hotelId = null)
     {
         var connectionString = _configuration.GetConnectionString("con");
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new InvalidOperationException("The MVC connection string 'ConnectionStrings:con' is required.");
 
         horizonDays = Math.Clamp(horizonDays, 1, 1095);
+        hotelId = string.IsNullOrWhiteSpace(hotelId) ? null : hotelId.Trim();
+        bool hotelIdFilterRequested = hotelId is not null;
+        if (hotelId is { Length: > 50 })
+            throw new ArgumentOutOfRangeException(nameof(hotelId));
         var summary = new BookingCutoffDailyRunSummary { StartedUtc = DateTime.UtcNow };
 
         // Session-level SQL application lock serializes requests across app instances.
@@ -97,24 +102,35 @@ public sealed class BookingCutoffDailyService
 
         try
         {
-            var hotelIds = await LoadHotelsRequiringCutoffProcessingAsync(lockConnection, cancellationToken);
+            // Login callers supply one authenticated hotel. The existing daily
+            // scheduler can still omit hotelId and perform its original sweep.
+            IReadOnlyList<string> hotelIds = hotelId is null
+                ? await LoadHotelsRequiringCutoffProcessingAsync(lockConnection, cancellationToken)
+                : new List<string> { hotelId! };
             summary.HotelCount = hotelIds.Count;
 
-            foreach (var hotelId in hotelIds)
+            foreach (var currentHotelId in hotelIds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var result = new BookingCutoffDailyHotelResult { HotelId = hotelId };
+                var result = new BookingCutoffDailyHotelResult { HotelId = currentHotelId };
                 summary.Hotels.Add(result);
 
                 string currentStage = "loading affected plans";
                 var hotelTimer = Stopwatch.StartNew();
                 try
                 {
-                    var plans = await LoadAffectedPlansAsync(lockConnection, hotelId, cancellationToken);
+                    // For a login-scoped sweep, only inspect dated restriction markers
+                    // inside the requested near-term window. The external full-horizon
+                    // scheduler continues to use the original all-date discovery.
+                    DateTime? scopedToday = hotelIdFilterRequested ? _hotelClock.GetHotelToday(currentHotelId).Date : null;
+                    var scopedThrough = scopedToday?.AddDays(horizonDays - 1);
+                    var plans = await LoadAffectedPlansAsync(
+                        lockConnection, currentHotelId, cancellationToken,
+                        scopedToday, scopedThrough);
                     if (plans.Length != 0)
                     {
                         // Uses the hotel's existing timezone configuration, not the server clock.
-                        var today = _hotelClock.GetHotelToday(hotelId).Date;
+                        var today = _hotelClock.GetHotelToday(currentHotelId).Date;
                         var through = today.AddDays(horizonDays - 1);
                         var uploader = new AvailabilityChannexUploadService(
                             _configuration,
@@ -132,7 +148,7 @@ public sealed class BookingCutoffDailyService
                             currentStage = $"preparing {batchStart:yyyy-MM-dd} to {batchEnd:yyyy-MM-dd}";
 
                             var preparation = await uploader.PrepareBookingCutoffRowsWithCountsAsync(
-                                hotelId, batchStart, batchEnd, plans, Array.Empty<string>(),
+                                currentHotelId, batchStart, batchEnd, plans, Array.Empty<string>(),
                                 "BookingCutoffDailyJob", today, cancellationToken);
                             result.UpdatedRows += preparation.UpdatedRows;
                             result.InsertedRows += preparation.InsertedRows;
@@ -141,7 +157,7 @@ public sealed class BookingCutoffDailyService
 
                         currentStage = "counting pending restrictions";
                         var pendingBefore = await ReadPendingAsync(
-                            lockConnection, hotelId, today, through, plans, cancellationToken);
+                            lockConnection, currentHotelId, today, through, plans, cancellationToken);
                         result.PendingUploadRows = pendingBefore.Pending;
 
                         if (pendingBefore.Pending != 0)
@@ -149,14 +165,14 @@ public sealed class BookingCutoffDailyService
                             // Existing MVC sync path; preserves Channex mapping and upload rules.
                             currentStage = "ensuring Channex rate-plan mappings";
                             await uploader.EnsureRatePlansAsync(
-                                hotelId, plans, Array.Empty<string>(), cancellationToken);
+                                currentHotelId, plans, Array.Empty<string>(), cancellationToken);
                             currentStage = "uploading Channex restrictions";
                             await uploader.UploadRestrictionsAsync(
-                                hotelId, today, through, plans, Array.Empty<string>(), cancellationToken);
+                                currentHotelId, today, through, plans, Array.Empty<string>(), cancellationToken);
 
                             currentStage = "verifying uploaded restrictions";
                             var pendingAfter = await ReadPendingAsync(
-                                lockConnection, hotelId, today, through, plans, cancellationToken);
+                                lockConnection, currentHotelId, today, through, plans, cancellationToken);
                             result.UploadedRows = Math.Max(0, pendingBefore.Pending - pendingAfter.Pending);
                             result.SkippedMappingRows = pendingAfter.Unmapped;
                             if (pendingAfter.Pending > 0)
@@ -171,7 +187,7 @@ public sealed class BookingCutoffDailyService
                     _logger.LogInformation(
                         "Booking cutoff hotel completed. Hotel={HotelId}, ElapsedMs={ElapsedMs}, " +
                         "Updated={UpdatedRows}, Inserted={InsertedRows}, Pending={PendingRows}",
-                        hotelId, hotelTimer.ElapsedMilliseconds, result.UpdatedRows,
+                        currentHotelId, hotelTimer.ElapsedMilliseconds, result.UpdatedRows,
                         result.InsertedRows, result.PendingUploadRows);
 
                     result.Success = true;
@@ -195,7 +211,7 @@ public sealed class BookingCutoffDailyService
                     summary.FailedHotels++;
                     _logger.LogError(ex,
                         "Booking cutoff failed. Hotel={HotelId}, Stage={Stage}, ElapsedMs={ElapsedMs}",
-                        hotelId, currentStage, hotelTimer.ElapsedMilliseconds);
+                        currentHotelId, currentStage, hotelTimer.ElapsedMilliseconds);
                 }
             }
         }
@@ -250,9 +266,10 @@ ORDER BY H.hotel_id;";
     }
 
     private static async Task<string[]> LoadAffectedPlansAsync(
-        SqlConnection connection, string hotelId, CancellationToken cancellationToken)
+        SqlConnection connection, string hotelId, CancellationToken cancellationToken,
+        DateTime? scopedFrom = null, DateTime? scopedThrough = null)
     {
-        const string sql = @"
+        string sql = @"
 SELECT DISTINCT plans.plan_id
 FROM (
     SELECT CONVERT(NVARCHAR(50),p.localplanid) AS plan_id
@@ -267,11 +284,21 @@ FROM (
     WHERE CONVERT(NVARCHAR(50),dr.hotel_id)=@hotel
       AND (ISNULL(dr.cutoff_stop_sell,0)=1
            OR ISNULL(TRY_CONVERT(INT,dr.cutoff_days),0)>0)
+      /**SCOPED_DATE_FILTER**/
 ) plans
 WHERE NULLIF(LTRIM(RTRIM(plans.plan_id)),N'') IS NOT NULL;";
 
+        sql = sql.Replace("/**SCOPED_DATE_FILTER**/",
+            scopedFrom.HasValue && scopedThrough.HasValue
+                ? "AND dr.[date] >= @ScopedFrom AND dr.[date] < @ScopedEndExclusive"
+                : "");
         var planIds = new List<string>();
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = 120 };
+        if (scopedFrom.HasValue && scopedThrough.HasValue)
+        {
+            command.Parameters.Add("@ScopedFrom", SqlDbType.Date).Value = scopedFrom.Value.Date;
+            command.Parameters.Add("@ScopedEndExclusive", SqlDbType.Date).Value = scopedThrough.Value.Date.AddDays(1);
+        }
         command.Parameters.Add("@hotel", SqlDbType.NVarChar, 50).Value = hotelId;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

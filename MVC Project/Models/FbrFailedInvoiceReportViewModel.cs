@@ -11,6 +11,12 @@ public sealed class FbrFailedInvoiceReportViewModel
     public int Failed { get; set; }
     public int Posted { get; set; }
     public int Matching { get; set; }
+    // Grand totals for all records matching the active status/search/date filters,
+    // not just the current page. Both Posted and Failed are included where selected.
+    public decimal TotalInvoiceAmount { get; set; }
+    public decimal TotalTaxAmount { get; set; }
+    public decimal PageInvoiceAmount => Rows.Sum(r => r.InvoiceTotal ?? 0m);
+    public decimal PageTaxAmount => Rows.Sum(r => r.TaxAmount ?? 0m);
     public int Pages => Math.Max(1, (Matching + PageSize - 1) / PageSize);
     public List<FbrInvoiceReportRow> Rows { get; set; } = new();
 }
@@ -27,6 +33,10 @@ public sealed class FbrInvoiceReportRow
     public string PaymentMethod { get; set; } = "";
     public string Status { get; set; } = "";
     public string InvoiceNo { get; set; } = "";
+    // Read from eligible payments rows for Posted and Failed invoices alike.
+    // Figures are the CURRENT charge values, not an immutable posted snapshot.
+    public decimal? InvoiceTotal { get; set; }
+    public decimal? TaxAmount { get; set; }
     public DateTime? PostedAt { get; set; }
 }
 
@@ -38,6 +48,8 @@ public sealed class FbrRetryContext
     public string PaymentMethod { get; set; } = "";
     public string PaymentMethodSource { get; set; } = "";
     public string RetryBlockedReason { get; set; } = "";
+    public bool NeedsPreviousAttemptReconciliation { get; set; }
+    public string PreviousAttemptSummary { get; set; } = "";
     public string Status { get; set; } = "";
     public List<string> AvailableAuthorities { get; set; } = new();
 }
@@ -46,5 +58,8 @@ public sealed class FbrRetryRequest
 {
     public string RegId { get; set; } = "";
     public string Authority { get; set; } = "";
+    // Required only when a previous attempt has an unconfirmed outcome.
+    // This user statement is recorded in the fiscal retry audit log.
+    public bool ConfirmedNoInvoice { get; set; }
     // Hotel, API endpoint and payment method are resolved from server-side records.
 }

@@ -16,16 +16,28 @@ public sealed class LoginBackgroundWorker : BackgroundService, ILoginBackgroundQ
     private readonly IConfiguration _configuration;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<LoginBackgroundWorker> _logger;
+    private readonly HotelLoginJobsWorker _hotelJobs;
     private int _autoChargeQueuedOrRunning;
 
     public LoginBackgroundWorker(
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory,
+        IHotelClock hotelClock,
+        ILoggerFactory loggerFactory,
         ILogger<LoginBackgroundWorker> logger)
     {
         _configuration = configuration;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        // The existing Program.cs already registers this worker as a hosted singleton.
+        // Compose the hotel-only worker here rather than changing DI registrations.
+        // Its queue is independent of login audit/expiry tasks.
+        _hotelJobs = new HotelLoginJobsWorker(
+            configuration,
+            httpClientFactory,
+            hotelClock,
+            loggerFactory,
+            loggerFactory.CreateLogger<HotelLoginJobsWorker>());
         _connectionString = configuration.GetConnectionString("con")
             ?? throw new InvalidOperationException("ConnectionStrings:con is missing from configuration.");
 
@@ -36,6 +48,10 @@ public sealed class LoginBackgroundWorker : BackgroundService, ILoginBackgroundQ
             FullMode = BoundedChannelFullMode.Wait
         });
     }
+
+    // Non-blocking hotel-specific trigger called after successful login.
+    // Uses its own bounded queue, so payment/cutoff work cannot block login audits.
+    public void QueueHotelJobs(string hotelId) => _hotelJobs.QueueHotelJobs(hotelId);
 
     public void QueueAutoChargeWorker()
     {
@@ -69,35 +85,55 @@ public sealed class LoginBackgroundWorker : BackgroundService, ILoginBackgroundQ
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var item in _queue.Reader.ReadAllAsync(stoppingToken))
+        // Existing Program.cs registration starts this worker. Start the independent,
+        // bounded hotel jobs consumer here. Do not run its SQL/HTTP work in the login
+        // or audit loop and do not register another hosted service.
+        await _hotelJobs.StartAsync(stoppingToken);
+        try
         {
-            try
+            await foreach (var item in _queue.Reader.ReadAllAsync(stoppingToken))
             {
-                switch (item.Kind)
+                try
                 {
-                    case LoginWorkKind.AutoCharge:
-                        await ExecuteAutoChargeAsync(stoppingToken);
-                        break;
-                    case LoginWorkKind.Expiry:
-                        await ExecuteExpiryMaintenanceAsync(item.HotelId, stoppingToken);
-                        break;
-                    case LoginWorkKind.Audit:
-                        await ExecuteAuditAsync(item, stoppingToken);
-                        break;
+                    switch (item.Kind)
+                    {
+                        case LoginWorkKind.AutoCharge:
+                            await ExecuteAutoChargeAsync(stoppingToken);
+                            break;
+                        case LoginWorkKind.Expiry:
+                            await ExecuteExpiryMaintenanceAsync(item.HotelId, stoppingToken);
+                            break;
+                        case LoginWorkKind.Audit:
+                            await ExecuteAuditAsync(item, stoppingToken);
+                            break;
+                    }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Login background task {Kind} failed.", item.Kind);
+                }
+                finally
+                {
+                    if (item.Kind == LoginWorkKind.AutoCharge)
+                        Interlocked.Exchange(ref _autoChargeQueuedOrRunning, 0);
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        }
+        finally
+        {
+            // Bound graceful shutdown even if an external payment provider stalls.
+            using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
             {
-                break;
+                await _hotelJobs.StopAsync(shutdown.Token);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
             {
-                _logger.LogError(ex, "Login background task {Kind} failed.", item.Kind);
-            }
-            finally
-            {
-                if (item.Kind == LoginWorkKind.AutoCharge)
-                    Interlocked.Exchange(ref _autoChargeQueuedOrRunning, 0);
+                _logger.LogWarning("Hotel jobs worker did not stop within the shutdown budget.");
             }
         }
     }

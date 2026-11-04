@@ -208,14 +208,21 @@ namespace Orapmshms.Services.LegacyApi
         /// </summary>
         public async Task<AutoChargeBatchResult> ProcessDueScheduledChargesAsync(
             int batchSize = 25,
-            Action<string, string, string, string, string> logFn = null)
+            Action<string, string, string, string, string> logFn = null,
+            string? hotelId = null)
         {
             if (batchSize < 1) batchSize = 1;
             if (batchSize > 100) batchSize = 100;
 
-            RecoverStaleProcessingRows();
+            // Optional hotel scope for login-triggered work. No scope retains the
+            // historical global scheduled-worker behavior.
+            hotelId = string.IsNullOrWhiteSpace(hotelId) ? null : hotelId.Trim();
+            if (hotelId is { Length: > 50 })
+                throw new ArgumentOutOfRangeException(nameof(hotelId));
 
-            List<ScheduledChargeItem> items = ClaimDueScheduledCharges(batchSize);
+            RecoverStaleProcessingRows(hotelId);
+
+            List<ScheduledChargeItem> items = ClaimDueScheduledCharges(batchSize, hotelId);
             var result = new AutoChargeBatchResult { Claimed = items.Count };
 
             foreach (ScheduledChargeItem item in items)
@@ -633,24 +640,27 @@ WHEN NOT MATCHED THEN
             }
         }
 
-        private void RecoverStaleProcessingRows()
+        private void RecoverStaleProcessingRows(string? hotelId)
         {
-            using (var con = new SqlConnection(_connectionString))
-            using (var cmd = new SqlCommand(@"
+            const string sql = @"
 UPDATE dbo.VirtualCardAutoChargeQueue
 SET Status = 'Retry',
     NextAttemptAt = GETDATE(),
     LastError = LEFT(COALESCE(LastError + ' | ', '') + 'Recovered stale processing lock.', 2000),
     UpdatedAt = GETDATE()
 WHERE Status = 'Processing'
-  AND LastAttemptAt < DATEADD(MINUTE, -20, GETDATE());", con))
-            {
-                con.Open();
-                cmd.ExecuteNonQuery();
-            }
+  AND LastAttemptAt < DATEADD(MINUTE, -20, GETDATE())";
+            using var con = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(
+                sql + (hotelId is null ? ";" : " AND HotelId = @HotelId;"), con);
+            cmd.CommandTimeout = 15;
+            if (hotelId is not null)
+                cmd.Parameters.Add("@HotelId", SqlDbType.NVarChar, 50).Value = hotelId;
+            con.Open();
+            cmd.ExecuteNonQuery();
         }
 
-        private List<ScheduledChargeItem> ClaimDueScheduledCharges(int batchSize)
+        private List<ScheduledChargeItem> ClaimDueScheduledCharges(int batchSize, string? hotelId)
         {
             var rows = new List<ScheduledChargeItem>();
 
@@ -662,6 +672,7 @@ WHERE Status = 'Processing'
     WHERE Status IN ('Pending', 'Retry')
       AND ScheduledChargeAt <= GETDATE()
       AND (NextAttemptAt IS NULL OR NextAttemptAt <= GETDATE())
+      /**HOTEL_PREDICATE**/
     ORDER BY ScheduledChargeAt, Id
 )
 UPDATE due
@@ -683,9 +694,13 @@ OUTPUT
     inserted.PropertyIdForLog;";
 
             using (var con = new SqlConnection(_connectionString))
-            using (var cmd = new SqlCommand(sql, con))
+            using (var cmd = new SqlCommand(
+                sql.Replace("/**HOTEL_PREDICATE**/", hotelId is null ? "" : "AND HotelId = @HotelId"), con))
             {
+                cmd.CommandTimeout = 15;
                 cmd.Parameters.Add("@BatchSize", SqlDbType.Int).Value = batchSize;
+                if (hotelId is not null)
+                    cmd.Parameters.Add("@HotelId", SqlDbType.NVarChar, 50).Value = hotelId;
                 con.Open();
 
                 using (var reader = cmd.ExecuteReader())

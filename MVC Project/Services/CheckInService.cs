@@ -3,6 +3,7 @@ using System.Data;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
@@ -4232,7 +4233,7 @@ INNER JOIN Calc c ON c.ID=p.ID;", cn, tx))
         string hotelId, string userId, string userName, string ip,
         FbrPostRequest request, CancellationToken ct = default)
     {
-        if (request == null || string.IsNullOrWhiteSpace(request.RegId)) return CheckInOperationResult.Fail("Reservation ID is required.");
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId)) return CheckInOperationResult.Fail("Reservation ID is required.", data: "Not Sent");
         // WebForms October 2026 checkout parity: do NOT recalculate tax or rewrite
         // payment rows while posting. The separate ApplyFbrTaxModeAsync endpoint
         // remains available and unchanged for explicit payment-method selection.
@@ -4260,9 +4261,9 @@ SELECT @result;",cn))
         if (IsValidFbrInvoice(existing)) return CheckInOperationResult.Ok("FBR invoice is already posted.", request.RegId, data: new { fbrInvoiceNo = existing });
 
         var setting = await GetFbrSettingAsync(cn, hotelId, request.PaymentMethod, request.FiscalAuthority, ct);
-        if (!setting.Enabled) return CheckInOperationResult.Fail("No enabled fiscal integration for this hotel.");
-        if (setting.PosId <= 0) return CheckInOperationResult.Fail("Fiscal POS ID is missing in HotelFiscalIntegrationTB.");
-        if (setting.ApiUrl.Length == 0) return CheckInOperationResult.Fail("Fiscal invoice URL is incomplete in the hotel integration settings.");
+        if (!setting.Enabled) return CheckInOperationResult.Fail("No enabled fiscal integration for this hotel.", data: "Not Sent");
+        if (setting.PosId <= 0) return CheckInOperationResult.Fail("Fiscal POS ID is missing in HotelFiscalIntegrationTB.", data: "Not Sent");
+        if (setting.ApiUrl.Length == 0) return CheckInOperationResult.Fail("Fiscal invoice URL is incomplete in the hotel integration settings.", data: "Not Sent");
 
         var guest = await GetGuestSummaryAsync(cn, null, hotelId, request.RegId, ct);
         var lines = new List<FbrLine>();
@@ -4284,7 +4285,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
             while (await rd.ReadAsync(ct))
                 lines.Add(new FbrLine { Id = I(rd, "ID"), RoomNo = S(rd, "room_no"), Description = S(rd, "descr"), DeductionInfo = S(rd, "deductioninfo"), Nights = M(rd, "NightsValue"), Rate = M(rd, "RateValue"), Gst = M(rd, "GstValue"), Bed = M(rd, "BedValue"), Discount = M(rd, "DiscountValue"), Total = M(rd, "TotalValue") });
         }
-        if (lines.Count == 0) return CheckInOperationResult.Fail("No charge rows found for FBR posting.");
+        if (lines.Count == 0) return CheckInOperationResult.Fail("No charge rows found for FBR posting.", data: "Not Sent");
 
         // FBR payload parity with the newer WebForms FbrInvoiceService.cs.
         // Only fiscal serialization changes here; checkout/payment/tax workflows remain intact.
@@ -4335,6 +4336,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
 
         string raw = string.Empty, invoiceNo = string.Empty;
         bool ok = false;
+        bool definitelyNotSent = false;
         try
         {
             var client = _httpClientFactory.CreateClient();
@@ -4352,11 +4354,31 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
             if (!IsValidFbrInvoice(invoiceNo)) ok = false;
             if (invoiceNo.Length == 0) invoiceNo = "Not Found";
         }
-        catch (Exception ex) { raw = ex.Message; ok = false; }
+        catch (Exception ex)
+        {
+            raw = ex.Message; ok = false;
+            // ConnectionRefused / DNS / route-unreachable means the TCP
+            // connection was never established, so the invoice wasn't sent.
+            // Do NOT mark socket timeouts or resets as Not Sent: the provider
+            // might have received the HTTP body before the connection failed.
+            for (Exception? cause=ex; cause!=null; cause=cause.InnerException)
+            {
+                if(cause is SocketException socket && socket.SocketErrorCode is
+                    (SocketError.ConnectionRefused or SocketError.HostNotFound or
+                     SocketError.HostUnreachable or SocketError.NetworkUnreachable or
+                     SocketError.NetworkDown or SocketError.AddressNotAvailable))
+                {
+                    definitelyNotSent=true;
+                    break;
+                }
+            }
+        }
 
         await SaveFbrResultAsync(cn, hotelId, request.RegId, invoiceNo, ok ? "Posted" : "Failed", raw, ct);
         await InsertSystemLogAsync(cn, null, hotelId, userName, ip, $"(FBR Post),{request.RegId},{invoiceNo},{(ok ? "Posted" : "Failed")}", ct);
-        if (!ok || !IsValidFbrInvoice(invoiceNo)) return CheckInOperationResult.Fail("FBR posting failed. " + ExtractApiError(raw, "No valid invoice number returned."));
+        if (!ok || !IsValidFbrInvoice(invoiceNo))
+            return CheckInOperationResult.Fail("FBR posting failed. " + ExtractApiError(raw, "No valid invoice number returned."),
+                data: definitelyNotSent ? "Not Sent" : "Needs Review");
         return CheckInOperationResult.Ok("FBR invoice posted successfully.", request.RegId, data: new { fbrInvoiceNo = invoiceNo, rawResponse = raw });
         }
         finally

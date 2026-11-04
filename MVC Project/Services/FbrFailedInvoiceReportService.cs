@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
@@ -56,6 +57,20 @@ public sealed class FbrFailedInvoiceReportService
  AND (@ToDateExclusive IS NULL OR PostedAt<@ToDateExclusive)
 ) ";
 
+    // Same charge selection as CheckInService.PostToFbrAsync; never aggregate
+    // all payments for a hotel before filtering by the report's reservation IDs.
+    private const string EligibleInvoiceAmountsApply = @"
+OUTER APPLY (
+ SELECT COUNT_BIG(1) ChargeCount,
+        COALESCE(SUM(TRY_CONVERT(decimal(18,2), pay.totalamount)),0) InvoiceTotal,
+        COALESCE(SUM(COALESCE(TRY_CONVERT(decimal(18,2), pay.GST),0)),0) TaxAmount
+ FROM dbo.payments pay
+ WHERE pay.hotel_id=@HotelId AND pay.reg_id=p.RegId
+   AND ISNULL(pay.descr,'')<>'Refund'
+   AND ISNULL(pay.Type,'') NOT IN ('Refund','Discount Offers')
+   AND ISNULL(TRY_CONVERT(decimal(18,2),pay.totalamount),0)>0
+) inv";
+
     public async Task VerifyHotelMembershipAsync(string hotelId, string userId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(hotelId) || string.IsNullOrWhiteSpace(userId))
@@ -108,10 +123,15 @@ WHERE CONVERT(varchar(100),a.user_id)=@u
         await cn.OpenAsync(ct);
         await using (var cmd = new SqlCommand(SourceSql + @"
 SELECT COUNT(*) TotalRows,
- SUM(CASE WHEN Status='FAILED' THEN 1 ELSE 0 END) FailedRows,
- SUM(CASE WHEN Status='POSTED' THEN 1 ELSE 0 END) PostedRows,
- SUM(CASE WHEN @Status='ALL' OR Status=@Status THEN 1 ELSE 0 END) MatchingRows
-FROM Filtered;", cn))
+ COALESCE(SUM(CASE WHEN p.Status='FAILED' THEN 1 ELSE 0 END),0) FailedRows,
+ COALESCE(SUM(CASE WHEN p.Status='POSTED' THEN 1 ELSE 0 END),0) PostedRows,
+ COALESCE(SUM(CASE WHEN @Status='ALL' OR p.Status=@Status THEN 1 ELSE 0 END),0) MatchingRows,
+ COALESCE(SUM(CASE WHEN @Status='ALL' OR p.Status=@Status
+    THEN COALESCE(inv.InvoiceTotal,0) ELSE 0 END),0) TotalInvoiceAmount,
+ COALESCE(SUM(CASE WHEN @Status='ALL' OR p.Status=@Status
+    THEN COALESCE(inv.TaxAmount,0) ELSE 0 END),0) TotalTaxAmount
+FROM Filtered p
+" + EligibleInvoiceAmountsApply + ";", cn))
         {
             AddFilters(cmd, hotelId, filter);
             await using var rd = await cmd.ExecuteReaderAsync(ct);
@@ -120,6 +140,8 @@ FROM Filtered;", cn))
                 filter.Failed = rd.IsDBNull(1) ? 0 : Convert.ToInt32(rd.GetValue(1));
                 filter.Posted = rd.IsDBNull(2) ? 0 : Convert.ToInt32(rd.GetValue(2));
                 filter.Matching = rd.IsDBNull(3) ? 0 : Convert.ToInt32(rd.GetValue(3));
+                filter.TotalInvoiceAmount = rd.IsDBNull(4) ? 0 : Convert.ToDecimal(rd.GetValue(4));
+                filter.TotalTaxAmount = rd.IsDBNull(5) ? 0 : Convert.ToDecimal(rd.GetValue(5));
             }
         }
         filter.Page = Math.Min(filter.Page, filter.Pages);
@@ -129,9 +151,12 @@ SELECT p.RegId, CASE WHEN p.GuestName='' THEN '(Guest name unavailable)' ELSE p.
  ISNULL(CONVERT(nvarchar(100),b.PaidAmount),'') PaidAmount,
  ISNULL(CONVERT(nvarchar(100),CASE WHEN b.RemainingAmount=0 AND b.GrandTotal>0
    THEN b.GrandTotal-b.PaidAmount ELSE b.RemainingAmount END),'') RemainingAmount,
- p.PaymentMethod,p.Status,p.PostedAt,p.InvoiceNo
+ p.PaymentMethod,p.Status,p.PostedAt,p.InvoiceNo,
+ CASE WHEN inv.ChargeCount>0 THEN inv.InvoiceTotal END InvoiceTotal,
+ CASE WHEN inv.ChargeCount>0 THEN inv.TaxAmount END TaxAmount
 FROM (SELECT * FROM Filtered WHERE @Status='ALL' OR Status=@Status
  ORDER BY PostedAt DESC,RegId DESC OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY) p
+" + EligibleInvoiceAmountsApply + @"
 OUTER APPLY (SELECT TOP(1)
  COALESCE(TRY_CONVERT(decimal(18,2),grand_total),0) GrandTotal,
  COALESCE(TRY_CONVERT(decimal(18,2),paid_amount),0) PaidAmount,
@@ -150,6 +175,8 @@ ORDER BY p.PostedAt DESC,p.RegId DESC;", cn))
                 RoomSecurity = ReadString(rd, "RoomSecurity"), PaidAmount = ReadString(rd, "PaidAmount"),
                 RemainingAmount = ReadString(rd, "RemainingAmount"), PaymentMethod = ReadString(rd, "PaymentMethod"),
                 Status = ReadString(rd, "Status"), InvoiceNo = ReadString(rd, "InvoiceNo"),
+                InvoiceTotal = rd.IsDBNull(rd.GetOrdinal("InvoiceTotal")) ? null : Convert.ToDecimal(rd["InvoiceTotal"]),
+                TaxAmount = rd.IsDBNull(rd.GetOrdinal("TaxAmount")) ? null : Convert.ToDecimal(rd["TaxAmount"]),
                 PostedAt = rd.IsDBNull(rd.GetOrdinal("PostedAt")) ? null : rd.GetDateTime(rd.GetOrdinal("PostedAt"))
             });
         }
@@ -162,20 +189,36 @@ ORDER BY p.PostedAt DESC,p.RegId DESC;", cn))
         filter.Status = (filter.Status ?? "ALL").Trim().ToUpperInvariant();
         if (filter.Status != "POSTED" && filter.Status != "FAILED") filter.Status = "ALL";
         if (filter.From > filter.To) throw new ArgumentException("From date cannot be after To date.");
-        var csv = new StringBuilder("Reservation ID,Guest,Phone,Status,Last Posted,Invoice Number\r\n");
+        var csv = new StringBuilder("Reservation ID,Guest,Phone,Status,Last Posted,Invoice Number,Invoice Total,Tax\r\n");
+        decimal exportInvoiceSum = 0m, exportTaxSum = 0m;
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(SourceSql + @"
-SELECT TOP (50000) RegId,GuestName,GuestPhone,Status,PostedAt,InvoiceNo
-FROM Filtered WHERE @Status='ALL' OR Status=@Status ORDER BY PostedAt DESC,RegId DESC;", cn);
+SELECT p.RegId,p.GuestName,p.GuestPhone,p.Status,p.PostedAt,p.InvoiceNo,
+ CASE WHEN inv.ChargeCount>0 THEN inv.InvoiceTotal END InvoiceTotal,
+ CASE WHEN inv.ChargeCount>0 THEN inv.TaxAmount END TaxAmount
+FROM (SELECT TOP (50000) * FROM Filtered WHERE @Status='ALL' OR Status=@Status
+ ORDER BY PostedAt DESC,RegId DESC) p
+" + EligibleInvoiceAmountsApply + @"
+ORDER BY p.PostedAt DESC,p.RegId DESC;", cn);
         AddFilters(cmd, hotelId, filter);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
         {
+            var invoice = rd.IsDBNull(rd.GetOrdinal("InvoiceTotal")) ? (decimal?)null : Convert.ToDecimal(rd["InvoiceTotal"]);
+            var tax = rd.IsDBNull(rd.GetOrdinal("TaxAmount")) ? (decimal?)null : Convert.ToDecimal(rd["TaxAmount"]);
+            exportInvoiceSum += invoice ?? 0m;
+            exportTaxSum += tax ?? 0m;
             var values = new[] { ReadString(rd,"RegId"),ReadString(rd,"GuestName"),ReadString(rd,"GuestPhone"),
-                ReadString(rd,"Status"),ReadString(rd,"PostedAt"),ReadString(rd,"InvoiceNo") };
+                ReadString(rd,"Status"),ReadString(rd,"PostedAt"),ReadString(rd,"InvoiceNo"),
+                invoice?.ToString("F2",CultureInfo.InvariantCulture) ?? "",
+                tax?.ToString("F2",CultureInfo.InvariantCulture) ?? "" };
             csv.AppendLine(string.Join(',', values.Select(CsvCell)));
         }
+        // Export is capped at 50,000 rows as before. This footer totals only exported rows.
+        csv.AppendLine(string.Join(',', new[] { "Exported rows total", "", "", "", "", "",
+            exportInvoiceSum.ToString("F2",CultureInfo.InvariantCulture),
+            exportTaxSum.ToString("F2",CultureInfo.InvariantCulture) }.Select(CsvCell)));
         return new UTF8Encoding(true).GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
     }
 
@@ -243,6 +286,31 @@ ORDER BY fbr_posted_at DESC, ID DESC;",cn);
             result.RetryBlockedReason="No enabled fiscal integration exists for this hotel.";
         else if (string.IsNullOrWhiteSpace(result.PaymentMethod))
             result.RetryBlockedReason="No recorded checkout payment method was found in the guest or payment history. Retry is blocked; do not assume Cash or Bank Transfer.";
+
+        // Make historical uncertain attempts visible in the review dialog instead
+        // of surprising the user with a permanent failure only after clicking Retry.
+        await using (var table = new SqlCommand("SELECT OBJECT_ID(N'dbo.FbrInvoiceRetryLogTB',N'U')",cn))
+        {
+            var tableId=await table.ExecuteScalarAsync(ct);
+            if (tableId is not null && tableId!=DBNull.Value)
+            {
+                await using var pending = new SqlCommand(@"
+SELECT TOP(1) ISNULL(ResponseSummary,'')
+FROM dbo.FbrInvoiceRetryLogTB
+WHERE HotelId=@h AND RegId=@r AND ResultStatus IN ('Started','Needs Review')
+ORDER BY Id DESC;", cn);
+                pending.Parameters.Add("@h",SqlDbType.VarChar,50).Value=hotelId;
+                pending.Parameters.Add("@r",SqlDbType.VarChar,60).Value=regId;
+                var summary=await pending.ExecuteScalarAsync(ct);
+                if(summary is not null)
+                {
+                    result.NeedsPreviousAttemptReconciliation=true;
+                    result.PreviousAttemptSummary=Convert.ToString(summary)?.Trim()??"";
+                    if(result.PreviousAttemptSummary.Length>350)
+                        result.PreviousAttemptSummary=result.PreviousAttemptSummary[..350]+"…";
+                }
+            }
+        }
         return result;
     }
 
@@ -313,7 +381,7 @@ ORDER BY recorded_at DESC, source_order, id DESC;", cn);
     /// as normal checkout, so there are not two competing fiscal payloads.
     /// </summary>
     public async Task<string> RetryAsync(string hotelId, string userId, string userName,
-        string ip, string regId, string authority, CancellationToken ct)
+        string ip, string regId, string authority, bool confirmedNoInvoice, CancellationToken ct)
     {
         await using var cn=new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
@@ -350,21 +418,44 @@ SELECT @result;",cn))
                 if(auditTable==null || auditTable==DBNull.Value)
                     throw new InvalidOperationException("Fiscal retry audit table is missing. Run docs/Install_FbrRetryAudit.sql before enabling retries.");
             }
+            // Any prior Started/Needs Review record requires explicit user
+            // attestation that the fiscal portal has no accepted invoice.
+            // Preserve the old audit history with the reconciling user/time.
             await using(var pending=new SqlCommand(@"
-SELECT TOP(1) ResultStatus FROM dbo.FbrInvoiceRetryLogTB
+SELECT TOP(1) Id FROM dbo.FbrInvoiceRetryLogTB
 WHERE HotelId=@h AND RegId=@r AND ResultStatus IN ('Started','Needs Review')
 ORDER BY Id DESC;",cn))
             {
                 pending.Parameters.Add("@h",SqlDbType.VarChar,50).Value=hotelId;
                 pending.Parameters.Add("@r",SqlDbType.VarChar,60).Value=regId;
-                if(await pending.ExecuteScalarAsync(ct) is not null)
-                    throw new InvalidOperationException("An earlier fiscal retry is unconfirmed. Reconcile it with the fiscal provider before retrying again.");
+                var prior = await pending.ExecuteScalarAsync(ct);
+                if(prior is not null)
+                {
+                    if(!confirmedNoInvoice)
+                        throw new InvalidOperationException("A prior fiscal submission has an unknown outcome. Verify the fiscal portal and tick the reconciliation confirmation before retrying.");
+                    // A second invoice check under the SQL application lock.
+                    if(await HasInvoiceAsync(cn,hotelId,regId,ct))
+                        throw new InvalidOperationException("A fiscal invoice number now exists; retry is blocked.");
+                    await using var reconcile = new SqlCommand(@"
+UPDATE dbo.FbrInvoiceRetryLogTB
+SET ResultStatus='Reconciled',
+    CompletedAt=ISNULL(CompletedAt,GETDATE()),
+    ResponseSummary=LEFT(CONCAT(ISNULL(ResponseSummary,''),
+      ' | Fiscal portal checked: no invoice accepted. Reconciled by user ',@user,
+      ' at ',CONVERT(varchar(19),GETUTCDATE(),120),' UTC.'),4000)
+WHERE HotelId=@h AND RegId=@r AND ResultStatus IN ('Started','Needs Review');",cn);
+                    reconcile.Parameters.Add("@h",SqlDbType.VarChar,50).Value=hotelId;
+                    reconcile.Parameters.Add("@r",SqlDbType.VarChar,60).Value=regId;
+                    reconcile.Parameters.Add("@user",SqlDbType.VarChar,100).Value=userId;
+                    await reconcile.ExecuteNonQueryAsync(ct);
+                    _log.LogWarning("User {UserId} reconciled uncertain fiscal retries for hotel {HotelId} reservation {RegId} based on portal verification",userId,hotelId,regId);
+                }
             }
             await using(var create=new SqlCommand(@"
 INSERT INTO dbo.FbrInvoiceRetryLogTB
 (HotelId,RegId,RequestedBy,FiscalAuthority,PaymentMethod,StartedAt,ResultStatus)
 OUTPUT INSERTED.Id
-VALUES(@h,@r,@u,@a,@m,GETDATE(),'Started');",cn))
+VALUES(@h,@r,@u,@a,@m,GETDATE(),'Preparing');",cn))
             {
                 create.Parameters.Add("@h",SqlDbType.VarChar,50).Value=hotelId;
                 create.Parameters.Add("@r",SqlDbType.VarChar,60).Value=regId;
@@ -373,8 +464,25 @@ VALUES(@h,@r,@u,@a,@m,GETDATE(),'Started');",cn))
                 create.Parameters.Add("@m",SqlDbType.NVarChar,50).Value=current.PaymentMethod;
                 auditId=Convert.ToInt64(await create.ExecuteScalarAsync(ct));
             }
-            // Audit exists and reservations still failed at the moment of sending.
-            // Calling CheckInService rechecks existing invoice numbers itself.
+            // A TCP test before the real HTTP request lets us prove a failed
+            // connection was NOT sent. This probe never posts an invoice.
+            var (reachable, connectionError) = await ProbeFiscalEndpointAsync(route.InvoiceUrl,ct);
+            if(!reachable)
+            {
+                await FinishAuditAsync(cn,auditId,"Not Sent","",
+                    "TCP connection check failed before any HTTP invoice POST. "+connectionError,CancellationToken.None);
+                auditId=0;
+                throw new InvalidOperationException("Fiscal server is unreachable. No invoice was submitted by this retry. " + connectionError);
+            }
+            await using(var markStarted=new SqlCommand(@"
+UPDATE dbo.FbrInvoiceRetryLogTB SET ResultStatus='Started' WHERE Id=@id AND ResultStatus='Preparing';",cn))
+            {
+                markStarted.Parameters.Add("@id",SqlDbType.BigInt).Value=auditId;
+                if(await markStarted.ExecuteNonQueryAsync(ct)!=1)
+                    throw new InvalidOperationException("Unable to record fiscal send-start state; request was not sent.");
+            }
+            // Audit is now Started. Only after this point may an actual HTTP
+            // invoice POST be made. CheckInService performs another invoice check.
             var result=await _checkIn.PostToFbrAsync(hotelId,userId,userName,ip,new FbrPostRequest
             {
                 RegId=regId, VisitId=current.VisitId, PaymentMethod=current.PaymentMethod,
@@ -382,16 +490,27 @@ VALUES(@h,@r,@u,@a,@m,GETDATE(),'Started');",cn))
             },ct);
             var invoiceNo=await ReadValidInvoiceAsync(cn,hotelId,regId,ct);
             var confirmed=result.Success && invoiceNo.Length>0;
-            await FinishAuditAsync(cn,auditId,confirmed?"Posted":"Needs Review",invoiceNo,result.Message,ct);
+            var notSent = !confirmed && result.Data is string marker && marker=="Not Sent";
+            var finalStatus=confirmed ? "Posted" : notSent ? "Not Sent" : "Needs Review";
+            await FinishAuditAsync(cn,auditId,finalStatus,invoiceNo,result.Message,ct);
+            auditId=0; // Completed status must not be overwritten by catch.
             if(!confirmed)
-                throw new InvalidOperationException(result.Message + " Confirm whether an invoice was accepted in the fiscal portal before trying again.");
+                throw new InvalidOperationException(result.Message + (notSent
+                    ? " No fiscal invoice was sent. Retry after restoring connectivity or correcting the request."
+                    : " The outcome may be uncertain; verify the fiscal portal before another retry."));
             return result.Message + " Invoice: " + invoiceNo;
         }
         catch(Exception ex)
         {
             if(auditId!=0)
             {
-                try { await FinishAuditAsync(cn,auditId,"Needs Review","",ex.Message,CancellationToken.None); }
+                try {
+                    // An attempt still marked Preparing has never been handed
+                    // to CheckInService for HTTP transmission.
+                    var state = await ReadAuditStateAsync(cn,auditId);
+                    await FinishAuditAsync(cn,auditId,state=="Preparing" ? "Not Sent" : "Needs Review",
+                        "",ex.Message,CancellationToken.None);
+                }
                 catch(Exception auditEx){_log.LogError(auditEx,"Could not finalize retry audit {AuditId}",auditId);}
             }
             throw;
@@ -409,6 +528,41 @@ VALUES(@h,@r,@u,@a,@m,GETDATE(),'Started');",cn))
                 catch(Exception ex){_log.LogWarning(ex,"Failed to release fiscal retry lock; SQL session close will release it.");}
             }
         }
+    }
+
+    private static async Task<string> ReadAuditStateAsync(SqlConnection cn,long auditId)
+    {
+        await using var cmd=new SqlCommand("SELECT ResultStatus FROM dbo.FbrInvoiceRetryLogTB WHERE Id=@id",cn);
+        cmd.Parameters.Add("@id",SqlDbType.BigInt).Value=auditId;
+        return Convert.ToString(await cmd.ExecuteScalarAsync(CancellationToken.None))??"";
+    }
+
+    // A failed connect means the HTTP invoice POST has not even begun. A
+    // successful probe does NOT prove a subsequent HTTP POST succeeded; those
+    // later errors must still be handled as potentially delivered.
+    private static async Task<(bool Connected,string Failure)> ProbeFiscalEndpointAsync(string url,CancellationToken ct)
+    {
+        if(!Uri.TryCreate(url,UriKind.Absolute,out var uri) ||
+            (uri.Scheme!=Uri.UriSchemeHttp && uri.Scheme!=Uri.UriSchemeHttps))
+            return (false,"Invalid configured fiscal endpoint URL.");
+        using var tcp=new TcpClient();
+        using var timeout=CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            await tcp.ConnectAsync(uri.Host,uri.Port,timeout.Token);
+            return (true,"");
+        }
+        catch(OperationCanceledException) when(!ct.IsCancellationRequested)
+        {
+            return (false,"TCP connection timed out at "+uri.Host+":"+uri.Port+" (5 seconds).");
+        }
+        catch(SocketException ex)
+        {
+            return (false,"TCP connection to "+uri.Host+":"+uri.Port+" failed: "+ex.SocketErrorCode+".");
+        }
+        // Request cancellation (e.g. app shutdown) is allowed to bubble out;
+        // RetryAsync records any still-Preparing attempt as Not Sent.
     }
 
     private static async Task<string> ReadValidInvoiceAsync(SqlConnection cn,string hotelId,string regId,CancellationToken ct)
