@@ -1954,9 +1954,9 @@
             <td>${esc(detailText)}</td>
             <td>${visibleType}</td>
             <td class="room-cell reservation-room-number-cell">${visibleRoom}</td>
-            <td class="num occupancy-cell">${isRoom ? esc(charge.roomAdults ?? 0) : ''}</td>
-            <td class="num occupancy-cell">${isRoom ? esc(charge.roomChildren ?? 0) : ''}</td>
-            <td class="num occupancy-cell">${isRoom ? esc(charge.roomInfants ?? 0) : ''}</td>
+            <td class="num occupancy-cell" data-occupancy-field="adults" title="Double-click to edit guest counts">${isRoom ? esc(charge.roomAdults ?? 0) : ''}</td>
+            <td class="num occupancy-cell" data-occupancy-field="children" title="Double-click to edit guest counts">${isRoom ? esc(charge.roomChildren ?? 0) : ''}</td>
+            <td class="num occupancy-cell" data-occupancy-field="infants" title="Double-click to edit guest counts">${isRoom ? esc(charge.roomInfants ?? 0) : ''}</td>
             <td class="guest-cell inline-editable-cell" data-value="${isRoom ? esc(guestName) : ''}" data-can-edit-guest="${isRoom && statusKey !== 'checkout' && statusKey !== 'checkedout' ? '1' : '0'}" title="${isRoom && statusKey !== 'checkout' && statusKey !== 'checkedout' ? 'Double-click to edit guest name' : (isRoom ? 'Checked-out stay is read-only' : '')}">${visibleGuest}</td>
             <td>${visibleStay}</td>
             <td>${esc(planName)}</td>
@@ -1975,6 +1975,50 @@
         syncChargeOptionalColumns();
         syncCheckInActionFromRows();
         return row;
+    }
+
+    function openChargeOccupancyEditor(row) {
+        const paymentId = Number(row?.dataset.chargeId || 0);
+        if (!paymentId || !regId) return;
+        if (isCheckedOutReadOnly(row.dataset.status || state.reservationStatus)) return;
+        const cells = [...row.querySelectorAll('td.occupancy-cell')];
+        if (cells.length !== 3) return;
+        const old = cells.map(x => Math.max(0, Number(x.textContent.trim()) || 0));
+        const shade = document.createElement('div');
+        shade.className = 'mvc-counts-shade';
+        shade.innerHTML = `<div class="mvc-counts-dialog" role="dialog" aria-modal="true" aria-labelledby="mvcCountsTitle">
+          <header><b id="mvcCountsTitle">Edit Room Guests</b><button type="button" data-counts-close title="Close">×</button></header>
+          <p>Room ${esc(row.dataset.room || '—')} · Change counts for this specific stay segment.</p>
+          <div class="mvc-counts-grid">
+            <label>Adults<input type="number" data-guest-count="adults" min="0" max="30" step="1" value="${old[0]}"></label>
+            <label>Children<input type="number" data-guest-count="children" min="0" max="30" step="1" value="${old[1]}"></label>
+            <label>Infants<input type="number" data-guest-count="infants" min="0" max="30" step="1" value="${old[2]}"></label></div>
+          <footer><button type="button" data-counts-close>Cancel</button><button type="button" data-counts-save>Save Guests</button></footer></div>`;
+        document.body.appendChild(shade);
+        const close = () => shade.remove();
+        shade.querySelectorAll('[data-counts-close]').forEach(b => b.onclick = close);
+        shade.addEventListener('click', e => { if (e.target === shade) close(); });
+        shade.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+        const save = shade.querySelector('[data-counts-save]');
+        save.onclick = async () => {
+            const numbers = ['adults','children','infants'].map(key => Number(shade.querySelector(`[data-guest-count="${key}"]`).value));
+            if (numbers.some(x => !Number.isInteger(x) || x < 0 || x > 30) || numbers.reduce((a,b)=>a+b,0)===0)
+                return message('Enter valid whole-number guest counts with at least one guest.', 'error');
+            save.disabled = true;
+            try {
+                const response = await api('/Calendar/UpdateRoomOccupancy', {method:'POST',body:{regId,paymentId,adults:numbers[0],children:numbers[1],infants:numbers[2]}});
+                if (!response.ok) return message(response.message || 'Unable to update room guest counts.', 'error');
+                cells.forEach((cell,i)=>cell.textContent=String(numbers[i]));
+                if (Array.isArray(state.charges)) {
+                    const target=state.charges.find(x=>Number(x?.id||0)===paymentId);
+                    if (target){target.roomAdults=numbers[0];target.roomChildren=numbers[1];target.roomInfants=numbers[2];}
+                }
+                close();message('Room guest counts updated and logged.', 'success');
+                try { await refreshReservationUi(regId); } catch(_) { /* server commit already succeeded */ }
+            } catch(e){message(e.message || 'Unable to update room guests.', 'error');}
+            finally {save.disabled=false;}
+        };
+        shade.querySelector('input')?.focus();
     }
 
     function startInlineChargeEdit(row, mode) {
@@ -3501,6 +3545,8 @@
         const row = e.target.closest('tr[data-charge-id]');
         if (!row) return;
         if (isCheckedOutReadOnly(row.dataset.status || state.reservationStatus)) return;
+        const countsCell = e.target.closest('.occupancy-cell');
+        if (countsCell) { openChargeOccupancyEditor(row); return; }
         const guestCell = e.target.closest('.guest-cell');
         if (guestCell && guestCell.dataset.canEditGuest === '1') { startInlineChargeEdit(row, 'guest-name'); return; }
         const rateCell = e.target.closest('.rate-cell');

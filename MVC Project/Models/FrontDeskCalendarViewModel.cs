@@ -84,6 +84,12 @@ public sealed class FrontDeskBookingDto
     public string Id { get; set; } = string.Empty;
     public string RegId { get; set; } = string.Empty;
     public int PaymentId { get; set; }
+    // Daily calendar only: reservation master exists but has no Room Rent row.
+    public bool IsMissingRoomRent { get; set; }
+    // Raw reservation master total, used ONLY to prefill the missing-charge editor.
+    public decimal MasterTotalAmount { get; set; }
+    // Number of rooms expected by the reservation master (noofrooms can be a CSV of counts).
+    public int ExpectedRooms { get; set; } = 1;
     public string VisitId { get; set; } = string.Empty;
     public string BookId { get; set; } = string.Empty;
     public string GuestName { get; set; } = string.Empty;
@@ -265,6 +271,15 @@ public sealed class FrontDeskBlockActionRequest
     [Required, StringLength(150)] public string CategoryName { get; set; } = string.Empty;
 }
 
+public sealed class FrontDeskRoomOccupancyRequest
+{
+    [Required, StringLength(100)] public string RegId { get; set; } = string.Empty;
+    [Range(1, int.MaxValue)] public int PaymentId { get; set; }
+    [Range(0, 30)] public int Adults { get; set; }
+    [Range(0, 30)] public int Children { get; set; }
+    [Range(0, 30)] public int Infants { get; set; }
+}
+
 public sealed class FrontDeskBookingMoveRequest
 {
     [Required, StringLength(100)] public string RegId { get; set; } = string.Empty;
@@ -274,6 +289,27 @@ public sealed class FrontDeskBookingMoveRequest
     [Required, StringLength(150)] public string TargetCategoryName { get; set; } = string.Empty;
     public DateTime NewArrival { get; set; }
     public decimal? NightlyRateOverride { get; set; }
+    // Daily calendar master-only room assignment, ignored by ordinary moves.
+    [StringLength(100)] public string RatePlanId { get; set; } = string.Empty;
+    public decimal? RoomRentTotal { get; set; }
+    // Optional room-level guest counts for single-room missing-charge repair.
+    // Null preserves the previous behavior for callers that omit them.
+    [Range(0,30)] public int? RoomAdults { get; set; }
+    [Range(0,30)] public int? RoomChildren { get; set; }
+    [Range(0,30)] public int? RoomInfants { get; set; }
+    // Explicit multi-room repair only, never used by existing payment-based moves.
+    public List<FrontDeskMissingRoomAssignmentDto>? RoomAssignments { get; set; }
+    public bool ConfirmRoomCountIncrease { get; set; }
+}
+
+public sealed class FrontDeskMissingRoomAssignmentDto
+{
+    [Required, StringLength(50)] public string RoomNo { get; set; } = string.Empty;
+    [Required, StringLength(100)] public string RatePlanId { get; set; } = string.Empty;
+    [Range(typeof(decimal), "0.01", "100000000")] public decimal RoomRentTotal { get; set; }
+    [Range(0,30)] public int Adults { get; set; }
+    [Range(0,30)] public int Children { get; set; }
+    [Range(0,30)] public int Infants { get; set; }
 }
 
 public sealed class FrontDeskBookingResizeRequest

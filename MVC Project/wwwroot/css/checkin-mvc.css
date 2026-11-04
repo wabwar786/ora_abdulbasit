@@ -5222,3 +5222,20 @@
 .mvc-checkout-room:last-child{border-bottom:0}.mvc-checkout-room:hover{background:#f5f9ff}
 .mvc-checkout-room span{min-width:0}.mvc-checkout-room small{display:block;margin-top:3px;color:#657789;line-height:1.5;font-size:11px}
 .mvc-checkout-count{text-align:right;padding-top:8px;font-size:11px;font-weight:750;color:#344963}
+
+/* Scoped room-segment occupancy editor; does not modify existing checkout/charge modals */
+#chargeRows td.occupancy-cell{cursor:pointer}
+#chargeRows tr:not(.charge-row-checkedout) td.occupancy-cell:hover{background:#eaf3ff;color:#124477}
+.mvc-counts-shade{position:fixed;inset:0;z-index:11000;background:rgba(10,29,53,.53);display:grid;place-items:center;padding:18px;backdrop-filter:blur(3px)}
+.mvc-counts-dialog{width:min(460px,100%);background:#fff;box-shadow:0 28px 80px rgba(7,28,52,.3);border-radius:15px;overflow:hidden;font-size:13px}
+.mvc-counts-dialog header{display:flex;align-items:center;justify-content:space-between;padding:18px;background:linear-gradient(110deg,#e9efff,#eef9f5);color:#0e2746}
+.mvc-counts-dialog header b{font-size:17px}
+.mvc-counts-dialog header button{border:0;border-radius:50%;background:#e83c4d;color:#fff;width:27px;height:27px;font-size:20px;cursor:pointer}
+.mvc-counts-dialog p{padding:16px 18px 0;color:#617289}
+.mvc-counts-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:16px 18px}
+.mvc-counts-grid label{font-weight:750;color:#52647b}
+.mvc-counts-grid input{width:100%;margin-top:6px;height:43px;border:1px solid #bccbdd;border-radius:9px;padding:7px 10px;color:#102b46;font-weight:700}
+.mvc-counts-dialog footer{display:flex;justify-content:flex-end;gap:8px;padding:13px 18px;background:#f8fafc;border-top:1px solid #e4eaf2}
+.mvc-counts-dialog footer button{border:1px solid #cbd5e1;border-radius:9px;padding:9px 14px;background:white;cursor:pointer}
+.mvc-counts-dialog footer [data-counts-save]{background:#102c48;color:white;border-color:#102c48;font-weight:700}
+@media(max-width:450px){.mvc-counts-grid{grid-template-columns:1fr}}

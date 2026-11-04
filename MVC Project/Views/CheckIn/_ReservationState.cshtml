@@ -101,9 +101,9 @@
                             }
                         }
                     </td>
-                    <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomAdults.ToString() : string.Empty)</td>
-                    <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomChildren.ToString() : string.Empty)</td>
-                    <td class="num occupancy-cell">@(isRoomRentRow ? row.RoomInfants.ToString() : string.Empty)</td>
+                    <td class="num occupancy-cell" data-occupancy-field="adults" title="Double-click to edit guest counts">@(isRoomRentRow ? row.RoomAdults.ToString() : string.Empty)</td>
+                    <td class="num occupancy-cell" data-occupancy-field="children" title="Double-click to edit guest counts">@(isRoomRentRow ? row.RoomChildren.ToString() : string.Empty)</td>
+                    <td class="num occupancy-cell" data-occupancy-field="infants" title="Double-click to edit guest counts">@(isRoomRentRow ? row.RoomInfants.ToString() : string.Empty)</td>
                     <td class="guest-cell inline-editable-cell" data-value="@(isRoomRentRow ? row.GuestName : string.Empty)" data-can-edit-guest="@(isRoomRentRow ? "1" : "0")" title="@(isRoomRentRow ? "Double-click to edit guest name" : "")">@(isRoomRentRow ? (string.IsNullOrWhiteSpace(row.GuestName) ? "—" : row.GuestName) : string.Empty)</td>
                     <td>@if (isRoomRentRow)
                         {

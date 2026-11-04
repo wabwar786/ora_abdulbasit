@@ -275,7 +275,68 @@ LEFT JOIN dbo.create_room cr WITH (READPAST)
 WHERE b.HotelID=@hotel AND ISNULL(b.IsActive,0)=1
   AND COALESCE(TRY_CONVERT(date,b.BlockStartDate,110),TRY_CONVERT(date,b.BlockStartDate,23),TRY_CONVERT(date,b.BlockStartDate)) <= @viewEnd
   AND COALESCE(TRY_CONVERT(date,b.BlockEndDate,110),TRY_CONVERT(date,b.BlockEndDate,23),TRY_CONVERT(date,b.BlockEndDate)) >= @viewStart
-ORDER BY BlockStartDate, BlockID;";
+ORDER BY BlockStartDate, BlockID;
+
+/* 5) DAILY calendar only. Master reservations without ANY Room Rent row.
+      Rows with an existing Room Rent payment (including an unassigned one)
+      stay entirely on the established payment-based path above. */
+;WITH MasterRows AS
+(
+    SELECT 1 AS SourcePriority, g.id AS SourceId,
+        CONVERT(varchar(100),g.reg_id) AS reg_id,
+        ISNULL(g.room_category,'') AS room_category,
+        LTRIM(RTRIM(CONCAT(ISNULL(g.GuestName,''),' ',ISNULL(g.LastName,'')))) AS guest_name,
+        ISNULL(g.PhoneNo,'') AS phone,
+        ISNULL(g.Agency,'') AS agency,
+        ISNULL(g.res_status,'') AS res_status,
+        COALESCE(TRY_CONVERT(date,g.ArrivalDate,110),TRY_CONVERT(date,g.ArrivalDate,23),TRY_CONVERT(date,g.ArrivalDate,103),TRY_CONVERT(date,g.ArrivalDate)) AS arrival,
+        COALESCE(TRY_CONVERT(date,g.DepartureDate,110),TRY_CONVERT(date,g.DepartureDate,23),TRY_CONVERT(date,g.DepartureDate,103),TRY_CONVERT(date,g.DepartureDate)) AS departure,
+        ISNULL(CONVERT(varchar(100),g.visit_id),'') AS visit_id,
+        ISNULL(CONVERT(varchar(100),g.Bookid),'') AS book_id,
+        ISNULL(CONVERT(varchar(100),g.booking_id),'') AS booking_id,
+        ISNULL(CONVERT(varchar(50),g.expirydate),'') AS expirydate,
+        ISNULL(TRY_CONVERT(int,g.NumberOfAdults),0) AS adults,
+        ISNULL(TRY_CONVERT(int,g.NumberOfMinors),0) AS children,
+        ISNULL(TRY_CONVERT(decimal(18,2),g.total_amount),0) AS master_total,
+        ISNULL(CONVERT(varchar(100),g.noofrooms),'1') AS room_count
+    FROM dbo.GuestInformationLogTB g WITH (READPAST)
+    WHERE g.hotel_id=@hotel AND LOWER(LTRIM(RTRIM(ISNULL(g.res_status,'')))) IN ('reservation','check in','provisional','tentative','booked','confirmed')
+
+    UNION ALL
+
+    SELECT 2,n.id,CONVERT(varchar(100),n.reg_id),ISNULL(n.room_category,''),
+        LTRIM(RTRIM(CONCAT(ISNULL(n.GuestName,''),' ',ISNULL(n.LastName,'')))),
+        ISNULL(n.PhoneNo,''),ISNULL(n.Agency,''),ISNULL(n.res_status,''),
+        COALESCE(TRY_CONVERT(date,n.ArrivalDate,110),TRY_CONVERT(date,n.ArrivalDate,23),TRY_CONVERT(date,n.ArrivalDate,103),TRY_CONVERT(date,n.ArrivalDate)),
+        COALESCE(TRY_CONVERT(date,n.dept_date,110),TRY_CONVERT(date,n.dept_date,23),TRY_CONVERT(date,n.dept_date,103),TRY_CONVERT(date,n.dept_date)),
+        CAST('' AS varchar(100)),ISNULL(CONVERT(varchar(100),n.Bookid),''),ISNULL(CONVERT(varchar(100),n.booking_id),''),
+        ISNULL(CONVERT(varchar(50),n.expirydate),''),ISNULL(TRY_CONVERT(int,n.number_of_adult),0),
+        ISNULL(TRY_CONVERT(int,n.number_of_minor),0),ISNULL(TRY_CONVERT(decimal(18,2),n.total_amount),0),
+        ISNULL(CONVERT(varchar(100),n.noofrooms),'1')
+    FROM dbo.NewReservationsTB n WITH (READPAST)
+    WHERE n.hotel_id=@hotel AND LOWER(LTRIM(RTRIM(ISNULL(n.res_status,'')))) IN ('reservation','check in','provisional','tentative','booked','confirmed')
+), RankedMasters AS
+(
+    SELECT *,ROW_NUMBER() OVER (PARTITION BY reg_id ORDER BY SourcePriority,SourceId DESC) AS rn
+    FROM MasterRows
+    WHERE arrival<=@viewEnd AND departure>@viewStart AND departure>arrival
+)
+SELECT m.reg_id,m.room_category,m.guest_name,m.phone,m.agency,m.res_status,
+       m.arrival,m.departure,m.visit_id,m.book_id,m.booking_id,m.expirydate,
+       m.adults,m.children,m.master_total,m.room_count,
+       COALESCE(TRY_CONVERT(decimal(18,2),pu.grand_total),m.master_total) AS grand_total,
+       ISNULL(TRY_CONVERT(decimal(18,2),pu.paid_amount),0) AS paid_amount,
+       ISNULL(TRY_CONVERT(decimal(18,2),pu.remaining_amount),
+              COALESCE(TRY_CONVERT(decimal(18,2),pu.grand_total),m.master_total)) AS remaining_amount
+FROM RankedMasters m
+OUTER APPLY (SELECT TOP (1) grand_total,paid_amount,remaining_amount
+             FROM dbo.PaymentsUpdateTB WHERE hotel_id=@hotel AND reg_id=m.reg_id ORDER BY id DESC) pu
+WHERE m.rn=1
+  AND NOT EXISTS
+      (SELECT 1 FROM dbo.payments p
+       WHERE p.hotel_id=@hotel AND p.reg_id=m.reg_id
+         AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent')
+ORDER BY m.arrival,m.reg_id OPTION (MAXDOP 1);";
 
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
@@ -439,6 +500,72 @@ ORDER BY BlockStartDate, BlockID;";
                     Kind = reason.Contains("maintenance", StringComparison.OrdinalIgnoreCase) ||
                            note.Contains("maintenance", StringComparison.OrdinalIgnoreCase)
                         ? "Maintenance" : "Room Block"
+                });
+            }
+        }
+
+        // Fifth result set is a read-only fallback; it never changes payment rows.
+        // A missing/unknown category is rendered as a virtual category, not a
+        // physical room.  This path applies only to the DAILY calendar service.
+        if (await rd.NextResultAsync(ct))
+        {
+            var categoryByName = new Dictionary<string, FrontDeskCategoryDto>(StringComparer.OrdinalIgnoreCase);
+            foreach (var c in categories)
+                categoryByName.TryAdd(c.Name.Trim(), c);
+            while (await rd.ReadAsync(ct))
+            {
+                var arrival = D(rd, "arrival");
+                var departure = D(rd, "departure");
+                if (!arrival.HasValue || !departure.HasValue || departure <= arrival) continue;
+                var status = S(rd, "res_status");
+                if (LegacyStatusCode(status) == "P" &&
+                    TryParseLegacyDate(S(rd, "expirydate"), out var expiry) && expiry.Date < hotelToday.Date)
+                    continue;
+
+                var sourceCategory = S(rd, "room_category").Trim();
+                var categoryName = sourceCategory.Length == 0 ? "Unknown" : sourceCategory;
+                if (!categoryByName.TryGetValue(categoryName, out var category))
+                {
+                    // Use a deterministic virtual identifier; never pretend this
+                    // orphan category exists in dbo.create_room.
+                    var virtualId = "__MASTER_" + Convert.ToHexString(
+                        SHA256.HashData(Encoding.UTF8.GetBytes(categoryName.ToUpperInvariant())))[..16];
+                    category = new FrontDeskCategoryDto { Id = virtualId, Name = categoryName };
+                    categories.Add(category);
+                    categoryByName[categoryName] = category;
+                }
+
+                var total = M(rd, "grand_total");
+                var paid = M(rd, "paid_amount");
+                bookings.Add(new FrontDeskBookingDto
+                {
+                    Id = "M" + S(rd, "reg_id"),
+                    RegId = S(rd, "reg_id"),
+                    PaymentId = 0,
+                    IsMissingRoomRent = true,
+                    MasterTotalAmount = M(rd, "master_total"),
+                    ExpectedRooms = ParseExpectedRooms(S(rd,"room_count")),
+                    VisitId = S(rd, "visit_id"),
+                    BookId = S(rd, "book_id"),
+                    GuestName = S(rd, "guest_name"),
+                    Phone = S(rd, "phone"),
+                    RoomNo = string.Empty,
+                    CategoryId = category.Id,
+                    CategoryName = categoryName,
+                    Arrival = arrival.Value,
+                    Departure = departure.Value,
+                    Status = DisplayStatus(status, arrival.Value, hotelToday),
+                    StatusCode = LegacyStatusCode(status),
+                    Source = S(rd, "agency"),
+                    Total = total,
+                    Paid = paid,
+                    Balance = M(rd, "remaining_amount"),
+                    PaymentStatus = LegacyPaymentStatus(total, paid, M(rd, "remaining_amount")),
+                    ChannexBookingId = S(rd, "booking_id"),
+                    Adults = I(rd, "adults"),
+                    Children = I(rd, "children"),
+                    CanDrag = permissions.CanDragDrop,
+                    CanResize = false
                 });
             }
         }
@@ -1015,6 +1142,12 @@ UPDATE dbo.RoomBlocksTB SET BlockEndDate=@end,IsActive=0 WHERE HotelID=@hotel AN
         string hotelId, string hotelName, string userId, string userName, string ip,
         FrontDeskBookingMoveRequest request, CancellationToken ct = default)
     {
+        if (request != null && request.PaymentId == 0)
+        {
+            if (request.RoomAssignments is { Count: > 1 })
+                return await AssignMultipleMasterOnlyReservationAsync(hotelId, hotelName, userId, userName, ip, request, ct);
+            return await AssignMasterOnlyReservationAsync(hotelId, hotelName, userId, userName, ip, request, ct);
+        }
         if (request == null || string.IsNullOrWhiteSpace(request.RegId) || request.PaymentId <= 0)
             return FrontDeskOperationResult.Fail("Invalid reservation move request.");
         if (request.NewArrival == default) return FrontDeskOperationResult.Fail("A valid new arrival date is required.");
@@ -1236,6 +1369,720 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@id AND LTRIM(RTRIM(ISNULL(descr,''
         }
     }
 
+    // One room/date segment, never every payment row for a booking.
+    // This route is shared by the daily calendar and Check-In's double-click cell editor.
+    public async Task<FrontDeskOperationResult> UpdateRoomOccupancyAsync(
+        string hotelId, string userId, string userName, string ip,
+        FrontDeskRoomOccupancyRequest request, CancellationToken ct = default)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId) || request.PaymentId <= 0 ||
+            request.Adults < 0 || request.Children < 0 || request.Infants < 0 ||
+            request.Adults > 30 || request.Children > 30 || request.Infants > 30 ||
+            request.Adults + request.Children + request.Infants == 0)
+            return FrontDeskOperationResult.Fail("Enter valid room guest counts (at least one guest).");
+        var regId = NormalizeRegId(request.RegId);
+        var permitted = await GetPermissionsAsync(hotelId, userId, string.Empty, ct);
+        if (!permitted.CanViewDetails || (!permitted.CanChangeRoom && !permitted.CanDragDrop))
+            return FrontDeskOperationResult.Fail("You do not have permission to edit room occupancy.");
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        try
+        {
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
+            // Authoritative payment row ID + hotel + reservation protect against cross-hotel edits.
+            // Lock and reject checked-out/cancelled segments; no fiscal or payment amounts change.
+            await using (var cmd = new SqlCommand(@"
+UPDATE dbo.payments
+SET room_adults=@adults, room_children=@children, room_infants=@infants
+WHERE ID=@id AND hotel_id=@hotel AND reg_id=@reg
+  AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) NOT IN
+    ('check out','checkout','checked out','cancelled','canceled','cancel','no show','noshow','no-show');", cn, tx))
+            {
+                cmd.Parameters.Add("@adults", SqlDbType.Int).Value=request.Adults;
+                cmd.Parameters.Add("@children", SqlDbType.Int).Value=request.Children;
+                cmd.Parameters.Add("@infants", SqlDbType.Int).Value=request.Infants;
+                cmd.Parameters.Add("@id", SqlDbType.Int).Value=request.PaymentId;
+                cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value=hotelId;
+                cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value=regId;
+                if (await cmd.ExecuteNonQueryAsync(ct)!=1)
+                {
+                    await tx.RollbackAsync(ct);
+                    return FrontDeskOperationResult.Fail("Room Rent row is missing or locked for editing.");
+                }
+            }
+            // The parent reservation counts use one latest occupancy per physical room.
+            // A date extension does not create extra occupants simply because it adds a row.
+            await using (var sync = new SqlCommand(@"
+DECLARE @adultCount int=0,@minorCount int=0;
+;WITH P AS
+(
+ SELECT LTRIM(RTRIM(ISNULL(room_no,''))) AS roomNo,
+        ISNULL(TRY_CONVERT(int,room_adults),0) AS adults,
+        ISNULL(TRY_CONVERT(int,room_children),0) AS children,
+        ISNULL(TRY_CONVERT(int,room_infants),0) AS infants,
+        ROW_NUMBER() OVER(PARTITION BY LTRIM(RTRIM(ISNULL(room_no,'')))
+           ORDER BY CASE WHEN ID=@id THEN 0 ELSE 1 END,
+                    CASE WHEN ISNULL(TRY_CONVERT(int,room_adults),0)+ISNULL(TRY_CONVERT(int,room_children),0)+ISNULL(TRY_CONVERT(int,room_infants),0)>0 THEN 0 ELSE 1 END,
+                    ID DESC) AS rn
+ FROM dbo.payments
+ WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+   AND NULLIF(LTRIM(RTRIM(ISNULL(room_no,''))),'') IS NOT NULL AND UPPER(LTRIM(RTRIM(ISNULL(room_no,''))))<>'UNASSIGNED'
+   AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) NOT IN ('cancelled','canceled','cancel','no show','noshow','no-show')
+)
+SELECT @adultCount=ISNULL(SUM(adults),0),@minorCount=ISNULL(SUM(children+infants),0) FROM P WHERE rn=1;
+UPDATE dbo.GuestInformationLogTB SET NumberOfAdults=@adultCount,NumberOfMinors=@minorCount WHERE hotel_id=@hotel AND reg_id=@reg;
+UPDATE dbo.NewReservationsTB SET number_of_adult=@adultCount,number_of_minor=@minorCount WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
+            {
+                sync.Parameters.Add("@id", SqlDbType.Int).Value=request.PaymentId;
+                sync.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value=hotelId;
+                sync.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value=regId;
+                await sync.ExecuteNonQueryAsync(ct);
+            }
+            await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
+                "UPDATE ROOM OCCUPANCY", $"Room segment #{request.PaymentId}: Adults {request.Adults}, Children {request.Children}, Infants {request.Infants}", ct);
+            await tx.CommitAsync(ct);
+            return FrontDeskOperationResult.Ok("Room guest counts updated.", new
+            {
+                paymentId=request.PaymentId, adults=request.Adults, children=request.Children, infants=request.Infants
+            });
+        }
+        catch(Exception ex)
+        {
+            try { await tx.RollbackAsync(ct); } catch { }
+            _logger.Error(ex,"Unable to update room guest counts for {RegId}/{PaymentId}",regId,request.PaymentId);
+            return FrontDeskOperationResult.Fail("Unable to update room guest counts. " + ex.Message);
+        }
+    }
+
+    // Reservation masters store noofrooms as either "2" or grouped CSV counts ("2,1").
+    private static int ParseExpectedRooms(string? text)
+    {
+        var sum = 0;
+        foreach (var value in (text ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) || n < 0)
+                return 1; // Malformed legacy record: never guess a multi-room quantity.
+            if (n > 50 || sum + n > 50) return 50;
+            sum += n;
+        }
+        return Math.Max(1, sum);
+    }
+
+    // Repair a master-only reservation that needs several physical rooms.
+    // This path is deliberately separate from all existing payment-ID moves and
+    // the single-room repair; every room must validate before ANY row is saved.
+    private async Task<FrontDeskOperationResult> AssignMultipleMasterOnlyReservationAsync(
+        string hotelId, string hotelName, string userId, string userName, string ip,
+        FrontDeskBookingMoveRequest request, CancellationToken ct)
+    {
+        var lines = request.RoomAssignments;
+        if (request.PaymentId != 0 || lines == null || lines.Count < 2 || lines.Count > 20)
+            return FrontDeskOperationResult.Fail("Add between 2 and 20 physical rooms to this reservation.");
+        var regId = NormalizeRegId(request.RegId);
+        if (regId.Length == 0) return FrontDeskOperationResult.Fail("Reservation ID is required.");
+        var allowed = await GetPermissionsAsync(hotelId, userId, string.Empty, ct);
+        if (!allowed.CanDragDrop) return FrontDeskOperationResult.Fail("You do not have permission to assign rooms.");
+        var roomNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        decimal totalRoomRent = 0m;
+        foreach (var line in lines)
+        {
+            if (line == null || string.IsNullOrWhiteSpace(line.RoomNo) || line.RoomNo.Trim().Length > 50 ||
+                string.IsNullOrWhiteSpace(line.RatePlanId) || line.RatePlanId.Trim().Length > 100 ||
+                line.RoomRentTotal <= 0m || line.RoomRentTotal > 100000000m ||
+                line.Adults < 0 || line.Adults > 30 || line.Children < 0 || line.Children > 30 ||
+                line.Infants < 0 || line.Infants > 30)
+                return FrontDeskOperationResult.Fail("Every room needs a valid room, rate plan, amount and guest counts.");
+            if (!roomNumbers.Add(line.RoomNo.Trim()))
+                return FrontDeskOperationResult.Fail("The same physical room cannot be added twice.");
+            totalRoomRent += Math.Round(line.RoomRentTotal, 2, MidpointRounding.AwayFromZero);
+            if (totalRoomRent > 100000000m)
+                return FrontDeskOperationResult.Fail("The combined Room Rent amount is too large.");
+        }
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        try
+        {
+            // Per-reservation lock works across app instances; the second
+            // check happens under the same transaction to prevent double charges.
+            await using (var lockCmd = new SqlCommand(@"
+DECLARE @result int;
+EXEC @result=sys.sp_getapplock @Resource=@key,@LockMode='Exclusive',
+ @LockOwner='Transaction',@LockTimeout=3000;
+SELECT @result;",cn,tx))
+            {
+                lockCmd.Parameters.Add("@key",SqlDbType.NVarChar,255).Value="FDC:assign:"+hotelId+":"+regId;
+                if (Convert.ToInt32(await lockCmd.ExecuteScalarAsync(ct),CultureInfo.InvariantCulture)<0)
+                    return FrontDeskOperationResult.Fail("This reservation is being updated. Please retry.");
+            }
+            await using (var existing = new SqlCommand(@"
+SELECT CASE WHEN EXISTS(SELECT 1 FROM dbo.payments WITH (UPDLOCK,HOLDLOCK)
+ WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent')
+ THEN 1 ELSE 0 END;",cn,tx))
+            {
+                existing.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                existing.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=regId;
+                if (Convert.ToInt32(await existing.ExecuteScalarAsync(ct),CultureInfo.InvariantCulture)!=0)
+                    return FrontDeskOperationResult.Fail("Room Rent has already been assigned. Refresh the calendar.");
+            }
+
+            string originalCategory=string.Empty,guestName=string.Empty,status=string.Empty,expiryText=string.Empty;
+            string expectedText="1";
+            var arrival=DateTime.MinValue;var departure=DateTime.MinValue;
+            var originalTotal=0m;
+            await using (var master = new SqlCommand(@"
+;WITH src AS
+(
+ SELECT 1 AS prio,ID,'GI' AS src,ISNULL(room_category,'') category,
+  ISNULL(res_status,'') st,LTRIM(RTRIM(CONCAT(ISNULL(GuestName,''),' ',ISNULL(LastName,'')))) guest,
+  COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)) a,
+  COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate)) d,
+  ISNULL(TRY_CONVERT(decimal(18,2),total_amount),0) total,
+  ISNULL(CONVERT(varchar(100),noofrooms),'1') countText,ISNULL(CONVERT(varchar(50),expirydate),'') expiry
+ FROM dbo.GuestInformationLogTB WITH (UPDLOCK,HOLDLOCK) WHERE hotel_id=@hotel AND reg_id=@reg
+ UNION ALL
+ SELECT 2,ID,'NR',ISNULL(room_category,''),ISNULL(res_status,''),
+  LTRIM(RTRIM(CONCAT(ISNULL(GuestName,''),' ',ISNULL(LastName,'')))),
+  COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)),
+  COALESCE(TRY_CONVERT(date,dept_date,110),TRY_CONVERT(date,dept_date,23),TRY_CONVERT(date,dept_date,103),TRY_CONVERT(date,dept_date)),
+  ISNULL(TRY_CONVERT(decimal(18,2),total_amount),0),
+  ISNULL(CONVERT(varchar(100),noofrooms),'1'),ISNULL(CONVERT(varchar(50),expirydate),'')
+ FROM dbo.NewReservationsTB WITH (UPDLOCK,HOLDLOCK) WHERE hotel_id=@hotel AND reg_id=@reg
+)
+SELECT TOP (1) category,st,guest,a,d,total,countText,expiry FROM src ORDER BY prio,ID DESC;",cn,tx))
+            {
+                master.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                master.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=regId;
+                await using var rd = await master.ExecuteReaderAsync(ct);
+                if (!await rd.ReadAsync(ct)) return FrontDeskOperationResult.Fail("Reservation not found.");
+                originalCategory=S(rd,"category");guestName=S(rd,"guest");status=S(rd,"st");
+                expectedText=S(rd,"countText");expiryText=S(rd,"expiry");
+                arrival=D(rd,"a")??DateTime.MinValue;departure=D(rd,"d")??DateTime.MinValue;
+                originalTotal=M(rd,"total");
+            }
+            if (!new[]{"reservation","check in","provisional","tentative","booked","confirmed"}
+                .Contains(status.Trim().ToLowerInvariant()))
+                return FrontDeskOperationResult.Fail("This reservation is no longer active.");
+            if ((status.Equals("provisional",StringComparison.OrdinalIgnoreCase) ||
+                 status.Equals("tentative",StringComparison.OrdinalIgnoreCase)) &&
+                TryParseLegacyDate(expiryText,out var expiry) &&
+                expiry.Date < _hotelClock.GetHotelToday(hotelId))
+                return FrontDeskOperationResult.Fail("This provisional reservation has expired.");
+            if (arrival==DateTime.MinValue || departure<=arrival || request.NewArrival.Date!=arrival.Date)
+                return FrontDeskOperationResult.Fail("Reservation dates have changed. Refresh and retry.");
+            var expected=ParseExpectedRooms(expectedText);
+            if (lines.Count < expected)
+                return FrontDeskOperationResult.Fail($"The booking expects {expected} rooms. Add all rooms before saving.");
+            if (lines.Count > expected && !request.ConfirmRoomCountIncrease)
+                return FrontDeskOperationResult.Fail("Confirm the increase in booked rooms before saving.");
+
+            // Lock rooms in a deterministic order. Availability and council access
+            // are checked for EVERY destination before inserting the first charge.
+            foreach (var number in roomNumbers.OrderBy(x=>x,StringComparer.OrdinalIgnoreCase))
+            {
+                await using var roomLock = new SqlCommand(@"
+DECLARE @result int;
+EXEC @result=sys.sp_getapplock @Resource=@key,@LockMode='Exclusive',
+ @LockOwner='Transaction',@LockTimeout=3000;
+SELECT @result;",cn,tx);
+                roomLock.Parameters.Add("@key",SqlDbType.NVarChar,255).Value=
+                    "FDC:room:"+hotelId+":"+number+":"+arrival.ToString("yyyyMMdd",CultureInfo.InvariantCulture)+":"+departure.ToString("yyyyMMdd",CultureInfo.InvariantCulture);
+                if (Convert.ToInt32(await roomLock.ExecuteScalarAsync(ct),CultureInfo.InvariantCulture)<0)
+                    return FrontDeskOperationResult.Fail("A destination room is currently being assigned. Please retry.");
+            }
+
+            var rows = new List<(string Room,string CategoryId,string Category,string Plan,string PlanName,
+                decimal Amount,int Adults,int Children,int Infants)>();
+            foreach (var line in lines)
+            {
+                var room=line.RoomNo.Trim();
+                var info=await GetRoomInfoAsync(cn,tx,hotelId,room,ct);
+                if (!info.HasValue || string.IsNullOrWhiteSpace(info.Value.CategoryId))
+                    return FrontDeskOperationResult.Fail("The selected room/category is unavailable: "+room);
+                var cat=info.Value.CategoryName;
+                var catId=info.Value.CategoryId;
+                var planId=line.RatePlanId.Trim();
+                await using var plan = new SqlCommand(@"
+SELECT TOP (1) planname FROM dbo.category_plan
+WHERE hotel_id=@hotel AND CONVERT(varchar(100),localplanid)=@plan
+  AND (LTRIM(RTRIM(ISNULL(category,'')))=@cat OR CONVERT(varchar(100),category_id)=@catId)
+ORDER BY ID DESC;",cn,tx);
+                plan.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                plan.Parameters.Add("@plan",SqlDbType.VarChar,100).Value=planId;
+                plan.Parameters.Add("@cat",SqlDbType.VarChar,150).Value=cat;
+                plan.Parameters.Add("@catId",SqlDbType.VarChar,100).Value=catId;
+                var name=Convert.ToString(await plan.ExecuteScalarAsync(ct),CultureInfo.InvariantCulture)??string.Empty;
+                if (name.Length==0)
+                    return FrontDeskOperationResult.Fail("The selected plan is not available for room "+room);
+                await using (var access=new SqlCommand(@"
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Hms_accounts ha
+ WHERE CONVERT(varchar(100),ha.user_id)=@user
+ AND LOWER(LTRIM(RTRIM(ISNULL(ha.role,''))))='council')
+ AND NOT EXISTS (SELECT 1 FROM dbo.UserRoomAccess a
+ WHERE a.HotelId=@hotel AND a.RoomNo=@room
+ AND CONVERT(varchar(100),a.UserId)=@user)
+ THEN 0 ELSE 1 END;",cn,tx))
+                {
+                    access.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                    access.Parameters.Add("@room",SqlDbType.VarChar,50).Value=room;
+                    access.Parameters.Add("@user",SqlDbType.VarChar,100).Value=userId;
+                    if (Convert.ToInt32(await access.ExecuteScalarAsync(ct),CultureInfo.InvariantCulture)==0)
+                        return FrontDeskOperationResult.Fail("No permission to assign room "+room);
+                }
+                if (!await IsRoomFreeAsync(cn,tx,hotelId,room,arrival,departure,0,ct))
+                    return FrontDeskOperationResult.Fail("Room "+room+" is already occupied or blocked for this stay.");
+                rows.Add((room,catId,cat,planId,name,
+                    Math.Round(line.RoomRentTotal,2,MidpointRounding.AwayFromZero),
+                    line.Adults,line.Children,line.Infants));
+            }
+
+            // Keep grouped metadata aligned: category, rate plan and count list
+            // use the same ordering; payment rows hold the precise room mapping.
+            var groups=rows.GroupBy(x=>new{x.CategoryId,x.Category,x.Plan,x.PlanName})
+                .Select(g=>new { g.Key.CategoryId,g.Key.Category,g.Key.Plan,g.Key.PlanName,Count=g.Count() }).ToList();
+            var groupCategories=string.Join(",",groups.Select(g=>g.Category));
+            var groupPlans=string.Join(",",groups.Select(g=>g.Plan));
+            var groupPlanNames=string.Join(",",groups.Select(g=>g.PlanName));
+            var groupCategoryIds=string.Join(",",groups.Select(g=>g.CategoryId));
+            var roomCsv=string.Join(",",rows.Select(x=>x.Room));
+            var countCsv=string.Join(",",groups.Select(g=>g.Count.ToString(CultureInfo.InvariantCulture)));
+            if (groupCategories.Length>150 || groupPlanNames.Length>300 || groupPlans.Length>300 ||
+                roomCsv.Length>250 || countCsv.Length>100 || groupCategoryIds.Length>300)
+                return FrontDeskOperationResult.Fail("Too many category/plan combinations. Use the reservation editor.");
+
+            decimal extrasAmount;
+            await using (var extras = new SqlCommand(@"
+SELECT ISNULL(SUM(ISNULL(TRY_CONVERT(decimal(18,2),totalamount),0)),0)
+FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg
+ AND LTRIM(RTRIM(ISNULL(descr,'')))<>'Room Rent';",cn,tx))
+            {
+                extras.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                extras.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=regId;
+                extrasAmount=Convert.ToDecimal(await extras.ExecuteScalarAsync(ct),CultureInfo.InvariantCulture);
+            }
+            var totalAdults=rows.Sum(x=>x.Adults);
+            var totalMinors=rows.Sum(x=>x.Children+x.Infants);
+            await ReservationChangeAudit.CaptureBeforeAsync(cn,tx,hotelId,regId,ct);
+            await using (var update=new SqlCommand(@"
+UPDATE dbo.GuestInformationLogTB
+ SET room_no=@rooms,room_category=@cats,noofrooms=@counts,
+     rateplan_id=@plans,rateplanname=@planNames,total_amount=@grand,
+     NumberOfAdults=@adults,NumberOfMinors=@minors
+ WHERE hotel_id=@hotel AND reg_id=@reg;
+UPDATE dbo.NewReservationsTB
+ SET room_no=@rooms,room_category=@cats,noofrooms=@counts,
+     rateplan_id=@plans,rateplanname=@planNames,total_amount=@grand,
+     number_of_adult=@adults,number_of_minor=@minors
+ WHERE hotel_id=@hotel AND reg_id=@reg;",cn,tx))
+            {
+                update.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                update.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=regId;
+                update.Parameters.Add("@rooms",SqlDbType.VarChar,250).Value=roomCsv;
+                update.Parameters.Add("@cats",SqlDbType.VarChar,150).Value=groupCategories;
+                update.Parameters.Add("@counts",SqlDbType.VarChar,100).Value=countCsv;
+                update.Parameters.Add("@plans",SqlDbType.VarChar,300).Value=groupPlans;
+                update.Parameters.Add("@planNames",SqlDbType.VarChar,300).Value=groupPlanNames;
+                update.Parameters.Add("@grand",SqlDbType.Decimal).Value=totalRoomRent+extrasAmount;
+                update.Parameters.Add("@adults",SqlDbType.Int).Value=totalAdults;
+                update.Parameters.Add("@minors",SqlDbType.Int).Value=totalMinors;
+                await update.ExecuteNonQueryAsync(ct);
+            }
+            var roomStatus=status.Trim().Equals("booked",StringComparison.OrdinalIgnoreCase) ||
+                status.Trim().Equals("confirmed",StringComparison.OrdinalIgnoreCase)
+                    ? "reservation" : status.Trim();
+            foreach (var row in rows)
+            {
+                await using (var insert = new SqlCommand(@"
+INSERT INTO dbo.payments
+(currentdate,deductioninfo,descr,[Type],NumberOfRoom,Rate,Charge,GST,Bed,Nights,
+ totalamount,reg_id,payment_status,hid,cb_status,room_no,res_status,visit_id,
+ hotel_id,ipAddress,systemUser,systemName,discount,suffle_type,
+ category_id,rateplan,rateplanname,guestname,room_adults,room_children,room_infants,ArrivalDate,DepartureDate)
+VALUES
+(@now,'0','Room Rent',@category,1,@amount,@amount,0,0,@nights,
+ @amount,@reg,'unpaid',@user,'1',@room,@status,'',
+ @hotel,@ip,@userName,'FrontDeskCalendar',0,'Manual',
+ @categoryId,@plan,@planName,@guest,@adults,@children,@infants,@arrival,@departure);",cn,tx))
+                {
+                    insert.Parameters.Add("@now",SqlDbType.DateTime).Value=_hotelClock.GetHotelNow(hotelId);
+                    insert.Parameters.Add("@category",SqlDbType.VarChar,150).Value=row.Category;
+                    insert.Parameters.Add("@amount",SqlDbType.Decimal).Value=row.Amount;
+                    insert.Parameters.Add("@nights",SqlDbType.Int).Value=(departure-arrival).Days;
+                    insert.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=regId;
+                    insert.Parameters.Add("@user",SqlDbType.VarChar,50).Value=userId;
+                    insert.Parameters.Add("@room",SqlDbType.VarChar,50).Value=row.Room;
+                    insert.Parameters.Add("@status",SqlDbType.VarChar,30).Value=roomStatus;
+                    insert.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                    insert.Parameters.Add("@ip",SqlDbType.VarChar,64).Value=ip??string.Empty;
+                    insert.Parameters.Add("@userName",SqlDbType.VarChar,150).Value=userName??string.Empty;
+                    insert.Parameters.Add("@categoryId",SqlDbType.VarChar,100).Value=row.CategoryId;
+                    insert.Parameters.Add("@plan",SqlDbType.VarChar,100).Value=row.Plan;
+                    insert.Parameters.Add("@planName",SqlDbType.VarChar,150).Value=row.PlanName;
+                    insert.Parameters.Add("@guest",SqlDbType.VarChar,180).Value=guestName;
+                    insert.Parameters.Add("@adults",SqlDbType.Int).Value=row.Adults;
+                    insert.Parameters.Add("@children",SqlDbType.Int).Value=row.Children;
+                    insert.Parameters.Add("@infants",SqlDbType.Int).Value=row.Infants;
+                    insert.Parameters.Add("@arrival",SqlDbType.VarChar,20).Value=LegacyDate(arrival);
+                    insert.Parameters.Add("@departure",SqlDbType.VarChar,20).Value=LegacyDate(departure);
+                    await insert.ExecuteNonQueryAsync(ct);
+                }
+                await InsertRoomChangeLogAsync(cn,tx,hotelId,regId,string.Empty,row.CategoryId,
+                    originalCategory,row.Category,"UNASSIGNED",row.Room,
+                    userId,userName,ip,"Master-only multi-room assignment",ct);
+            }
+            await RefreshPaymentSummaryAsync(cn,tx,hotelId,regId,ct);
+            await InsertLogAsync(cn,tx,hotelId,userId,userName,ip,regId,
+                "CALENDAR ASSIGN MULTIPLE ROOMS",
+                $"Assigned {rows.Count} rooms: {string.Join("; ",rows.Select(x=>$"{x.Room} {x.Category} / {x.PlanName} {x.Amount:0.00} (A{x.Adults}/C{x.Children}/I{x.Infants})"))}; " +
+                $"Total room rent {totalRoomRent:0.00}, previous master total {originalTotal:0.00}; original expected rooms {expected}.",ct);
+            await tx.CommitAsync(ct);
+            foreach (var category in rows.Select(x=>x.CategoryId).Distinct(StringComparer.OrdinalIgnoreCase))
+                QueueAvailability(hotelId,hotelName,userId,userName,ip,arrival,departure,category);
+            return FrontDeskOperationResult.Ok($"Assigned {rows.Count} rooms and saved their individual rate plans, amounts and guest counts.");
+        }
+        catch(Exception ex)
+        {
+            try { await tx.RollbackAsync(ct); } catch { }
+            _logger.Error(ex,"Failed multi-room assignment for reservation {RegId}",regId);
+            await _dbLogger.LogExceptionAsync(ex,"Front Desk Calendar","Assign Multiple Rooms",hotelId,userId,userName,ip,ct);
+            return FrontDeskOperationResult.Fail("Unable to assign rooms. " + ex.Message);
+        }
+    }
+
+    // Only called for a calendar master reservation with no Room Rent payment row.
+    // Never change the normal payment-based move path above.
+    private async Task<FrontDeskOperationResult> AssignMasterOnlyReservationAsync(
+        string hotelId, string hotelName, string userId, string userName, string ip,
+        FrontDeskBookingMoveRequest request, CancellationToken ct)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId) || request.PaymentId != 0)
+            return FrontDeskOperationResult.Fail("Invalid unassigned reservation.");
+        var regId = NormalizeRegId(request.RegId);
+        if (regId.Length == 0) return FrontDeskOperationResult.Fail("Reservation ID is required.");
+        // Require the same move permission that controls calendar drag/drop.
+        var allowed = await GetPermissionsAsync(hotelId, userId, string.Empty, ct);
+        if (!allowed.CanDragDrop) return FrontDeskOperationResult.Fail("You do not have permission to assign rooms.");
+        var roomNo = (request.NewRoomNo ?? string.Empty).Trim();
+        var categoryId = (request.TargetCategoryId ?? string.Empty).Trim();
+        if (roomNo.Length > 50 || categoryId.Length > 100)
+            return FrontDeskOperationResult.Fail("Invalid room or category.");
+        // Prefer the explicitly edited full-stay amount. Keep the original nightly
+        // parameter as a fallback for already-open browser tabs using the old form.
+        if (roomNo.Length > 0 &&
+            (!request.RoomRentTotal.HasValue && !request.NightlyRateOverride.HasValue))
+            return FrontDeskOperationResult.Fail("Enter the confirmed total Room Rent before assigning a room.");
+
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        try
+        {
+            // Serialise orphan assignment across multiple app instances. The
+            // payment-row existence check is repeated AFTER acquiring this lock.
+            await using (var claim = new SqlCommand(@"
+DECLARE @result int;
+EXEC @result = sys.sp_getapplock
+  @Resource=@lockName,@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=3000;
+SELECT @result;", cn, tx))
+            {
+                claim.Parameters.Add("@lockName", SqlDbType.NVarChar, 255).Value = "FDC:assign:" + hotelId + ":" + regId;
+                var result = Convert.ToInt32(await claim.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+                if (result < 0) return FrontDeskOperationResult.Fail("This reservation is being updated. Please retry.");
+            }
+
+            // IMPORTANT: never insert a second Room Rent row if another session
+            // has already assigned this reservation.  Prevents double charging.
+            await using (var existing = new SqlCommand(@"
+SELECT CASE WHEN EXISTS(
+    SELECT 1 FROM dbo.payments WITH (UPDLOCK,HOLDLOCK)
+    WHERE hotel_id=@hotel AND reg_id=@reg
+      AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent') THEN 1 ELSE 0 END;", cn, tx))
+            {
+                existing.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                existing.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                if (Convert.ToInt32(await existing.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) != 0)
+                    return FrontDeskOperationResult.Fail("A Room Rent entry now exists. Refresh the calendar before moving.");
+            }
+
+            var oldCategory = string.Empty;
+            var guestName = string.Empty;
+            var status = string.Empty;
+            var expiryText = string.Empty;
+            var expectedRoomsText = "1";
+            var arrival = DateTime.MinValue;
+            var departure = DateTime.MinValue;
+            var adults = 0;
+            var children = 0;
+            var masterTotal = 0m;
+            await using (var source = new SqlCommand(@"
+;WITH src AS
+(
+ SELECT 1 AS prio, id, 'GI' AS src, ISNULL(room_category,'') AS category,
+   ISNULL(res_status,'') AS st,
+   LTRIM(RTRIM(CONCAT(ISNULL(GuestName,''),' ',ISNULL(LastName,'')))) AS guest,
+   COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)) AS a,
+   COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate)) AS d,
+   ISNULL(TRY_CONVERT(int,NumberOfAdults),0) AS adults,
+   ISNULL(TRY_CONVERT(int,NumberOfMinors),0) AS children,
+   ISNULL(TRY_CONVERT(decimal(18,2),total_amount),0) AS master_total,
+   ISNULL(CONVERT(varchar(50),expirydate),'') AS expiry,
+   ISNULL(CONVERT(varchar(100),noofrooms),'1') AS room_count
+ FROM dbo.GuestInformationLogTB WITH (UPDLOCK,HOLDLOCK) WHERE hotel_id=@hotel AND reg_id=@reg
+ UNION ALL
+ SELECT 2,id,'NR',ISNULL(room_category,''),ISNULL(res_status,''),
+   LTRIM(RTRIM(CONCAT(ISNULL(GuestName,''),' ',ISNULL(LastName,'')))),
+   COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)),
+   COALESCE(TRY_CONVERT(date,dept_date,110),TRY_CONVERT(date,dept_date,23),TRY_CONVERT(date,dept_date,103),TRY_CONVERT(date,dept_date)),
+   ISNULL(TRY_CONVERT(int,number_of_adult),0),ISNULL(TRY_CONVERT(int,number_of_minor),0),
+   ISNULL(TRY_CONVERT(decimal(18,2),total_amount),0),
+   ISNULL(CONVERT(varchar(50),expirydate),''),
+   ISNULL(CONVERT(varchar(100),noofrooms),'1')
+ FROM dbo.NewReservationsTB WITH (UPDLOCK,HOLDLOCK) WHERE hotel_id=@hotel AND reg_id=@reg
+)
+SELECT TOP (1) src,category,st,guest,a,d,adults,children,master_total,expiry,room_count
+FROM src ORDER BY prio,id DESC;", cn, tx))
+            {
+                source.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                source.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                await using var reader = await source.ExecuteReaderAsync(ct);
+                if (!await reader.ReadAsync(ct)) return FrontDeskOperationResult.Fail("Reservation not found.");
+                oldCategory = S(reader, "category");
+                guestName = S(reader, "guest");
+                status = S(reader, "st");
+                expiryText = S(reader, "expiry");
+                expectedRoomsText = S(reader, "room_count");
+                arrival = D(reader, "a") ?? DateTime.MinValue;
+                departure = D(reader, "d") ?? DateTime.MinValue;
+                adults = I(reader, "adults");
+                children = I(reader, "children");
+                masterTotal = M(reader, "master_total");
+            }
+            if (!new[] { "reservation", "check in", "provisional", "tentative", "booked", "confirmed" }
+                  .Contains(status.Trim().ToLowerInvariant()))
+                return FrontDeskOperationResult.Fail("The reservation is not active. Refresh the calendar.");
+            if ((status.Equals("provisional", StringComparison.OrdinalIgnoreCase) ||
+                 status.Equals("tentative", StringComparison.OrdinalIgnoreCase)) &&
+                TryParseLegacyDate(expiryText, out var expiredAt) &&
+                expiredAt.Date < _hotelClock.GetHotelToday(hotelId))
+                return FrontDeskOperationResult.Fail("This provisional reservation has expired.");
+            if (arrival == DateTime.MinValue || departure <= arrival)
+                return FrontDeskOperationResult.Fail("The reservation has invalid stay dates.");
+            // A room assignment cannot silently shift the original master stay.
+            if (request.NewArrival.Date != arrival.Date)
+                return FrontDeskOperationResult.Fail("Room assignment must preserve the original arrival date.");
+
+            // The room assignment form may submit edited occupancy counts.
+            // Old API clients can omit these and keep the prior master-based values.
+            var infants = 0;
+            var hasEditedCounts = request.RoomAdults.HasValue && request.RoomChildren.HasValue && request.RoomInfants.HasValue;
+            if (roomNo.Length > 0 && hasEditedCounts)
+            {
+                if (request.RoomAdults!.Value < 0 || request.RoomAdults.Value > 30 ||
+                    request.RoomChildren!.Value < 0 || request.RoomChildren.Value > 30 ||
+                    request.RoomInfants!.Value < 0 || request.RoomInfants.Value > 30 ||
+                    request.RoomAdults.Value + request.RoomChildren.Value + request.RoomInfants.Value == 0)
+                    return FrontDeskOperationResult.Fail("Enter valid Adults, Children and Infants for this room.");
+                adults = request.RoomAdults.Value;
+                children = request.RoomChildren.Value;
+                infants = request.RoomInfants.Value;
+            }
+
+            // The repair action creates precisely one room row. A multi-room
+            // reservation needs the existing multi-room editor, not a partial
+            // silent repair which could understate inventory or revenue.
+            var expectedRooms = ParseExpectedRooms(expectedRoomsText);
+            if (roomNo.Length > 0 && expectedRooms > 1)
+                return FrontDeskOperationResult.Fail(
+                    "This reservation expects multiple rooms. Please assign them through the existing reservation editor.");
+
+            var categoryName = oldCategory.Trim();
+            var selectedPlanId = string.Empty;
+            var selectedPlanName = string.Empty;
+            var confirmedTotal = 0m;
+            if (roomNo.Length > 0)
+            {
+                var info = await GetRoomInfoAsync(cn, tx, hotelId, roomNo, ct);
+                if (!info.HasValue || info.Value.CategoryId.Length == 0)
+                    return FrontDeskOperationResult.Fail("The destination room/category is unavailable.");
+                categoryId = info.Value.CategoryId;
+                categoryName = info.Value.CategoryName;
+                var nightsForTotal = Math.Max(1, (departure.Date - arrival.Date).Days);
+                confirmedTotal = request.RoomRentTotal ??
+                    Math.Round((request.NightlyRateOverride ?? 0m) * nightsForTotal, 2, MidpointRounding.AwayFromZero);
+                if (confirmedTotal <= 0m || confirmedTotal > 100000000m)
+                    return FrontDeskOperationResult.Fail("Enter a valid total Room Rent amount.");
+                selectedPlanId = (request.RatePlanId ?? string.Empty).Trim();
+                if (selectedPlanId.Length == 0)
+                    return FrontDeskOperationResult.Fail("Select a rate plan before assigning the room.");
+                // Never accept a plan from another hotel/category based on the client label.
+                await using (var planCmd = new SqlCommand(@"SELECT TOP(1) planname FROM dbo.category_plan
+WHERE hotel_id=@hotel AND CONVERT(varchar(100),localplanid)=@plan
+  AND (LTRIM(RTRIM(ISNULL(category,'')))=@category
+       OR CONVERT(varchar(100),category_id)=@categoryId)
+ORDER BY ID DESC;", cn, tx))
+                {
+                    planCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    planCmd.Parameters.Add("@plan", SqlDbType.VarChar, 100).Value = selectedPlanId;
+                    planCmd.Parameters.Add("@category", SqlDbType.VarChar, 150).Value = categoryName;
+                    planCmd.Parameters.Add("@categoryId", SqlDbType.VarChar, 100).Value = categoryId;
+                    selectedPlanName = Convert.ToString(await planCmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) ?? string.Empty;
+                    if (selectedPlanName.Length == 0)
+                        return FrontDeskOperationResult.Fail("The selected rate plan does not belong to this room category. Refresh and select again.");
+                }
+                await using (var councilAccess = new SqlCommand(@"
+SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM dbo.Hms_accounts ha
+    WHERE CONVERT(varchar(100),ha.user_id)=@user
+      AND LOWER(LTRIM(RTRIM(ISNULL(ha.role,''))))='council')
+ AND NOT EXISTS (
+    SELECT 1 FROM dbo.UserRoomAccess a
+    WHERE a.HotelId=@hotel AND a.RoomNo=@room
+      AND CONVERT(varchar(100),a.UserId)=@user)
+THEN 0 ELSE 1 END;", cn, tx))
+                {
+                    councilAccess.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    councilAccess.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = roomNo;
+                    councilAccess.Parameters.Add("@user", SqlDbType.VarChar, 100).Value = userId;
+                    if (Convert.ToInt32(await councilAccess.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) == 0)
+                        return FrontDeskOperationResult.Fail("You do not have access to the destination room.");
+                }
+                if (!await IsRoomFreeAsync(cn, tx, hotelId, roomNo, arrival, departure, 0, ct))
+                    return FrontDeskOperationResult.Fail("The destination room is occupied or blocked for these dates.");
+            }
+            else
+            {
+                // Category-to-category Unassigned moves do not create a charge.
+                await using var checkCategory = new SqlCommand(@"
+SELECT TOP(1) description FROM dbo.create_room
+WHERE hotel_id=@hotel AND CONVERT(varchar(100),localcategoryid)=@catid
+  AND LTRIM(RTRIM(ISNULL(category,'')))='Room Rent';", cn, tx);
+                checkCategory.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                checkCategory.Parameters.Add("@catid", SqlDbType.VarChar, 100).Value = categoryId;
+                var value = await checkCategory.ExecuteScalarAsync(ct);
+                if (value == null || value == DBNull.Value)
+                    return FrontDeskOperationResult.Fail("Select a valid category for the unassigned reservation.");
+                categoryName = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+            }
+
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
+            // The reservation is authoritative; update only the category/room
+            // assignment fields, not dates, paid status, or booking status.
+            await using (var masters = new SqlCommand(@"
+UPDATE dbo.GuestInformationLogTB SET room_category=@category,room_no=CASE WHEN @room='' THEN room_no ELSE @room END
+WHERE hotel_id=@hotel AND reg_id=@reg;
+UPDATE dbo.NewReservationsTB SET room_category=@category,room_no=CASE WHEN @room='' THEN room_no ELSE @room END
+WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
+            {
+                masters.Parameters.Add("@category", SqlDbType.VarChar, 150).Value = categoryName;
+                masters.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = roomNo;
+                masters.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                masters.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                await masters.ExecuteNonQueryAsync(ct);
+            }
+
+            if (roomNo.Length > 0)
+            {
+                var nights = Math.Max(1, (departure.Date - arrival.Date).Days);
+                var baseAmount = Math.Round(confirmedTotal, 2, MidpointRounding.AwayFromZero);
+                // If the reservation already has separate extras, do not erase them
+                // from its grand total when setting the edited Room Rent charge.
+                decimal extraAmount;
+                await using (var extras = new SqlCommand(@"SELECT ISNULL(SUM(ISNULL(TRY_CONVERT(decimal(18,2),totalamount),0)),0)
+FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg
+  AND LTRIM(RTRIM(ISNULL(descr,'')))<>'Room Rent';", cn, tx))
+                {
+                    extras.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    extras.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                    extraAmount = Convert.ToDecimal(await extras.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+                }
+                await using (var masterAmounts = new SqlCommand(@"
+UPDATE dbo.GuestInformationLogTB
+SET total_amount=@grand,rateplan_id=@plan,rateplanname=@planName,
+    NumberOfAdults=CASE WHEN @edited=1 THEN @adults ELSE NumberOfAdults END,
+    NumberOfMinors=CASE WHEN @edited=1 THEN @minors ELSE NumberOfMinors END
+WHERE hotel_id=@hotel AND reg_id=@reg;
+UPDATE dbo.NewReservationsTB
+SET total_amount=@grand,rateplan_id=@plan,rateplanname=@planName,
+    number_of_adult=CASE WHEN @edited=1 THEN @adults ELSE number_of_adult END,
+    number_of_minor=CASE WHEN @edited=1 THEN @minors ELSE number_of_minor END
+WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
+                {
+                    masterAmounts.Parameters.Add("@grand", SqlDbType.Decimal).Value = baseAmount + extraAmount;
+                    masterAmounts.Parameters.Add("@edited", SqlDbType.Bit).Value = hasEditedCounts;
+                    masterAmounts.Parameters.Add("@adults", SqlDbType.Int).Value = adults;
+                    masterAmounts.Parameters.Add("@minors", SqlDbType.Int).Value = children + infants;
+                    masterAmounts.Parameters.Add("@plan", SqlDbType.VarChar, 100).Value = selectedPlanId;
+                    masterAmounts.Parameters.Add("@planName", SqlDbType.VarChar, 150).Value = selectedPlanName;
+                    masterAmounts.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    masterAmounts.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                    await masterAmounts.ExecuteNonQueryAsync(ct);
+                }
+                // Explicit rate confirmation; never create tax, discounts or
+                // nightly amounts from an unrelated default rate or master total.
+                await using var insert = new SqlCommand(@"
+INSERT INTO dbo.payments
+(currentdate,deductioninfo,descr,[Type],NumberOfRoom,Rate,Charge,GST,Bed,Nights,
+ totalamount,reg_id,payment_status,hid,cb_status,room_no,res_status,visit_id,
+ hotel_id,ipAddress,systemUser,systemName,discount,suffle_type,
+ category_id,rateplan,rateplanname,guestname,room_adults,room_children,room_infants,ArrivalDate,DepartureDate)
+VALUES
+(@now,'0','Room Rent',@category,1,@rate,@rate,0,0,@nights,
+ @rate,@reg,'unpaid',@user,'1',@room,@status,'',
+ @hotel,@ip,@userName,'FrontDeskCalendar',0,'Manual',
+ @categoryId,@plan,@planName,@guestName,@adults,@children,@infants,@arrival,@departure);", cn, tx);
+                insert.Parameters.Add("@now", SqlDbType.DateTime).Value = _hotelClock.GetHotelNow(hotelId);
+                insert.Parameters.Add("@category", SqlDbType.VarChar, 150).Value = categoryName;
+                insert.Parameters.Add("@rate", SqlDbType.Decimal).Value = baseAmount;
+                insert.Parameters.Add("@nights", SqlDbType.Int).Value = nights;
+                insert.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                insert.Parameters.Add("@user", SqlDbType.VarChar, 50).Value = userId;
+                insert.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = roomNo;
+                insert.Parameters.Add("@status", SqlDbType.VarChar, 30).Value =
+                    status.Trim().Equals("booked", StringComparison.OrdinalIgnoreCase) ||
+                    status.Trim().Equals("confirmed", StringComparison.OrdinalIgnoreCase)
+                        ? "reservation" : status.Trim();
+                insert.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                insert.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip ?? string.Empty;
+                insert.Parameters.Add("@userName", SqlDbType.VarChar, 150).Value = userName ?? string.Empty;
+                insert.Parameters.Add("@categoryId", SqlDbType.VarChar, 100).Value = categoryId;
+                insert.Parameters.Add("@plan", SqlDbType.VarChar, 100).Value = selectedPlanId;
+                insert.Parameters.Add("@planName", SqlDbType.VarChar, 150).Value = selectedPlanName;
+                insert.Parameters.Add("@guestName", SqlDbType.VarChar, 180).Value = guestName;
+                insert.Parameters.Add("@adults", SqlDbType.Int).Value = adults;
+                insert.Parameters.Add("@children", SqlDbType.Int).Value = children;
+                insert.Parameters.Add("@infants", SqlDbType.Int).Value = infants;
+                insert.Parameters.Add("@arrival", SqlDbType.VarChar, 20).Value = LegacyDate(arrival);
+                insert.Parameters.Add("@departure", SqlDbType.VarChar, 20).Value = LegacyDate(departure);
+                await insert.ExecuteNonQueryAsync(ct);
+                await RefreshPaymentSummaryAsync(cn, tx, hotelId, regId, ct);
+            }
+
+            await InsertRoomChangeLogAsync(cn, tx, hotelId, regId, string.Empty,
+                categoryId, oldCategory.Length == 0 ? "Unknown" : oldCategory,
+                categoryName, "UNASSIGNED", roomNo.Length == 0 ? "UNASSIGNED" : roomNo,
+                userId, userName, ip, "Master-only reservation room assignment", ct);
+            await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
+                "CALENDAR ASSIGN MISSING ROOM RENT",
+                "Unassigned " + oldCategory + " -> " + categoryName + "/" +
+                (roomNo.Length == 0 ? "UNASSIGNED" : roomNo) +
+                (roomNo.Length == 0 ? "" : $"; Plan: {selectedPlanName} ({selectedPlanId}); Room Rent: {confirmedTotal:0.00}; Original master total: {masterTotal:0.00}; Adults: {adults}; Children: {children}; Infants: {infants}"), ct);
+            await tx.CommitAsync(ct);
+            QueueAvailability(hotelId, hotelName, userId, userName, ip, arrival, departure, categoryId);
+            return FrontDeskOperationResult.Ok(roomNo.Length == 0
+                ? "Unassigned reservation moved to the selected category."
+                : "Missing room-rent entry created and room assigned. Verify the reservation balance.");
+        }
+        catch (Exception ex)
+        {
+            try { await tx.RollbackAsync(ct); } catch { }
+            _logger.Error(ex, "Master-only reservation assignment failed for {RegId}.", regId);
+            await _dbLogger.LogExceptionAsync(ex, "Front Desk Calendar", "Assign Missing Room Rent", hotelId, userId, userName, ip, ct);
+            return FrontDeskOperationResult.Fail("Unable to assign the reservation. " + ex.Message);
+        }
+    }
+
     public async Task<FrontDeskOperationResult> ResizeBookingAsync(
         string hotelId, string hotelName, string userId, string userName, string ip,
         FrontDeskBookingResizeRequest request, CancellationToken ct = default)
@@ -1431,6 +2278,8 @@ WHERE hotel_id=@hotel
                         return FrontDeskOperationResult.Fail("Extension row already exists for the selected dates. Please refresh the calendar.");
                 }
 
+                var extensionOccupancy = await ReadExtensionOccupancyAsync(
+                    cn, tx, hotelId, NormalizeRegId(request.RegId), roomNo, request.PaymentId, ct);
                 // The production schemas used by ORA PMS are not identical.  Keep the
                 // extension insert to columns that are already required by the calendar,
                 // instead of depending on optional legacy columns such as visit_id.
@@ -1440,13 +2289,13 @@ INSERT INTO dbo.payments
     [Type],room_no,ArrivalDate,DepartureDate,NumberOfRoom,
     rate,charge,Nights,totalamount,reg_id,hotel_id,
     payment_status,currentdate,descr,res_status,
-    rateplan,rateplanname,GST,Bed,category_id
+    rateplan,rateplanname,GST,Bed,category_id,room_adults,room_children,room_infants,guestname
 )
 SELECT
     [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),
     @rate,@charge,@nights,@total,reg_id,hotel_id,
     payment_status,@currentdate,descr,res_status,
-    rateplan,rateplanname,@gst,@bed,category_id
+    rateplan,rateplanname,@gst,@bed,category_id,@adults,@children,@infants,guestname
 FROM dbo.payments
 WHERE ID=@parentId
   AND hotel_id=@hotel
@@ -1460,6 +2309,9 @@ WHERE ID=@parentId
                     ins.Parameters.Add("@total", SqlDbType.Decimal).Value = extensionTotal;
                     ins.Parameters.Add("@gst", SqlDbType.Decimal).Value = extensionGst;
                     ins.Parameters.Add("@bed", SqlDbType.Decimal).Value = extensionBed;
+                    ins.Parameters.Add("@adults", SqlDbType.Int).Value = extensionOccupancy.Adults;
+                    ins.Parameters.Add("@children", SqlDbType.Int).Value = extensionOccupancy.Children;
+                    ins.Parameters.Add("@infants", SqlDbType.Int).Value = extensionOccupancy.Infants;
                     ins.Parameters.Add("@currentdate", SqlDbType.DateTime).Value = _hotelClock.GetHotelNow(hotelId);
                     ins.Parameters.Add("@parentId", SqlDbType.Int).Value = request.PaymentId;
                     ins.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
@@ -1510,7 +2362,8 @@ END;", cn, tx);
                 await InsertLogAsync(cn, tx, hotelId, userId, userName, ip, request.RegId,
                     "EXTEND RESERVATION",
                     $"Departure: {rowOldDeparture:dd MMM yyyy} → {newDeparture:dd MMM yyyy}; " +
-                    $"Added {addedNights} night(s); nightly rate: {chosenPerNight:0.00}.", ct);
+                    $"Added {addedNights} night(s); nightly rate: {chosenPerNight:0.00}; " +
+                    $"Room {roomNo} guests (Adults {extensionOccupancy.Adults}, Children {extensionOccupancy.Children}, Infants {extensionOccupancy.Infants}).", ct);
 
                 resultTotal = extensionTotal;
             }
@@ -2984,6 +3837,60 @@ WHERE n.hotel_id=@hotel AND n.reg_id=@reg AND x.MinArr IS NOT NULL AND x.MaxDep 
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(regId);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // A new date segment inherits guest counts for its physical room, not a blank
+    // default. Prior segments with counts win over a zero-valued parent row.
+    private static async Task<(int Adults, int Children, int Infants)> ReadExtensionOccupancyAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId,
+        string roomNo, int parentId, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    ISNULL(TRY_CONVERT(int,room_adults),0) AS adults,
+    ISNULL(TRY_CONVERT(int,room_children),0) AS children,
+    ISNULL(TRY_CONVERT(int,room_infants),0) AS infants
+FROM dbo.payments WITH (UPDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(room_no,'')))=@room
+  AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+  AND (ISNULL(TRY_CONVERT(int,room_adults),0)+ISNULL(TRY_CONVERT(int,room_children),0)+ISNULL(TRY_CONVERT(int,room_infants),0))>0
+ORDER BY ID DESC;", cn, tx);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+        cmd.Parameters.Add("@room", SqlDbType.VarChar, 50).Value = roomNo;
+        cmd.Parameters.Add("@parent", SqlDbType.Int).Value = parentId;
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (await rd.ReadAsync(ct))
+            return (Math.Max(0,I(rd,"adults")),Math.Max(0,I(rd,"children")),Math.Max(0,I(rd,"infants")));
+        // A zero-count legacy parent may predate per-room occupancy columns.
+        // Use the master guest totals ONLY when precisely one physical room has
+        // Room Rent rows. For multi-room reservations require staff to edit counts.
+        await rd.DisposeAsync();
+        await using var fallback = new SqlCommand(@"
+IF (SELECT COUNT(DISTINCT LTRIM(RTRIM(ISNULL(room_no,''))))
+    FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg
+      AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+      AND NULLIF(LTRIM(RTRIM(ISNULL(room_no,''))),'') IS NOT NULL
+      AND UPPER(LTRIM(RTRIM(ISNULL(room_no,''))))<>'UNASSIGNED')=1
+BEGIN
+ SELECT TOP (1) adults, minors FROM
+ (
+  SELECT 1 AS prio,ID AS record_id,
+   ISNULL(TRY_CONVERT(int,NumberOfAdults),0) AS adults,
+   ISNULL(TRY_CONVERT(int,NumberOfMinors),0) AS minors
+  FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND reg_id=@reg
+  UNION ALL
+  SELECT 2,ID,ISNULL(TRY_CONVERT(int,number_of_adult),0),
+   ISNULL(TRY_CONVERT(int,number_of_minor),0)
+  FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg
+ ) AS master ORDER BY prio,record_id DESC;
+END", cn, tx);
+        fallback.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        fallback.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+        await using var counts = await fallback.ExecuteReaderAsync(ct);
+        if (await counts.ReadAsync(ct))
+            return (Math.Max(0,I(counts,"adults")),Math.Max(0,I(counts,"minors")),0);
+        return (0,0,0); // No reliable room-specific occupancy available.
     }
 
     private async Task RefreshPaymentSummaryAsync(

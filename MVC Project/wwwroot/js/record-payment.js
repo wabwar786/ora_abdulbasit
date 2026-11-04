@@ -22,6 +22,51 @@
     document.head.appendChild(style);
   }
   ensureHoldCaptureStyles();
+  // A single confirmation design reused by Record Payment and the daily Calendar.
+  // This is presentation-only: Stripe capture/release endpoints and payloads are unchanged.
+  function showCardHoldConfirm({action,amount,symbol='£',currency='GBP',partial=false}={}){
+    return new Promise(resolve=>{
+      const releasing=action==='release';
+      const shade=document.createElement('div');
+      shade.className='orp-hold-confirm-shade';
+      const formatted=`${symbol}${Number(amount||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const title=releasing?'Release Card Authorization':'Confirm Card Capture';
+      const warning=releasing
+        ?'The authorization will be released. No payment will be collected from this hold.'
+        :(partial?'The remaining unused authorization will be released after this partial capture.':'This capture will collect the selected amount from the card.');
+      shade.innerHTML=`<div class="orp-hold-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="orpHoldConfirmTitle" aria-describedby="orpHoldConfirmText">
+        <div class="orp-hold-confirm-head"><span class="orp-hold-confirm-icon">${releasing?'↶':'✓'}</span><div><b id="orpHoldConfirmTitle">${title}</b><small>Review the card authorization before proceeding</small></div><button type="button" class="orp-hold-confirm-x" data-hold-cancel aria-label="Close">×</button></div>
+        <div class="orp-hold-confirm-body"><div class="orp-hold-confirm-total"><small>${releasing?'Authorization to release':'Amount to capture'}</small><strong>${formatted}</strong><em>${String(currency).replace(/[^A-Z]/g,'').slice(0,3)}</em></div>
+        <p id="orpHoldConfirmText">${warning}</p><div class="orp-hold-confirm-warning">${releasing?'Releasing an authorization cannot be reversed.':'Confirm the amount before capturing; card transactions cannot be undone by closing this window.'}</div></div>
+        <div class="orp-hold-confirm-foot"><button type="button" data-hold-cancel>Cancel</button><button type="button" class="${releasing?'release':'capture'}" data-hold-accept>${releasing?'Yes, Release Hold':'Yes, Capture Payment'}</button></div></div>`;
+      const finish=ok=>{shade.remove();document.removeEventListener('keydown',onKey);resolve(ok);};
+      const onKey=e=>{if(e.key==='Escape'){e.preventDefault();finish(false);}};
+      document.body.appendChild(shade);
+      document.addEventListener('keydown',onKey);
+      shade.querySelectorAll('[data-hold-cancel]').forEach(el=>el.addEventListener('click',()=>finish(false)));
+      shade.querySelector('[data-hold-accept]').addEventListener('click',()=>finish(true));
+      shade.addEventListener('click',e=>{if(e.target===shade)finish(false);});
+      shade.querySelector('[data-hold-accept]')?.focus();
+    });
+  }
+  window.OrpHoldConfirm=showCardHoldConfirm;
+  const holdConfirmStyle=document.createElement('style');
+  holdConfirmStyle.textContent=`
+    .orp-hold-confirm-shade{position:fixed;inset:0;z-index:12000;display:grid;place-items:center;padding:18px;background:rgba(8,25,48,.56);backdrop-filter:blur(4px)}
+    .orp-hold-confirm-dialog{width:min(460px,100%);overflow:hidden;border:1px solid #e5ebf2;border-radius:16px;background:#fff;color:#16314f;box-shadow:0 30px 90px rgba(5,22,43,.32);font-family:inherit}
+    .orp-hold-confirm-head{display:flex;align-items:center;gap:11px;padding:19px;background:linear-gradient(112deg,#edf3ff,#edfaf5);border-bottom:1px solid #e8edf3}
+    .orp-hold-confirm-icon{display:grid;place-items:center;flex:0 0 37px;height:37px;border-radius:11px;background:#0f2948;color:#fff;font-size:19px;font-weight:900}
+    .orp-hold-confirm-head>div{flex:1;min-width:0}.orp-hold-confirm-head b{display:block;font-size:16px;font-weight:850}.orp-hold-confirm-head small{display:block;margin-top:2px;color:#65778c;font-size:11px}
+    .orp-hold-confirm-x{border:0;width:27px;height:27px;border-radius:50%;background:#e6374a;color:#fff;font-size:19px;cursor:pointer}
+    .orp-hold-confirm-body{padding:17px 19px}.orp-hold-confirm-total{display:flex;align-items:center;gap:10px;padding:13px;border:1px solid #d6e2ee;border-radius:10px;background:#f7faff}
+    .orp-hold-confirm-total small{display:block;flex:1;font-size:10px;color:#60738a;font-weight:700}.orp-hold-confirm-total strong{font-size:21px;font-weight:900;color:#10263f}.orp-hold-confirm-total em{font-style:normal;color:#71849a;font-size:10px}
+    .orp-hold-confirm-body p{margin:14px 0;font-size:12px;line-height:1.5;color:#3e5770}.orp-hold-confirm-warning{border:1px solid #f0d5ad;background:#fff8ed;color:#94632a;padding:10px;border-radius:9px;font-size:10px;line-height:1.5}
+    .orp-hold-confirm-foot{display:flex;justify-content:flex-end;gap:9px;border-top:1px solid #e4eaf1;background:#f8fafc;padding:14px 18px}
+    .orp-hold-confirm-foot button{padding:11px 15px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#435a70;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+    .orp-hold-confirm-foot .capture{background:#0b7554;border-color:#0b7554;color:#fff}.orp-hold-confirm-foot .release{background:#b92e43;border-color:#b92e43;color:#fff}
+    @media(max-width:390px){.orp-hold-confirm-foot{flex-direction:column}.orp-hold-confirm-foot button{width:100%}}
+  `;
+  document.head.appendChild(holdConfirmStyle);
   const token = document.querySelector('#orpRecordPaymentAntiForgery input[name="__RequestVerificationToken"]')?.value || '';
   const defaults = {
     recordPaymentUrl: root.dataset.recordPaymentUrl || '/CheckIn/RecordPayment',
@@ -441,11 +486,10 @@
       if(authorizedMinor>0 && amountMinor>authorizedMinor){
         showToast('Capture amount cannot exceed the authorized hold.',true);input?.focus();return;
       }
-      if(authorizedMinor>0 && amountMinor<authorizedMinor){
-        const ok=confirm(`Capture ${money(captureMajor,current.currencySymbol||'£')} from this hold? The remaining authorization will be released by Stripe.`);
-        if(!ok) return;
-      }
     }
+    const ok=await showCardHoldConfirm({action,amount:action==='capture'?majorFromMinor(amountMinor,currency):majorFromMinor(authorizedMinor,currency),
+      symbol:current.currencySymbol||'£',currency,partial:action==='capture'&&authorizedMinor>amountMinor});
+    if(!ok)return;
 
     const urls=optionsFor(current);
     const endpoint=action==='capture'?urls.captureHoldUrl:urls.releaseHoldUrl;

@@ -210,6 +210,169 @@ WHERE hotel_id = @hotel_id;", connection);
         }
     }
 
+    // Daily Calendar only. Room choices are calculated for the entire stored
+    // reservation stay. Never trust dates passed by the browser for availability.
+    // A fresh availability check under SQL locks still runs during final save.
+    [HttpGet("UnassignedAssignmentOptions")]
+    public async Task<IActionResult> UnassignedAssignmentOptions(string regId, CancellationToken ct)
+    {
+        if (!HasSession())
+            return Unauthorized(new { ok = false, message = "Your login session has expired. Sign in again." });
+        regId = (regId ?? string.Empty).Trim();
+        if (regId.Length == 0 || regId.Length > 100)
+            return BadRequest(new { ok = false, message = "A valid reservation ID is required." });
+
+        try
+        {
+            await using var cn = new SqlConnection(_connectionString);
+            await cn.OpenAsync(ct);
+            DateTime arrival;
+            DateTime departure;
+            await using (var stay = new SqlCommand(@"
+SELECT TOP (1) x.arrival,x.departure
+FROM (
+  SELECT 1 AS priority,ID AS rowId,
+    COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),
+      TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)) AS arrival,
+    COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),
+      TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate)) AS departure
+  FROM dbo.GuestInformationLogTB
+  WHERE hotel_id=@hotel AND reg_id=@reg
+  UNION ALL
+  SELECT 2,ID,
+    COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),
+      TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)),
+    COALESCE(TRY_CONVERT(date,dept_date,110),TRY_CONVERT(date,dept_date,23),
+      TRY_CONVERT(date,dept_date,103),TRY_CONVERT(date,dept_date))
+  FROM dbo.NewReservationsTB
+  WHERE hotel_id=@hotel AND reg_id=@reg
+) x ORDER BY x.priority,x.rowId DESC;", cn))
+            {
+                stay.CommandTimeout = 15;
+                stay.Parameters.Add("@hotel", System.Data.SqlDbType.VarChar, 50).Value = SessionValue("hotel");
+                stay.Parameters.Add("@reg", System.Data.SqlDbType.VarChar, 100).Value = regId;
+                await using var reader = await stay.ExecuteReaderAsync(ct);
+                if (!await reader.ReadAsync(ct) || reader.IsDBNull(0) || reader.IsDBNull(1))
+                    return NotFound(new { ok = false, message = "Reservation dates were not found. Refresh the calendar." });
+                arrival = reader.GetDateTime(0).Date;
+                departure = reader.GetDateTime(1).Date;
+            }
+            if (departure <= arrival || (departure - arrival).TotalDays > 730)
+                return BadRequest(new { ok = false, message = "The reservation has invalid stay dates." });
+
+            var rooms = new List<object>();
+            var plans = new List<object>();
+            await using (var cmd = new SqlCommand(@"
+SET NOCOUNT ON;
+/* Only physical rooms that can be occupied across the entire stay. */
+SELECT DISTINCT
+  LTRIM(RTRIM(r.room_no)) AS room_no,
+  CONVERT(varchar(100),cr.localcategoryid) AS category_id,
+  LTRIM(RTRIM(cr.description)) AS category_name
+FROM dbo.RoomsTB r
+INNER JOIN dbo.create_room cr
+  ON cr.hotel_id=r.Hotel_id
+ AND LTRIM(RTRIM(cr.description))=LTRIM(RTRIM(r.room_category))
+ AND LTRIM(RTRIM(ISNULL(cr.category,'')))='Room Rent'
+WHERE r.Hotel_id=@hotel
+  AND NULLIF(LTRIM(RTRIM(ISNULL(r.room_no,''))),'') IS NOT NULL
+  AND LTRIM(RTRIM(ISNULL(r.room_no,'')))<>'UNASSIGNED'
+  AND NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),cr.localcategoryid))),'') IS NOT NULL
+  AND LOWER(LTRIM(RTRIM(ISNULL(r.room_status,''))))<>'blocked'
+  AND (
+       NOT EXISTS(SELECT 1 FROM dbo.Hms_accounts ha
+                  WHERE CONVERT(varchar(100),ha.user_id)=@user
+                    AND LOWER(LTRIM(RTRIM(ISNULL(ha.role,''))))='council')
+       OR EXISTS(SELECT 1 FROM dbo.UserRoomAccess ura
+                 WHERE ura.HotelId=@hotel AND ura.RoomNo=r.room_no
+                   AND CONVERT(varchar(100),ura.UserId)=@user)
+      )
+  AND NOT EXISTS (
+    SELECT 1 FROM dbo.payments p
+    WHERE p.hotel_id=@hotel
+      AND LTRIM(RTRIM(ISNULL(p.room_no,'')))=LTRIM(RTRIM(r.room_no))
+      AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
+      AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN
+          ('reservation','check in','checkin','checked in','provisional','tentative')
+      AND COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,23),
+                   TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)) < @departure
+      AND @arrival < COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,23),
+                              TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate))
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM dbo.RoomBlocksTB rb
+    WHERE rb.HotelID=@hotel AND rb.RoomNo=r.room_no AND ISNULL(rb.IsActive,0)=1
+      AND COALESCE(TRY_CONVERT(date,rb.BlockStartDate,110),TRY_CONVERT(date,rb.BlockStartDate,23),
+                   TRY_CONVERT(date,rb.BlockStartDate,103),TRY_CONVERT(date,rb.BlockStartDate)) < @departure
+      AND @arrival <= COALESCE(TRY_CONVERT(date,rb.BlockEndDate,110),TRY_CONVERT(date,rb.BlockEndDate,23),
+                               TRY_CONVERT(date,rb.BlockEndDate,103),TRY_CONVERT(date,rb.BlockEndDate))
+  )
+ORDER BY category_name,room_no;
+/* Rate plans are returned as JSON by this Calendar endpoint, never HTML. */
+SELECT DISTINCT
+  LTRIM(RTRIM(CONVERT(varchar(100),localplanid))) AS plan_id,
+  ISNULL(planname,'') AS plan_name,
+  LTRIM(RTRIM(ISNULL(category,''))) AS category_name,
+  LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),category_id),''))) AS category_id
+FROM dbo.category_plan
+WHERE hotel_id=@hotel
+  AND NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),localplanid))),'') IS NOT NULL
+ORDER BY category_name,plan_name,plan_id;", cn))
+            {
+                cmd.CommandTimeout = 15;
+                cmd.Parameters.Add("@hotel", System.Data.SqlDbType.VarChar, 50).Value = SessionValue("hotel");
+                cmd.Parameters.Add("@user", System.Data.SqlDbType.VarChar, 100).Value = SessionValue("UserId");
+                cmd.Parameters.Add("@arrival", System.Data.SqlDbType.Date).Value = arrival;
+                cmd.Parameters.Add("@departure", System.Data.SqlDbType.Date).Value = departure;
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    rooms.Add(new
+                    {
+                        roomNo = reader.GetString(0),
+                        categoryId = reader.GetString(1),
+                        categoryName = reader.GetString(2)
+                    });
+                }
+                if (await reader.NextResultAsync(ct))
+                {
+                    while (await reader.ReadAsync(ct))
+                    {
+                        plans.Add(new
+                        {
+                            value = reader.GetString(0),
+                            text = reader.GetString(1),
+                            categoryName = reader.GetString(2),
+                            categoryId = reader.GetString(3)
+                        });
+                    }
+                }
+            }
+            Response.Headers.CacheControl = "private, no-store";
+            return Json(new
+            {
+                ok = true,
+                data = new
+                {
+                    arrival = arrival.ToString("yyyy-MM-dd"),
+                    departure = departure.ToString("yyyy-MM-dd"),
+                    rooms,
+                    plans
+                }
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new EmptyResult(); }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Unable to load available rooms/rate plans for the daily calendar.");
+            return StatusCode(500, new
+            {
+                ok = false,
+                message = "Unable to load room availability or rate plans. Check server logs."
+            });
+        }
+    }
+
     [HttpGet("BookingDetails")]
     public async Task<IActionResult> BookingDetails(string regId, int paymentId, CancellationToken cancellationToken)
     {
@@ -280,6 +443,10 @@ WHERE hotel_id = @hotel_id;", connection);
     [HttpPost("MoveBooking"), ValidateAntiForgeryToken]
     public Task<IActionResult> MoveBooking([FromBody] FrontDeskBookingMoveRequest request, CancellationToken ct) => Mutate(
         () => _calendar.MoveBookingAsync(SessionValue("hotel"), SessionValue("HotelName"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
+
+    [HttpPost("UpdateRoomOccupancy"), ValidateAntiForgeryToken]
+    public Task<IActionResult> UpdateRoomOccupancy([FromBody] FrontDeskRoomOccupancyRequest request, CancellationToken ct) => Mutate(
+        () => _calendar.UpdateRoomOccupancyAsync(SessionValue("hotel"), SessionValue("UserId"), SessionValue("UserName"), Ip(), request, ct));
 
     [HttpPost("DeleteRoomSegment"), ValidateAntiForgeryToken]
     public Task<IActionResult> DeleteRoomSegment([FromBody] FrontDeskDeleteRoomSegmentRequest request, CancellationToken ct) => Mutate(

@@ -1199,3 +1199,86 @@ body.fdc-move-drop-pending .fdc-drag-focus-backdrop{
 .fdc-payment-log-entry>strong{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
 .fdc-payment-log-entry .fdc-payment-log-tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:nowrap;gap:5px;margin:0;white-space:nowrap}
 .fdc-payment-log-entry .fdc-payment-receipt,.fdc-payment-log-entry .fdc-payment-refund{min-height:18px!important;padding:0 1px!important;font-size:9px!important;white-space:nowrap}
+
+/* Daily calendar: visually flag a reservation master without a Room Rent row. */
+.fdc-bar.fdc-missing-rent{background:#9e631f!important;border:1px dashed #f6d498!important;color:#fff!important}
+.fdc-bar.fdc-missing-rent .fdc-missing-rent-tag{font-size:8px;font-weight:850;flex:0 0 auto;background:rgba(255,255,255,.18);border-radius:3px;padding:2px 4px}
+.fdc-missing-assign{display:grid;gap:9px}
+.fdc-missing-assign .fdc-field{margin:3px 0}
+.fdc-missing-assign .fdc-kv{font-size:12px}
+.fdc-missing-alert{padding:9px 10px;border-radius:7px;border:1px solid #efd49d;background:#fff9ec;color:#78531a;font-size:11px;line-height:1.45}
+.fdc-tip-missing{color:#fdd9a4;font-weight:800;padding-top:6px}
+
+/* Daily calendar only: compact professional assignment popup, matching category-change dialog */
+#fdcOverlay.fdc-assign-mode .fdc-modal{width:min(520px,calc(100vw - 24px));border-radius:16px;overflow:hidden;box-shadow:0 26px 76px rgba(7,22,43,.29)}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head{background:linear-gradient(105deg,#eaf1ff,#f3fbf8);padding:16px 17px}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head h2{font-size:16px;letter-spacing:-.025em}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head h2:before{content:'↔';background:#10263f;color:#fff;border-radius:9px}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head button{background:#e9364a;color:#fff;border:0;border-radius:50%;width:27px;height:27px}
+#fdcOverlay.fdc-assign-mode .fdc-modal-body{padding:14px 17px;background:#fff}
+#fdcOverlay.fdc-assign-mode .fdc-modal-foot{background:#f7f9fb;display:flex;justify-content:flex-end;gap:8px;padding:14px 16px}
+#fdcOverlay.fdc-assign-mode .fdc-modal-foot .fdc-btn.primary{background:#10263f;color:#fff;border-color:#10263f}
+#fdcOverlay.fdc-assign-mode .fdc-missing-summary{border:1px solid #e2e8ee;border-radius:9px;background:#f7f9fc;color:#64748b;padding:10px;margin:10px 0;font-size:11px}
+#fdcOverlay.fdc-assign-mode .fdc-panel{padding:0;border:0;box-shadow:none}
+#fdcOverlay.fdc-assign-mode .fdc-field{margin:11px 0}
+#fdcOverlay.fdc-assign-mode .fdc-field label{font-size:11px;font-weight:750;color:#536278}
+#fdcOverlay.fdc-assign-mode .fdc-field select,#fdcOverlay.fdc-assign-mode .fdc-field input{border:1px solid #c9d5e6;border-radius:10px;height:42px;font-weight:650;background:#fff}
+#fdcOverlay.fdc-assign-mode .fdc-missing-alert{border-radius:9px;border:1px solid #e5eaf1;color:#67758a;background:#f8fafc;font-size:10px;padding:10px}
+#fdcOverlay.fdc-occupancy-mode .fdc-modal{width:min(475px,calc(100vw - 24px))}
+.fdc-counts-edit{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.fdc-counts-edit input{width:100%;min-width:0;height:42px;border:1px solid #cbd8e6;border-radius:9px;padding:7px 10px;font-weight:750}
+.fdc-counts-help{margin:10px 0;padding:10px;background:#f5f8fc;border:1px solid #e4eaf1;border-radius:8px;color:#63748a;font-size:11px}
+
+.fdc-edit-counts{cursor:pointer;border-bottom:1px dashed #839bb4;color:#133f69}
+.fdc-edit-counts:hover{color:#0964b3;border-bottom-color:#0964b3}
+
+/* 2026-11-04: lightweight, editable multi-room assignment. Daily calendar ONLY. */
+#fdcOverlay.fdc-assign-mode .fdc-modal{width:min(650px,calc(100vw - 22px));max-height:min(88vh,840px);display:flex;flex-direction:column;overflow:hidden}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head{flex:0 0 auto;padding:13px 17px;min-height:53px}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head h2{font-size:15px;font-weight:600;letter-spacing:0}
+#fdcOverlay.fdc-assign-mode .fdc-modal-body{padding:13px 17px;overflow-y:auto;min-height:0;flex:1 1 auto}
+#fdcOverlay.fdc-assign-mode .fdc-modal-foot{flex:0 0 auto;padding:11px 17px}
+#fdcOverlay.fdc-assign-mode .fdc-btn{font-weight:500}
+.fdc-assign-repair{display:grid;gap:12px;color:#22354a;font-size:12px}
+.fdc-assign-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;padding:9px 11px;background:#f7f9fc;border:1px solid #e5ebf2;border-radius:9px;color:#617187}
+.fdc-assign-meta span:last-child{grid-column:1/-1}
+.fdc-assign-meta em{font-style:normal;color:#203650;font-weight:550;margin-left:5px}
+.fdc-assign-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.fdc-assign-toolbar>div{font-size:13px;font-weight:600;color:#203650}
+.fdc-assign-toolbar small{font-size:11px;color:#8391a4;font-weight:400;margin-left:5px}
+.fdc-assign-add{padding:7px 11px;background:#eef4fc;color:#234b76;border:1px solid #cbdcf0;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer}
+.fdc-assign-add:hover{background:#e5effc}
+.fdc-assign-add:disabled{opacity:.45;cursor:not-allowed}
+.fdc-assign-lines{display:grid;gap:10px}
+.fdc-assign-line{border:1px solid #dfe6ef;background:#fff;border-radius:10px;padding:11px 12px}
+.fdc-assign-linehead{display:flex;justify-content:space-between;align-items:center;min-height:22px;margin-bottom:9px;color:#344961;font-weight:550}
+.fdc-assign-remove{border:0;background:transparent;color:#bb4351;font-size:11px;font-weight:450;cursor:pointer;padding:4px 5px}
+.fdc-assign-remove:hover{text-decoration:underline}
+.fdc-assign-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px 12px;align-items:end}
+.fdc-assign-field{display:grid;gap:5px;min-width:0}
+.fdc-assign-field label{font-size:11px;font-weight:500;color:#607087;letter-spacing:0;text-transform:none}
+#fdcOverlay.fdc-assign-mode .fdc-assign-field select,
+#fdcOverlay.fdc-assign-mode .fdc-assign-field input{height:37px;padding:7px 9px;border:1px solid #cdd8e5;border-radius:7px;background:#fff;font-size:12px;font-weight:450;color:#25394f;width:100%;min-width:0}
+#fdcOverlay.fdc-assign-mode .fdc-assign-field select:focus,
+#fdcOverlay.fdc-assign-mode .fdc-assign-field input:focus{outline:0;border-color:#5b8bcb;box-shadow:0 0 0 2px rgba(64,128,205,.12)}
+.fdc-assign-nightly{align-self:center;font-size:11px;color:#64748b;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 1px}
+.fdc-assign-nightly span{color:#2a4565;font-weight:550}
+.fdc-assign-counts{border-top:1px solid #eef2f6;margin-top:10px;padding-top:9px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.fdc-assign-counts label{display:flex;align-items:center;gap:6px;font-weight:450;color:#61718a;font-size:11px}
+#fdcOverlay.fdc-assign-mode .fdc-assign-counts input{width:100%;min-width:0;max-width:85px;height:31px;padding:4px 7px;border:1px solid #cdd8e5;border-radius:6px;color:#23374a;background:#fff;font-size:12px;font-weight:450}
+.fdc-assign-category-only{margin-top:7px;color:#64748b;font-size:11px}
+.fdc-assign-totals{border-top:1px solid #e5ebf2;padding-top:10px;display:grid;grid-template-columns:1fr;gap:9px}
+.fdc-assign-totals span{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #e7edf3;border-radius:8px;background:#f9fbfd;color:#67788e;font-size:11px}
+.fdc-assign-totals b{font-weight:550;color:#233e58;font-size:12px}
+.fdc-assign-extra-confirm{display:flex;align-items:center;gap:8px;color:#8b541e;font-size:11px;padding:8px 10px;background:#fff9ee;border:1px solid #f4dbb5;border-radius:7px;cursor:pointer}
+.fdc-assign-extra-confirm input{margin:0;accent-color:#1d5a9b}
+@media(max-width:560px){
+  .fdc-assign-meta,.fdc-assign-grid,.fdc-assign-totals{grid-template-columns:1fr}
+  .fdc-assign-meta span:last-child{grid-column:auto}
+  .fdc-assign-toolbar{align-items:flex-start}
+  .fdc-assign-counts{gap:5px;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .fdc-assign-counts label{display:grid;gap:3px}
+}
+#fdcOverlay.fdc-assign-mode .fdc-assign-repair [hidden]{display:none!important}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head h2{display:flex;align-items:center}
+#fdcOverlay.fdc-assign-mode .fdc-modal-head h2:before{display:inline-grid;place-items:center;vertical-align:middle;width:30px;height:30px;flex:0 0 30px;margin-right:9px;border-radius:8px;font-size:16px;font-weight:500;letter-spacing:0}

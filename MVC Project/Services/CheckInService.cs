@@ -3,7 +3,6 @@ using System.Data;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
@@ -2964,9 +2963,32 @@ VALUES(@reg,@visit,@email,@phone,@name,'1',@hotel,@today);", cn, tx);
             await UpdatePaymentTotalsAsync(cn, tx, hotelId, request.RegId, ct);
             var isExtend = request.NewDepartureDate.Date > current.Departure.Value.Date;
             var action = isExtend ? "EXTEND RESERVATION" : "SHRINK RESERVATION";
+            var occupancyLog = string.Empty;
+            if (isExtend)
+            {
+                var addedRooms = new List<string>();
+                await using var occupancyCmd = new SqlCommand(@"
+SELECT room_no,ISNULL(TRY_CONVERT(int,room_adults),0) AS adults,
+ ISNULL(TRY_CONVERT(int,room_children),0) AS children,
+ ISNULL(TRY_CONVERT(int,room_infants),0) AS infants
+FROM dbo.payments
+WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+ AND COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,23),TRY_CONVERT(date,ArrivalDate))=@fromDate
+ AND COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,23),TRY_CONVERT(date,DepartureDate))=@toDate;", cn, tx);
+                occupancyCmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+                occupancyCmd.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=request.RegId;
+                occupancyCmd.Parameters.Add("@fromDate",SqlDbType.Date).Value=current.Departure.Value.Date;
+                occupancyCmd.Parameters.Add("@toDate",SqlDbType.Date).Value=request.NewDepartureDate.Date;
+                await using (var reader=await occupancyCmd.ExecuteReaderAsync(ct))
+                {
+                    while(await reader.ReadAsync(ct))
+                        addedRooms.Add($"Room {S(reader,"room_no")}: Adults {I(reader,"adults")}, Children {I(reader,"children")}, Infants {I(reader,"infants")}");
+                }
+                occupancyLog=addedRooms.Count==0 ? string.Empty : "; " + string.Join("; ",addedRooms);
+            }
             await InsertReservationActionLogAsync(
                 cn, tx, hotelId, userId, userName, ip, request.RegId, action,
-                $"Departure {current.Departure:yyyy-MM-dd} -> {request.NewDepartureDate:yyyy-MM-dd}", ct);
+                $"Departure {current.Departure:yyyy-MM-dd} -> {request.NewDepartureDate:yyyy-MM-dd}" + occupancyLog, ct);
             await tx.CommitAsync(ct);
 
             var availabilityStart = isExtend
@@ -4233,7 +4255,7 @@ INNER JOIN Calc c ON c.ID=p.ID;", cn, tx))
         string hotelId, string userId, string userName, string ip,
         FbrPostRequest request, CancellationToken ct = default)
     {
-        if (request == null || string.IsNullOrWhiteSpace(request.RegId)) return CheckInOperationResult.Fail("Reservation ID is required.", data: "Not Sent");
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId)) return CheckInOperationResult.Fail("Reservation ID is required.");
         // WebForms October 2026 checkout parity: do NOT recalculate tax or rewrite
         // payment rows while posting. The separate ApplyFbrTaxModeAsync endpoint
         // remains available and unchanged for explicit payment-method selection.
@@ -4261,9 +4283,9 @@ SELECT @result;",cn))
         if (IsValidFbrInvoice(existing)) return CheckInOperationResult.Ok("FBR invoice is already posted.", request.RegId, data: new { fbrInvoiceNo = existing });
 
         var setting = await GetFbrSettingAsync(cn, hotelId, request.PaymentMethod, request.FiscalAuthority, ct);
-        if (!setting.Enabled) return CheckInOperationResult.Fail("No enabled fiscal integration for this hotel.", data: "Not Sent");
-        if (setting.PosId <= 0) return CheckInOperationResult.Fail("Fiscal POS ID is missing in HotelFiscalIntegrationTB.", data: "Not Sent");
-        if (setting.ApiUrl.Length == 0) return CheckInOperationResult.Fail("Fiscal invoice URL is incomplete in the hotel integration settings.", data: "Not Sent");
+        if (!setting.Enabled) return CheckInOperationResult.Fail("No enabled fiscal integration for this hotel.");
+        if (setting.PosId <= 0) return CheckInOperationResult.Fail("Fiscal POS ID is missing in HotelFiscalIntegrationTB.");
+        if (setting.ApiUrl.Length == 0) return CheckInOperationResult.Fail("Fiscal invoice URL is incomplete in the hotel integration settings.");
 
         var guest = await GetGuestSummaryAsync(cn, null, hotelId, request.RegId, ct);
         var lines = new List<FbrLine>();
@@ -4285,7 +4307,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
             while (await rd.ReadAsync(ct))
                 lines.Add(new FbrLine { Id = I(rd, "ID"), RoomNo = S(rd, "room_no"), Description = S(rd, "descr"), DeductionInfo = S(rd, "deductioninfo"), Nights = M(rd, "NightsValue"), Rate = M(rd, "RateValue"), Gst = M(rd, "GstValue"), Bed = M(rd, "BedValue"), Discount = M(rd, "DiscountValue"), Total = M(rd, "TotalValue") });
         }
-        if (lines.Count == 0) return CheckInOperationResult.Fail("No charge rows found for FBR posting.", data: "Not Sent");
+        if (lines.Count == 0) return CheckInOperationResult.Fail("No charge rows found for FBR posting.");
 
         // FBR payload parity with the newer WebForms FbrInvoiceService.cs.
         // Only fiscal serialization changes here; checkout/payment/tax workflows remain intact.
@@ -4336,7 +4358,6 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
 
         string raw = string.Empty, invoiceNo = string.Empty;
         bool ok = false;
-        bool definitelyNotSent = false;
         try
         {
             var client = _httpClientFactory.CreateClient();
@@ -4354,31 +4375,11 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ISNULL(descr,'')<>'Refund' AND ISNULL(
             if (!IsValidFbrInvoice(invoiceNo)) ok = false;
             if (invoiceNo.Length == 0) invoiceNo = "Not Found";
         }
-        catch (Exception ex)
-        {
-            raw = ex.Message; ok = false;
-            // ConnectionRefused / DNS / route-unreachable means the TCP
-            // connection was never established, so the invoice wasn't sent.
-            // Do NOT mark socket timeouts or resets as Not Sent: the provider
-            // might have received the HTTP body before the connection failed.
-            for (Exception? cause=ex; cause!=null; cause=cause.InnerException)
-            {
-                if(cause is SocketException socket && socket.SocketErrorCode is
-                    (SocketError.ConnectionRefused or SocketError.HostNotFound or
-                     SocketError.HostUnreachable or SocketError.NetworkUnreachable or
-                     SocketError.NetworkDown or SocketError.AddressNotAvailable))
-                {
-                    definitelyNotSent=true;
-                    break;
-                }
-            }
-        }
+        catch (Exception ex) { raw = ex.Message; ok = false; }
 
         await SaveFbrResultAsync(cn, hotelId, request.RegId, invoiceNo, ok ? "Posted" : "Failed", raw, ct);
         await InsertSystemLogAsync(cn, null, hotelId, userName, ip, $"(FBR Post),{request.RegId},{invoiceNo},{(ok ? "Posted" : "Failed")}", ct);
-        if (!ok || !IsValidFbrInvoice(invoiceNo))
-            return CheckInOperationResult.Fail("FBR posting failed. " + ExtractApiError(raw, "No valid invoice number returned."),
-                data: definitelyNotSent ? "Not Sent" : "Needs Review");
+        if (!ok || !IsValidFbrInvoice(invoiceNo)) return CheckInOperationResult.Fail("FBR posting failed. " + ExtractApiError(raw, "No valid invoice number returned."));
         return CheckInOperationResult.Ok("FBR invoice posted successfully.", request.RegId, data: new { fbrInvoiceNo = invoiceNo, rawResponse = raw });
         }
         finally
@@ -6231,6 +6232,61 @@ ORDER BY ord,rid DESC;", cn, tx);
         return Convert.ToString(await cmd.ExecuteScalarAsync(ct))?.Trim() ?? string.Empty;
     }
 
+    // A new date segment must inherit the correct physical room's occupancy,
+    // not a zero-filled parent payment row. Do not combine guest counts from
+    // different rooms or from unrelated reservations/hotels.
+    private static async Task<(int Adults,int Children,int Infants)> GetRoomExtensionCountsAsync(
+        SqlConnection cn, SqlTransaction tx, string hotelId, string regId,
+        string roomNo, int parentId, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+ ISNULL(TRY_CONVERT(int,room_adults),0) AS adults,
+ ISNULL(TRY_CONVERT(int,room_children),0) AS children,
+ ISNULL(TRY_CONVERT(int,room_infants),0) AS infants
+FROM dbo.payments
+WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(room_no,'')))=@room
+ AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+ AND ISNULL(TRY_CONVERT(int,room_adults),0)+ISNULL(TRY_CONVERT(int,room_children),0)+ISNULL(TRY_CONVERT(int,room_infants),0)>0
+ORDER BY ID DESC;", cn, tx);
+        cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;
+        cmd.Parameters.Add("@reg",SqlDbType.VarChar,100).Value=regId;
+        cmd.Parameters.Add("@room",SqlDbType.VarChar,50).Value=roomNo ?? string.Empty;
+        cmd.Parameters.Add("@parent",SqlDbType.Int).Value=parentId;
+        await using var rd=await cmd.ExecuteReaderAsync(ct);
+        if(await rd.ReadAsync(ct))
+            return (Math.Max(0,I(rd,"adults")),Math.Max(0,I(rd,"children")),Math.Max(0,I(rd,"infants")));
+        // A zero-count legacy parent may predate per-room occupancy columns.
+        // Use the master guest totals ONLY when precisely one physical room has
+        // Room Rent rows. For multi-room reservations require staff to edit counts.
+        await rd.DisposeAsync();
+        await using var fallback = new SqlCommand(@"
+IF (SELECT COUNT(DISTINCT LTRIM(RTRIM(ISNULL(room_no,''))))
+    FROM dbo.payments WHERE hotel_id=@hotel AND reg_id=@reg
+      AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
+      AND NULLIF(LTRIM(RTRIM(ISNULL(room_no,''))),'') IS NOT NULL
+      AND UPPER(LTRIM(RTRIM(ISNULL(room_no,''))))<>'UNASSIGNED')=1
+BEGIN
+ SELECT TOP (1) adults, minors FROM
+ (
+  SELECT 1 AS prio,ID AS record_id,
+   ISNULL(TRY_CONVERT(int,NumberOfAdults),0) AS adults,
+   ISNULL(TRY_CONVERT(int,NumberOfMinors),0) AS minors
+  FROM dbo.GuestInformationLogTB WHERE hotel_id=@hotel AND reg_id=@reg
+  UNION ALL
+  SELECT 2,ID,ISNULL(TRY_CONVERT(int,number_of_adult),0),
+   ISNULL(TRY_CONVERT(int,number_of_minor),0)
+  FROM dbo.NewReservationsTB WHERE hotel_id=@hotel AND reg_id=@reg
+ ) AS master ORDER BY prio,record_id DESC;
+END", cn, tx);
+        fallback.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        fallback.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+        await using var counts = await fallback.ExecuteReaderAsync(ct);
+        if (await counts.ReadAsync(ct))
+            return (Math.Max(0,I(counts,"adults")),Math.Max(0,I(counts,"minors")),0);
+        return (0,0,0); // No reliable room-specific occupancy available.
+    }
+
     private async Task<DateChangeOutcome> ApplySingleReservationExtendLikeWebFormsAsync(
         SqlConnection cn, SqlTransaction tx, string hotelId, string regId,
         DateTime arrival, DateTime oldDeparture, DateTime newDeparture,
@@ -6314,10 +6370,11 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
                 throw new InvalidOperationException("Extension row already exists for the selected dates. Please refresh the reservation.");
         }
 
+        var occupancy=await GetRoomExtensionCountsAsync(cn,tx,hotelId,regId,roomNo,parent.Id,ct);
         await using (var ins = new SqlCommand(@"
 INSERT INTO dbo.payments
 ([Type],room_no,ArrivalDate,DepartureDate,NumberOfRoom,rate,charge,Nights,totalamount,reg_id,hotel_id,payment_status,currentdate,descr,res_status,rateplan,rateplanname,GST,Bed,category_id,room_adults,room_children,room_infants)
-SELECT [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),@rate,@charge,@nights,@total,reg_id,hotel_id,payment_status,GETDATE(),descr,res_status,rateplan,rateplanname,@gst,@bed,category_id,room_adults,room_children,room_infants
+SELECT [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),@rate,@charge,@nights,@total,reg_id,hotel_id,payment_status,GETDATE(),descr,res_status,rateplan,rateplanname,@gst,@bed,category_id,@roomAdults,@roomChildren,@roomInfants
 FROM dbo.payments
 WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
         {
@@ -6329,6 +6386,9 @@ WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
             ins.Parameters.Add("@total", SqlDbType.Decimal).Value = extensionTotal;
             ins.Parameters.Add("@gst", SqlDbType.Decimal).Value = extensionGst;
             ins.Parameters.Add("@bed", SqlDbType.Decimal).Value = extensionBed;
+            ins.Parameters.Add("@roomAdults", SqlDbType.Int).Value = occupancy.Adults;
+            ins.Parameters.Add("@roomChildren", SqlDbType.Int).Value = occupancy.Children;
+            ins.Parameters.Add("@roomInfants", SqlDbType.Int).Value = occupancy.Infants;
             ins.Parameters.Add("@parentId", SqlDbType.Int).Value = parent.Id;
             ins.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
             ins.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
@@ -6439,6 +6499,7 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND descr='Room Rent'
                     continue;
             }
 
+            var roomCounts = await GetRoomExtensionCountsAsync(cn,tx,hotelId,regId,roomNo,parent.Id,ct);
             await using (var ins = new SqlCommand(@"
 INSERT INTO dbo.payments
 ([Type],room_no,ArrivalDate,DepartureDate,NumberOfRoom,rate,charge,Nights,totalamount,
@@ -6446,7 +6507,7 @@ INSERT INTO dbo.payments
  GST,Bed,discount,GuestName,category_id,room_adults,room_children,room_infants)
 SELECT [Type],room_no,@arrDate,@depDate,ISNULL(NumberOfRoom,1),@rate,@charge,@nights,@total,
        reg_id,hotel_id,payment_status,GETDATE(),descr,res_status,rateplan,rateplanname,
-       @gst,@bed,0,GuestName,category_id,room_adults,room_children,room_infants
+       @gst,@bed,0,GuestName,category_id,@roomAdults,@roomChildren,@roomInfants
 FROM dbo.payments
 WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
             {
@@ -6458,6 +6519,9 @@ WHERE ID=@parentId AND hotel_id=@hotel AND reg_id=@reg;", cn, tx))
                 ins.Parameters.Add("@total", SqlDbType.Decimal).Value = extensionTotal;
                 ins.Parameters.Add("@gst", SqlDbType.Decimal).Value = extensionGst;
                 ins.Parameters.Add("@bed", SqlDbType.Decimal).Value = extensionBed;
+                ins.Parameters.Add("@roomAdults", SqlDbType.Int).Value = roomCounts.Adults;
+                ins.Parameters.Add("@roomChildren", SqlDbType.Int).Value = roomCounts.Children;
+                ins.Parameters.Add("@roomInfants", SqlDbType.Int).Value = roomCounts.Infants;
                 ins.Parameters.Add("@parentId", SqlDbType.Int).Value = parent.Id;
                 ins.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 ins.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;

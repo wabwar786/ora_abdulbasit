@@ -46,6 +46,10 @@ public interface IFrontDeskCalendarService
         string hotelId, string hotelName, string userId, string userName, string ip,
         FrontDeskBookingMoveRequest request, CancellationToken ct = default);
 
+    Task<FrontDeskOperationResult> UpdateRoomOccupancyAsync(
+        string hotelId, string userId, string userName, string ip,
+        FrontDeskRoomOccupancyRequest request, CancellationToken ct = default);
+
     Task<FrontDeskOperationResult> DeleteRoomSegmentAsync(
         string hotelId, string hotelName, string userId, string userName, string ip,
         string regId, int paymentId, CancellationToken ct = default);

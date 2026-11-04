@@ -203,6 +203,8 @@
       url.searchParams.set('days', state.days);
       const json = await api(url.toString(), {signal:state.request.signal});
       state.payload = json.data;
+      // Room status can change after a calendar reload. Never reuse old choices.
+      assignmentOptionsCache.clear();
       state.start = dateOnly(json.data.startDate) || start;
       state.hotelToday = dateOnly(json.data.hotelToday) || state.hotelToday;
       state.currency = json.data.currencySymbol || state.currency;
@@ -337,12 +339,13 @@
       const cls=statusClass(item.statusCode||item.status);
       const payClass=paymentDotClass(item.paymentStatus);
       const roomClass=room==='UNASSIGNED'?' unassigned-booking':'';
+      const missingClass=item.isMissingRoomRent?' fdc-missing-rent':'';
       const restaurantClass=item.hasRestaurantPendingBill?' fdc-restaurant-pending':'';
       const rowKey=`${item.categoryId}|${room}`;
       const slot=isSlim?(rowSlotCounter.get(rowKey)||0):0;
       if(isSlim) rowSlotCounter.set(rowKey,slot+1);
       row.insertAdjacentHTML('beforeend',
-        `<div class="fdc-bar ${cls}${roomClass}${restaurantClass}${isSlim?' slim-checkout':''}" draggable="${item.canDrag?'true':'false'}" `+
+        `<div class="fdc-bar ${cls}${roomClass}${restaurantClass}${isSlim?' slim-checkout':''}${missingClass}" draggable="${item.canDrag?'true':'false'}" `+
         `style="left:${left};width:${width};${isSlim?`--slim-slot:${slot};`:''}" data-booking='${esc(JSON.stringify(item))}' title="${esc(item.guestName)}${item.hasRestaurantPendingBill?' · Restaurant bill pending':''}">`+
         `<span class="name">${esc(item.guestName||item.regId)}</span>`+
         `<span class="pay-dot ${payClass}" title="${esc(item.paymentStatus||'')}"></span>`+
@@ -391,7 +394,7 @@
     delete context.dataset.booking;
   }
   function closeTip(){ tip.classList.remove('open'); }
-  const modalModeClasses=['fdc-cancel-mode','fdc-category-rate-mode','fdc-professional-mode','fdc-room-action-mode','fdc-block-form-mode','fdc-block-details-mode','fdc-resize-mode'];
+  const modalModeClasses=['fdc-cancel-mode','fdc-category-rate-mode','fdc-professional-mode','fdc-room-action-mode','fdc-block-form-mode','fdc-block-details-mode','fdc-resize-mode','fdc-assign-mode','fdc-occupancy-mode'];
   function openModal(title, body, foot='', mode='') {
     overlay.classList.remove(...modalModeClasses);
     String(mode||'').split(/\s+/).filter(Boolean).forEach(x=>overlay.classList.add(x));
@@ -400,6 +403,8 @@
     page.classList.add('fdc-modal-open');
   }
   function closeModal(){
+    // Invalidates any pending availability response after the user cancels.
+    if(overlay.classList.contains('fdc-assign-mode'))assignmentDialogToken++;
     overlay.classList.remove('open',...modalModeClasses);
     overlay.setAttribute('aria-hidden','true');
     page.classList.remove('fdc-modal-open');
@@ -575,7 +580,7 @@
         ${row('Total Nights',`${d.nights||Math.max(1,diffDays(d.arrival,d.departure))} Nights`)}
         ${row('Room',esc(d.roomNo||'Unassigned'))}
         ${row('Room Category',esc(d.categoryName||'—'))}
-        ${row('Occupancy',`${Number(d.adults||0)} Adults · ${Number(d.children||0)} Children${Number(d.infants||0)?` · ${Number(d.infants)} Infants`:''}`)}
+        ${row('Occupancy',`<span class="fdc-edit-counts" data-edit-occupancy title="Double-click to edit adults, children and infants">${Number(d.adults||0)} Adults · ${Number(d.children||0)} Children · ${Number(d.infants||0)} Infants</span>`)}
         ${row('Source',esc(d.source||'—'))}
       </div>
       <div class="fdc-panel"><h4>Charges & Payments</h4>
@@ -645,12 +650,12 @@
       amountMinor=holdMinor(major,currency);
       if(!(amountMinor>0)){showToast('Enter a valid capture amount.',true);input?.focus();return;}
       if(authorizedMinor>0&&amountMinor>authorizedMinor){showToast('Capture amount cannot exceed the authorized hold.',true);input?.focus();return;}
-      if(authorizedMinor>0&&amountMinor<authorizedMinor){
-        if(!confirm(`Capture ${money(major)} from this hold? The remaining authorization will be released by Stripe.`)) return;
-      }
-    }else if(action==='release'){
-      if(!confirm('Release this card authorization without taking payment?')) return;
     }
+    const confirmed=window.OrpHoldConfirm
+      ? await window.OrpHoldConfirm({action,amount:action==='capture'?holdMajor(amountMinor,currency):holdMajor(authorizedMinor,currency),
+          symbol:state.currency||'£',partial:action==='capture'&&authorizedMinor>amountMinor,currency})
+      : window.confirm(action==='capture'?'Capture this card authorization?':'Release this card authorization?');
+    if(!confirmed)return;
 
     const urls=paymentHoldUrls();
     const endpoint=action==='capture'?urls.capture:urls.release;
@@ -745,6 +750,36 @@
     input?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();void submit();}});
   }
 
+  function openRoomOccupancyEditor(d){
+    if(!d?.regId || !Number(d.paymentId||0))return showToast('Open a room segment to edit guest counts.',true);
+    if(isCheckedOutStatus(d.status))return showToast('Checked-out room occupancy is read-only.',true);
+    const value=(field)=>Math.max(0,Math.trunc(Number(d[field]||0)));
+    const body=`<div class="fdc-pro-summary compact"><div class="fdc-pro-summary-icon">♙</div>
+      <div><span>Room guest occupancy</span><b>Room ${esc(d.roomNo||'Unassigned')}</b><small>${esc(d.regId||'')}</small></div></div>
+      <div class="fdc-counts-help">Update the guest counts for this specific room/date segment. Changes are recorded in Guest History.</div>
+      <div class="fdc-counts-edit">
+        <div class="fdc-field"><label for="fdcEditAdults">Adults</label><input id="fdcEditAdults" type="number" min="0" max="30" step="1" value="${value('adults')}"></div>
+        <div class="fdc-field"><label for="fdcEditChildren">Children</label><input id="fdcEditChildren" type="number" min="0" max="30" step="1" value="${value('children')}"></div>
+        <div class="fdc-field"><label for="fdcEditInfants">Infants</label><input id="fdcEditInfants" type="number" min="0" max="30" step="1" value="${value('infants')}"></div>
+      </div>`;
+    openModal('Edit Adults, Children & Infants',body,
+      '<button type="button" class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button><button id="fdcSaveOccupancy" type="button" class="fdc-btn primary">Save Guest Counts</button>',
+      'fdc-professional-mode fdc-occupancy-mode');
+    const save=$('fdcSaveOccupancy');
+    save?.addEventListener('click',async()=>{
+      const get=id=>Number($(id)?.value);
+      const adults=get('fdcEditAdults'),children=get('fdcEditChildren'),infants=get('fdcEditInfants');
+      if([adults,children,infants].some(x=>!Number.isInteger(x)||x<0||x>30)||adults+children+infants===0){
+        showToast('Enter whole-number guest counts with at least one guest.',true);return;
+      }
+      try{
+        await mutate('/Calendar/UpdateRoomOccupancy',{regId:d.regId,paymentId:Number(d.paymentId),adults,children,infants},'Saving guest counts…',save);
+        closeModal();await loadCalendar(state.start,true);
+        await openDetails({regId:d.regId,paymentId:d.paymentId,guestName:d.guestName,roomNo:d.roomNo});
+      }catch{}
+    });
+  }
+
   function detailsActions(d){
     const s=normalizeStatus(d.status);
     const checked=isCheckedInStatus(s);
@@ -759,6 +794,7 @@
       if(cfg.restaurantEnabled==='1' && !/council/i.test(cfg.role||'') && d.regId && d.roomNo && String(d.roomNo).toUpperCase()!=='UNASSIGNED') actions.push(action('▣','Restaurant','restaurant'));
       actions.push(action('✎','Edit','edit'));
       actions.push(action('Aa','Edit Guest Name','guest-name'));
+      actions.push(action('♙','Edit Guest Counts','guest-counts'));
       actions.push(action('↶','Undo Check-in','undo'));
       actions.push(action('▤','Note Book','note'));
       actions.push(action('◆','Room Security','security'));
@@ -772,6 +808,7 @@
     }else if(provisional){
       actions.push(action('✓','Confirm Reservation','confirm'));
       actions.push(action('Aa','Edit Guest Name','guest-name'));
+      actions.push(action('♙','Edit Guest Counts','guest-counts'));
       actions.push(action('◆','Room Security','security'));
       actions.push(action('◷','Guest History','history'));
       actions.push(action('▤','Detail Invoice','detail-invoice'));
@@ -780,6 +817,7 @@
       actions.push(action('➜','Check-In Now','checkin-now','primary-action'));
       actions.push(action('▣','Edit','edit'));
       actions.push(action('Aa','Edit Guest Name','guest-name'));
+      actions.push(action('♙','Edit Guest Counts','guest-counts'));
       actions.push(action('▤','Note Book','note'));
       actions.push(action('◆','Room Security','security'));
       actions.push(action('◷','Guest History','history'));
@@ -855,6 +893,7 @@
     if(action==='invoice'){openInvoice(d);return;}
     if(action==='detail-invoice'){await openDetailInvoice(d,button);return;}
     if(action==='guest-name'){openRoomGuestNameEditor(d,button);return;}
+    if(action==='guest-counts'){openRoomOccupancyEditor(d);return;}
     if(action==='confirm'){
       try {
         await mutate(cfg.confirmReservationUrl||calendarActionUrl('ConfirmReservation'),
@@ -1345,6 +1384,19 @@ ${tag}`:tag;
 
   function openBookingContext(item,x,y){
     if(!item?.regId) return;
+    if(item.isMissingRoomRent){
+      closeContext(true);
+      context.classList.add('booking-menu');
+      context.dataset.booking=JSON.stringify(item);
+      context.innerHTML=`<div class="fdc-booking-menu-head"><div class="fdc-booking-menu-guest"><b>${esc(item.guestName||item.regId)}</b><small>${esc(item.categoryName||'Unknown')} · Unassigned</small></div></div>
+        <div class="fdc-booking-menu-body"><div class="fdc-booking-menu-actions">
+          ${item.canDrag?bookingMenuItem('⇥','Assign room / change category','assign','primary-action'):''}
+          ${bookingMenuItem('✎','Edit Reservation','edit-unassigned')}
+          ${bookingMenuItem('⧉','Copy reservation ID','copy-reg')}
+        </div></div>`;
+      showContextAt(x,y);
+      return;
+    }
     closeContext(true);
     const code=String(item.statusCode||'').toUpperCase();
     const checked=code==='O' || isCheckedInStatus(item.status);
@@ -1362,6 +1414,7 @@ ${tag}`:tag;
       if(cfg.restaurantEnabled==='1' && !/council/i.test(cfg.role||'') && item.regId && item.roomNo && String(item.roomNo).toUpperCase()!=='UNASSIGNED') actions.push(bookingMenuItem('▣','Restaurant','restaurant'));
       actions.push(bookingMenuItem('✎','Edit','edit'));
       actions.push(bookingMenuItem('Aa','Edit Guest Name','guest-name'));
+      actions.push(bookingMenuItem('♙','Edit Guest Counts','guest-counts'));
       actions.push(bookingMenuItem('↶','Undo Check-in','undo'));
       actions.push(bookingMenuItem('▤','Note Book','note'));
       actions.push(bookingMenuItem('◆','Room Security','security'));
@@ -1375,6 +1428,7 @@ ${tag}`:tag;
     }else if(provisional){
       actions.push(bookingMenuItem('✓','Confirm Reservation','confirm'));
       actions.push(bookingMenuItem('Aa','Edit Guest Name','guest-name'));
+      actions.push(bookingMenuItem('♙','Edit Guest Counts','guest-counts'));
       actions.push(bookingMenuItem('◆','Room Security','security'));
       actions.push(bookingMenuItem('◷','Guest History','history'));
       actions.push(bookingMenuItem('▤','Detail Invoice','detail-invoice'));
@@ -1383,6 +1437,7 @@ ${tag}`:tag;
       actions.push(bookingMenuItem('➜','Check-In Now','checkin','primary-action'));
       actions.push(bookingMenuItem('▣','Edit','edit'));
       actions.push(bookingMenuItem('Aa','Edit Guest Name','guest-name'));
+      actions.push(bookingMenuItem('♙','Edit Guest Counts','guest-counts'));
       actions.push(bookingMenuItem('▤','Note Book','note'));
       actions.push(bookingMenuItem('◆','Room Security','security'));
       actions.push(bookingMenuItem('◷','Guest History','history'));
@@ -1437,6 +1492,16 @@ ${tag}`:tag;
       closeContext(true); return;
     }
 
+    if(action==='assign' && item.isMissingRoomRent){
+      closeContext(true);
+      void openAssignMissingRoomDialog(item);
+      return;
+    }
+    if(action==='edit-unassigned' && item.isMissingRoomRent){
+      closeContext(true);
+      openCheckInEditor(item);
+      return;
+    }
     if(action==='history'){
       openHistoryPage(item);
       closeContext(true);
@@ -1570,6 +1635,7 @@ ${tag}`:tag;
         else if(action==='invoice'){closeAfter=true;deferredAction=()=>openInvoice(d);}
         else if(action==='detail-invoice'){closeAfter=true;deferredAction=()=>openDetailInvoice(d,null);}
         else if(action==='guest-name'){closeAfter=true;deferredAction=()=>openRoomGuestNameEditor(d,null);}
+        else if(action==='guest-counts'){closeAfter=true;deferredAction=()=>openRoomOccupancyEditor(d);}
         else if(action==='checkout'){closeAfter=true;deferredAction=()=>openCheckout(d);}
       }
 
@@ -1599,13 +1665,275 @@ ${tag}`:tag;
   function bookingFrom(el){try{return JSON.parse(el.dataset.booking||'{}');}catch{return null;}}
   function blockFrom(el){try{return JSON.parse(el.dataset.block||'{}');}catch{return null;}}
 
-  // ---------------------------------------------------------------------------
-  // WebForms-style Move Room spotlight
-  // ---------------------------------------------------------------------------
-  // The legacy FrontDeskCalender keeps the calendar readable while a booking is
-  // dragged: everything outside the calendar is softly blurred, unrelated bars
-  // are muted, the dragged booking stays sharp, and only the destination room +
-  // affected date headers + one exact landing bar are highlighted.
+  // Prime the hotel-scoped full-stay lookup when dragging starts. Keep a
+  // short-lived, bounded cache so drop and drag-start never repeat the same
+  // expensive availability query. The final save always revalidates on SQL.
+  const assignmentOptionsCache=new Map();
+  let assignmentDialogToken=0;
+  function getAssignmentOptions(item){
+    const key=[String(item.regId||''),String(item.arrival||''),String(item.departure||'')].join('|');
+    const now=Date.now();
+    const cached=assignmentOptionsCache.get(key);
+    if(cached && cached.expiresAt>now)return cached.promise;
+    assignmentOptionsCache.delete(key);
+    const optionsUrl=new URL(calendarActionUrl('UnassignedAssignmentOptions'),location.origin);
+    optionsUrl.searchParams.set('regId',String(item.regId));
+    const entry={promise:null,expiresAt:Infinity};
+    const promise=api(optionsUrl.toString()).then(response=>{
+      if(!response?.ok || !Array.isArray(response?.data?.rooms) || !Array.isArray(response?.data?.plans))
+        throw new Error(response?.message||'Unable to load available rooms and rate plans.');
+      entry.expiresAt=Date.now()+8000;
+      return response.data;
+    }).catch(error=>{
+      if(assignmentOptionsCache.get(key)===entry)assignmentOptionsCache.delete(key);
+      throw error;
+    });
+    entry.promise=promise;
+    assignmentOptionsCache.set(key,entry);
+    if(assignmentOptionsCache.size>12)assignmentOptionsCache.delete(assignmentOptionsCache.keys().next().value);
+    return promise;
+  }
+
+  // Room Rent is absent, so the usual payment-ID move cannot be used. Staff
+  // can create ALL missing room rows in one reviewed, atomic assignment.
+  async function openAssignMissingRoomDialog(item, dropTarget=null){
+    if(!item?.isMissingRoomRent)return;
+    if(!item.canDrag){showToast('You do not have permission to assign rooms.',true);return;}
+    // Open immediately on drop instead of blocking the modal behind SQL.
+    // The options request may already be running from drag-start.
+    const dialogToken=++assignmentDialogToken;
+    openModal('Assign Room & Rate Plan',
+      `<div class="fdc-assign-repair" data-assignment-loading="${dialogToken}">
+        <div class="fdc-assign-meta"><span>Reservation <em>${esc(item.regId||'')}</em></span>
+          <span>${esc(item.guestName||'—')}</span></div>
+        <div class="fdc-missing-summary" role="status" aria-live="polite">
+          <span class="fdc-button-spinner" aria-hidden="true"></span>
+          Checking available rooms and rate plans…
+        </div>
+      </div>`,
+      '<button type="button" class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button>',
+      'fdc-professional-mode fdc-assign-mode');
+    let options;
+    try{
+      options=await getAssignmentOptions(item);
+    }catch(err){
+      if(dialogToken!==assignmentDialogToken || !overlay.classList.contains('open') ||
+         modalTitle.textContent!=='Assign Room & Rate Plan')return;
+      modalBody.innerHTML=`<div class="fdc-assign-repair">
+        <div class="fdc-missing-summary" role="alert">${esc(err?.message||'Unable to check room availability.')}</div>
+        <button type="button" class="fdc-btn primary" id="fdcRetryAssignmentOptions">Try again</button>
+      </div>`;
+      $('fdcRetryAssignmentOptions')?.addEventListener('click',()=>{void openAssignMissingRoomDialog(item,dropTarget);});
+      return;
+    }
+    // A closed/replaced dialog must not reappear when an earlier request finishes.
+    if(dialogToken!==assignmentDialogToken || !overlay.classList.contains('open') ||
+       modalTitle.textContent!=='Assign Room & Rate Plan')return;
+    // Refuse stale calendar data: the server is authoritative for the stay.
+    if(String(options.arrival||'').slice(0,10)!==String(item.arrival||'').slice(0,10) ||
+       String(options.departure||'').slice(0,10)!==String(item.departure||'').slice(0,10)){
+      closeModal();showToast('Reservation dates changed. Refresh the calendar and retry.',true);
+      return;
+    }
+    const choices=(options.rooms||[]).map(r=>({
+      roomNo:String(r.roomNo),categoryId:String(r.categoryId),categoryName:String(r.categoryName),
+      caption:`Room ${r.roomNo} — ${r.categoryName}`
+    }));
+    // Retain category-only moves when staff deliberately drags to an Unassigned
+    // lane, but never show occupied rooms as physical assignment choices.
+    if(dropTarget && (!dropTarget.roomNo || String(dropTarget.roomNo).toUpperCase()==='UNASSIGNED')){
+      const targetCat=(state.payload?.categories||[]).find(c=>
+        String(c.id)===String(dropTarget.categoryId));
+      if(targetCat) choices.unshift({roomNo:'',categoryId:String(targetCat.id),
+        categoryName:String(targetCat.name),caption:`Unassigned — ${targetCat.name}`});
+    }
+    if(dropTarget?.roomNo && String(dropTarget.roomNo).toUpperCase()!=='UNASSIGNED' && !choices.some(c=>c.roomNo===String(dropTarget.roomNo) &&
+        c.categoryId===String(dropTarget.categoryId))){
+      closeModal();showToast('That room is already booked or blocked for some of these nights.',true);
+      return;
+    }
+    if(!choices.length){closeModal();showToast('No rooms available for the entire reservation stay.',true);return;}
+    const planRecords=options.plans||[];
+    const expected=Math.max(1,Math.trunc(Number(item.expectedRooms||1)));
+    if(expected>20){closeModal();showToast('This group reservation exceeds 20 rooms. Use the existing reservation editor.',true);return;}
+    const nights=Math.max(1,dragNightCount(item));
+    const masterTotal=Number(item.masterTotalAmount??item.total??0);
+    const currency=state.currency||'£';
+    // New room assignment starts with one adult per room; staff can edit it.
+    const defaultAdults=()=>1;
+    let sequence=0;
+    const evenlyAllocated=index=>{
+      if(!Number.isFinite(masterTotal)||masterTotal<=0)return '';
+      const base=Math.round(masterTotal/expected*100)/100;
+      return (index===expected-1 ? Math.round((masterTotal-base*(expected-1))*100)/100 : base).toFixed(2);
+    };
+    const initialTarget=dropTarget?choices.findIndex(c=>
+      String(c.roomNo||'').toUpperCase()===String(dropTarget.roomNo||'').toUpperCase()&&
+      String(c.categoryId)===String(dropTarget.categoryId)):-1;
+    const lines=[{id:++sequence,target:initialTarget,plan:'',amount:evenlyAllocated(0),
+      adults:defaultAdults(0),children:Math.max(0,Number(item.children||0)),
+      infants:Math.max(0,Number(item.infants||0)),load:0}];
+    const body=`<div class="fdc-assign-repair">
+      <div class="fdc-assign-meta">
+        <span>Reservation <em>${esc(item.regId||'')}</em></span>
+        <span>${esc(item.guestName||'—')}</span>
+        <span>${fmt(item.arrival,true)} – ${fmt(item.departure,true)} · ${nights} night${nights===1?'':'s'}</span>
+      </div>
+      <div class="fdc-assign-toolbar"><div>Room assignments <small id="fdcAssignRoomCount"></small></div>
+        <button id="fdcAddRoom" type="button" class="fdc-assign-add">+ Add Room</button></div>
+      <div id="fdcAssignRoomLines" class="fdc-assign-lines"></div>
+      <div class="fdc-assign-totals">
+        <span>New room rent <b id="fdcAssignCombinedTotal">${money(0)}</b></span>
+      </div>
+      <label id="fdcAssignIncreaseWrap" class="fdc-assign-extra-confirm" hidden>
+        <input type="checkbox" id="fdcAssignConfirmIncrease">
+        <span>Confirm increasing this booking above ${expected} room${expected===1?'':'s'}</span>
+      </label>
+    </div>`;
+    openModal('Assign Room & Rate Plan',body,
+      '<button type="button" class="fdc-btn fdc-btn-secondary" data-close-modal>Cancel</button>'+ 
+      '<button type="button" id="fdcSaveRoomAssignments" class="fdc-btn primary">Apply & Continue</button>',
+      'fdc-professional-mode fdc-assign-mode');
+    const list=$('fdcAssignRoomLines');
+    if(!list)return;
+    const updateTotals=()=>{
+      const total=lines.reduce((sum,x)=>sum+(Number(x.amount)||0),0);
+      const totalNode=$('fdcAssignCombinedTotal');
+      if(totalNode)totalNode.textContent=money(total);
+      const countNode=$('fdcAssignRoomCount');
+      if(countNode)countNode.textContent=`${lines.length} / ${expected} booked`;
+      const extra=$('fdcAssignIncreaseWrap');
+      if(extra)extra.hidden=lines.length<=expected;
+      const add=$('fdcAddRoom');
+      if(add)add.disabled=lines.length>=20;
+    };
+    const getSelected=x=>Number.isInteger(x.target)&&x.target>=0?choices[x.target]:null;
+    const showLines=()=>{
+      list.innerHTML=lines.map((x,i)=>{
+        const sel=getSelected(x);
+        const isPhysical=!!sel?.roomNo;
+        const opts=choices.map((c,j)=>`<option value="${j}" ${j===x.target?'selected':''}>${esc(c.caption)}</option>`).join('');
+        return `<section class="fdc-assign-line" data-line="${x.id}">
+          <div class="fdc-assign-linehead"><span>Room ${i+1}</span>
+            ${lines.length>1?`<button type="button" class="fdc-assign-remove" data-remove="${x.id}">Remove</button>`:''}</div>
+          <div class="fdc-assign-grid">
+            <div class="fdc-assign-field"><label>Destination room / category</label>
+              <select data-field="target"><option value="">Select room…</option>${opts}</select></div>
+            <div class="fdc-assign-field" ${isPhysical?'':'hidden'} data-plan-wrap><label>Rate plan</label>
+              <select data-field="plan"><option value="">Select plan…</option></select></div>
+            <div class="fdc-assign-field" ${isPhysical?'':'hidden'} data-total-wrap><label>Room rent total (${esc(currency)})</label>
+              <input type="number" data-field="amount" min="0.01" max="100000000" step="0.01" value="${esc(x.amount)}" inputmode="decimal"></div>
+            <div class="fdc-assign-nightly" ${isPhysical?'':'hidden'} data-nightly-wrap>
+              Nightly <span data-nightly>${Number(x.amount)>0?money(Number(x.amount)/nights):'—'}</span></div>
+          </div>
+          <div class="fdc-assign-counts" ${isPhysical?'':'hidden'} data-count-wrap>
+            <label>Adults <input type="number" data-field="adults" min="0" max="30" step="1" value="${esc(x.adults)}"></label>
+            <label>Children <input type="number" data-field="children" min="0" max="30" step="1" value="${esc(x.children)}"></label>
+            <label>Infants <input type="number" data-field="infants" min="0" max="30" step="1" value="${esc(x.infants)}"></label>
+          </div>
+          ${!isPhysical?'<div class="fdc-assign-category-only">Category only — no room charge will be created.</div>':''}
+        </section>`;
+      }).join('');
+      for(const x of lines){
+        const card=list.querySelector(`[data-line="${x.id}"]`);
+        if(!card)continue;
+        card.querySelector('[data-field="target"]')?.addEventListener('change',ev=>{
+          x.target=ev.target.value===''?-1:Number(ev.target.value);
+          x.plan='';showLines();
+        });
+        for(const field of ['amount','adults','children','infants']){
+          card.querySelector(`[data-field="${field}"]`)?.addEventListener('input',ev=>{
+            x[field]=ev.target.value;
+            if(field==='amount'){
+              const nightly=card.querySelector('[data-nightly]');
+              if(nightly)nightly.textContent=Number(x.amount)>0?money(Number(x.amount)/nights):'—';
+            }
+            updateTotals();
+          });
+        }
+        card.querySelector('[data-remove]')?.addEventListener('click',()=>{
+          if(lines.length<=1)return;
+          lines.splice(lines.indexOf(x),1);showLines();
+        });
+        if(getSelected(x)?.roomNo)loadPlans(x,card);
+      }
+      updateTotals();
+    };
+    const loadPlans=(x,card)=>{
+      const choice=getSelected(x);if(!choice?.roomNo)return;
+      const selector=card.querySelector('[data-field="plan"]');
+      if(!selector)return;
+      const available=planRecords.filter(p=>
+        String(p.categoryId||'')===String(choice.categoryId) ||
+        String(p.categoryName||'').trim().toLowerCase()===choice.categoryName.trim().toLowerCase());
+      selector.innerHTML=available.length
+        ? '<option value="">Select plan…</option>'+available.map(p=>
+            `<option value="${esc(p.value)}">${esc(p.text)}</option>`).join('')
+        : '<option value="">No rate plan configured</option>';
+      if(available.some(p=>String(p.value)===String(x.plan)))selector.value=String(x.plan);
+      else if(available.length===1){selector.value=String(available[0].value);x.plan=selector.value;}
+      selector.addEventListener('change',ev=>{x.plan=ev.target.value;});
+      // Missing plan configuration is not a JSON parsing error. Save validation
+      // still enforces a matching rate plan for each selected physical room.
+    };
+    $('fdcAddRoom')?.addEventListener('click',()=>{
+      if(lines.length>=20){showToast('Use the reservation editor for more than 20 rooms.',true);return;}
+      const index=lines.length;
+      lines.push({id:++sequence,target:-1,plan:'',amount:index<expected?evenlyAllocated(index):'',
+        adults:defaultAdults(index),children:0,infants:0,load:0});
+      showLines();
+    });
+    $('fdcSaveRoomAssignments')?.addEventListener('click',async e=>{
+      const selections=lines.map(getSelected);
+      if(selections.some(x=>!x)){showToast('Choose a destination for every room.',true);return;}
+      if(lines.length<expected){showToast(`Add all ${expected} booked rooms before saving.`,true);return;}
+      if(lines.length>expected&&!$('fdcAssignConfirmIncrease')?.checked){
+        showToast('Confirm the increased number of rooms first.',true);return;
+      }
+      if(lines.length>1&&selections.some(x=>!x.roomNo)){
+        showToast('Every row must have a physical room for a multi-room assignment.',true);return;
+      }
+      const used=new Set();
+      for(let i=0;i<lines.length;i++){
+        const x=lines[i],choice=selections[i];
+        if(!choice.roomNo)continue;
+        if(used.has(choice.roomNo.toLowerCase())){showToast('A room is selected more than once.',true);return;}
+        used.add(choice.roomNo.toLowerCase());
+        if(!x.plan){showToast(`Select a rate plan for room ${i+1}.`,true);return;}
+        const amount=Number(x.amount);
+        if(!Number.isFinite(amount)||amount<=0||amount>100000000){showToast(`Enter the room rent for room ${i+1}.`,true);return;}
+        for(const k of ['adults','children','infants']){
+          const n=Number(x[k]);
+          if(!Number.isInteger(n)||n<0||n>30){showToast(`Invalid ${k} for room ${i+1}.`,true);return;}
+        }
+      }
+      const arrival=String(item.arrival||'').slice(0,10);
+      const payload={regId:item.regId,paymentId:0,newArrival:arrival,
+        newRoomNo:selections[0].roomNo,targetCategoryId:selections[0].categoryId,
+        targetCategoryName:selections[0].categoryName};
+      if(lines.length===1){
+        payload.ratePlanId=selections[0].roomNo?lines[0].plan:'';
+        payload.roomRentTotal=selections[0].roomNo?Number(lines[0].amount):null;
+        // Only for physical missing-room assignment. Category-only moves remain unchanged.
+        if(selections[0].roomNo){
+          payload.roomAdults=Number(lines[0].adults);
+          payload.roomChildren=Number(lines[0].children);
+          payload.roomInfants=Number(lines[0].infants);
+        }
+      }else{
+        payload.roomAssignments=lines.map((x,i)=>({roomNo:selections[i].roomNo,
+          ratePlanId:x.plan,roomRentTotal:Number(x.amount),
+          adults:Number(x.adults),children:Number(x.children),infants:Number(x.infants)}));
+        payload.confirmRoomCountIncrease=lines.length>expected;
+      }
+      try{
+        await mutate(cfg.moveUrl,payload,'Assigning rooms…',e.currentTarget);
+        closeModal();await loadCalendar(state.start,true);
+      }catch{}
+    });
+    showLines();
+  }
+
   function ensureDragFocusLayer(){
     let layer=document.getElementById('fdcDragFocusLayer');
     if(layer) return layer;
@@ -1669,7 +1997,7 @@ ${tag}`:tag;
     const checkoutMove=String(item.statusCode||'').toUpperCase()==='CO' || isCheckedOutStatus(item.status);
     // Checked-out drag/drop is a room-assignment correction only. Preserve the
     // historical stay dates and preview the original date span in the target row.
-    const startIndex=checkoutMove
+    const startIndex=(checkoutMove||item.isMissingRoomRent)
       ? diffDays(state.start,dateOnly(item.isSameDayCheckout?item.actualCheckoutDate:item.arrival))
       : Number(cell.dataset.day);
     if(!Number.isFinite(startIndex)||startIndex<0||startIndex>=cells.length) return;
@@ -1738,6 +2066,8 @@ ${tag}`:tag;
     state.selectedCell?.classList.remove('selected');
     state.selectedCell=null;
     state.drag={item,bar};
+    // Use the drag time to prepare choices, without delaying drag or login.
+    if(item.isMissingRoomRent)void getAssignmentOptions(item).catch(()=>{});
     bar.classList.add('dragging');
     beginDragFocus(bar);
     e.dataTransfer.effectAllowed='move';
@@ -1746,7 +2076,7 @@ ${tag}`:tag;
   function dragNightCount(item){return Math.max(1,diffDays(item.arrival,item.departure));}
   function targetRange(item,cell){
     const checkoutMove=String(item.statusCode||'').toUpperCase()==='CO' || isCheckedOutStatus(item.status);
-    const start=checkoutMove?dateOnly(item.isSameDayCheckout?item.actualCheckoutDate:item.arrival):dateOnly(cell.dataset.date);
+    const start=(checkoutMove||item.isMissingRoomRent)?dateOnly(item.isSameDayCheckout?item.actualCheckoutDate:item.arrival):dateOnly(cell.dataset.date);
     const nights=item.isSameDayCheckout?1:dragNightCount(item);
     return {start,end:addDays(start,nights),nights};
   }
@@ -1811,6 +2141,14 @@ ${tag}`:tag;
     if(!targetRangeIsFree(item,cell)){
       showToast('The selected room/date range is not available.',true);
       finishDragUi();
+      return;
+    }
+
+    if(item.isMissingRoomRent){
+      const destination={roomNo:String(cell.dataset.room).toUpperCase()==='UNASSIGNED'?'':cell.dataset.room,
+        categoryId:cell.dataset.category,categoryName:cell.dataset.categoryName};
+      finishDragUi();
+      openAssignMissingRoomDialog(item,destination);
       return;
     }
 
@@ -1968,6 +2306,7 @@ ${tag}`:tag;
       <div><span>Booking #:</span> <strong>${esc(book)}</strong></div>
       <div><span>Stay:</span> ${fmt(b.arrival,true)} – ${fmt(b.departure,true)}</div>
       <div><span>Room:</span> ${esc(room)} · ${esc(b.categoryName||'')}</div>
+      ${b.isMissingRoomRent?'<div class="fdc-tip-missing">No Room Rent entry — assign a room to proceed.</div>':''}
       <div><span>Plan:</span> ${esc(b.planName||'—')}</div>
       <div><span>Source:</span> ${esc(b.source||'—')}</div>
       <div><span>Payment:</span> ${esc(b.paymentStatus||'—')}${Number(b.balance||0)>0?` · ${money(b.balance)} due`:''}</div>
@@ -2029,7 +2368,7 @@ ${tag}`:tag;
     const cell=e.target.closest('.fdc-cell');if(cell&&!e.target.closest('.fdc-bar')){state.selectedCell?.classList.remove('selected');state.selectedCell=cell;cell.classList.add('selected');}
   });
   calendar.addEventListener('dblclick',e=>{
-    const bar=e.target.closest('.fdc-bar[data-booking]');if(bar){openDetails(bookingFrom(bar));return;}
+    const bar=e.target.closest('.fdc-bar[data-booking]');if(bar){const booking=bookingFrom(bar);if(booking?.isMissingRoomRent)openAssignMissingRoomDialog(booking);else openDetails(booking);return;}
     const cell=e.target.closest('.fdc-cell');if(cell&&!e.target.closest('.fdc-bar'))openRoomAction(cell);
   });
   calendar.addEventListener('contextmenu',e=>{
@@ -2097,6 +2436,8 @@ ${tag}`:tag;
       openReceivedPaymentRefund(refundButton);
       return;
     }
+    const editCounts=e.target.closest('[data-edit-occupancy]');
+    if(editCounts){openRoomOccupancyEditor(state.currentDetails);return;}
     const holdButton=e.target.closest('[data-drawer-hold-action]');
     if(holdButton){
       e.preventDefault();
