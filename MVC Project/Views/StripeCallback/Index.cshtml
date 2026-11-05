@@ -1,0 +1,53 @@
+@model Orapmshms.Models.StripeCallbackViewModel
+@{
+    Layout = null;
+    var icon = Model.IsSuccess ? "✔" : Model.IsPartialSuccess ? "!" : "✖";
+    var iconClass = Model.IsSuccess ? "success-icon" : Model.IsPartialSuccess ? "warning-icon" : "error-icon";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@Model.Title - Stripe Callback</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 18px;
+        }
+        .card {
+            width: 100%;
+            max-width: 450px;
+            background: #fff;
+            padding: 40px 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        .success-icon, .error-icon, .warning-icon {
+            font-size: 60px;
+            line-height: 1;
+            font-weight: 700;
+        }
+        .success-icon { color: #4caf50; }
+        .error-icon { color: #f44336; }
+        .warning-icon { color: #e5a000; }
+        h1 { margin: 20px 0; font-size: 25px; color: #1f2937; }
+        p { color: #555; line-height: 1.6; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body>
+    <main class="card" role="status">
+        <div class="@iconClass" aria-hidden="true">@icon</div>
+        <h1>@Model.Title</h1>
+        <p>@Model.Message</p>
+    </main>
+</body>
+</html>

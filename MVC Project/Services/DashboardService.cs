@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Data;
@@ -140,7 +140,7 @@ public sealed class DashboardService : IDashboardService
 
         var occupancy30Task = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:occupancy-period:{hotelId}:{rangeKey}",
+                $"dashboard:occupancy-period:v2:{hotelId}:{rangeKey}",
                 TimeSpan.FromSeconds(45),
                 () => LoadOccupancySeriesAsync(hotelId, rangeStart, today.AddDays(6), cancellationToken)),
             new List<DashboardDailyPoint>(),
@@ -179,7 +179,7 @@ public sealed class DashboardService : IDashboardService
 
         var receivablesTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:receivables:v2:{hotelId}:{rangeKey}",
+                $"dashboard:receivables:v4:{hotelId}:{rangeKey}",
                 TimeSpan.FromSeconds(15),
                 () => LoadReceivablesAsync(hotelId, today, cancellationToken, rangeStart)),
             new DashboardReceivableData(),
@@ -197,7 +197,7 @@ public sealed class DashboardService : IDashboardService
         var todayOccupancyTask = businessToday >= rangeStart && businessToday <= today
             ? occupancy30Task
             : SafeLoadAsync(
-                () => CachedAsync($"dashboard:today-occupancy:{hotelId}:{businessToday:yyyyMMdd}",
+                () => CachedAsync($"dashboard:today-occupancy:v2:{hotelId}:{businessToday:yyyyMMdd}",
                     TimeSpan.FromSeconds(30),
                     () => LoadOccupancySeriesAsync(hotelId, businessToday, businessToday, cancellationToken)),
                 new List<DashboardDailyPoint>(), "today occupancy");
@@ -577,7 +577,7 @@ ORDER BY MonthNumber, Source;";
 
         var receivablesTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:receivables:{hotelId}:{today:yyyyMMdd}",
+                $"dashboard:receivables:exclude-archives-v2:{hotelId}:{today:yyyyMMdd}",
                 TimeSpan.FromSeconds(10),
                 () => LoadReceivablesAsync(hotelId, today, cancellationToken)),
             new DashboardReceivableData(),
@@ -827,39 +827,44 @@ SELECT YEAR(m.month_start) AS yr, MONTH(m.month_start) AS mo,
 FROM months m LEFT JOIN sold s ON s.month_start=m.month_start
 LEFT JOIN capacity c ON c.month_start=m.month_start
 ORDER BY m.month_start OPTION (MAXRECURSION 0);";
-        var current = new Dictionary<int,(int sold,int supply)>();
-        var prior = new Dictionary<int,(int sold,int supply)>();
+        var current = new Dictionary<int, (int sold, int supply)>();
+        var prior = new Dictionary<int, (int sold, int supply)>();
         using var dashboardSqlLease = await EnterDashboardSqlAsync(ct);
         await using var c = new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
-        await using var cmd = new SqlCommand(sql,c) { CommandTimeout = 45 };
-        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value=hotelId;
-        cmd.Parameters.Add("@first", SqlDbType.Date).Value=new DateTime(year-1,1,1);
-        await using var reader=await cmd.ExecuteReaderAsync(ct);
-        while(await reader.ReadAsync(ct)) {
-            var y=ToInt(reader["yr"]);var m=ToInt(reader["mo"]);
-            var value=(ToInt(reader["sold"]),ToInt(reader["supply"]));
-            if(y==year)current[m]=value;
-            else if(y==year-1)prior[m]=value;
+        await using var cmd = new SqlCommand(sql, c) { CommandTimeout = 45 };
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
+        cmd.Parameters.Add("@first", SqlDbType.Date).Value = new DateTime(year - 1, 1, 1);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var y = ToInt(reader["yr"]); var m = ToInt(reader["mo"]);
+            var value = (ToInt(reader["sold"]), ToInt(reader["supply"]));
+            if (y == year) current[m] = value;
+            else if (y == year - 1) prior[m] = value;
         }
-        return Enumerable.Range(1,12).Select(m=>{
-            var now=current.GetValueOrDefault(m);var ly=prior.GetValueOrDefault(m);
-            return new DashboardAnnualOccupancyMonth {
-                Month=m,Label=new DateTime(year,m,1).ToString("MMM",CultureInfo.InvariantCulture),
-                Sold=now.sold, Supply=now.supply,
-                PreviousSold=ly.sold,PreviousSupply=ly.supply,
-                Occupancy=now.supply>0?100m*now.sold/now.supply:0m,
-                PreviousOccupancy=ly.supply>0?100m*ly.sold/ly.supply:0m
+        return Enumerable.Range(1, 12).Select(m => {
+            var now = current.GetValueOrDefault(m); var ly = prior.GetValueOrDefault(m);
+            return new DashboardAnnualOccupancyMonth
+            {
+                Month = m,
+                Label = new DateTime(year, m, 1).ToString("MMM", CultureInfo.InvariantCulture),
+                Sold = now.sold,
+                Supply = now.supply,
+                PreviousSold = ly.sold,
+                PreviousSupply = ly.supply,
+                Occupancy = now.supply > 0 ? 100m * now.sold / now.supply : 0m,
+                PreviousOccupancy = ly.supply > 0 ? 100m * ly.sold / ly.supply : 0m
             };
         }).ToList();
     }
 
     private async Task<List<DashboardAnnualFinancialMonth>> LoadAnnualFinancialMonthsAsync(
-        string hotelId,int year,CancellationToken ct)
+        string hotelId, int year, CancellationToken ct)
     {
         // Aggregate directly by month, without manufacturing a 365-row date
         // calendar and joining each payment/expense to that calendar.
-        const string sql=@"
+        const string sql = @"
 DECLARE @isClosing bit=0;
 SELECT TOP 1 @isClosing=CASE WHEN TRY_CONVERT(int,ISNULL(isClosing,0))=1 THEN 1 ELSE 0 END
  FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;
@@ -876,24 +881,30 @@ SELECT TOP 1 @isClosing=CASE WHEN TRY_CONVERT(int,ISNULL(isClosing,0))=1 THEN 1 
 )
 SELECT YEAR(d) AS yr, MONTH(d) AS mo, SUM(revenue) AS revenue, SUM(expense) AS expense
 FROM events WHERE d>=@first AND d<@last GROUP BY YEAR(d),MONTH(d);";
-        var months=new Dictionary<(int year,int month),(decimal revenue,decimal expense)>();
+        var months = new Dictionary<(int year, int month), (decimal revenue, decimal expense)>();
         using var dashboardSqlLease = await EnterDashboardSqlAsync(ct);
-        await using var c=new SqlConnection(_connectionString);
+        await using var c = new SqlConnection(_connectionString);
         await c.OpenAsync(ct);
-        await using var cmd=new SqlCommand(sql,c){ CommandTimeout=45 };
-        cmd.Parameters.Add("@hotel",SqlDbType.VarChar,20).Value=hotelId;
-        cmd.Parameters.Add("@first",SqlDbType.Date).Value=new DateTime(year-1,1,1);
-        cmd.Parameters.Add("@last",SqlDbType.Date).Value=new DateTime(year+1,1,1);
-        await using var rdr=await cmd.ExecuteReaderAsync(ct);
-        while(await rdr.ReadAsync(ct)) {
-            months[(ToInt(rdr["yr"]),ToInt(rdr["mo"]))]=(ToDecimal(rdr["revenue"]),ToDecimal(rdr["expense"]));
+        await using var cmd = new SqlCommand(sql, c) { CommandTimeout = 45 };
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
+        cmd.Parameters.Add("@first", SqlDbType.Date).Value = new DateTime(year - 1, 1, 1);
+        cmd.Parameters.Add("@last", SqlDbType.Date).Value = new DateTime(year + 1, 1, 1);
+        await using var rdr = await cmd.ExecuteReaderAsync(ct);
+        while (await rdr.ReadAsync(ct))
+        {
+            months[(ToInt(rdr["yr"]), ToInt(rdr["mo"]))] = (ToDecimal(rdr["revenue"]), ToDecimal(rdr["expense"]));
         }
-        return Enumerable.Range(1,12).Select(m=>{
-            var cur=months.GetValueOrDefault((year,m));var prev=months.GetValueOrDefault((year-1,m));
-            return new DashboardAnnualFinancialMonth{
-                Month=m,Label=new DateTime(year,m,1).ToString("MMM",CultureInfo.InvariantCulture),
-                Revenue=cur.revenue,Expense=cur.expense,Profit=cur.revenue-cur.expense,
-                LastYearRevenue=prev.revenue,LastYearProfit=prev.revenue-prev.expense
+        return Enumerable.Range(1, 12).Select(m => {
+            var cur = months.GetValueOrDefault((year, m)); var prev = months.GetValueOrDefault((year - 1, m));
+            return new DashboardAnnualFinancialMonth
+            {
+                Month = m,
+                Label = new DateTime(year, m, 1).ToString("MMM", CultureInfo.InvariantCulture),
+                Revenue = cur.revenue,
+                Expense = cur.expense,
+                Profit = cur.revenue - cur.expense,
+                LastYearRevenue = prev.revenue,
+                LastYearProfit = prev.revenue - prev.expense
             };
         }).ToList();
     }
@@ -915,43 +926,44 @@ FROM events WHERE d>=@first AND d<@last GROUP BY YEAR(d),MONTH(d);";
         switch (section?.Trim().ToLowerInvariant())
         {
             case "occupancy":
-            {
-                // Monthly stay-overlap aggregation avoids the former 730-day
-                // reservation-by-day expansion (and only reads stays once for both years).
-                var monthly = await CachedAsync($"dashboard:year-occ-monthly:v3:{hotelId}:{year}",
-                    TimeSpan.FromMinutes(8),
-                    () => LoadAnnualOccupancyMonthsAsync(hotelId, year, cancellationToken));
-                return new { Year = year, OccupancyMonths = monthly };
-            }
+                {
+                    // Monthly stay-overlap aggregation avoids the former 730-day
+                    // reservation-by-day expansion (and only reads stays once for both years).
+                    var monthly = await CachedAsync($"dashboard:year-occ-monthly:v3:{hotelId}:{year}",
+                        TimeSpan.FromMinutes(8),
+                        () => LoadAnnualOccupancyMonthsAsync(hotelId, year, cancellationToken));
+                    return new { Year = year, OccupancyMonths = monthly };
+                }
             case "calendar":
-            {
-                // Independent from annual chart: a slow current-month query must
-                // not delay the annual occupancy chart.
-                var hotelToday = _hotelClock.GetHotelToday(hotelId).Date;
-                var monthStart = new DateTime(hotelToday.Year, hotelToday.Month, 1);
-                var monthEnd = monthStart.AddMonths(1).AddDays(-1);
-                var days = await CachedAsync($"dashboard:month-occ:{hotelId}:{hotelToday:yyyyMM}",
-                    TimeSpan.FromMinutes(3),
-                    () => LoadOccupancySeriesAsync(hotelId, monthStart, monthEnd, cancellationToken));
-                return new {
-                    Year = year,
-                    CurrentMonth = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-                    MonthDaily = days.Where(d => d.Date >= monthStart && d.Date <= monthEnd).ToList()
-                };
-            }
+                {
+                    // Independent from annual chart: a slow current-month query must
+                    // not delay the annual occupancy chart.
+                    var hotelToday = _hotelClock.GetHotelToday(hotelId).Date;
+                    var monthStart = new DateTime(hotelToday.Year, hotelToday.Month, 1);
+                    var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+                    var days = await CachedAsync($"dashboard:month-occ:{hotelId}:{hotelToday:yyyyMM}",
+                        TimeSpan.FromMinutes(3),
+                        () => LoadOccupancySeriesAsync(hotelId, monthStart, monthEnd, cancellationToken));
+                    return new
+                    {
+                        Year = year,
+                        CurrentMonth = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                        MonthDaily = days.Where(d => d.Date >= monthStart && d.Date <= monthEnd).ToList()
+                    };
+                }
             case "financial":
-            {
-                var months = await CachedAsync($"dashboard:year-finance-monthly:v2:{hotelId}:{year}",
-                    TimeSpan.FromMinutes(5),
-                    () => LoadAnnualFinancialMonthsAsync(hotelId, year, cancellationToken));
-                return new { Year = year, FinancialMonths = months };
-            }
+                {
+                    var months = await CachedAsync($"dashboard:year-finance-monthly:v2:{hotelId}:{year}",
+                        TimeSpan.FromMinutes(5),
+                        () => LoadAnnualFinancialMonthsAsync(hotelId, year, cancellationToken));
+                    return new { Year = year, FinancialMonths = months };
+                }
             case "exceptions":
-            {
-                var months = await CachedAsync($"dashboard:year-exceptions:{hotelId}:{year}", TimeSpan.FromMinutes(5),
-                    () => LoadYearExceptionMonthsAsync(hotelId, year, cancellationToken));
-                return new { Year = year, ExceptionMonths = months };
-            }
+                {
+                    var months = await CachedAsync($"dashboard:year-exceptions:{hotelId}:{year}", TimeSpan.FromMinutes(5),
+                        () => LoadYearExceptionMonthsAsync(hotelId, year, cancellationToken));
+                    return new { Year = year, ExceptionMonths = months };
+                }
             default:
                 throw new ArgumentException("Unknown annual chart section.", nameof(section));
         }
@@ -1029,10 +1041,15 @@ FROM events WHERE d>=@first AND d<@last GROUP BY YEAR(d),MONTH(d);";
                 LastYearProfit = list.Sum(p => p.LastYearProfit)
             };
         }).ToList();
-        return new { Year = year, OccupancyMonths = monthlyOcc,
-            FinancialMonths = monthlyFinancial, ExceptionMonths = exceptions,
+        return new
+        {
+            Year = year,
+            OccupancyMonths = monthlyOcc,
+            FinancialMonths = monthlyFinancial,
+            ExceptionMonths = exceptions,
             CurrentMonth = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-            MonthDaily = monthDaily };
+            MonthDaily = monthDaily
+        };
     }
 
     private async Task<List<DashboardExceptionPoint>> LoadYearExceptionMonthsAsync(
@@ -1049,7 +1066,8 @@ FROM (
 ) AS source
 WHERE EventDate >= @start AND EventDate < @end
 GROUP BY ExceptionType, MONTH(EventDate);";
-        var results = Enumerable.Range(1, 12).Select(month => new DashboardExceptionPoint {
+        var results = Enumerable.Range(1, 12).Select(month => new DashboardExceptionPoint
+        {
             Label = new DateTime(year, month, 1).ToString("MMM", CultureInfo.InvariantCulture)
         }).ToList();
         using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
@@ -1060,7 +1078,8 @@ GROUP BY ExceptionType, MONTH(EventDate);";
         command.Parameters.Add("@start", SqlDbType.Date).Value = new DateTime(year, 1, 1);
         command.Parameters.Add("@end", SqlDbType.Date).Value = new DateTime(year + 1, 1, 1);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) {
+        while (await reader.ReadAsync(cancellationToken))
+        {
             var idx = ToInt(reader["MonthNo"]) - 1;
             if (idx < 0 || idx >= 12) continue;
             if (string.Equals(Convert.ToString(reader["ExceptionType"]), "cancel", StringComparison.OrdinalIgnoreCase))
@@ -1246,7 +1265,10 @@ ORDER BY ID DESC;";
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.dept_date)), ''), 110),
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.dept_date)), ''), 103),
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.dept_date)), ''))
-        ) AS dept_date
+        ) AS dept_date,
+        CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(g.res_status, ''))))
+                  IN ('cancel','cancelled','canceled','no show','noshow','no-show','no_show')
+             THEN 1 ELSE 0 END AS is_cancelled_or_noshow
     FROM dbo.NewReservationsTB g
     WHERE g.hotel_id = @hotel
 
@@ -1265,7 +1287,10 @@ ORDER BY ID DESC;";
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.DepartureDate)), ''), 110),
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.DepartureDate)), ''), 103),
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.DepartureDate)), ''))
-        )
+        ),
+        CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(g.res_status, ''))))
+                  IN ('cancel','cancelled','canceled','no show','noshow','no-show','no_show')
+             THEN 1 ELSE 0 END
     FROM dbo.GuestInformationLogTB g
     WHERE g.hotel_id = @hotel
 ),
@@ -1276,10 +1301,21 @@ Res AS
         reg_id,
         MAX(guest_name) AS guest_name,
         MIN(arr_date) AS arr_date,
-        MAX(dept_date) AS dept_date
+        MAX(dept_date) AS dept_date,
+        MAX(is_cancelled_or_noshow) AS is_cancelled_or_noshow
     FROM Unified
     WHERE NULLIF(reg_id,'') IS NOT NULL
     GROUP BY hotel_id, reg_id
+),
+Archived AS
+(
+    SELECT c.hotel_id, LTRIM(RTRIM(c.reg_id)) AS reg_id
+    FROM dbo.CancelledReservationsTB c
+    WHERE c.hotel_id = @hotel AND NULLIF(LTRIM(RTRIM(c.reg_id)), '') IS NOT NULL
+    UNION
+    SELECT n.hotel_id, LTRIM(RTRIM(n.reg_id))
+    FROM dbo.NoShowTB n
+    WHERE n.hotel_id = @hotel AND NULLIF(LTRIM(RTRIM(n.reg_id)), '') IS NOT NULL
 )
 SELECT
     r.reg_id,
@@ -1290,6 +1326,8 @@ SELECT
     CONVERT(varchar(100),pu.currentdate) AS last_update,
     pu.remaining_dec AS remaining_amount
 FROM Res r
+LEFT JOIN Archived a
+  ON a.hotel_id = r.hotel_id AND a.reg_id = r.reg_id
 OUTER APPLY
 (
     SELECT TOP (1)
@@ -1307,6 +1345,8 @@ OUTER APPLY
 WHERE r.arr_date >= @startdate
   AND r.arr_date <= @enddate
   AND r.hotel_id = @hotel
+  AND r.is_cancelled_or_noshow = 0
+  AND a.reg_id IS NULL
   AND pu.remaining_dec IS NOT NULL
   AND pu.remaining_dec > 0
 ORDER BY r.arr_date, r.reg_id;";
@@ -1514,7 +1554,7 @@ ORDER BY
     {
         var start = periodStart?.Date ?? date.Date;
         var nights = await CachedAsync(
-            $"dashboard:occupancy-detail:{hotelId}:{start:yyyyMMdd}:{date:yyyyMMdd}", TimeSpan.FromSeconds(45),
+            $"dashboard:occupancy-detail:v2:{hotelId}:{start:yyyyMMdd}:{date:yyyyMMdd}", TimeSpan.FromSeconds(45),
             () => LoadOccupancySeriesAsync(hotelId, start, date.Date, cancellationToken));
         var sold = nights.Sum(x => x.RoomsSold);
         var available = nights.Sum(x => x.SellableInventory);
@@ -2723,7 +2763,7 @@ p_clean AS
             TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(p.DepartureDate)), ''))
         ) AS departure_date,
         COALESCE(
-            TRY_CONVERT(decimal(18,2), NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(p.Rate)), ',', ''), '£', ''), '$', ''), '')),
+            TRY_CONVERT(decimal(18,2), NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(CONVERT(varchar(100), p.totalamount))), ',', ''), '£', ''), '$', ''), '')),
             0
         ) AS room_rate,
         TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(p.Nights)), '')) AS nights_raw
@@ -2736,25 +2776,54 @@ p_clean AS
 room_stays AS
 (
     SELECT
-        reg_id,
-        room_no,
-        res_status,
-        arrival_date,
-        departure_date,
-        room_rate,
-        COALESCE(NULLIF(nights_raw, 0), NULLIF(DATEDIFF(day, arrival_date, departure_date), 0)) AS stay_nights
-    FROM p_clean
-    WHERE arrival_date IS NOT NULL
-      AND departure_date IS NOT NULL
-      AND departure_date > arrival_date
+        pc.reg_id,
+        pc.room_no,
+        pc.res_status,
+        pc.arrival_date,
+        pc.departure_date,
+        pc.room_rate,
+        COALESCE(NULLIF(pc.nights_raw, 0), NULLIF(DATEDIFF(day, pc.arrival_date, pc.departure_date), 0)) AS stay_nights
+    FROM p_clean pc
+    WHERE pc.arrival_date IS NOT NULL
+      AND pc.departure_date IS NOT NULL
+      AND pc.departure_date > pc.arrival_date
       -- Restrict reservation-night joins to stays overlapping the requested calendar.
-      AND arrival_date <= @end
-      AND departure_date > @start
-      AND res_status NOT IN ('cancel','cancelled','canceled','no show','noshow','no-show')
+      AND pc.arrival_date <= @end
+      AND pc.departure_date > @start
+      AND pc.res_status NOT IN ('cancel','cancelled','canceled','no show','noshow','no-show')
+      -- A payment row can remain reservation after its master booking was
+      -- archived as cancelled / no - show.The archived status takes precedence
+      --over stale payment status for occupancy and room - rent reporting.
+      AND NOT EXISTS(
+          SELECT 1 FROM dbo.CancelledReservationsTB cancelled
+          WHERE cancelled.hotel_id = @hotel
+            AND LTRIM(RTRIM(cancelled.reg_id)) = pc.reg_id
+      )
+      AND NOT EXISTS(
+          SELECT 1 FROM dbo.NoShowTB no_show
+          WHERE no_show.hotel_id = @hotel
+            AND LTRIM(RTRIM(no_show.reg_id)) = pc.reg_id
+      )
+      -- Also exclude an explicitly cancelled / no - show active master record,
+      --even if the corresponding archive row is not present yet.
+      AND NOT EXISTS(
+          SELECT 1 FROM dbo.NewReservationsTB nr
+          WHERE nr.hotel_id = @hotel
+            AND LTRIM(RTRIM(nr.reg_id)) = pc.reg_id
+            AND LOWER(LTRIM(RTRIM(ISNULL(nr.res_status, ''))))
+                IN('cancel', 'cancelled', 'canceled', 'no show', 'noshow', 'no-show')
+      )
+      AND NOT EXISTS(
+          SELECT 1 FROM dbo.GuestInformationLogTB gi
+          WHERE gi.hotel_id = @hotel
+            AND LTRIM(RTRIM(gi.reg_id)) = pc.reg_id
+            AND LOWER(LTRIM(RTRIM(ISNULL(gi.res_status, ''))))
+                IN('cancel', 'cancelled', 'canceled', 'no show', 'noshow', 'no-show')
+      )
 ),
 nightly AS
 (
-    -- One reservation-night join supplies both occupancy and ADR metrics.
+    --One reservation - night join supplies both occupancy and ADR metrics.
     -- Previously SQL Server repeated this expensive join for sold and revenue.
     SELECT dd.d,
         COUNT(DISTINCT ISNULL(rs.reg_id, '') + '|' + ISNULL(rs.room_no, '')) AS RoomsSold,
@@ -2763,26 +2832,26 @@ nightly AS
     INNER JOIN room_stays rs ON rs.arrival_date <= dd.d AND dd.d < rs.departure_date
     GROUP BY dd.d
 )
-SELECT
-    dd.d AS [Date],
+            SELECT
+    dd.d AS[Date],
     ISNULL(i.Inventory, 0) AS Inventory,
     ISNULL(o.OutOfInventory, 0) AS OutOfInventory,
-    CASE WHEN ISNULL(i.Inventory, 0) - ISNULL(o.OutOfInventory, 0) < 0 THEN 0
-         ELSE ISNULL(i.Inventory, 0) - ISNULL(o.OutOfInventory, 0) END AS SellableInventory,
+    CASE WHEN ISNULL(i.Inventory, 0) -ISNULL(o.OutOfInventory, 0) < 0 THEN 0
+         ELSE ISNULL(i.Inventory, 0) -ISNULL(o.OutOfInventory, 0) END AS SellableInventory,
     ISNULL(s.RoomsSold, 0) AS RoomsSold,
-    CAST(CASE WHEN ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0) <= 0 THEN 0
-         ELSE 100.0 * ISNULL(s.RoomsSold,0) / NULLIF(ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0),0) END AS decimal(9,2)) AS OccupancyPercent,
-    CAST(ISNULL(s.AccommodationRevenue,0) AS decimal(18,2)) AS AccommodationRevenue,
-    CAST(CASE WHEN ISNULL(s.RoomsSold,0) <= 0 THEN 0
-         ELSE ISNULL(s.AccommodationRevenue,0) / NULLIF(s.RoomsSold,0) END AS decimal(18,2)) AS ADR,
-    CAST(CASE WHEN ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0) <= 0 THEN 0
-         ELSE ISNULL(s.AccommodationRevenue,0) / NULLIF(ISNULL(i.Inventory,0) - ISNULL(o.OutOfInventory,0),0) END AS decimal(18,2)) AS RevPAR
+    CAST(CASE WHEN ISNULL(i.Inventory, 0) - ISNULL(o.OutOfInventory, 0) <= 0 THEN 0
+         ELSE 100.0 * ISNULL(s.RoomsSold, 0) / NULLIF(ISNULL(i.Inventory, 0) - ISNULL(o.OutOfInventory, 0), 0) END AS decimal(9, 2)) AS OccupancyPercent,
+    CAST(ISNULL(s.AccommodationRevenue, 0) AS decimal(18, 2)) AS AccommodationRevenue,
+    CAST(CASE WHEN ISNULL(s.RoomsSold, 0) <= 0 THEN 0
+         ELSE ISNULL(s.AccommodationRevenue, 0) / NULLIF(s.RoomsSold, 0) END AS decimal(18, 2)) AS ADR,
+    CAST(CASE WHEN ISNULL(i.Inventory, 0) - ISNULL(o.OutOfInventory, 0) <= 0 THEN 0
+         ELSE ISNULL(s.AccommodationRevenue, 0) / NULLIF(ISNULL(i.Inventory, 0) - ISNULL(o.OutOfInventory, 0), 0) END AS decimal(18, 2)) AS RevPAR
 FROM d dd
 CROSS JOIN inv i
 LEFT JOIN ooo o ON o.d = dd.d
 LEFT JOIN nightly s ON s.d = dd.d
 ORDER BY dd.d
-OPTION (MAXRECURSION 0);";
+OPTION(MAXRECURSION 0); ";
 
         var result = new List<DashboardDailyPoint>();
         using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
@@ -3482,7 +3551,10 @@ OPTION (MAXRECURSION 0);";
            LTRIM(RTRIM(g.reg_id)) AS reg_id,
            COALESCE(TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
                     TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 103),
-                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''))) AS arr_date
+                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''))) AS arr_date,
+           CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(g.res_status, ''))))
+                     IN ('cancel','cancelled','canceled','no show','noshow','no-show','no_show')
+                THEN 1 ELSE 0 END AS is_cancelled_or_noshow
     FROM dbo.NewReservationsTB g
     WHERE g.hotel_id = @hotel
     UNION ALL
@@ -3490,16 +3562,49 @@ OPTION (MAXRECURSION 0);";
            LTRIM(RTRIM(g.reg_id)),
            COALESCE(TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 110),
                     TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''), 103),
-                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), '')))
+                    TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(g.ArrivalDate)), ''))),
+           CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(g.res_status, ''))))
+                     IN ('cancel','cancelled','canceled','no show','noshow','no-show','no_show')
+                THEN 1 ELSE 0 END
     FROM dbo.GuestInformationLogTB g
     WHERE g.hotel_id = @hotel
 ),
 Res AS
 (
-    SELECT hotel_id, reg_id, MIN(arr_date) AS arr_date
+    SELECT hotel_id, reg_id, MIN(arr_date) AS arr_date,
+           MAX(is_cancelled_or_noshow) AS is_cancelled_or_noshow
     FROM Unified
     WHERE NULLIF(reg_id, '') IS NOT NULL
     GROUP BY hotel_id, reg_id
+),
+-- Build one distinct, hotel-scoped cancellation/no-show ID set.
+-- This avoids two correlated archive predicates on every reservation.
+-- The SQL optimizer chooses the physical join/scan strategy.
+Archived AS
+(
+    SELECT c.hotel_id, LTRIM(RTRIM(c.reg_id)) AS reg_id
+    FROM dbo.CancelledReservationsTB c
+    WHERE c.hotel_id = @hotel
+      AND NULLIF(LTRIM(RTRIM(c.reg_id)), '') IS NOT NULL
+    UNION
+    SELECT n.hotel_id, LTRIM(RTRIM(n.reg_id))
+    FROM dbo.NoShowTB n
+    WHERE n.hotel_id = @hotel
+      AND NULLIF(LTRIM(RTRIM(n.reg_id)), '') IS NOT NULL
+),
+EligibleRes AS
+(
+    SELECT r.hotel_id, r.reg_id, r.arr_date
+    FROM Res r
+    LEFT JOIN Archived a
+      ON a.hotel_id = r.hotel_id
+     AND a.reg_id = r.reg_id
+    WHERE r.hotel_id = @hotel
+      AND r.is_cancelled_or_noshow = 0
+      AND a.reg_id IS NULL
+      AND r.arr_date >= CASE WHEN @selectedstart < @last30start
+                             THEN @selectedstart ELSE @last30start END
+      AND r.arr_date <= @today
 ),
 LatestRem AS
 (
@@ -3527,11 +3632,10 @@ SELECT
     COALESCE(SUM(CASE WHEN r.arr_date BETWEEN @selectedstart AND @today
                       AND lr.remaining_dec > 0
         THEN lr.remaining_dec ELSE 0 END), 0) AS SelectedAmount
-FROM Res r
-LEFT JOIN LatestRem lr ON lr.hotel_id = r.hotel_id
-                      AND lr.reg_id = r.reg_id
-                      AND lr.rn = 1
-WHERE r.hotel_id = @hotel;";
+FROM EligibleRes r
+INNER JOIN LatestRem lr ON lr.hotel_id = r.hotel_id
+                       AND lr.reg_id = r.reg_id
+                       AND lr.rn = 1;";
 
         using var lease = await EnterDashboardSqlAsync(cancellationToken);
         await using var connection = new SqlConnection(_connectionString);
@@ -3607,7 +3711,7 @@ room_rent AS
         ) AS departure_date,
         LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) AS res_status,
         COALESCE(
-            TRY_CONVERT(decimal(18,2), NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(p.Rate)), ',', ''), '£', ''), '$', ''), '')),
+            TRY_CONVERT(decimal(18,2), NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(CONVERT(varchar(100), p.totalamount))), ',', ''), '£', ''), '$', ''), '')),
             0
         ) AS room_rate,
         COALESCE(
@@ -3723,7 +3827,7 @@ p AS
         LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) AS res_status,
         COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)) AS arrival_date,
         COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate)) AS departure_date,
-        COALESCE(TRY_CONVERT(decimal(18,2),NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(p.Rate)),',',''),'£',''),'$',''),'')),0) AS rate,
+        COALESCE(TRY_CONVERT(decimal(18,2),NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(CONVERT(varchar(100),p.totalamount))),',',''),'£',''),'$',''),'')),0) AS rate,
         COALESCE(NULLIF(TRY_CONVERT(int,p.Nights),0),NULLIF(DATEDIFF(day,
             COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,103),TRY_CONVERT(date,p.ArrivalDate)),
             COALESCE(TRY_CONVERT(date,p.DepartureDate,110),TRY_CONVERT(date,p.DepartureDate,103),TRY_CONVERT(date,p.DepartureDate))),0)) AS nights

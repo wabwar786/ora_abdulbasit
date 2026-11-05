@@ -332,6 +332,15 @@ FROM RankedMasters m
 OUTER APPLY (SELECT TOP (1) grand_total,paid_amount,remaining_amount
              FROM dbo.PaymentsUpdateTB WHERE hotel_id=@hotel AND reg_id=m.reg_id ORDER BY id DESC) pu
 WHERE m.rn=1
+  -- Exclude archived cancellations/no-shows from the DAILY calendar's
+  -- master-only Unassigned fallback, even when master.res_status is stale.
+  -- Do not alter the existing payment-based calendar or room-conflict checks.
+  AND NOT EXISTS
+      (SELECT 1 FROM dbo.CancelledReservationsTB c
+       WHERE c.hotel_id=@hotel AND c.reg_id=m.reg_id)
+  AND NOT EXISTS
+      (SELECT 1 FROM dbo.NoShowTB ns
+       WHERE ns.hotel_id=@hotel AND ns.reg_id=m.reg_id)
   AND NOT EXISTS
       (SELECT 1 FROM dbo.payments p
        WHERE p.hotel_id=@hotel AND p.reg_id=m.reg_id
