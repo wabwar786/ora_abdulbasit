@@ -446,20 +446,25 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
         if ((request.DepartureDate.Date - request.ArrivalDate.Date).TotalDays > 730) return FailCreate("Stay cannot exceed 730 nights.");
         if (request.Rooms == null || request.Rooms.Count == 0) return FailCreate("Please add at least one room before creating the reservation.");
         if (request.Rooms.Count > 50) return FailCreate("A reservation cannot contain more than 50 room rows.");
-        // Backdated reservations are historical entries: a future deadline on or before
-        // a past arrival is impossible. Do not require a payment deadline for them.
-        var historicalArrival = request.ArrivalDate.Date < _hotelClock.GetHotelToday(hotelId);
-        if (historicalArrival && request.IsProvisional)
-            return FailCreate("Historical reservations cannot be provisional. Please create a confirmed reservation.");
-        if (request.PaymentDeadline.HasValue)
+        // Only provisional reservations are subject to a payment deadline.
+        // Normal and historical confirmed reservations must not be blocked by a
+        // deadline accidentally supplied by an older client or browser.
+        if (request.IsProvisional)
         {
+            if (request.ArrivalDate.Date < _hotelClock.GetHotelToday(hotelId))
+                return FailCreate("Historical reservations cannot be provisional. Please create a confirmed reservation.");
+            if (!request.PaymentDeadline.HasValue)
+                return FailCreate("Payment deadline is required for provisional reservations.");
             var hotelNowForDeadline = _hotelClock.GetHotelNow(hotelId);
-            if (request.PaymentDeadline.Value <= hotelNowForDeadline) return FailCreate("Payment deadline must be in the future.");
-            if (!historicalArrival && request.PaymentDeadline.Value > request.ArrivalDate.Date.AddDays(1).AddTicks(-1))
+            if (request.PaymentDeadline.Value <= hotelNowForDeadline)
+                return FailCreate("Payment deadline must be in the future.");
+            if (request.PaymentDeadline.Value > request.ArrivalDate.Date.AddDays(1).AddTicks(-1))
                 return FailCreate("Payment deadline must be on or before the arrival date.");
         }
-        if (!historicalArrival && !request.PaymentDeadline.HasValue)
-            return FailCreate("Payment deadline is required.");
+        else
+        {
+            request.PaymentDeadline = null;
+        }
         if (request.SendPaymentLink && !IsValidEmail(request.PaymentLinkEmail)) return FailCreate("Enter a valid payment-link email address.");
 
         await using var settingsConnection = new SqlConnection(_connectionString);
@@ -473,7 +478,11 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
             if (Convert.ToInt32(await sourceCheck.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) == 0) return FailCreate("The selected booking source is no longer available.");
         }
 
-        if (!settings.HasProvisional) request.IsProvisional = false;
+        if (!settings.HasProvisional)
+        {
+            request.IsProvisional = false;
+            request.PaymentDeadline = null;
+        }
 
         if (!settings.HasRoomShuffle) request.ShuffleType = "Manual";
         request.ShuffleType = request.ShuffleType.Equals("Auto", StringComparison.OrdinalIgnoreCase) ? "Auto" : "Manual";
@@ -1888,7 +1897,7 @@ WHERE CONVERT(varchar(50),hotel_id)=@hotel;", cn);
             }
             var deadlineText = deadline.HasValue
                 ? deadline.Value.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture)
-                : "the requested deadline";
+                : "Not specified";
             var html = BuildPaymentLinkHtml(
                 hotelName, regId, currencyCode, amount, deadlineText, checkoutUrl);
             using var msg=new MailMessage(); msg.From=new MailAddress(settings.FromEmail,string.IsNullOrWhiteSpace(settings.FromName)?settings.FromEmail:settings.FromName); msg.To.Add(toEmail); msg.Subject=$"Payment Link - Reservation {regId}"; msg.Body=html; msg.IsBodyHtml=true;

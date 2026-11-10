@@ -25,6 +25,7 @@
   let lastCreatedTotal = 0;
   let lastSavedPaymentEmail = '';
   let lastSavedPaymentDeadline = '';
+  let lastSavedWasProvisional = false;
   let lastSavedArrivalDate = '';
   let guestResults = [];
 
@@ -56,6 +57,7 @@
     lastCreatedTotal=number(paymentContext?.grandTotal||0);
     lastSavedPaymentEmail=paymentContext?.email||'';
     lastSavedPaymentDeadline=paymentContext?.paymentDeadline||'';
+    lastSavedWasProvisional=!!paymentContext?.isProvisional;
     lastSavedArrivalDate=paymentContext?.arrivalDate||'';
     guestResults=[];
 
@@ -97,6 +99,7 @@
     renderRooms();
     defaultDeadline();
     if(lastCreatedRegId && lastSavedPaymentDeadline) $('PaymentDeadline').value=lastSavedPaymentDeadline;
+    updateDeadlineUi();
     setCounter('adults',1);
     setCounter('children',0);
     setCounter('infants',0);
@@ -288,10 +291,27 @@
     error($('guestError'),'');return true;
   }
   function isHistoricalArrival(){return !!hotelToday && !!$('ArrivalDate').value && $('ArrivalDate').value < hotelToday;}
+  function isProvisional(){
+    const checkbox=$('IsProvisional');
+    return checkbox?.type==='checkbox' && checkbox.checked;
+  }
+  function updateDeadlineUi(){
+    // Keep the saved provisional deadline visible for the optional payment-link step.
+    const needsDeadline=isProvisional() || (!!lastCreatedRegId && lastSavedWasProvisional);
+    show($('provisionalDeadlineFields'),needsDeadline);
+    show($('standardDeadlineHint'),!needsDeadline);
+    $('PaymentDeadline').required=needsDeadline;
+    if(!needsDeadline){
+      $('PaymentDeadline').classList.remove('invalid');
+      error($('deadlineError'),'');
+    }
+  }
   function validateDeadline(){
     const el=$('PaymentDeadline');el.classList.remove('invalid');
+    // A normal (confirmed) reservation must never be blocked by a payment deadline.
+    if(!isProvisional()){error($('deadlineError'),'');return true;}
     const historical=isHistoricalArrival();
-    if(historical && $('IsProvisional')?.checked){
+    if(historical){
       error($('deadlineError'),'Historical reservations cannot be provisional.');return false;
     }
     if(!el.value){
@@ -304,7 +324,7 @@
     error($('deadlineError'),'');return true;
   }
 
-  function request(){const idType=$('IdType').value,idNo=$('IdNumber').value.trim();return{arrivalDate:$('ArrivalDate').value,departureDate:$('DepartureDate').value,firstName:$('FirstName').value.trim(),lastName:$('LastName').value.trim(),phone:$('Phone').value.trim(),email:$('Email').value.trim(),country:$('Country').value,city:$('City').value,address:$('Address').value.trim(),identification:idNo,source:$('BookingSource').value,isProvisional:$('IsProvisional')?.type==='checkbox'?$('IsProvisional').checked:false,paymentDeadline:$('PaymentDeadline').value||null,sendPaymentLink:false,paymentLinkEmail:$('PaymentLinkEmail').value.trim(),shuffleType:getShuffle(),reservationMode:getMode(),groupSameDates:sameDates(),rooms:rooms.map(r=>({categoryId:r.categoryId,planId:r.planId,count:r.count,roomNo:r.roomNo,guestName:r.guestName,arrivalDate:r.arrivalDate,departureDate:r.departureDate,monthlyRate:r.monthlyRate,discount:r.discount,applyGst:r.applyGst,applyBedTax:r.applyBedTax,adults:r.adults,children:r.children,infants:r.infants}))};}
+  function request(){const idType=$('IdType').value,idNo=$('IdNumber').value.trim();return{arrivalDate:$('ArrivalDate').value,departureDate:$('DepartureDate').value,firstName:$('FirstName').value.trim(),lastName:$('LastName').value.trim(),phone:$('Phone').value.trim(),email:$('Email').value.trim(),country:$('Country').value,city:$('City').value,address:$('Address').value.trim(),identification:idNo,source:$('BookingSource').value,isProvisional:isProvisional(),paymentDeadline:isProvisional()?($('PaymentDeadline').value||null):null,sendPaymentLink:false,paymentLinkEmail:$('PaymentLinkEmail').value.trim(),shuffleType:getShuffle(),reservationMode:getMode(),groupSameDates:sameDates(),rooms:rooms.map(r=>({categoryId:r.categoryId,planId:r.planId,count:r.count,roomNo:r.roomNo,guestName:r.guestName,arrivalDate:r.arrivalDate,departureDate:r.departureDate,monthlyRate:r.monthlyRate,discount:r.discount,applyGst:r.applyGst,applyBedTax:r.applyBedTax,adults:r.adults,children:r.children,infants:r.infants}))};}
 
   async function submit(){
     error($('linkError'),'');
@@ -314,7 +334,8 @@
 
     const button=$('btnSave');
     const paymentEmail=$('PaymentLinkEmail').value.trim()||$('Email').value.trim();
-    const paymentDeadline=$('PaymentDeadline').value||'';
+    const wasProvisional=isProvisional();
+    const paymentDeadline=wasProvisional?($('PaymentDeadline').value||''):'';
     const paymentArrival=$('ArrivalDate').value||'';
     setPrimaryActionBusy(button,true,'Saving…');
 
@@ -325,7 +346,7 @@
       const reg=result.registrationId||'';
       const total=number(result.grandTotal);
       const successMessage=`Reservation ${reg} created successfully. Guest confirmation email: ${result.guestEmailStatus||'not checked'}. Hotel notification email: ${result.hotelEmailStatus||'not checked'}.`;
-      resetReservationForm({registrationId:reg,grandTotal:total,email:paymentEmail,paymentDeadline,arrivalDate:paymentArrival});
+      resetReservationForm({registrationId:reg,grandTotal:total,email:paymentEmail,paymentDeadline,arrivalDate:paymentArrival,isProvisional:wasProvisional});
       showSuccess(successMessage);
       toast(successMessage);
       $('reservationSuccess')?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -347,8 +368,10 @@
     const deadlineEl=$('PaymentDeadline');
     deadlineEl.classList.remove('invalid');
     const savedHistorical=!!hotelToday && !!lastSavedArrivalDate && lastSavedArrivalDate < hotelToday;
-    if(!deadlineEl.value && !savedHistorical){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline is required.');return;}
-    if(deadlineEl.value){
+    // Sending a payment link for a normal reservation does not require a provisional deadline.
+    const requiresDeadline=lastSavedWasProvisional;
+    if(requiresDeadline && !deadlineEl.value && !savedHistorical){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline is required.');return;}
+    if(requiresDeadline && deadlineEl.value){
       const deadline=new Date(deadlineEl.value),now=new Date();
       if(Number.isNaN(deadline.getTime())||deadline<=now){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline must be in the future.');return;}
       if(lastSavedArrivalDate&&!savedHistorical){const arrivalEnd=new Date(`${lastSavedArrivalDate}T23:59:59`);if(deadline>arrivalEnd){deadlineEl.classList.add('invalid');error($('deadlineError'),'Payment deadline must be on or before the saved reservation arrival date.');return;}}
@@ -360,7 +383,7 @@
     let sent=false;
     setPrimaryActionBusy(button,true,'Sending…');
     try{
-      const r=await postJson('/CreateReservation/SendPaymentLink',{registrationId:reg,email,paymentDeadline:$('PaymentDeadline').value||null});
+      const r=await postJson('/CreateReservation/SendPaymentLink',{registrationId:reg,email,paymentDeadline:requiresDeadline?($('PaymentDeadline').value||null):null});
       if(!r?.success)throw new Error(r?.message||'Unable to send payment link.');
       sent=true;
     }catch(e){
@@ -387,6 +410,7 @@
     lastCreatedTotal=0;
     lastSavedPaymentEmail='';
     lastSavedPaymentDeadline='';
+    lastSavedWasProvisional=false;
     lastSavedArrivalDate='';
     $('PaymentLinkEmail').value='';
     delete $('PaymentLinkEmail').dataset.edited;
@@ -394,6 +418,7 @@
     if($('sendLbl'))$('sendLbl').textContent='Send payment link via email';
     error($('linkError'),'');
     defaultDeadline();
+    updateDeadlineUi();
   }
 
   function openSourceModal(){show($('sourceModal'),true);$('NewSourceName').value='';error($('sourceError'),'');setTimeout(()=>$('NewSourceName').focus(),30);}
@@ -438,7 +463,7 @@
   ['FirstName','LastName'].forEach(id=>$(id).addEventListener('input',updateSummary));
   $('Email').addEventListener('input',()=>{if(!$('PaymentLinkEmail').dataset.edited)$('PaymentLinkEmail').value=$('Email').value;});$('PaymentLinkEmail').addEventListener('input',()=>{$('PaymentLinkEmail').dataset.edited='1';});
   $('BookingSource').addEventListener('change',()=>{if($('BookingSource').value==='__add_new__')openSourceModal();else updateSummary();});
-  $('IsProvisional')?.addEventListener('change',updateSummary);
+  $('IsProvisional')?.addEventListener('change',()=>{if(isProvisional()&&!$('PaymentDeadline').value)defaultDeadline();updateDeadlineUi();updateSummary();});
   $('btnSearch').addEventListener('click',searchGuests);$('findGuest').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchGuests();}});$('findGuestSuggestions').addEventListener('click',e=>{const item=e.target.closest('.suggestion');if(item)fillGuest(guestResults[Number(item.dataset.i)]);});
   $('rCategory').addEventListener('change',async()=>{await Promise.all([loadRatePlans(),loadLimits()]);await loadRooms();await quote();});
   $('rPlan')?.addEventListener('change',quote);$('rMonthlyRate')?.addEventListener('input',quote);$('rCount')?.addEventListener('input',quote);$('rDiscount')?.addEventListener('input',quote);$('rVat')?.addEventListener('change',quote);$('rBed')?.addEventListener('change',quote);$('btnAddRoom').addEventListener('click',addRoom);
@@ -461,6 +486,6 @@
   $('btnCancel').addEventListener('click',()=>history.length>1?history.back():window.location.assign('/Availability'));
   $('closeSourceModal').addEventListener('click',closeSourceModal);$('cancelSource').addEventListener('click',closeSourceModal);$('saveSource').addEventListener('click',addSource);$('NewSourceName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addSource();}});$('sourceModal').addEventListener('click',e=>{if(e.target===$('sourceModal'))closeSourceModal();});
 
-  refreshDates();modeUi();renderRooms();defaultDeadline();setCounter('adults',1);setCounter('children',0);setCounter('infants',0);$('rGuest').value='';
+  refreshDates();modeUi();renderRooms();defaultDeadline();updateDeadlineUi();setCounter('adults',1);setCounter('children',0);setCounter('infants',0);$('rGuest').value='';
   const prefill=page.dataset.prefillCategory;if(prefill&&chooseOption($('rCategory'),prefill)){$('rCategory').dispatchEvent(new Event('change'));}
 })();

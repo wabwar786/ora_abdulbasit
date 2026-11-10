@@ -331,13 +331,16 @@
                             <input type="hidden" id="IsProvisional" value="false" />
                         }
                     </div>
-                    <div><label class="lbl" for="PaymentDeadline">Pay by<span class="req">*</span></label><input id="PaymentDeadline" type="datetime-local" class="inp" /></div>
-                    <div class="warn" id="autoCancel">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        <span>Automatically cancelled if payment is not received by the deadline.</span>
+                    <p class="status" id="standardDeadlineHint">Payment deadline applies only to provisional bookings.</p>
+                    <div id="provisionalDeadlineFields" class="hidden">
+                        <div><label class="lbl" for="PaymentDeadline">Pay by<span class="req">*</span></label><input id="PaymentDeadline" type="datetime-local" class="inp" /></div>
+                        <div class="warn" id="autoCancel">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            <span>Automatically cancelled if payment is not received by the deadline.</span>
+                        </div>
+                        <p class="err hidden" id="deadlineError"></p>
+                        <div class="deadline-total"><span class="k" style="font-size:14px;color:var(--muted)">Required by deadline</span><span id="dTotal">@(Model.Currency + "0.00")</span></div>
                     </div>
-                    <p class="err hidden" id="deadlineError"></p>
-                    <div class="deadline-total"><span class="k" style="font-size:14px;color:var(--muted)">Required by deadline</span><span id="dTotal">@(Model.Currency + "0.00")</span></div>
                 </section>
             </aside>
         </div>
