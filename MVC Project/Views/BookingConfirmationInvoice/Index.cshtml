@@ -1,0 +1,493 @@
+@model Orapmshms.Models.BookingConfirmationInvoicePageViewModel
+@using Orapmshms.Models
+@{
+    // The invoice is a printable document opened in its own tab, exactly as the .aspx was:
+    // it carries no sidebar and no top bar, so it has no layout.
+    Layout = null;
+    ViewData["Title"] = "Confirmation Invoice";
+
+    var symbol = Model.CurrencySymbol;
+    string Money(decimal amount) => BookingConfirmationInvoiceRules.Short(symbol, amount);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Confirmation Invoice</title>
+    <style>html,body{margin:0;padding:0;background:#eef2f7;}</style>
+    <link rel="stylesheet" href="~/css/booking-confirmation-invoice.css" asp-append-version="true" />
+</head>
+<body>
+
+<div class="bcinvoice-page">
+
+@if (Model.LoadError.Length > 0)
+{
+    <div class="bcinvoice-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" /></svg>
+        <b>@Model.LoadError</b>
+        <span>If it keeps happening, tell your administrator.</span>
+    </div>
+}
+else
+{
+    <div class="bcinvoice-toolbar bcinvoice-no-print">
+        <div class="bcinvoice-views" role="group" aria-label="Invoice view">
+            <button type="button" data-view="full" class="is-on" aria-pressed="true">Full Invoice</button>
+            <button type="button" data-view="room" aria-pressed="false">Room Rent Only</button>
+            <button type="button" data-view="extras" aria-pressed="false">Extras Only</button>
+        </div>
+        <button type="button" class="bcinvoice-btn is-primary" id="bcinvoicePrint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" /></svg>
+            Print Current View
+        </button>
+    </div>
+
+    <div class="bcinvoice-sheet" id="bcinvoiceSheet" data-view="full"
+         data-symbol="@symbol"
+         data-hotel=""
+         data-reg="@Model.Guest.RegId"
+         data-guest="@Model.Guest.Name"
+         data-room="@(Model.Charges.Count > 0 ? Model.Charges[0].RoomNo : string.Empty)"
+         data-stay="@Model.Stay.CheckInText &rarr; @Model.Stay.CheckOutText"
+         data-tax-name="@(Model.Tax.Type.Length > 0 ? Model.Tax.Type : "VAT")">
+
+        @* ------------------------------------------------ masthead ------------------------------------------------ *@
+        <header class="bcinvoice-mast">
+            <div class="bcinvoice-mast-brand">
+                @* The hotel's own logo comes from HotelsSignUpTB.logo. The service hands it
+                   over either as an absolute URL, a data URI, or as a "~/..." application
+                   path, so Url.Content resolves it correctly even under a virtual directory
+                   - the old .aspx page sat at the site root, this route does not, so a bare
+                   relative path would otherwise resolve against /bookingconfirmationinvoice/.
+                   When the column is empty, or the file behind it is gone, the shipped
+                   invoice logo is used instead so the masthead is never blank. The swap is
+                   done by the script, not by an inline handler. *@
+                @{
+                    var bcinvoiceLogoFallback = Url.Content("~/img/invoice-logo.png");
+                    var bcinvoiceLogoSrc = Model.Hotel.LogoUrl.Length > 0
+                        ? Url.Content(Model.Hotel.LogoUrl)
+                        : bcinvoiceLogoFallback;
+                }
+                <img class="bcinvoice-logo"
+                     src="@bcinvoiceLogoSrc"
+                     data-fallback="@bcinvoiceLogoFallback"
+                     alt="Hotel logo" />
+            </div>
+            <div class="bcinvoice-mast-doc">
+                <span class="bcinvoice-mast-kicker">Invoice</span>
+                <span class="bcinvoice-doctitle" id="bcinvoiceDocTitle">@Model.DocumentTitle</span>
+            </div>
+            <div class="bcinvoice-mast-qr">
+                @if (Model.Qr.ShowFbr)
+                {
+                    <span class="bcinvoice-qr-frame bcinvoice-fbr">
+                        <img class="bcinvoice-qr-img" src="@Model.Qr.FbrDataUri" alt="FBR invoice QR code" />
+                        <span class="bcinvoice-fbr-no">@Model.Qr.FbrInvoiceNo</span>
+                    </span>
+                }
+                else if (Model.Qr.ShowVerification)
+                {
+                    <span class="bcinvoice-qr-frame">
+                        <img class="bcinvoice-qr-img" src="@Model.Qr.VerificationDataUri" alt="Scan to verify this invoice" />
+                    </span>
+                }
+            </div>
+        </header>
+
+        @* ------------------------------------------------ stay ribbon ------------------------------------------------ *@
+        <div class="bcinvoice-ribbon">
+            <div class="bcinvoice-rib">
+                <span class="bcinvoice-rib-cap">Check-in</span>
+                <span class="bcinvoice-rib-big">@Model.Stay.CheckInText</span>
+                <span class="bcinvoice-rib-sub">@Model.Stay.CheckInDow</span>
+            </div>
+            <div class="bcinvoice-rib">
+                <span class="bcinvoice-rib-cap">Check-out</span>
+                <span class="bcinvoice-rib-big">@Model.Stay.CheckOutText</span>
+                <span class="bcinvoice-rib-sub">@Model.Stay.CheckOutDow</span>
+            </div>
+            <div class="bcinvoice-rib">
+                <span class="bcinvoice-rib-cap">Rooms / Nights</span>
+                <span class="bcinvoice-rib-big">@Model.Stay.Rooms / @Model.Stay.Nights</span>
+                <span class="bcinvoice-rib-sub">Persons @Model.Guest.Adults / @Model.Guest.Minors</span>
+            </div>
+            <div class="bcinvoice-rib">
+                <span class="bcinvoice-rib-cap">Bill #</span>
+                <span class="bcinvoice-rib-big is-code">@Model.Guest.BillNo</span>
+                <span class="bcinvoice-rib-sub">Printed @Model.PrintDate</span>
+            </div>
+        </div>
+
+        @* ------------------------------------------------ guest ------------------------------------------------ *@
+        <section class="bcinvoice-panel bcinvoice-guest">
+            <div class="bcinvoice-guest-head">
+                <label class="bcinvoice-guest-cap">Guest</label>
+                <b class="bcinvoice-guest-name">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.Name)</b>
+            </div>
+            <div class="bcinvoice-guest-grid">
+                <div class="bcinvoice-row">
+                    <label>Reservation#</label>
+                    <b>@BookingConfirmationInvoiceRules.OrDash(Model.Guest.RegId)</b>
+                </div>
+                <div class="bcinvoice-row">
+                    <label>Address</label>
+                    <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.Address) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.Address)</b>
+                </div>
+                <div class="bcinvoice-row">
+                    <label>Vat #</label>
+                    <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.VatNo) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.VatNo)</b>
+                </div>
+                <div class="bcinvoice-row">
+                    <label>Phone</label>
+                    <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.Phone) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.Phone)</b>
+                </div>
+                <div class="bcinvoice-row">
+                    <label>Booking Source</label>
+                    <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.BookingSource) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.BookingSource)</b>
+                </div>
+            </div>
+        </section>
+
+        <div class="bcinvoice-note bcinvoice-note-room">ROOM RENT REPORT &mdash; This print contains accommodation charges and room-rent totals only.</div>
+        <div class="bcinvoice-note bcinvoice-note-extras">EXTRAS REPORT &mdash; This print contains extras details and extras totals only. Payment log is excluded.</div>
+
+        @* ------------------------------------------------ charges ------------------------------------------------ *@
+        <section class="bcinvoice-panel bcinvoice-charges-panel">
+            <div class="bcinvoice-scroll">
+                <table class="bcinvoice-charges">
+                    <thead>
+                        <tr>
+                            <th class="bcinvoice-c">Sr#</th>
+                            <th>Description</th>
+                            <th>Rate Plan</th>
+                            <th class="bcinvoice-c">Room#</th>
+                            <th class="bcinvoice-r">Rate/Day</th>
+                            <th class="bcinvoice-c">Nights</th>
+                            <th class="bcinvoice-r">Total Rate</th>
+                            <th class="bcinvoice-r">@(Model.Tax.Type.Length > 0 ? Model.Tax.Type : "VAT")(@Model.Tax.RateText%)</th>
+                            @if (Model.Tax.ShowBedTaxColumn)
+                            {
+                                <th class="bcinvoice-r">BED TAX(@Model.Tax.BedRateText%)</th>
+                            }
+                            <th class="bcinvoice-r">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @{
+                        var columnCount = Model.Tax.ShowBedTaxColumn ? 10 : 9;
+                        var serial = 0;
+                    }
+                    @foreach (var row in Model.Charges)
+                    {
+                        serial++;
+                        if (row.GroupBreak)
+                        {
+                            <tr class="bcinvoice-group @(row.IsRoomRent ? "bcinvoice-room-group" : "bcinvoice-extras-group")">
+                                <td colspan="@columnCount">
+                                    <div class="bcinvoice-group-in">
+                                        <span class="bcinvoice-group-title">@row.GroupTitle</span>
+                                        @if (!row.IsRoomRent)
+                                        {
+                                            <a href="#" class="bcinvoice-group-link bcinvoice-no-print bcinvoice-extras-link">View / Print</a>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        <tr class="@(row.IsRoomRent ? "bcinvoice-room-row" : "bcinvoice-extras-row")"
+                            data-net="@row.Net.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                            data-vat="@row.Vat.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                            data-bed="@row.Bed.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                            data-gross="@row.Gross.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)">
+                            <td class="bcinvoice-c">@serial</td>
+                            <td>@row.DisplayName</td>
+                            <td>@row.RatePlan</td>
+                            <td class="bcinvoice-c">@row.RoomNo</td>
+                            <td class="bcinvoice-r">@(symbol.Length > 0 ? symbol + " " + row.RatePerDay : row.RatePerDay)</td>
+                            <td class="bcinvoice-c">@row.Nights</td>
+                            <td class="bcinvoice-r">@Money(row.Net)</td>
+                            <td class="bcinvoice-r">@Money(row.Vat)</td>
+                            @if (Model.Tax.ShowBedTaxColumn)
+                            {
+                                <td class="bcinvoice-r">@Money(row.Bed)</td>
+                            }
+                            <td class="bcinvoice-r bcinvoice-strong">@Money(row.Gross)</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        @* ------------------------------------------------ payments + totals ------------------------------------------------ *@
+        <div class="bcinvoice-financial">
+            @if (Model.HasPayments)
+            {
+                <section class="bcinvoice-panel bcinvoice-paymentlog">
+                    <h2 class="bcinvoice-panel-title"><label class="bcinvoice-loglabel">Payments Log</label></h2>
+                    <table class="bcinvoice-log">
+                        <thead>
+                            <tr>
+                                <th class="bcinvoice-c">Sr#</th>
+                                <th>Date</th>
+                                <th class="bcinvoice-r">Amount Received</th>
+                                <th>Pay Method</th>
+                                <th class="bcinvoice-receipt-col">Receipt</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @{ var paymentSerial = 0; }
+                        @foreach (var payment in Model.Payments)
+                        {
+                            paymentSerial++;
+                            <tr data-kind="payment"
+                                data-amount="@payment.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                                data-net="@payment.Net.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                                data-tax="@payment.Tax.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                                data-date="@payment.Date"
+                                data-method="@payment.Method"
+                                data-by=""
+                                data-receipt="@payment.ReceiptUrl">
+                                <td class="bcinvoice-c">@paymentSerial</td>
+                                <td>@payment.Date</td>
+                                <td class="bcinvoice-r">@Money(payment.Amount)</td>
+                                <td>@payment.Method</td>
+                                <td class="bcinvoice-receipt-col">
+                                    @if (payment.ReceiptUrl.Length > 0)
+                                    {
+                                        <button type="button" class="bcinvoice-receipt-btn" title="View receipt" aria-label="View the receipt of this payment">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2.5-1.5L9 22l2.5-1.5L14 22l2.5-1.5L19 22V2l-2.5 1.5L14 2l-2.5 1.5L9 2 6.5 3.5z" /><path d="M8 7h8M8 11h8M8 15h5" /></svg>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="bcinvoice-no-receipt">&mdash;</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </section>
+            }
+            else
+            {
+                <div class="bcinvoice-paymentlog"></div>
+            }
+
+            <div class="bcinvoice-full-summary bcinvoice-summary-wrap">
+                <table class="bcinvoice-totals">
+                    <tbody>
+                        <tr><td>Amount(Without Tax) :</td><td>@Money(Model.Totals.Net)</td></tr>
+                        <tr><td>Total Tax :</td><td>@Money(Model.Totals.Tax)</td></tr>
+                        <tr><td>Total Payable Amount :</td><td>@Money(Model.Totals.Gross)</td></tr>
+                        <tr class="is-break"><td>Advance Paid Amount :</td><td>@Model.Totals.AdvancePaid.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)</td></tr>
+                        <tr><td>Current Paid Amount :</td><td>@Model.Totals.CurrentPaid.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)</td></tr>
+                        <tr><td>Total Paid Amount :</td><td>@Model.Totals.TotalPaid.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)</td></tr>
+                        <tr class="is-net"><td>Net Balance :</td><td>@Money(Model.Totals.NetBalance)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bcinvoice-room-only bcinvoice-summary-wrap">
+                <table class="bcinvoice-split">
+                    <tbody>
+                        <tr><td>Room Rent Without Tax</td><td id="bcinvoiceRoomNet">0.00</td></tr>
+                        <tr><td>GST / VAT</td><td id="bcinvoiceRoomVat">0.00</td></tr>
+                        <tr><td>Bed Tax</td><td id="bcinvoiceRoomBed">0.00</td></tr>
+                        <tr class="is-grand"><td>Room Rent Grand Total</td><td id="bcinvoiceRoomGross">0.00</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bcinvoice-extras-only bcinvoice-summary-wrap">
+                <table class="bcinvoice-split">
+                    <tbody>
+                        <tr><td>Extras Amount Without Tax</td><td id="bcinvoiceExtrasNet">0.00</td></tr>
+                        <tr><td>Total Extras Tax</td><td id="bcinvoiceExtrasTax">0.00</td></tr>
+                        <tr class="is-grand"><td>Extras Grand Total</td><td id="bcinvoiceExtrasGross">0.00</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @* ------------------------------------------------ room security / restaurant ------------------------------------------------ *@
+        @if (Model.HasAncillary)
+        {
+            <div class="bcinvoice-ancillary">
+                @if (Model.HasRoomSecurity)
+                {
+                    <div>
+                        <section class="bcinvoice-panel">
+                            <h2 class="bcinvoice-panel-title"><label class="bcinvoice-loglabel">Room Security Log</label></h2>
+                            <table class="bcinvoice-log">
+                                <thead>
+                                    <tr>
+                                        <th class="bcinvoice-c">Sr#</th>
+                                        <th>Date</th>
+                                        <th class="bcinvoice-r">Security</th>
+                                        <th>Status</th>
+                                        <th>Note</th>
+                                        <th class="bcinvoice-receipt-col">Receipt</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                @{ var securitySerial = 0; }
+                                @foreach (var security in Model.RoomSecurity)
+                                {
+                                    securitySerial++;
+                                    <tr data-kind="security"
+                                        data-amount="@security.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                                        data-net="@security.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                                        data-tax="0.00"
+                                        data-date="@security.Date"
+                                        data-method="@security.Status"
+                                        data-by=""
+                                        data-receipt="@security.ReceiptUrl">
+                                        <td class="bcinvoice-c">@securitySerial</td>
+                                        <td>@security.Date</td>
+                                        <td class="bcinvoice-r">@security.Security</td>
+                                        <td>@security.Status</td>
+                                        <td>@security.Note</td>
+                                        <td class="bcinvoice-receipt-col">
+                                            @if (security.ReceiptUrl.Length > 0)
+                                            {
+                                                <button type="button" class="bcinvoice-receipt-btn" title="View receipt" aria-label="View the receipt of this security deposit">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2.5-1.5L9 22l2.5-1.5L14 22l2.5-1.5L19 22V2l-2.5 1.5L14 2l-2.5 1.5L9 2 6.5 3.5z" /><path d="M8 7h8M8 11h8M8 15h5" /></svg>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="bcinvoice-no-receipt">&mdash;</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </section>
+                    </div>
+                }
+
+                @if (Model.HasRestaurant)
+                {
+                    <div>
+                        <section class="bcinvoice-panel">
+                            <h2 class="bcinvoice-panel-title"><label class="bcinvoice-loglabel">Restaurant Log</label></h2>
+                            <table class="bcinvoice-log">
+                                <thead>
+                                    <tr>
+                                        <th class="bcinvoice-c">Sr#</th>
+                                        <th>Category</th>
+                                        <th>Item Name</th>
+                                        <th class="bcinvoice-r">Quantity</th>
+                                        <th class="bcinvoice-r">Price</th>
+                                        <th class="bcinvoice-r">Total Bill</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                @{ var restaurantSerial = 0; }
+                                @foreach (var item in Model.Restaurant)
+                                {
+                                    restaurantSerial++;
+                                    <tr>
+                                        <td class="bcinvoice-c">@restaurantSerial</td>
+                                        <td>@item.Category</td>
+                                        <td>@item.ItemName</td>
+                                        <td class="bcinvoice-r">@item.Quantity</td>
+                                        <td class="bcinvoice-r">@item.Price</td>
+                                        <td class="bcinvoice-r">@item.TotalBill</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </section>
+                    </div>
+                }
+            </div>
+        }
+
+        @* These two were on the old page but never rendered: the refund line's wrapper is
+           visible="false" and the words line sits in a visibility:hidden block. They are kept
+           here in the same state so nothing is lost, and so switching either on is one word. *@
+        <div class="bcinvoice-refund" hidden>
+            <label>@Model.SecurityLabel :</label><span>@Model.SecurityAmount</span>
+        </div>
+        <div class="bcinvoice-words" hidden>
+            <label>Grand Total In Words:</label><span>@Model.AmountInWords</span>
+        </div>
+
+        @* ------------------------------------------------ footer ------------------------------------------------ *@
+        <footer class="bcinvoice-footer">
+            <div class="bcinvoice-sign-row">
+                <div class="bcinvoice-sign"><span class="bcinvoice-sign-line"></span><span class="bcinvoice-sign-title">Check In By</span></div>
+                <div class="bcinvoice-sign"><span class="bcinvoice-sign-line"></span><span class="bcinvoice-sign-title">Guest Signature</span></div>
+            </div>
+            <div class="bcinvoice-foot-grid">
+                <div class="bcinvoice-foot-item is-address">
+                    <span class="bcinvoice-foot-label">Address</span>
+                    <span class="bcinvoice-foot-value is-wrap">@Model.Hotel.Address</span>
+                </div>
+                <div class="bcinvoice-foot-item">
+                    <span class="bcinvoice-foot-label">@Model.Tax.NtnLabel</span>
+                    <span class="bcinvoice-foot-value is-code">@Model.Hotel.Ntn</span>
+                </div>
+                @if (Model.Tax.ShowStrn)
+                {
+                    <div class="bcinvoice-foot-item">
+                        <span class="bcinvoice-foot-label">STRN#</span>
+                        <span class="bcinvoice-foot-value is-code">@Model.Hotel.Strn</span>
+                    </div>
+                }
+                <div class="bcinvoice-foot-item">
+                    <span class="bcinvoice-foot-label">Contact#</span>
+                    <span class="bcinvoice-foot-value is-code">@Model.Hotel.Phone</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+}
+</div>
+
+@* ------------------------------------------------ the receipt, shown on this page ------------------------------------------------ *@
+<div class="bcinvoice-receipt-overlay" id="bcinvoiceReceiptOverlay" hidden></div>
+
+<div class="bcinvoice-receipt-modal" id="bcinvoiceReceiptModal" role="dialog" aria-modal="true" aria-labelledby="bcinvoiceReceiptTitle" hidden>
+    <div class="bcinvoice-receipt-band" aria-hidden="true"></div>
+    <span class="bcinvoice-receipt-badge" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2.5-1.5L9 22l2.5-1.5L14 22l2.5-1.5L19 22V2l-2.5 1.5L14 2l-2.5 1.5L9 2 6.5 3.5z" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+    </span>
+    <div class="bcinvoice-receipt-body">
+        <div class="bcinvoice-receipt-head">
+            <h3 id="bcinvoiceReceiptTitle">Payment receipt</h3>
+            <p id="bcinvoiceReceiptNo"></p>
+        </div>
+        <div class="bcinvoice-receipt-facts">
+            <div><span>Amount paid</span><b id="bcinvoiceReceiptAmount">&mdash;</b></div>
+            <div><span>Date paid</span><b id="bcinvoiceReceiptDate">&mdash;</b></div>
+            <div><span>Payment method</span><b id="bcinvoiceReceiptMethod">&mdash;</b></div>
+        </div>
+        <p class="bcinvoice-receipt-label">Summary</p>
+        <div class="bcinvoice-receipt-summary">
+            <div class="bcinvoice-receipt-line">
+                <span><span id="bcinvoiceReceiptLine"></span><small id="bcinvoiceReceiptStay"></small></span>
+                <span class="bcinvoice-v" id="bcinvoiceReceiptLineAmount">&mdash;</span>
+            </div>
+            <div class="bcinvoice-receipt-line is-sub"><span>Net</span><span class="bcinvoice-v" id="bcinvoiceReceiptNet">&mdash;</span></div>
+            <div class="bcinvoice-receipt-line is-sub"><span id="bcinvoiceReceiptTaxName">VAT</span><span class="bcinvoice-v" id="bcinvoiceReceiptTax">&mdash;</span></div>
+            <div class="bcinvoice-receipt-line is-total"><span>Amount paid</span><span class="bcinvoice-v" id="bcinvoiceReceiptTotal">&mdash;</span></div>
+        </div>
+        <p class="bcinvoice-receipt-by" id="bcinvoiceReceiptBy" hidden></p>
+    </div>
+    <div class="bcinvoice-receipt-actions">
+        <a class="bcinvoice-btn is-ghost bcinvoice-receipt-link" id="bcinvoiceReceiptOriginal" target="_blank" rel="noopener noreferrer" hidden>Open original receipt</a>
+        <button type="button" class="bcinvoice-btn is-primary" id="bcinvoiceReceiptPrint">Print receipt</button>
+        <button type="button" class="bcinvoice-btn is-ghost" id="bcinvoiceReceiptClose">Close</button>
+    </div>
+</div>
+
+<script src="~/js/booking-confirmation-invoice.js" asp-append-version="true"></script>
+</body>
+</html>

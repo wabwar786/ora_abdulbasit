@@ -1954,6 +1954,575 @@ WHERE ID=@id
         }
     }
 
+    public async Task<IReadOnlyList<LookupOption>> GetPaymentMethodsAsync(string hotelId, CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        return (await LoadSimpleLookupAsync(cn,
+            "SELECT method FROM dbo.PaymentMethodTB WHERE hotel_id=@hotel AND NULLIF(LTRIM(RTRIM(method)),'') IS NOT NULL ORDER BY orderid,method",
+            "method", hotelId, ct)).ToList();
+    }
+
+    private static async Task<bool> ConfiguredPaymentMethodAsync(
+        SqlConnection cn, SqlTransaction? tx, string hotelId, string method, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(method) || method.Length > 100) return false;
+        await using var cmd = new SqlCommand(@"
+SELECT TOP (1) 1 FROM dbo.PaymentMethodTB
+WHERE hotel_id=@hotel AND LOWER(LTRIM(RTRIM(method)))=LOWER(@method);", cn, tx);
+        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+        cmd.Parameters.Add("@method", SqlDbType.VarChar, 100).Value = method.Trim();
+        return await cmd.ExecuteScalarAsync(ct) != null;
+    }
+
+    // The past-payment insert and in-place edit are deliberately separate from
+    // RecordPaymentAsync. Neither invokes a provider, and both require permission
+    // even for a checked-out reservation.
+    public Task<CheckInOperationResult> AddPastPaymentAsync(
+        string hotelId, string userId, string userName, string ip,
+        AddPastPaymentRequest request, CancellationToken ct = default)
+        => PostHistoricalManualPaymentAsync(hotelId, userId, userName, ip,
+            request?.RegId ?? string.Empty, request?.PaymentDate ?? default,
+            request?.Amount ?? 0m, request?.Method ?? string.Empty,
+            request?.Reason ?? string.Empty, 0, 0m, false, request?.RequestId ?? string.Empty, ct);
+
+    public Task<CheckInOperationResult> AdjustRecordedPaymentAsync(
+        string hotelId, string userId, string userName, string ip,
+        AdjustRecordedPaymentRequest request, CancellationToken ct = default)
+        => EditManualRecordedPaymentAsync(hotelId, userId, userName, ip, request, ct);
+
+    // Updates the EXISTING manually entered payment. No additional PaymentsLogTB
+    // row is inserted. Every overwritten amount and method is kept in Reserv_log.
+    private async Task<CheckInOperationResult> EditManualRecordedPaymentAsync(
+        string hotelId, string userId, string userName, string ip,
+        AdjustRecordedPaymentRequest request, CancellationToken ct)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.RegId) || request.RegId.Length > 50
+            || request.LogId <= 0 || request.NewAmount <= 0m
+            || request.NewAmount != decimal.Round(request.NewAmount, 2))
+            return CheckInOperationResult.Fail("Choose a manual payment and enter a valid corrected amount.");
+        var regId = request.RegId.Trim();
+        var reason = (request.Reason ?? string.Empty).Trim();
+        var selectedMethod = (request.Method ?? string.Empty).Trim();
+        if (reason.Length < 5 || reason.Length > 500)
+            return CheckInOperationResult.Fail("Enter a reason of 5 to 500 characters.");
+        if (!Guid.TryParse(request.RequestId, out _))
+            return CheckInOperationResult.Fail("Invalid operation ID. Reopen the payment form.");
+        // PMS payment timestamps are hotel-local wall-clock values (no client UTC conversion).
+        // Changing the date moves this transaction to the selected reporting period.
+        if (request.ChangePaymentDate &&
+            (request.PaymentDate < new DateTime(2000, 1, 1)
+             || request.PaymentDate > _hotelClock.GetHotelNow(hotelId)))
+            return CheckInOperationResult.Fail("Payment date and time cannot be in the future.");
+
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        var rights = await CalendarFinancialPermissions.LoadAsync(cn, hotelId, userId, ct);
+        if (!rights.CanAdjustPayment) return CheckInOperationResult.Fail("Adjust Payment permission is required.");
+        await using var schema = new SqlCommand(@"
+SELECT CASE WHEN OBJECT_ID('dbo.PaymentAdjustmentAuditTB','U') IS NOT NULL
+             AND OBJECT_ID('dbo.ManualPaymentEditAuditTB','U') IS NOT NULL
+             AND COL_LENGTH('dbo.ManualPaymentEditAuditTB','new_payment_datetime') IS NOT NULL
+            THEN 1 ELSE 0 END;", cn);
+        if (Convert.ToInt32(await schema.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) != 1)
+            return CheckInOperationResult.Fail("Payment correction database setup is required.");
+
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        try
+        {
+            // Same reservation-level SQL lock as Add Past Payment, so two staff
+            // members cannot overwrite each other's adjustment simultaneously.
+            await using (var lockCmd = new SqlCommand(@"
+DECLARE @result int;
+EXEC @result = sp_getapplock @Resource=@resource, @LockMode='Exclusive',
+    @LockOwner='Transaction', @LockTimeout=10000;
+SELECT @result;", cn, tx))
+            {
+                lockCmd.Parameters.Add("@resource", SqlDbType.NVarChar, 255).Value =
+                    "ORA_PAYMENT_CORRECTION:" + hotelId + ":" + regId;
+                if (Convert.ToInt32(await lockCmd.ExecuteScalarAsync(ct) ?? -1, CultureInfo.InvariantCulture) < 0)
+                    throw new InvalidOperationException("Payment is currently being edited. Please retry.");
+            }
+            // A repeated request (for example after a browser/network timeout)
+            // must not overwrite this payment a second time or duplicate Guest Log.
+            await using (var duplicate = new SqlCommand(@"
+SELECT TOP (1) reg_id,payment_log_id FROM dbo.ManualPaymentEditAuditTB WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND request_id=@request;", cn, tx))
+            {
+                duplicate.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                duplicate.Parameters.Add("@request", SqlDbType.UniqueIdentifier).Value = Guid.Parse(request.RequestId);
+                await using var reader = await duplicate.ExecuteReaderAsync(ct);
+                if (await reader.ReadAsync(ct))
+                {
+                    var matches = string.Equals(reader.GetString(0), regId, StringComparison.OrdinalIgnoreCase)
+                                  && reader.GetInt32(1) == request.LogId;
+                    await reader.DisposeAsync();
+                    if (!matches) throw new InvalidOperationException("Correction request was already used for another payment.");
+                    await tx.CommitAsync(ct);
+                    return CheckInOperationResult.Ok("This correction was already saved; no second edit was made.", regId, request.LogId);
+                }
+            }
+            await using (var lockBalance = new SqlCommand(@"
+SELECT TOP (1) id FROM dbo.PaymentsUpdateTB WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id DESC;", cn, tx))
+            {
+                lockBalance.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                lockBalance.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                await lockBalance.ExecuteScalarAsync(ct);
+            }
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
+            var guest = await GetGuestSummaryAsync(cn, tx, hotelId, regId, ct);
+            if (guest == null) throw new InvalidOperationException("This reservation does not belong to the selected hotel.");
+            var archivedStatus = await GetArchivedPaymentStatusAsync(cn, tx, hotelId, regId, ct);
+            if (!string.IsNullOrWhiteSpace(archivedStatus)) guest.Status = archivedStatus;
+
+            var original = await GetPaymentLogRowAsync(cn, tx, hotelId, regId, request.LogId, ct, true);
+            if (original == null || original.Amount <= 0m
+                || !string.IsNullOrWhiteSpace(original.PaymentId)
+                || !string.IsNullOrWhiteSpace(original.ChargeId)
+                || !string.IsNullOrWhiteSpace(original.RefundId)
+                || !string.IsNullOrWhiteSpace(original.ExternalRefundId)
+                || !string.IsNullOrWhiteSpace(original.ReceiptUrl)
+                || original.PayMessage.Contains("PI=", StringComparison.OrdinalIgnoreCase)
+                || original.PayMessage.Contains("CH=", StringComparison.OrdinalIgnoreCase)
+                || original.Name.Equals("Payment Adjustment", StringComparison.OrdinalIgnoreCase)
+                || original.Name.Equals("Security Deduction", StringComparison.OrdinalIgnoreCase)
+                || original.Name.Equals("Refund", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Only manually recorded payments without provider references can be adjusted.");
+            if (await GetRefundedAmountAsync(cn, tx, hotelId, regId,
+                original.PaymentId, original.ChargeId, request.LogId, ct) > 0.005m)
+                throw new InvalidOperationException("This payment has already been refunded and cannot be overwritten.");
+
+            if (!request.ExpectedPaymentDate.HasValue
+                || original.Date != request.ExpectedPaymentDate)
+                throw new InvalidOperationException("The payment date/time changed. Refresh and try again.");
+            if (!string.IsNullOrWhiteSpace(request.ExpectedMethod)
+                && !string.Equals(original.Method, request.ExpectedMethod, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The payment method changed. Refresh and try again.");
+            var newPaymentDate = request.ChangePaymentDate ? request.PaymentDate : original.Date!.Value;
+            var dateChanged = original.Date != newPaymentDate;
+            if (string.IsNullOrWhiteSpace(selectedMethod)) selectedMethod = original.Method;
+            if (!await ConfiguredPaymentMethodAsync(cn, tx, hotelId, selectedMethod, ct))
+                throw new InvalidOperationException("Select a payment method configured for this hotel.");
+
+            // Older release versions appended separate positive 'Payment Adjustment'
+            // rows. Absorb those amounts into this original payment and zero out
+            // the legacy rows in the SAME transaction; otherwise the booking would
+            // double-count money. These original legacy rows and audit events are
+            // preserved for historical review (and are hidden from the payment UI).
+            var oldAdjustmentIds = new List<int>();
+            decimal oldLegacyDelta = 0m;
+            await using (var legacy = new SqlCommand(@"
+SELECT a.added_payment_log_id,
+       ISNULL(TRY_CONVERT(decimal(18,2),l.paid_amount),0)
+FROM dbo.PaymentAdjustmentAuditTB a WITH (UPDLOCK,HOLDLOCK)
+JOIN dbo.PaymentsLogTB l WITH (UPDLOCK,HOLDLOCK)
+  ON l.hotel_id=a.hotel_id AND l.reg_id=a.reg_id AND l.id=a.added_payment_log_id
+WHERE a.hotel_id=@hotel AND a.reg_id=@reg AND a.original_payment_log_id=@id
+  AND a.correction_type='INCREASE' AND ISNULL(l.name,'')='Payment Adjustment';", cn, tx))
+            {
+                legacy.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                legacy.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                legacy.Parameters.Add("@id", SqlDbType.Int).Value = request.LogId;
+                await using var reader = await legacy.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var legacyId = reader.GetInt32(0);
+                    var oldDelta = reader.GetDecimal(1);
+                    if (oldDelta <= 0m) continue;
+                    oldAdjustmentIds.Add(legacyId);
+                    oldLegacyDelta += oldDelta;
+                }
+            }
+            foreach (var legacyId in oldAdjustmentIds)
+            {
+                if (await GetRefundedAmountAsync(cn, tx, hotelId, regId,
+                    string.Empty, string.Empty, legacyId, ct) > 0.005m)
+                    throw new InvalidOperationException("A previous adjustment has been refunded. Accounts must review before editing.");
+            }
+
+            var previousEffective = original.Amount + oldLegacyDelta;
+            if (!request.ExpectedAmount.HasValue || Math.Abs(request.ExpectedAmount.Value - previousEffective) > 0.005m)
+                throw new InvalidOperationException("This payment has changed since you opened it. Refresh the reservation and adjust again.");
+            var change = request.NewAmount - previousEffective;
+            var methodsChanged = !string.Equals(original.Method, selectedMethod, StringComparison.OrdinalIgnoreCase);
+            if (change == 0m && !methodsChanged && !dateChanged && oldAdjustmentIds.Count == 0)
+            {
+                await tx.CommitAsync(ct);
+                return CheckInOperationResult.Ok("Payment is already up to date.", regId, request.LogId);
+            }
+            var totals = await LoadTotalsAsync(cn, tx, hotelId, regId,
+                await IsRoundTotalAsync(cn, tx, hotelId, ct), ct);
+            if (change > Math.Max(0m, totals.Remaining) + 0.005m)
+                throw new InvalidOperationException($"Maximum payment increase is {Math.Max(0m, totals.Remaining):0.00}.");
+            if (totals.PaidAmount + change < 0m)
+                throw new InvalidOperationException("Correction would make the reservation paid total negative.");
+
+            await using (var overwrite = new SqlCommand(@"
+UPDATE dbo.PaymentsLogTB
+SET paid_amount=@newAmount, payment_method=@method, currentdate=@paymentDate
+WHERE hotel_id=@hotel AND reg_id=@reg AND id=@id;", cn, tx))
+            {
+                overwrite.Parameters.Add("@newAmount", SqlDbType.VarChar, 50).Value =
+                    request.NewAmount.ToString(CultureInfo.InvariantCulture);
+                overwrite.Parameters.Add("@method", SqlDbType.VarChar, 100).Value = selectedMethod;
+                overwrite.Parameters.Add("@paymentDate", SqlDbType.DateTime).Value = newPaymentDate;
+                overwrite.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                overwrite.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                overwrite.Parameters.Add("@id", SqlDbType.Int).Value = request.LogId;
+                if (await overwrite.ExecuteNonQueryAsync(ct) != 1)
+                    throw new InvalidOperationException("Original payment could not be updated.");
+            }
+            foreach (var legacyId in oldAdjustmentIds)
+            {
+                await using var absorbed = new SqlCommand(@"
+UPDATE dbo.PaymentsLogTB SET paid_amount='0'
+WHERE hotel_id=@hotel AND reg_id=@reg AND id=@id
+  AND ISNULL(name,'')='Payment Adjustment';", cn, tx);
+                absorbed.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                absorbed.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                absorbed.Parameters.Add("@id", SqlDbType.Int).Value = legacyId;
+                if (await absorbed.ExecuteNonQueryAsync(ct) != 1)
+                    throw new InvalidOperationException("Older adjustment could not be safely consolidated.");
+            }
+
+            // A payment correction belongs to the ORIGINAL payment period. The
+            // generic UpdatePaymentTotalsAsync helper rewrites currentdate to NOW,
+            // which can move the summary into today's reporting period. Instead
+            // update financial figures only and retain every existing summary
+            // timestamp, check-in/out status, stay dates and other report fields.
+            // For archived bookings, totals.PaidAmount is the preserved summary
+            // baseline; for active bookings it is the pre-edit ledger total.
+            var correctedPaid = totals.PaidAmount + change;
+            var correctedRemaining = Math.Round(totals.GrandTotal - correctedPaid, 2);
+            await using (var summary = new SqlCommand(@"
+UPDATE dbo.PaymentsUpdateTB
+SET paid_amount=@paid, remaining_amount=@remaining, payment_method=@method
+WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
+            {
+                summary.Parameters.Add("@paid", SqlDbType.VarChar, 50).Value =
+                    correctedPaid.ToString(CultureInfo.InvariantCulture);
+                summary.Parameters.Add("@remaining", SqlDbType.VarChar, 50).Value =
+                    correctedRemaining.ToString(CultureInfo.InvariantCulture);
+                summary.Parameters.Add("@method", SqlDbType.VarChar, 100).Value = selectedMethod;
+                summary.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                summary.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                if (await summary.ExecuteNonQueryAsync(ct) < 1)
+                    throw new InvalidOperationException("Reservation payment summary is missing; contact accounts before editing.");
+            }
+            totals.PaidAmount = correctedPaid;
+            totals.Remaining = correctedRemaining;
+            totals.PaymentMethod = selectedMethod;
+            var updated = totals;
+
+            // Keep the old timestamp in the audit even if the operator edited
+            // PaymentsLogTB.currentdate. Actual modification time remains separate.
+            var correctedAtUtc = DateTime.UtcNow;
+            var previousDate = original.Date?.ToString("dd MMM yyyy hh:mm tt", CultureInfo.InvariantCulture) ?? "unknown";
+            var resultingDate = newPaymentDate.ToString("dd MMM yyyy hh:mm tt", CultureInfo.InvariantCulture);
+            await using (var audit = new SqlCommand(@"
+INSERT INTO dbo.ManualPaymentEditAuditTB
+(hotel_id,reg_id,payment_log_id,original_payment_datetime,new_payment_datetime,old_amount,old_effective_amount,
+ new_amount,delta_amount,old_method,new_method,edited_at_utc,user_id,user_name,ip_address,reason,
+ legacy_adjustment_ids,request_id)
+VALUES(@hotel,@reg,@logId,@originalAt,@newPaymentAt,@old,@effective,@new,@delta,@oldMethod,@newMethod,
+ @editedAt,@user,@userName,@ip,@reason,@legacy,@requestId);", cn, tx))
+            {
+                audit.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                audit.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                audit.Parameters.Add("@logId", SqlDbType.Int).Value = request.LogId;
+                audit.Parameters.Add("@originalAt", SqlDbType.DateTime2).Value =
+                    original.Date.HasValue ? (object)original.Date.Value : DBNull.Value;
+                audit.Parameters.Add("@newPaymentAt", SqlDbType.DateTime2).Value = newPaymentDate;
+                audit.Parameters.Add("@old", SqlDbType.Decimal).Value = original.Amount;
+                audit.Parameters.Add("@effective", SqlDbType.Decimal).Value = previousEffective;
+                audit.Parameters.Add("@new", SqlDbType.Decimal).Value = request.NewAmount;
+                audit.Parameters.Add("@delta", SqlDbType.Decimal).Value = change;
+                audit.Parameters.Add("@oldMethod", SqlDbType.VarChar, 100).Value = original.Method;
+                audit.Parameters.Add("@newMethod", SqlDbType.VarChar, 100).Value = selectedMethod;
+                audit.Parameters.Add("@editedAt", SqlDbType.DateTime2).Value = correctedAtUtc;
+                audit.Parameters.Add("@user", SqlDbType.VarChar, 50).Value = userId;
+                audit.Parameters.Add("@userName", SqlDbType.NVarChar, 150).Value = userName;
+                audit.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip;
+                audit.Parameters.Add("@reason", SqlDbType.NVarChar, 500).Value = reason;
+                audit.Parameters.Add("@legacy", SqlDbType.NVarChar, 500).Value = string.Join(",", oldAdjustmentIds);
+                audit.Parameters.Add("@requestId", SqlDbType.UniqueIdentifier).Value = Guid.Parse(request.RequestId);
+                await audit.ExecuteNonQueryAsync(ct);
+            }
+            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName, ip, regId,
+                "PAYMENT_ADJUSTED",
+                $"PaymentLog #{request.LogId}; OLD amount {original.Amount:0.00}; " +
+                $"previous total {previousEffective:0.00}; NEW amount {request.NewAmount:0.00}; " +
+                $"old method {original.Method}; new method {selectedMethod}; " +
+                $"OLD payment date/time {previousDate}; NEW payment date/time {resultingDate}; " +
+                $"delta {change:+0.00;-0.00;0.00}; " +
+                $"edit recorded {correctedAtUtc:yyyy-MM-dd HH:mm:ss} UTC; " +
+                $"legacy rows [{string.Join(",", oldAdjustmentIds)}]; reason: {reason}", ct);
+            await tx.CommitAsync(ct);
+            return CheckInOperationResult.Ok("Manual payment updated. Original amount saved in Guest Log.",
+                regId, request.LogId, data: new { totals = updated, previousAmount = original.Amount,
+                    previousEffectiveAmount = previousEffective, correctedAmount = request.NewAmount,
+                    paymentLogId = request.LogId });
+        }
+        catch (Exception ex)
+        {
+            try { await tx.RollbackAsync(ct); } catch { }
+            _logger.LogError(ex, "In-place manual payment correction failed for {Hotel} {RegId}", hotelId, regId);
+            return CheckInOperationResult.Fail("Payment was not changed. " + ex.Message);
+        }
+    }
+
+    private static bool HistoricalManualMethod(string? value)
+    {
+        var method = (value ?? string.Empty).Trim();
+        return method.Equals("Cash", StringComparison.OrdinalIgnoreCase)
+            || method.Equals("Bank Transfer", StringComparison.OrdinalIgnoreCase)
+            || method.Equals("Cheque", StringComparison.OrdinalIgnoreCase)
+            || method.Equals("Other", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<CheckInOperationResult> PostHistoricalManualPaymentAsync(
+        string hotelId, string userId, string userName, string ip,
+        string regId, DateTime selectedDate, decimal amount, string method,
+        string reason, int originalLogId, decimal newCorrectedTotal, bool isAdjustment,
+        string requestId, CancellationToken ct)
+    {
+        regId = regId?.Trim() ?? string.Empty;
+        reason = reason?.Trim() ?? string.Empty;
+        // Adjustments MUST use EditManualRecordedPaymentAsync; this insertion
+        // path may never create a delta payment row for an adjustment.
+        if (isAdjustment)
+            return CheckInOperationResult.Fail("Use the in-place manual payment adjustment endpoint.");
+        if (regId.Length == 0 || regId.Length > 50)
+            return CheckInOperationResult.Fail("A valid reservation reference is required.");
+        if (!Guid.TryParse(requestId, out var operationId))
+            return CheckInOperationResult.Fail("Invalid payment operation identifier. Reopen the payment form.");
+        if (reason.Length < 5 || reason.Length > 500)
+            return CheckInOperationResult.Fail("Enter a reason of 5 to 500 characters.");
+        if (selectedDate == default || selectedDate < new DateTime(2000, 1, 1)
+            || selectedDate > _hotelClock.GetHotelNow(hotelId))
+            return CheckInOperationResult.Fail("Select a valid payment date and time (not in the future).");
+        if (!isAdjustment && (string.IsNullOrWhiteSpace(method) || amount <= 0m || amount != decimal.Round(amount, 2)))
+            return CheckInOperationResult.Fail("Enter a positive manual payment with a valid amount (two decimals maximum).");
+        if (isAdjustment && (originalLogId <= 0 || newCorrectedTotal <= 0m
+            || newCorrectedTotal != decimal.Round(newCorrectedTotal, 2)))
+            return CheckInOperationResult.Fail("Select a payment and enter a valid corrected total.");
+
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        var rights = await CalendarFinancialPermissions.LoadAsync(cn, hotelId, userId, ct);
+        if (isAdjustment && !rights.CanAdjustPayment)
+            return CheckInOperationResult.Fail("Adjust Payment permission is required.");
+        if (!isAdjustment && !rights.CanAddPastPayment)
+            return CheckInOperationResult.Fail("Add Past Payment permission is required.");
+        if (!isAdjustment && !await ConfiguredPaymentMethodAsync(cn, null, hotelId, method, ct))
+            return CheckInOperationResult.Fail("Select a payment method configured for this hotel.");
+
+        // The audit table is intentionally a deployment prerequisite. No correction
+        // should be posted without recording who changed it and when.
+        await using (var schema = new SqlCommand(
+            "SELECT CASE WHEN OBJECT_ID('dbo.PaymentAdjustmentAuditTB','U') IS NOT NULL THEN 1 ELSE 0 END;", cn))
+        {
+            if (Convert.ToInt32(await schema.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) != 1)
+                return CheckInOperationResult.Fail("Payment correction database setup is required. Contact the administrator.");
+        }
+
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        try
+        {
+            // Serialize corrections to the same booking, including two managers
+            // attempting to adjust the same original payment simultaneously.
+            await using (var lockCmd = new SqlCommand(@"
+DECLARE @lockResult int;
+EXEC @lockResult = sp_getapplock @Resource=@resource, @LockMode='Exclusive',
+    @LockOwner='Transaction', @LockTimeout=10000;
+SELECT @lockResult;", cn, tx))
+            {
+                lockCmd.Parameters.Add("@resource", SqlDbType.NVarChar, 255).Value =
+                    "ORA_PAYMENT_CORRECTION:" + hotelId + ":" + regId;
+                var lockResult = Convert.ToInt32(await lockCmd.ExecuteScalarAsync(ct) ?? -1, CultureInfo.InvariantCulture);
+                if (lockResult < 0) throw new InvalidOperationException("Payment is being updated. Please retry.");
+            }
+            // A network timeout after committing must not result in another
+            // credit when the staff retries the same request.
+            await using (var duplicate = new SqlCommand(@"
+SELECT TOP (1) added_payment_log_id FROM dbo.PaymentAdjustmentAuditTB WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND request_id=@requestId;", cn, tx))
+            {
+                duplicate.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                duplicate.Parameters.Add("@requestId", SqlDbType.UniqueIdentifier).Value = operationId;
+                var prior = await duplicate.ExecuteScalarAsync(ct);
+                if (prior != null && prior != DBNull.Value)
+                {
+                    var previousLogId = Convert.ToInt32(prior, CultureInfo.InvariantCulture);
+                    await tx.CommitAsync(ct);
+                    return CheckInOperationResult.Ok("This payment was already posted; no duplicate was created.", regId, previousLogId);
+                }
+            }
+            // Read the latest reservation ledger with an update lock, then reload
+            // totals inside the same serializable SQL transaction.
+            await using (var lockBalance = new SqlCommand(@"
+SELECT TOP (1) id FROM dbo.PaymentsUpdateTB WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id DESC;", cn, tx))
+            {
+                lockBalance.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                lockBalance.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                await lockBalance.ExecuteScalarAsync(ct);
+            }
+            await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
+            var guest = await GetGuestSummaryAsync(cn, tx, hotelId, regId, ct);
+            if (guest == null) throw new InvalidOperationException("Reservation was not found for this hotel.");
+            var archivedStatus = await GetArchivedPaymentStatusAsync(cn, tx, hotelId, regId, ct);
+            if (!string.IsNullOrWhiteSpace(archivedStatus)) guest.Status = archivedStatus;
+
+            decimal? previousEffectiveAmount = null;
+            var delta = amount;
+            if (isAdjustment)
+            {
+                var original = await GetPaymentLogRowAsync(cn, tx, hotelId, regId, originalLogId, ct);
+                if (original == null || original.Amount <= 0m || !HistoricalManualMethod(original.Method)
+                    || !string.IsNullOrWhiteSpace(original.PaymentId)
+                    || !string.IsNullOrWhiteSpace(original.ChargeId))
+                    throw new InvalidOperationException("Only an original manual Cash, Bank Transfer, Cheque or Other payment can be increased.");
+
+                await using (var validate = new SqlCommand(@"
+SELECT TOP (1) ISNULL(name,'') FROM dbo.PaymentsLogTB WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg AND id=@id;", cn, tx))
+                {
+                    validate.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    validate.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                    validate.Parameters.Add("@id", SqlDbType.Int).Value = originalLogId;
+                    var name = Convert.ToString(await validate.ExecuteScalarAsync(ct)) ?? string.Empty;
+                    if (name.Equals("Security Deduction", StringComparison.OrdinalIgnoreCase)
+                        || name.Equals("Refund", StringComparison.OrdinalIgnoreCase)
+                        || name.Equals("Payment Adjustment", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("This ledger entry cannot be adjusted.");
+                }
+                var alreadyRefunded = await GetRefundedAmountAsync(cn, tx, hotelId, regId,
+                    original.PaymentId, original.ChargeId, originalLogId, ct);
+                if (alreadyRefunded > 0.005m)
+                    throw new InvalidOperationException("This payment has refunds. Review it in the accounts ledger before correction.");
+
+                // The requested corrected total is cumulative; never append the
+                // same £50 twice when an original £100 was already corrected to £150.
+                decimal previouslyCorrected = original.Amount;
+                await using (var last = new SqlCommand(@"
+SELECT TOP (1) new_effective_amount FROM dbo.PaymentAdjustmentAuditTB WITH (UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND reg_id=@reg AND original_payment_log_id=@id
+  AND correction_type='INCREASE' ORDER BY id DESC;", cn, tx))
+                {
+                    last.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    last.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                    last.Parameters.Add("@id", SqlDbType.Int).Value = originalLogId;
+                    var latest = await last.ExecuteScalarAsync(ct);
+                    if (latest != null && latest != DBNull.Value) previouslyCorrected = Convert.ToDecimal(latest, CultureInfo.InvariantCulture);
+                }
+                // Refunded correction rows cannot be changed via an additional increase.
+                await using (var paidBack = new SqlCommand(@"
+SELECT COUNT(*) FROM dbo.PaymentAdjustmentAuditTB a
+INNER JOIN dbo.PaymentsLogTB r ON r.hotel_id=a.hotel_id AND r.reg_id=a.reg_id
+  AND ISNULL(TRY_CONVERT(decimal(18,2),r.paid_amount),0)<0
+  AND LTRIM(RTRIM(ISNULL(r.externalrefundid,'')))=CONVERT(varchar(50),a.added_payment_log_id)
+WHERE a.hotel_id=@hotel AND a.reg_id=@reg AND a.original_payment_log_id=@id;", cn, tx))
+                {
+                    paidBack.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                    paidBack.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                    paidBack.Parameters.Add("@id", SqlDbType.Int).Value = originalLogId;
+                    if (Convert.ToInt32(await paidBack.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) > 0)
+                        throw new InvalidOperationException("A previous adjustment has been refunded. Further corrections require accounts review.");
+                }
+                if (newCorrectedTotal <= previouslyCorrected)
+                    throw new InvalidOperationException($"The corrected total must exceed the current £{previouslyCorrected:0.00}. Use Refund for reductions.");
+                previousEffectiveAmount = previouslyCorrected;
+                delta = newCorrectedTotal - previouslyCorrected;
+                method = original.Method;
+            }
+
+            var totals = await LoadTotalsAsync(cn, tx, hotelId, regId,
+                await IsRoundTotalAsync(cn, tx, hotelId, ct), ct);
+            if (delta > Math.Max(0m, totals.Remaining) + 0.005m)
+                throw new InvalidOperationException($"Maximum additional payment is {Math.Max(0m, totals.Remaining):0.00}.");
+            if (delta <= 0m) throw new InvalidOperationException("The payment adjustment must be positive.");
+
+            var post = new RecordCheckInPaymentRequest
+            {
+                RegId = regId,
+                VisitId = guest.VisitId,
+                Method = method,
+                Amount = delta,
+                Note = reason,
+                PayMessage = (isAdjustment ? "Manual payment increase" : "Historical manual payment") + ": " + reason
+            };
+            // Store the exact chosen hotel-local date AND time in PaymentsLogTB.currentdate.
+            var postingDate = selectedDate;
+            var logId = await InsertPaymentLogInternalAsync(cn, tx, hotelId, userId,
+                userName, ip, post, guest, totals, delta, totals.GrandTotal,
+                totals.PaidAmount + delta, totals.GrandTotal - totals.PaidAmount - delta,
+                ct, postingDate, isAdjustment ? "Payment Adjustment" : null);
+            if (logId <= 0) throw new InvalidOperationException("Payment log insert did not return an ID.");
+
+            // If an archived booking has no room charge rows left, the latest
+            // PaymentsUpdateTB entry is the historical paid baseline.
+            var archiveWithoutCharges = false;
+            await using (var rows = new SqlCommand(@"
+SELECT CASE WHEN EXISTS(SELECT 1 FROM dbo.payments
+ WHERE hotel_id=@hotel AND reg_id=@reg) THEN 0 ELSE 1 END;", cn, tx))
+            {
+                rows.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                rows.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                archiveWithoutCharges = Convert.ToInt32(await rows.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) == 1;
+            }
+            var updated = await UpdatePaymentTotalsAsync(cn, tx, hotelId, regId, ct, method,
+                paidAfterArchivePayment: archiveWithoutCharges ? totals.PaidAmount + delta : null,
+                requireUpdate: true,
+                statusOverride: archiveWithoutCharges ? guest.Status : null);
+
+            await using (var audit = new SqlCommand(@"
+INSERT dbo.PaymentAdjustmentAuditTB
+(hotel_id,reg_id,correction_type,original_payment_log_id,added_payment_log_id,
+ previous_effective_amount,new_effective_amount,delta_amount,effective_payment_date,
+ user_id,user_name,ip_address,reason,request_id)
+VALUES(@hotel,@reg,@type,@original,@added,@previous,@corrected,@delta,@date,
+ @user,@name,@ip,@reason,@requestId);", cn, tx))
+            {
+                audit.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                audit.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
+                audit.Parameters.Add("@type", SqlDbType.VarChar, 24).Value = isAdjustment ? "INCREASE" : "BACKDATED";
+                audit.Parameters.Add("@original", SqlDbType.Int).Value = isAdjustment ? (object)originalLogId : DBNull.Value;
+                audit.Parameters.Add("@added", SqlDbType.Int).Value = logId;
+                var previousParameter = audit.Parameters.Add("@previous", SqlDbType.Decimal);
+                previousParameter.Precision = 18; previousParameter.Scale = 2;
+                previousParameter.Value = (object?)previousEffectiveAmount ?? DBNull.Value;
+                var correctedParameter = audit.Parameters.Add("@corrected", SqlDbType.Decimal);
+                correctedParameter.Precision = 18; correctedParameter.Scale = 2;
+                correctedParameter.Value = isAdjustment ? (object)newCorrectedTotal : DBNull.Value;
+                var deltaParameter = audit.Parameters.Add("@delta", SqlDbType.Decimal);
+                deltaParameter.Precision = 18; deltaParameter.Scale = 2;
+                deltaParameter.Value = delta;
+                audit.Parameters.Add("@date", SqlDbType.Date).Value = selectedDate.Date;
+                audit.Parameters.Add("@user", SqlDbType.VarChar, 50).Value = userId;
+                audit.Parameters.Add("@name", SqlDbType.NVarChar, 150).Value = userName;
+                audit.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip;
+                audit.Parameters.Add("@reason", SqlDbType.NVarChar, 500).Value = reason;
+                audit.Parameters.Add("@requestId", SqlDbType.UniqueIdentifier).Value = operationId;
+                await audit.ExecuteNonQueryAsync(ct);
+            }
+            await InsertReservationActionLogAsync(cn, tx, hotelId, userId, userName,
+                ip, regId, isAdjustment ? "PAYMENT_ADJUSTED" : "PAST_PAYMENT_ADDED",
+                $"PaymentLog #{logId}; original #{originalLogId}; {method}; delta {delta:0.00}; " +
+                $"effective {selectedDate:dd MMM yyyy hh:mm tt}; recorded {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC; reason: {reason}", ct);
+            await tx.CommitAsync(ct);
+            return CheckInOperationResult.Ok(isAdjustment ? "Payment adjustment recorded." : "Past payment recorded.",
+                regId, logId, data: new { totals = updated, amountAdded = delta, paymentLogId = logId });
+        }
+        catch (Exception ex)
+        {
+            try { await tx.RollbackAsync(ct); } catch { /* transaction may already have rolled back */ }
+            _logger.LogError(ex, "Historical payment correction failed for hotel {Hotel} reservation {Reg}", hotelId, regId);
+            return CheckInOperationResult.Fail("Payment was not changed. " + ex.Message);
+        }
+    }
+
     public async Task<CheckInOperationResult> RefundPaymentAsync(
         string hotelId, string userId, string userName, string ip,
         RefundPaymentRequest request, CancellationToken ct = default)
@@ -1968,8 +2537,8 @@ WHERE ID=@id
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
 
-        var permissions = await LoadPermissionsAsync(cn, hotelId, userId, ct);
-        if (!permissions.HasAction("Refund"))
+        var calendarPaymentRights = await CalendarFinancialPermissions.LoadAsync(cn, hotelId, userId, ct);
+        if (!calendarPaymentRights.CanRefund)
             return CheckInOperationResult.Fail("You do not have refund permission.");
 
         // Do all validation/provider work before opening the SQL transaction. This is
@@ -4615,6 +5184,10 @@ SELECT TOP 1 * FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;", cn);
             return cached.State;
 
         var state = await LoadPermissionsCoreAsync(cn, hotelId, userId, ct);
+        var financial = await CalendarFinancialPermissions.LoadAsync(cn, hotelId, userId, ct);
+        state.All.Add("Refund");
+        if (financial.CanRefund) state.Allowed.Add("Refund");
+        else state.Allowed.Remove("Refund");
         PermissionCache[key] = new PermissionCacheEntry(DateTime.UtcNow.Add(PermissionCacheTtl), state);
         return state;
     }
@@ -5971,8 +6544,10 @@ VALUES(@customerno,@arrival,@arrivalTime,@departure,@departureTime,@first,@last,
     private sealed class PaymentLogInternal
     {
         public int Id { get; set; } public decimal Amount { get; set; } public string Method { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty; public DateTime? Date { get; set; }
         public string PaymentId { get; set; } = string.Empty; public string ChargeId { get; set; } = string.Empty;
         public string RefundId { get; set; } = string.Empty; public string ExternalRefundId { get; set; } = string.Empty;
+        public string ReceiptUrl { get; set; } = string.Empty; public string PayMessage { get; set; } = string.Empty;
     }
     private sealed class TaxSettings
     {
@@ -7499,10 +8074,10 @@ VALUES(@date,@security,@status,@reg,@visit,@hotel,@user,@system,@ip);",cn,tx);
         catch { }
     }
 
-    private async Task<int> InsertPaymentLogInternalAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string userId,string userName,string ip,RecordCheckInPaymentRequest request,GuestSummary guest,CheckInTotals totals,decimal amount,decimal payable,decimal newPaid,decimal remaining,CancellationToken ct)
+    private async Task<int> InsertPaymentLogInternalAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string userId,string userName,string ip,RecordCheckInPaymentRequest request,GuestSummary guest,CheckInTotals totals,decimal amount,decimal payable,decimal newPaid,decimal remaining,CancellationToken ct, DateTime? effectivePaymentDate = null, string? movementName = null)
     {
         var visit = string.IsNullOrWhiteSpace(request.VisitId) ? guest.VisitId : request.VisitId;
-        var now = _hotelClock.GetHotelNow(hotelId);
+        var now = effectivePaymentDate ?? _hotelClock.GetHotelNow(hotelId);
 
         // Some PMS databases have the newer Stripe/Clover metadata columns while
         // older installations still have the original WebForms PaymentsLogTB schema.
@@ -7541,7 +8116,7 @@ SELECT TOP (1) id FROM @InsertedPaymentsLogIds;";
         cmd.Parameters.Add("@arrival",SqlDbType.VarChar,50).Value=guest.Arrival;
         cmd.Parameters.Add("@departure",SqlDbType.VarChar,50).Value=guest.Departure;
         cmd.Parameters.Add("@current",SqlDbType.DateTime).Value=now;
-        cmd.Parameters.Add("@name",SqlDbType.VarChar,250).Value=guest.Name;
+        cmd.Parameters.Add("@name",SqlDbType.VarChar,250).Value=movementName ?? guest.Name;
         cmd.Parameters.Add("@grand",SqlDbType.VarChar,50).Value=totals.GrandTotal.ToString(CultureInfo.InvariantCulture);
         cmd.Parameters.Add("@security",SqlDbType.VarChar,50).Value=totals.RoomSecurity.ToString(CultureInfo.InvariantCulture);
         cmd.Parameters.Add("@payable",SqlDbType.VarChar,50).Value=payable.ToString(CultureInfo.InvariantCulture);
@@ -7638,12 +8213,14 @@ VALUES(@reg,@arrival,@departure,@now,@name,@grand,@security,@payable,@paid,@rema
             action, $"{action} | {detail}{changes}", _hotelClock.GetHotelNow(hotelId), ct);
     }
 
-    private async Task<PaymentLogInternal?> GetPaymentLogRowAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string regId,int id,CancellationToken ct)
+    private async Task<PaymentLogInternal?> GetPaymentLogRowAsync(SqlConnection cn,SqlTransaction tx,string hotelId,string regId,int id,CancellationToken ct,bool forUpdate=false)
     {
-        await using var cmd=new SqlCommand("SELECT TOP 1 * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg AND id=@id",cn,tx);
+        var sql="SELECT TOP 1 * FROM dbo.PaymentsLogTB " + (forUpdate ? "WITH (UPDLOCK,HOLDLOCK) " : "") +
+                "WHERE hotel_id=@hotel AND reg_id=@reg AND id=@id";
+        await using var cmd=new SqlCommand(sql,cn,tx);
         cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=regId;cmd.Parameters.Add("@id",SqlDbType.Int).Value=id;
         await using var rd=await cmd.ExecuteReaderAsync(ct);if(!await rd.ReadAsync(ct))return null;
-        return new PaymentLogInternal{Id=I(rd,"id"),Amount=M(rd,"paid_amount"),Method=S(rd,"payment_method"),PaymentId=S(rd,"PaymentId"),ChargeId=S(rd,"chargeid"),RefundId=S(rd,"RefundId"),ExternalRefundId=S(rd,"externalrefundid")};
+        return new PaymentLogInternal{Id=I(rd,"id"),Amount=M(rd,"paid_amount"),Method=S(rd,"payment_method"),Name=S(rd,"name"),Date=DateAny(rd,"currentdate"),PaymentId=S(rd,"PaymentId"),ChargeId=S(rd,"chargeid"),RefundId=S(rd,"RefundId"),ExternalRefundId=S(rd,"externalrefundid"),ReceiptUrl=S(rd,"receipturl"),PayMessage=S(rd,"paymessage")};
     }
 
     private async Task<decimal> GetRefundedAmountAsync(SqlConnection cn,SqlTransaction? tx,string hotelId,string regId,string paymentId,string chargeId,int originalId,CancellationToken ct)

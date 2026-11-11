@@ -196,10 +196,32 @@ public sealed class CheckInController : Controller
     public Task<IActionResult> ChangeRoom([FromBody] ChangeRoomRequest request, CancellationToken ct)
         => Run(() => _service.ChangeRoomAsync(HotelId, HotelName, UserId, UserName, ClientIp(), request, ct));
 
+    [HttpGet("PaymentMethods")]
+    public async Task<IActionResult> PaymentMethods(CancellationToken ct)
+    {
+        if (!HasSession()) return UnauthorizedJson();
+        try { return Json(await _service.GetPaymentMethodsAsync(HotelId, ct)); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Payment method lookup failed for hotel {HotelId}.", HotelId);
+            return StatusCode(500, new { ok = false, message = "Unable to load hotel payment methods." });
+        }
+    }
+
     [HttpPost("RecordPayment")]
     [ValidateAntiForgeryToken]
     public Task<IActionResult> RecordPayment([FromBody] RecordCheckInPaymentRequest request, CancellationToken ct)
         => Run(() => _service.RecordPaymentAsync(HotelId, UserId, UserName, ClientIp(), request, ct));
+
+    [HttpPost("AddPastPayment")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> AddPastPayment([FromBody] AddPastPaymentRequest request, CancellationToken ct)
+        => Run(() => _service.AddPastPaymentAsync(HotelId, UserId, UserName, ClientIp(), request, ct));
+
+    [HttpPost("AdjustRecordedPayment")]
+    [ValidateAntiForgeryToken]
+    public Task<IActionResult> AdjustRecordedPayment([FromBody] AdjustRecordedPaymentRequest request, CancellationToken ct)
+        => Run(() => _service.AdjustRecordedPaymentAsync(HotelId, UserId, UserName, ClientIp(), request, ct));
 
     [HttpPost("RefundPayment")]
     [ValidateAntiForgeryToken]

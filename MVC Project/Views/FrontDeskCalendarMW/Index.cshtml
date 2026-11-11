@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="~/css/record-payment.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/room-security.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/refund-payment.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/payment-adjustment.css" asp-append-version="true" />
 }
 
 <div class="fdcmw-fdc-page fdcmw-fdc-mw-page" id="frontDeskCalendarMWPage"
@@ -23,6 +24,8 @@
      data-can-online-card="@(Model.CanOnlineCardPayment ? "1" : "0")"
      data-can-pdq-payment="@(Model.CanPdqPayment ? "1" : "0")"
      data-can-refund="@(Model.Permissions.CanRefund ? "1" : "0")"
+     data-can-add-past-payment="@(Model.Permissions.CanAddPastPayment ? "1" : "0")"
+     data-can-adjust-payment="@(Model.Permissions.CanAdjustPayment ? "1" : "0")"
      data-data-url="@Url.Action("Data", "FrontDeskCalendarMW")"
      data-actions-base-url="@Url.Content("~/Calendar")"
      data-details-url="@Url.Action("BookingDetails", "FrontDeskCalendar")"
@@ -124,10 +127,12 @@
 @await Html.PartialAsync("~/Views/Shared/_RecordPaymentModal.cshtml")
 @await Html.PartialAsync("~/Views/Shared/_RoomSecurityModal.cshtml")
 @await Html.PartialAsync("~/Views/Shared/_RefundPaymentModal.cshtml")
+@await Html.PartialAsync("~/Views/Shared/_PaymentAdjustmentModal.cshtml")
 
 @section Scripts {
     <script src="~/js/record-payment.js" asp-append-version="true"></script>
     <script src="~/js/room-security.js" asp-append-version="true"></script>
     <script src="~/js/refund-payment.js" asp-append-version="true"></script>
+    <script src="~/js/payment-adjustment.js" asp-append-version="true"></script>
     <script src="~/js/frontdesk-calendar-mw.js" asp-append-version="true"></script>
 }

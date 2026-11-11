@@ -376,6 +376,37 @@ public sealed class RecordCheckInPaymentRequest
     public string PayMessage { get; set; } = string.Empty;
 }
 
+// Restricted historical manual payment; never creates a Stripe/PDQ transaction.
+public sealed class AddPastPaymentRequest
+{
+    public string RequestId { get; set; } = string.Empty;
+    public string RegId { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Method { get; set; } = string.Empty;
+    public DateTime PaymentDate { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
+// NewAmount is the corrected *total* for the original payment. The service
+// calculates the incremental delta, even if earlier corrections already exist.
+public sealed class AdjustRecordedPaymentRequest
+{
+    public string RequestId { get; set; } = string.Empty;
+    public string RegId { get; set; } = string.Empty;
+    public int LogId { get; set; }
+    public decimal NewAmount { get; set; }
+    // Optimistic concurrency: the amount the operator saw when opening Adjust.
+    public decimal? ExpectedAmount { get; set; }
+    public string ExpectedMethod { get; set; } = string.Empty;
+    public DateTime? ExpectedPaymentDate { get; set; }
+    public string Method { get; set; } = string.Empty;
+    // The date/time is saved to PaymentsLogTB.currentdate only when deliberately edited.
+    // This avoids rounding away seconds on an amount-only change.
+    public DateTime PaymentDate { get; set; }
+    public bool ChangePaymentDate { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
 public sealed class RefundPaymentRequest
 {
     public string RegId { get; set; } = string.Empty;

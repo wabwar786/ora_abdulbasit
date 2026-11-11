@@ -1,0 +1,39 @@
+/* Compact payment adjustment/past-payment form; follows Record Payment visual tokens. */
+.ora-pc-overlay[hidden], .ora-pc-overlay [hidden]{display:none!important}
+.ora-pc-overlay:not([hidden]){display:flex;z-index:11050}
+.ora-pc-overlay .ora-pc-dialog{width:min(465px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:auto}
+.ora-pc-overlay .orp-payment-header{padding:13px 17px;min-height:0;gap:8px}
+.ora-pc-overlay .orp-payment-title-wrap{gap:10px}
+.ora-pc-overlay .orp-payment-title-wrap h2{font-size:16px;margin:0}
+.ora-pc-overlay .orp-payment-title-icon{width:34px;height:34px;font-size:17px}
+.ora-pc-overlay .ora-pc-body{padding:12px 17px 13px}
+.ora-pc-overlay .ora-pc-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid #e7ecf3}
+.ora-pc-overlay .ora-pc-guest{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ora-pc-overlay .ora-pc-guest strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ora-pc-overlay .ora-pc-guest small{color:#687c90;font-size:10px}
+.ora-pc-overlay .ora-pc-balance{text-align:right;display:flex;flex-direction:column;gap:2px;white-space:nowrap}
+.ora-pc-overlay .ora-pc-balance span{font-size:10px;color:#76869a}
+.ora-pc-overlay .ora-pc-balance strong{font-size:17px;color:#142b42}
+.ora-pc-overlay .ora-pc-original{display:flex;align-items:center;gap:7px;margin-bottom:10px;background:#f4f8fc;border:1px solid #e0eaf3;border-radius:7px;padding:7px 10px}
+.ora-pc-overlay .ora-pc-original span{font-size:10px;color:#62778d}
+.ora-pc-overlay .ora-pc-original strong{font-size:13px;color:#153350}
+.ora-pc-overlay .ora-pc-original small{font-size:10px;color:#62778d;margin-left:auto}
+.ora-pc-overlay .ora-pc-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 10px;margin:0}
+.ora-pc-overlay .ora-pc-fields .orp-payment-field{margin:0;min-width:0;gap:4px}
+.ora-pc-overlay .ora-pc-fields .orp-payment-field>span{font-size:11px}
+.ora-pc-overlay .ora-pc-fields input,.ora-pc-overlay .ora-pc-fields select{min-height:36px;height:36px;box-sizing:border-box;font-size:12px;padding:6px 9px;width:100%}
+.ora-pc-overlay .ora-pc-fields .full{grid-column:1/-1}
+.ora-pc-overlay .ora-pc-fields em{color:#bd3349;font-style:normal}
+.ora-pc-overlay .ora-pc-datetime input{font-variant-numeric:tabular-nums}
+.ora-pc-overlay .ora-pc-error{padding:8px 10px;margin-bottom:10px;border-radius:7px;background:#fff1f2;border:1px solid #f4ced3;color:#a3263c;font-size:11px;font-weight:650}
+.ora-pc-overlay .ora-pc-difference{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin-top:10px;border:1px solid #d9eadd;background:#f2faf5;border-radius:7px;color:#206e4e;font-size:11px;font-weight:700}
+.ora-pc-overlay .ora-pc-difference strong{font-size:14px;color:#0c7650}
+.ora-pc-overlay .ora-pc-difference strong.negative{color:#b43745}
+.ora-pc-overlay .orp-payment-footer{padding:10px 17px;gap:8px}
+.ora-pc-overlay button:disabled,.ora-pc-overlay select:disabled{opacity:.6;cursor:not-allowed}
+.fdc-payment-past,.fdcmw-fdc-payment-past,.fdc-payment-adjust,.fdcmw-fdc-payment-adjust{border:1px solid #a8c6e4;background:#f3f9ff;color:#155a94;border-radius:5px;padding:4px 7px;font:inherit;font-size:10px;font-weight:750;cursor:pointer}
+.fdc-payment-adjust,.fdcmw-fdc-payment-adjust{padding:3px 6px}
+.fdc-payment-history-head,.fdcmw-payment-history-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.fdc-payment-log-entry .fdc-payment-adjust,.fdcmw-fdc-payment-log-entry .fdcmw-fdc-payment-adjust{display:inline-flex;min-height:20px;padding:2px 3px;background:#f1f7fe;border:0;border-radius:0;text-decoration:underline;text-underline-offset:2px;font-size:9px;line-height:1.4}
+.fdc-payment-log-entry .fdc-payment-log-tools,.fdcmw-fdc-payment-log-entry .fdcmw-fdc-payment-log-tools{flex-wrap:wrap;gap:4px}
+@media(max-width:420px){.ora-pc-overlay .ora-pc-fields{grid-template-columns:1fr}.ora-pc-overlay .ora-pc-original{flex-wrap:wrap}.ora-pc-overlay .ora-pc-original small{width:100%;margin-left:0}}

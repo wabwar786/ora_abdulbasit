@@ -2,6 +2,9 @@ namespace Orapmshms.Models;
 
 public sealed class FbrFailedInvoiceReportViewModel
 {
+    // The selected hotel's configured display currency (HotelsSignUpTB.currency_sign).
+    // No hard-coded GBP/PKR symbol: blank stays blank when the hotel has none.
+    public string CurrencySign { get; set; } = "";
     public string Search { get; set; } = "";
     public string Status { get; set; } = "ALL";
     public DateTime? From { get; set; }
@@ -15,8 +18,11 @@ public sealed class FbrFailedInvoiceReportViewModel
     // not just the current page. Both Posted and Failed are included where selected.
     public decimal TotalInvoiceAmount { get; set; }
     public decimal TotalTaxAmount { get; set; }
+    // Existing invoice total includes GST. Compute net values without changing SQL or invoices.
+    public decimal TotalBeforeTaxAmount => TotalInvoiceAmount - TotalTaxAmount;
     public decimal PageInvoiceAmount => Rows.Sum(r => r.InvoiceTotal ?? 0m);
     public decimal PageTaxAmount => Rows.Sum(r => r.TaxAmount ?? 0m);
+    public decimal PageBeforeTaxAmount => PageInvoiceAmount - PageTaxAmount;
     public int Pages => Math.Max(1, (Matching + PageSize - 1) / PageSize);
     public List<FbrInvoiceReportRow> Rows { get; set; } = new();
 }
@@ -37,6 +43,8 @@ public sealed class FbrInvoiceReportRow
     // Figures are the CURRENT charge values, not an immutable posted snapshot.
     public decimal? InvoiceTotal { get; set; }
     public decimal? TaxAmount { get; set; }
+    public decimal? AmountBeforeTax => InvoiceTotal.HasValue
+        ? InvoiceTotal.Value - (TaxAmount ?? 0m) : null;
     public DateTime? PostedAt { get; set; }
 }
 

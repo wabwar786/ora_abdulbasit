@@ -4,6 +4,14 @@
 @using Microsoft.AspNetCore.WebUtilities
 @{
     string D(DateTime? value) => value?.ToString("yyyy-MM-dd") ?? "";
+    // Use the hotel's saved sign without assuming a default currency.
+    string Money(decimal? amount)
+    {
+        if (!amount.HasValue) return "—";
+        var sign = (Model.CurrencySign ?? "").Trim();
+        var formattedAmount = amount.Value.ToString("N2");
+        return sign.Length == 0 ? formattedAmount : sign + " " + formattedAmount;
+    }
     string B64(string? value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? ""));
     var hotelId = Context.Session.GetString("hotel") ?? "";
     var userId = Context.Session.GetString("UserId") ?? "";
@@ -31,14 +39,15 @@
         <div class="metric"><span class="metric-label">Invoices</span><strong class="metric-value">@Model.Matching.ToString("N0")</strong></div>
         <div class="metric"><span class="metric-label">Posted</span><strong class="metric-value good">@Model.Posted.ToString("N0")</strong></div>
         <div class="metric"><span class="metric-label">Failed</span><strong class="metric-value bad">@Model.Failed.ToString("N0")</strong></div>
-        <div class="metric total"><span class="metric-label">Invoice total</span><strong class="metric-value">@Model.TotalInvoiceAmount.ToString("N2")</strong></div>
-        <div class="metric total"><span class="metric-label">Tax</span><strong class="metric-value">@Model.TotalTaxAmount.ToString("N2")</strong></div>
+        <div class="metric total"><span class="metric-label">Before Tax</span><strong class="metric-value">@Money(Model.TotalBeforeTaxAmount)</strong></div>
+        <div class="metric total"><span class="metric-label">Tax</span><strong class="metric-value">@Money(Model.TotalTaxAmount)</strong></div>
+        <div class="metric total"><span class="metric-label">Total</span><strong class="metric-value">@Money(Model.TotalInvoiceAmount)</strong></div>
     </div>
     <section class="panel fbr-table-panel">
         <div class="table-title"><h2>Invoices</h2><span class="result-count">@Model.Matching.ToString("N0") records</span></div>
         <div class="table-scroll"><table class="data-table">
             <thead><tr><th>Guest</th><th>Reservation</th><th>Phone</th><th>Last attempt</th><th>Invoice no.</th>
-                <th class="money-head">Invoice total</th><th class="money-head">Tax</th><th>Status</th><th>Action</th></tr></thead>
+                <th class="money-head">Before tax</th><th class="money-head">Tax</th><th class="money-head">Total</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
             @foreach (var r in Model.Rows)
             {
@@ -48,8 +57,9 @@
                     <td>@r.GuestPhone</td>
                     <td class="date">@(r.PostedAt?.ToString("dd MMM yyyy HH:mm") ?? "—")</td>
                     <td class="mono">@(string.IsNullOrWhiteSpace(r.InvoiceNo) ? "—" : r.InvoiceNo)</td>
-                    <td class="money">@(r.InvoiceTotal?.ToString("N2") ?? "—")</td>
-                    <td class="money">@(r.TaxAmount?.ToString("N2") ?? "—")</td>
+                    <td class="money">@Money(r.AmountBeforeTax)</td>
+                    <td class="money">@Money(r.TaxAmount)</td>
+                    <td class="money">@Money(r.InvoiceTotal)</td>
                     <td><span class="state @(r.Status == "POSTED" ? "posted" : "failed")">@r.Status</span></td>
                     <td>@if (r.Status == "FAILED") { <button type="button" class="row-action" data-fbr-retry="@r.RegId">Retry</button> } else { <span class="muted">—</span> }</td>
                 </tr>
@@ -61,10 +71,10 @@
                     @if (Model.Pages > 1)
                     {
                         <tr class="subtotal"><td colspan="5">Page total (@Model.Rows.Count.ToString("N0") records)</td>
-                            <td class="money">@Model.PageInvoiceAmount.ToString("N2")</td><td class="money">@Model.PageTaxAmount.ToString("N2")</td><td colspan="2"></td></tr>
+                            <td class="money">@Money(Model.PageBeforeTaxAmount)</td><td class="money">@Money(Model.PageTaxAmount)</td><td class="money">@Money(Model.PageInvoiceAmount)</td><td colspan="2"></td></tr>
                     }
                     <tr class="grand-total"><td colspan="5">Filtered total (@Model.Matching.ToString("N0") records)</td>
-                        <td class="money">@Model.TotalInvoiceAmount.ToString("N2")</td><td class="money">@Model.TotalTaxAmount.ToString("N2")</td><td colspan="2"></td></tr>
+                        <td class="money">@Money(Model.TotalBeforeTaxAmount)</td><td class="money">@Money(Model.TotalTaxAmount)</td><td class="money">@Money(Model.TotalInvoiceAmount)</td><td colspan="2"></td></tr>
                 </tfoot>
             }
         </table></div>

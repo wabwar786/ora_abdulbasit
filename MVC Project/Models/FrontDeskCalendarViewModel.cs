@@ -33,7 +33,9 @@ public sealed class FrontDeskCalendarPermissions
     // properties can enable one without exposing the other.
     public bool CanOnlineCardPayment { get; set; } = true;
     public bool CanPdqPayment { get; set; } = true;
-    public bool CanRefund { get; set; } = true;
+    public bool CanRefund { get; set; }
+    public bool CanAddPastPayment { get; set; }
+    public bool CanAdjustPayment { get; set; }
     public bool CanDeleteReservation { get; set; }
     public bool CanDeleteAfterCheckIn { get; set; }
     public bool CanDeleteAfterCheckOut { get; set; }
@@ -210,6 +212,11 @@ public sealed class FrontDeskPaymentLogDto
     public string ReceiptUrl { get; set; } = string.Empty;
     public decimal RemainingRefundable { get; set; }
     public bool CanRefund { get; set; }
+    public bool CanAdjust { get; set; }
+    public decimal CurrentAdjustedAmount { get; set; }
+    public bool IsCorrection { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string EntryName { get; set; } = string.Empty;
 
     // Used only server-side to match previous refunds to their original payment.
     [System.Text.Json.Serialization.JsonIgnore]

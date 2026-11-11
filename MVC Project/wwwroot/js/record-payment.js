@@ -70,6 +70,7 @@
   const token = document.querySelector('#orpRecordPaymentAntiForgery input[name="__RequestVerificationToken"]')?.value || '';
   const defaults = {
     recordPaymentUrl: root.dataset.recordPaymentUrl || '/CheckIn/RecordPayment',
+    methodsUrl: root.dataset.methodsUrl || '/CheckIn/PaymentMethods',
     prepareEmailUrl: root.dataset.prepareEmailUrl || '/Calendar/PrepareEmail',
     payNowLinkUrl: root.dataset.paynowLinkUrl || '/PayNow/GenerateLink',
     pdqUrl: root.dataset.pdqUrl || '/TerminalCardPayment.aspx',
@@ -99,6 +100,41 @@
   let pdqCompletionInProgress = false;
   let toastTimer = 0;
   let holdsBusy = false;
+  let paymentMethodsRequest = 0;
+
+  // The hotel's PaymentMethodTB is the only source for manual method options.
+  async function loadHotelPaymentMethods(preferred){
+    const id=++paymentMethodsRequest;
+    els.method.disabled=true;
+    els.method.replaceChildren(new Option('Loading hotel payment methods…',''));
+    els.save.disabled=true;
+    try{
+      const response=await fetch(defaults.methodsUrl,{
+        credentials:'same-origin',headers:{'Accept':'application/json'}
+      });
+      if(!response.ok) throw new Error('Hotel payment methods could not be loaded.');
+      const rows=await response.json();
+      if(!Array.isArray(rows)||!rows.length) throw new Error('No payment methods are configured for this hotel.');
+      if(id!==paymentMethodsRequest||!current) return;
+      const unique=new Set(), options=[];
+      for(const row of rows){
+        const value=String(row.value??row.Value??'').trim();
+        const caption=String(row.text??row.Text??value).trim()||value;
+        if(!value||unique.has(value.toLowerCase())) continue;
+        unique.add(value.toLowerCase());options.push(new Option(caption,value));
+      }
+      if(!options.length) throw new Error('No valid hotel payment methods available.');
+      els.method.replaceChildren(...options);
+      const match=options.find(x=>x.value.toLowerCase()===String(preferred||'Cash').toLowerCase());
+      els.method.value=match?match.value:options[0].value;
+      els.method.disabled=false;els.save.disabled=false;
+    }catch(e){
+      if(id!==paymentMethodsRequest||!current) return;
+      els.method.replaceChildren(new Option('Methods unavailable',''));
+      els.method.disabled=true;els.save.disabled=true;
+      showToast(e.message||'Could not load payment methods.',true);
+    }
+  }
 
   function money(value, symbol){
     const n = Number(value || 0);
@@ -224,7 +260,7 @@
     els.guest.textContent=[ctx.guestName,ctx.roomNo?`Room ${ctx.roomNo}`:''].filter(Boolean).join(' · ');
     els.balance.textContent=money(balance,ctx.currencySymbol||'£');
     els.amount.value=balance>0?balance.toFixed(2):'0.00';
-    els.method.value=ctx.defaultMethod||'Cash';
+    void loadHotelPaymentMethods(ctx.defaultMethod||'Cash');
     els.note.value='';
     hideOnlineChooser();
     hidePdqChooser();
@@ -256,6 +292,7 @@
   }
 
   function close(){
+    paymentMethodsRequest++;
     root.classList.remove('open');root.setAttribute('aria-hidden','true');
     hideOnlineChooser();
     hidePdqChooser();
@@ -530,6 +567,7 @@
 
   async function manualPayment(){
     if(!current) return;
+    if(els.method.disabled || !els.method.value){showToast('Select a configured payment method.',true);return;}
     const amount=Number(els.amount.value);
     if(!(amount>0)){showToast('Enter a valid amount.',true);els.amount.focus();return;}
     const urls=optionsFor(current);setBusy(els.save,true,'Recording…');await waitForPaint();

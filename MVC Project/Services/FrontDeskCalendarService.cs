@@ -805,6 +805,7 @@ ORDER BY id DESC;";
                     Method = S(rd, "payment_method"),
                     Reference = !string.IsNullOrWhiteSpace(paymentIdText) ? paymentIdText : chargeIdText,
                     ReceiptUrl = S(rd, "receipturl"),
+                    EntryName = S(rd, "name"),
                     PaymentId = paymentIdText,
                     ChargeId = chargeIdText,
                     RefundId = S(rd, "RefundId"),
@@ -872,10 +873,57 @@ ORDER BY id DESC;";
             row.CanRefund = row.RemainingRefundable > 0.005m;
         }
 
-        // Keep the drawer compact while refund calculations still consider the
-        // complete reservation payment history.
-        details.Payments = allLogs.Take(30).ToList();
         await rd.DisposeAsync();
+        // Older releases added positive delta rows for corrections. Keep those
+        // ledger rows visible until an authorised in-place edit consolidates them.
+        // In-place editing changes the original amount; do not display stale
+        // new_effective_amount from an older audit record.
+        try
+        {
+            await using var schema = new SqlCommand(
+                "SELECT CASE WHEN OBJECT_ID('dbo.PaymentAdjustmentAuditTB','U') IS NOT NULL THEN 1 ELSE 0 END;", cn);
+            if (Convert.ToInt32(await schema.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) == 1)
+            {
+                await using var audit = new SqlCommand(@"
+SELECT original_payment_log_id, added_payment_log_id, correction_type
+FROM dbo.PaymentAdjustmentAuditTB
+WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id ASC;", cn);
+                audit.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                audit.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(regId);
+                await using var corrections = await audit.ExecuteReaderAsync(ct);
+                var byLogId = allLogs.ToDictionary(x => x.Id);
+                while (await corrections.ReadAsync(ct))
+                {
+                    if (!corrections.GetString(2).Equals("INCREASE", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!byLogId.TryGetValue(corrections.GetInt32(1), out var added)) continue;
+                    added.IsCorrection = true;
+                    if (!corrections.IsDBNull(0) && added.Amount > 0m
+                        && byLogId.TryGetValue(corrections.GetInt32(0), out var original))
+                        original.CurrentAdjustedAmount += added.Amount;
+                }
+            }
+        }
+        catch (SqlException ex)
+        {
+            _logger.Debug(ex, "Calendar historical payment correction metadata unavailable.");
+        }
+        foreach (var payment in allLogs)
+        {
+            // CurrentAdjustedAmount accumulates any still-active legacy deltas.
+            payment.CurrentAdjustedAmount += payment.Amount;
+            payment.CanAdjust = !payment.IsCorrection && payment.Amount > 0m
+                && string.IsNullOrWhiteSpace(payment.PaymentId)
+                && string.IsNullOrWhiteSpace(payment.ChargeId)
+                && string.IsNullOrWhiteSpace(payment.RefundId)
+                && string.IsNullOrWhiteSpace(payment.ExternalRefundId)
+                && string.IsNullOrWhiteSpace(payment.ReceiptUrl)
+                && payment.RemainingRefundable >= payment.Amount - 0.005m
+                && !payment.EntryName.Equals("Security Deduction", StringComparison.OrdinalIgnoreCase)
+                && !payment.EntryName.Equals("Payment Adjustment", StringComparison.OrdinalIgnoreCase)
+                && !payment.EntryName.Equals("Refund", StringComparison.OrdinalIgnoreCase);
+        }
+        // Keep the drawer compact while refund calculations consider the complete history.
+        details.Payments = allLogs.Where(x => !(x.IsCorrection && x.Amount == 0m)).Take(30).ToList();
         details.CanDeleteRoomSegment = !IsClosedStatus(details.Status) &&
             await HasOtherRoomSegmentAsync(cn, null, hotelId, details.RegId,
                 details.PaymentId, details.RoomNo, ct);
@@ -4074,17 +4122,17 @@ END;", cn, tx);
         if (_cache.TryGetValue(cacheKey, out FrontDeskCalendarPermissions? cached) && cached != null) return cached;
 
         var permissions = new FrontDeskCalendarPermissions();
-        if (role.Equals("hotel", StringComparison.OrdinalIgnoreCase) || role.Equals("manager", StringComparison.OrdinalIgnoreCase))
+        var hasLegacyManagerRole = role.Equals("hotel", StringComparison.OrdinalIgnoreCase)
+            || role.Equals("manager", StringComparison.OrdinalIgnoreCase);
+        if (hasLegacyManagerRole)
         {
             permissions.CanDeleteReservation = true;
             permissions.CanDeleteAfterCheckIn = true;
             permissions.CanDeleteAfterCheckOut = true;
-            permissions.CanRefund = true;
-            _cache.Set(cacheKey, permissions, TimeSpan.FromMinutes(2));
-            return permissions;
+            // Legacy role permissions continue below; financial actions are explicit only.
         }
 
-        try
+        if (!hasLegacyManagerRole) try
         {
             await using var cn = new SqlConnection(_connectionString);
             await cn.OpenAsync(ct);
@@ -4122,7 +4170,7 @@ GROUP BY pa.action_id,pa.action_name;", cn);
             // Match the legacy action aliases used by the WebForms calendar.
             permissions.CanOnlineCardPayment = HasAny(true, "vcPayment", "ChargeVC", "VirtualCard", "VC_PAYMENT", "CardPayment", "card_payment");
             permissions.CanPdqPayment = HasAny(true, "pdqPayment", "PDQ_PAYMENT", "PDQPayment", "pdq_payment");
-            permissions.CanRefund = Has("Refund", true);
+            // Refund is deliberately resolved by the strict shared financial policy below.
             permissions.CanDeleteReservation = Has("DeleteReservation", false);
             permissions.CanDeleteAfterCheckIn = Has("DeleteAfterCheckIn", false);
             permissions.CanDeleteAfterCheckOut = Has("DeleteAfterCheckOut", false);
@@ -4133,7 +4181,25 @@ GROUP BY pa.action_id,pa.action_name;", cn);
             _logger.Debug(ex, "Calendar permissions could not be loaded; non-destructive actions stay enabled.");
         }
 
-        _cache.Set(cacheKey, permissions, TimeSpan.FromMinutes(2));
+        // Sensitive payments have explicit, server-enforced hotel/user permissions.
+        // Never infer them from role or legacy default-allow action resolution.
+        try
+        {
+            await using var permissionConnection = new SqlConnection(_connectionString);
+            await permissionConnection.OpenAsync(ct);
+            var financial = await CalendarFinancialPermissions.LoadAsync(permissionConnection, hotelId, userId, ct);
+            permissions.CanRefund = financial.CanRefund;
+            permissions.CanAddPastPayment = financial.CanAddPastPayment;
+            permissions.CanAdjustPayment = financial.CanAdjustPayment;
+        }
+        catch (Exception ex)
+        {
+            permissions.CanRefund = false;
+            permissions.CanAddPastPayment = false;
+            permissions.CanAdjustPayment = false;
+            _logger.Debug(ex, "Financial action permission check failed; actions denied.");
+        }
+        _cache.Set(cacheKey, permissions, TimeSpan.FromSeconds(60));
         return permissions;
     }
 

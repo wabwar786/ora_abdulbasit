@@ -24,7 +24,10 @@ public interface ICheckInService
     Task<CheckInOperationResult> UpdateChargeGuestNameAsync(string hotelId, string userId, string userName, string ip, UpdateChargeGuestNameRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<LookupOption>> GetRoomChangeOptionsAsync(string hotelId, string userId, int paymentId, CancellationToken ct = default);
     Task<CheckInOperationResult> ChangeRoomAsync(string hotelId, string hotelName, string userId, string userName, string ip, ChangeRoomRequest request, CancellationToken ct = default);
+    Task<IReadOnlyList<LookupOption>> GetPaymentMethodsAsync(string hotelId, CancellationToken ct = default);
     Task<CheckInOperationResult> RecordPaymentAsync(string hotelId, string userId, string userName, string ip, RecordCheckInPaymentRequest request, CancellationToken ct = default);
+    Task<CheckInOperationResult> AddPastPaymentAsync(string hotelId, string userId, string userName, string ip, AddPastPaymentRequest request, CancellationToken ct = default);
+    Task<CheckInOperationResult> AdjustRecordedPaymentAsync(string hotelId, string userId, string userName, string ip, AdjustRecordedPaymentRequest request, CancellationToken ct = default);
     Task<CheckInOperationResult> RefundPaymentAsync(string hotelId, string userId, string userName, string ip, RefundPaymentRequest request, CancellationToken ct = default);
     Task<CheckInOperationResult> SaveGuestAndCheckInAsync(string hotelId, string userId, string userName, string ip, SaveCheckInRequest request, CancellationToken ct = default);
     Task<CheckInOperationResult> UndoCheckInAsync(string hotelId, string userId, string userName, string ip, string regId, int paymentId = 0, CancellationToken ct = default);

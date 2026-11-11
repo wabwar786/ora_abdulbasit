@@ -4,6 +4,7 @@
      class="orp-payment-overlay"
      aria-hidden="true"
      data-record-payment-url="@Url.Action("RecordPayment", "CheckIn")"
+     data-methods-url="@Url.Action("PaymentMethods", "CheckIn")"
      data-prepare-email-url="@Url.Action("PrepareEmail", "FrontDeskCalendar")"
      data-paynow-link-url="@Url.Action("GenerateLink", "PayNow")"
      data-pdq-url="/TerminalCardPayment.aspx"
@@ -136,13 +137,8 @@
 
                 <label class="orp-payment-field">
                     <span>Payment method</span>
-                    <select id="orpPaymentMethod">
-                        <option value="Cash">Cash</option>
-                        <option value="Card">Card</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                        <option value="Online">Online</option>
-                        <option value="Cheque">Cheque</option>
-                        <option value="Other">Other</option>
+                    <select id="orpPaymentMethod" required disabled>
+                        <option value="">Loading hotel payment methods…</option>
                     </select>
                 </label>
 

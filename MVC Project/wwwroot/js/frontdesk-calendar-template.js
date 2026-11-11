@@ -554,7 +554,8 @@
     const row=(label,value)=>`<div class="fdc-kv"><span>${label}</span><b>${value}</b></div>`;
     const logs=(d.payments||[]).map(p=>{
       const refundable=Math.max(0,Number(p.remainingRefundable||0));
-      const canRefund=!closed && cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
+      const canRefund=cfg.canRefund==='1' && p.canRefund===true && refundable>0.005;
+      const canAdjust=cfg.canAdjustPayment==='1' && p.canAdjust===true;
       const receipt=String(p.receiptUrl||'').trim();
       return `<div class="fdc-payment-log-entry" data-payment-log-id="${Number(p.id||0)}">
         <span class="fdc-payment-date" title="Payment date">${fmt(p.date,true)}</span>
@@ -563,6 +564,7 @@
         <div class="fdc-payment-log-tools">
           ${receipt?`<a class="fdc-payment-receipt" href="${esc(receipt)}" target="_blank" rel="noopener" aria-label="View payment receipt">Receipt</a>`:''}
           ${canRefund?`<button type="button" class="fdc-payment-refund" data-payment-refund="${Number(p.id||0)}" data-refundable="${refundable}" title="Refund this payment">Refund</button>`:''}
+          ${canAdjust?`<button type="button" class="fdc-payment-adjust" data-payment-adjust="${Number(p.id||0)}" data-current-amount="${Number(p.currentAdjustedAmount||p.amount||0)}" data-payment-date="${esc(String(p.date||'').slice(0,10))}" title="Edit this manually recorded payment in place">Adjust</button>`:''}
         </div>
       </div>`;
     }).join('');
@@ -596,7 +598,7 @@
         ${row('Deposits / Paid',money(d.paid))}
         ${row('Balance',`<span class="${balance>0.005?'fdc-amount-due':'fdc-amount-settled'}">${money(balance)}</span>`)}
         ${balance>0.005?`<div class="fdc-payment-due-note">${money(balance)} remains to be collected.</div>`:'<div class="fdc-payment-settled-note">Payment received in full.</div>'}
-        ${logs?`<div class="fdc-payment-log"><strong>Payment history</strong>${logs}</div>`:''}
+        ${logs||cfg.canAddPastPayment==='1'?`<div class="fdc-payment-log"><div class="fdc-payment-history-head"><strong>Payment history</strong>${cfg.canAddPastPayment==='1' && balance>0.005?`<button type="button" class="fdc-payment-past" data-drawer-action="past-payment">+ Past Payment</button>`:''}</div>${logs||'<small>No payments recorded.</small>'}</div>`:''}
       </div>
       ${holdPanel}
       ${d.frontDeskNotes?`<div class="fdc-panel"><h4>Notebook</h4><p class="fdc-drawer-notes">${esc(d.frontDeskNotes)}</p></div>`:''}
@@ -684,8 +686,7 @@
   function openReceivedPaymentRefund(button){
     const d=state.currentDetails;
     if(!d?.regId) return showToast('Reservation reference is missing.',true);
-    // Do not offer refunds inside the calendar drawer for checked-out stays.
-    if(isCheckedOutStatus(d.status)) return showToast('Refund is not available for checked-out reservations here.',true);
+    if(cfg.canRefund!=='1') return showToast('Refund permission is required.',true);
     if(!window.RefundPayment || typeof window.RefundPayment.open!=='function')
       return showToast('Refund component is not loaded.',true);
 
@@ -784,6 +785,36 @@
         closeModal();await loadCalendar(state.start,true);
         await openDetails({regId:d.regId,paymentId:d.paymentId,guestName:d.guestName,roomNo:d.roomNo});
       }catch{}
+    });
+  }
+
+  function openCalendarPaymentCorrection(mode,button=null){
+    const d=state.currentDetails;
+    const adjusting=mode==='adjust';
+    if(!d?.regId) return showToast('Reservation reference is missing.',true);
+    if(adjusting && cfg.canAdjustPayment!=='1') return showToast('Adjust Payment permission is required.',true);
+    if(!adjusting && cfg.canAddPastPayment!=='1') return showToast('Add Past Payment permission is required.',true);
+    if(!window.PaymentCorrection?.open) return showToast('Payment correction form is unavailable.',true);
+    const logId=Number(button?.dataset.paymentAdjust||0);
+    const original=(d.payments||[]).find(x=>Number(x.id)===logId);
+    if(adjusting && (!original||!original.canAdjust)) return showToast('This payment is not eligible for adjustment.',true);
+    window.PaymentCorrection.open({
+      mode:adjusting?'adjust':'past',
+      regId:d.regId,
+      logId:adjusting?logId:0,
+      currentAmount:adjusting?Number(original.currentAdjustedAmount||original.amount||0):0,
+      method:adjusting?String(original.method||''):'Cash',
+      guestName:d.guestName||'',
+      roomNo:d.roomNo||'',
+      balance:Number(d.balance||0),
+      date:adjusting?String(original.date||''):String(cfg.hotelToday||''),
+      hotelToday:cfg.hotelToday,
+      currency:state.currency||'£',
+      onCompleted:async()=>{
+        showToast(adjusting?'Payment adjustment saved.':'Past payment saved.');
+        await openDetails({regId:d.regId,paymentId:d.paymentId,guestName:d.guestName,roomNo:d.roomNo});
+        await loadCalendar(state.start,true);
+      }
     });
   }
 
@@ -893,6 +924,7 @@
     if(action==='copy-reg'){ navigator.clipboard.writeText(String(d.regId)).then(()=>showToast('Reservation ID copied: '+d.regId)).catch(()=>showToast('Cannot copy: '+d.regId,true));return;}
     if(action==='history'){openHistoryPage(d);return;}
     if(action==='payment'){openPayment(d,button);return;}
+    if(action==='past-payment'){openCalendarPaymentCorrection('past');return;}
     if(action==='cardpayment' || action==='pdqpayment'){openPayment(d);return;}
     if(action==='sendpaylink'){openSendPaymentLink(d,button);return;}
     if(action==='delete-room-segment'){await deleteRoomSegment(d,button);return;}
@@ -2438,6 +2470,8 @@ ${tag}`:tag;
       if(value) navigator.clipboard.writeText(value).then(()=>showToast('Reservation ID copied: '+value)).catch(()=>showToast('Copy this reservation ID: '+value,true));
       return;
     }
+    const adjustButton=e.target.closest('[data-payment-adjust]');
+    if(adjustButton){e.preventDefault();openCalendarPaymentCorrection('adjust',adjustButton);return;}
     const refundButton=e.target.closest('[data-payment-refund]');
     if(refundButton){
       e.preventDefault();

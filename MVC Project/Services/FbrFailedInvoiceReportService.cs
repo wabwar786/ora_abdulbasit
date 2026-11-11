@@ -99,6 +99,17 @@ WHERE CONVERT(varchar(100),a.user_id)=@u
             throw new UnauthorizedAccessException("You do not have access to this hotel's fiscal reports.");
     }
 
+    private static async Task<string> ReadHotelCurrencySignAsync(
+        SqlConnection cn, string hotelId, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(@"
+SELECT TOP (1) ISNULL(CONVERT(nvarchar(32), currency_sign), N'')
+FROM dbo.HotelsSignUpTB
+WHERE hotel_id = @HotelId;", cn);
+        cmd.Parameters.Add("@HotelId", SqlDbType.VarChar, 50).Value = hotelId;
+        return (Convert.ToString(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) ?? "").Trim();
+    }
+
     private static void AddFilters(SqlCommand cmd, string hotelId, FbrFailedInvoiceReportViewModel f)
     {
         var search = (f.Search ?? "").Trim();
@@ -121,6 +132,7 @@ WHERE CONVERT(varchar(100),a.user_id)=@u
         filter.PageSize = 25;
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
+        filter.CurrencySign = await ReadHotelCurrencySignAsync(cn, hotelId, ct);
         await using (var cmd = new SqlCommand(SourceSql + @"
 SELECT COUNT(*) TotalRows,
  COALESCE(SUM(CASE WHEN p.Status='FAILED' THEN 1 ELSE 0 END),0) FailedRows,
@@ -189,10 +201,13 @@ ORDER BY p.PostedAt DESC,p.RegId DESC;", cn))
         filter.Status = (filter.Status ?? "ALL").Trim().ToUpperInvariant();
         if (filter.Status != "POSTED" && filter.Status != "FAILED") filter.Status = "ALL";
         if (filter.From > filter.To) throw new ArgumentException("From date cannot be after To date.");
-        var csv = new StringBuilder("Reservation ID,Guest,Phone,Status,Last Posted,Invoice Number,Invoice Total,Tax\r\n");
+        var csv = new StringBuilder("Reservation ID,Guest,Phone,Status,Last Posted,Invoice Number,Currency,Amount Before Tax,Tax,Total\r\n");
         decimal exportInvoiceSum = 0m, exportTaxSum = 0m;
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
+        // Keep financial CSV columns numeric for spreadsheet formulas; include the
+        // hotel's currency sign in its own column, without converting amounts to text.
+        var currencySign = await ReadHotelCurrencySignAsync(cn, hotelId, ct);
         await using var cmd = new SqlCommand(SourceSql + @"
 SELECT p.RegId,p.GuestName,p.GuestPhone,p.Status,p.PostedAt,p.InvoiceNo,
  CASE WHEN inv.ChargeCount>0 THEN inv.InvoiceTotal END InvoiceTotal,
@@ -210,15 +225,17 @@ ORDER BY p.PostedAt DESC,p.RegId DESC;", cn);
             exportInvoiceSum += invoice ?? 0m;
             exportTaxSum += tax ?? 0m;
             var values = new[] { ReadString(rd,"RegId"),ReadString(rd,"GuestName"),ReadString(rd,"GuestPhone"),
-                ReadString(rd,"Status"),ReadString(rd,"PostedAt"),ReadString(rd,"InvoiceNo"),
-                invoice?.ToString("F2",CultureInfo.InvariantCulture) ?? "",
-                tax?.ToString("F2",CultureInfo.InvariantCulture) ?? "" };
+                ReadString(rd,"Status"),ReadString(rd,"PostedAt"),ReadString(rd,"InvoiceNo"),currencySign,
+                invoice.HasValue ? (invoice.Value - (tax ?? 0m)).ToString("F2",CultureInfo.InvariantCulture) : "",
+                tax?.ToString("F2",CultureInfo.InvariantCulture) ?? "",
+                invoice?.ToString("F2",CultureInfo.InvariantCulture) ?? "" };
             csv.AppendLine(string.Join(',', values.Select(CsvCell)));
         }
         // Export is capped at 50,000 rows as before. This footer totals only exported rows.
-        csv.AppendLine(string.Join(',', new[] { "Exported rows total", "", "", "", "", "",
-            exportInvoiceSum.ToString("F2",CultureInfo.InvariantCulture),
-            exportTaxSum.ToString("F2",CultureInfo.InvariantCulture) }.Select(CsvCell)));
+        csv.AppendLine(string.Join(',', new[] { "Exported rows total", "", "", "", "", "", currencySign,
+            (exportInvoiceSum - exportTaxSum).ToString("F2",CultureInfo.InvariantCulture),
+            exportTaxSum.ToString("F2",CultureInfo.InvariantCulture),
+            exportInvoiceSum.ToString("F2",CultureInfo.InvariantCulture) }.Select(CsvCell)));
         return new UTF8Encoding(true).GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
     }
 

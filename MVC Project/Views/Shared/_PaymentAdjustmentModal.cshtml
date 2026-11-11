@@ -1,0 +1,57 @@
+@* Shared compact adjustment / historical manual-payment dialog. *@
+<div id="oraPaymentCorrection" class="ora-pc-overlay orp-payment-overlay" hidden aria-hidden="true"
+     data-past-url="@Url.Action("AddPastPayment", "CheckIn")"
+     data-adjust-url="@Url.Action("AdjustRecordedPayment", "CheckIn")"
+     data-methods-url="@Url.Action("PaymentMethods", "CheckIn")">
+    <section class="ora-pc-dialog orp-payment-modal" role="dialog" aria-modal="true" aria-labelledby="oraPcTitle">
+        <header class="orp-payment-header">
+            <div class="orp-payment-title-wrap">
+                <span class="orp-payment-title-icon" aria-hidden="true">£</span>
+                <h2 id="oraPcTitle">Adjust Payment</h2>
+            </div>
+            <button type="button" class="orp-payment-close" data-ora-pc-close aria-label="Close">×</button>
+        </header>
+        <form id="oraPcForm">
+            @Html.AntiForgeryToken()
+            <div class="orp-payment-body ora-pc-body">
+                <div id="oraPcError" class="ora-pc-error" role="alert" hidden></div>
+                <div class="ora-pc-meta">
+                    <div class="ora-pc-guest"><strong id="oraPcGuest"></strong><small>#<span id="oraPcRegId"></span></small></div>
+                    <div class="ora-pc-balance"><span>Balance</span><strong id="oraPcBalance">£0.00</strong></div>
+                </div>
+                <div class="ora-pc-original" id="oraPcOriginalWrap" hidden>
+                    <span>Previously</span><strong id="oraPcOriginal">£0.00</strong>
+                    <small id="oraPcOriginalDate"></small>
+                </div>
+                <div class="orp-payment-form ora-pc-fields">
+                    <label class="orp-payment-field">
+                        <span id="oraPcAmountLabel">Amount</span>
+                        <input id="oraPcAmount" type="number" min="0.01" step="0.01" required inputmode="decimal" autocomplete="off" />
+                    </label>
+                    <label class="orp-payment-field">
+                        <span>Payment method</span>
+                        <select id="oraPcMethod" required disabled>
+                            <option value="">Loading…</option>
+                        </select>
+                    </label>
+                    <label class="orp-payment-field full ora-pc-datetime">
+                        <span>Payment date &amp; time</span>
+                        <input id="oraPcDate" type="datetime-local" step="60" min="2000-01-01T00:00" required />
+                    </label>
+                    <label class="orp-payment-field full">
+                        <span>Reason <em>*</em></span>
+                        <input id="oraPcReason" type="text" maxlength="500" minlength="5" required
+                               placeholder="Reason for change" autocomplete="off" />
+                    </label>
+                </div>
+                <div class="ora-pc-difference" id="oraPcDifference" hidden>
+                    <span>Difference</span><strong id="oraPcDelta"></strong>
+                </div>
+            </div>
+            <footer class="orp-payment-footer">
+                <button type="button" class="orp-payment-btn cancel" data-ora-pc-close>Cancel</button>
+                <button type="submit" class="orp-payment-btn primary" id="oraPcSubmit" disabled>Save</button>
+            </footer>
+        </form>
+    </section>
+</div>
