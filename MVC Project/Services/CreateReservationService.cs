@@ -578,6 +578,25 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
             await UpsertPaymentSummaryAsync(cn, tx, hotelId, userId, userName, clientIp, systemName, request, regId, grandTotal, validatedRooms.Sum(x => x.Discount), advance, paymentMethod, hotelNow, ct);
             await InsertReservationLogAsync(cn, tx, hotelId, userId, userName, clientIp, systemName, request, validatedRooms, regId, grandTotal, hotelNow, ct);
 
+            // Retain legacy expirydate for older screens, but persist the full hotel-local
+            // deadline for minute-accurate automatic expiry and calendar display.
+            // Install Database/ProvisionalReservation_Migration.sql BEFORE deployment.
+            if (request.IsProvisional && request.PaymentDeadline.HasValue)
+            {
+                await using var deadlineCmd = new SqlCommand(@"
+MERGE dbo.ProvisionalReservationDeadlines WITH (HOLDLOCK) AS target
+USING (SELECT @hotel AS hotel_id, @reg AS reg_id) AS src
+ON target.hotel_id=src.hotel_id AND target.reg_id=src.reg_id
+WHEN MATCHED THEN UPDATE SET deadline_at=@deadline
+WHEN NOT MATCHED THEN
+  INSERT(hotel_id,reg_id,deadline_at,created_at)
+  VALUES(@hotel,@reg,@deadline,SYSUTCDATETIME());", cn, tx);
+                deadlineCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                deadlineCmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                deadlineCmd.Parameters.Add("@deadline", SqlDbType.DateTime2).Value = request.PaymentDeadline.Value;
+                await deadlineCmd.ExecuteNonQueryAsync(ct);
+            }
+
             await tx.CommitAsync(ct);
         }
         catch (Exception ex)
@@ -915,7 +934,7 @@ BEGIN
  SET arrival_date=@arrival,departure_date=@departure,currentdate=@now,name=@name,
      grand_total=@grand,room_security=ISNULL(room_security,0),payable=@grand,
      paid_amount=@paid,remaining_amount=@remaining,payment_method=@method,
-     status='reservation',visit_id='add',user_id=@user,systemUser=@systemUser,
+     status=@status,visit_id='add',user_id=@user,systemUser=@systemUser,
      systemName=@systemName,ipAddress=@ip,discount=@discount
  WHERE reg_id=@reg AND hotel_id=@hotel;
 END
@@ -924,7 +943,7 @@ BEGIN
  INSERT INTO dbo.PaymentsUpdateTB
  (arrival_date,departure_date,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,
   payment_method,status,visit_id,user_id,hotel_id,systemUser,systemName,ipAddress,reg_id,discount)
- VALUES(@arrival,@departure,@now,@name,@grand,0,@grand,@paid,@remaining,@method,'reservation','add',@user,@hotel,
+ VALUES(@arrival,@departure,@now,@name,@grand,0,@grand,@paid,@remaining,@method,@status,'add',@user,@hotel,
         @systemUser,@systemName,@ip,@reg,@discount);
 END";
         await using var cmd = new SqlCommand(upsert, cn, tx);
@@ -943,6 +962,7 @@ END";
         cmd.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = Clean(clientIp, 64);
         cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = regId;
         cmd.Parameters.Add("@discount", SqlDbType.Decimal).Value = Math.Max(0m, totalDiscount);
+        cmd.Parameters.Add("@status", SqlDbType.VarChar, 30).Value = request.IsProvisional ? "provisional" : "reservation";
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -1016,7 +1036,7 @@ SELECT CASE WHEN EXISTS
        AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
        AND
        (
-           LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
+           LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','provisional','tentative','check in','checked in','checkin')
            OR (@arr < @hotelToday AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check out','checkout','checked out'))
        )
        AND LTRIM(RTRIM(ISNULL(p.room_no,'')))=@room
@@ -1063,7 +1083,7 @@ WHERE NOT EXISTS
    AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
    AND
        (
-           LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
+           LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','provisional','tentative','check in','checked in','checkin')
            OR (@arr < @hotelToday AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check out','checkout','checked out'))
        )
    AND ISNULL(p.room_no,'') NOT IN ('','UNASSIGNED','Unassigned')

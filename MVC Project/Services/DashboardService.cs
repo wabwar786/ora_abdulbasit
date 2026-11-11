@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Data;
@@ -1897,7 +1897,7 @@ PaymentRanked AS
         (
             pc.arrival_date <= @day
             AND @day < pc.departure_date
-            AND pc.res_status IN ('check in','check-in','checked in','checked-in','reservation')
+            AND pc.res_status IN ('check in','check-in','checked in','checked-in','reservation','provisional','tentative')
             AND (
                 EXISTS (
                     SELECT 1
@@ -2057,7 +2057,8 @@ ORDER BY r.room_category, TRY_CONVERT(int, r.room_no), r.room_no;";
                 state = "ooo";
             else if (resStatus is "check in" or "check-in" or "checked in" or "checked-in")
                 state = "checkin";
-            else if (resStatus == "reservation")
+            else if (resStatus is "reservation" or "provisional" or "tentative")
+                // On dashboard this is a held / reserved room, NOT physically checked in.
                 state = "reservation";
             else if (isDirty)
                 state = "dirty";

@@ -96,6 +96,12 @@
   function diffDays(a, b) { return Math.round((dateOnly(b) - dateOnly(a)) / 86400000); }
   function iso(d) { const x = dateOnly(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; }
   function fmt(d, long = false) { const x = dateOnly(d); return x ? x.toLocaleDateString('en-GB', long ? {day:'2-digit',month:'short',year:'numeric'} : {day:'2-digit',month:'short'}) : ''; }
+  // The API returns hotel-local ISO timestamps (no UTC conversion): show both
+  // date and HH:mm so the selected provisional deadline remains unambiguous.
+  function fmtDeadline(value) {
+    const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+    return m ? `${fmt(m[1]+'-'+m[2]+'-'+m[3],true)} ${m[4]}:${m[5]} (hotel time)` : fmt(value,true);
+  }
   function esc(v) { return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
   function money(v) { const n = Number(v || 0); return `${state.currency}${n.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
   const zeroDecimalCurrencies=new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
@@ -731,6 +737,7 @@
       </div>
       <div class="fdcmw-fdc-panel"><h4>${checked?'Checked-in stay':'Reservation stay'}</h4>
         ${row('Status',`<i class="fdcmw-fdc-badge ${stateClass}">${esc(stateText)}</i>`)}
+        ${d.provisionalExpiry && ['provisional','tentative'].includes(normalizeStatus(d.status)) ? row('Payment deadline',fmtDeadline(d.provisionalExpiry)) : ''}
         ${row('Arrival',fmt(d.arrival,true))}
         ${row('Departure',fmt(d.departure,true))}
         ${row('Total Nights',`${d.nights||Math.max(1,diffDays(d.arrival,d.departure))} Nights`)}
@@ -2212,6 +2219,7 @@ ${tag}`:tag;
       <div><span>Reference:</span> <strong>${esc(ref)}</strong></div>
       <div><span>Booking #:</span> <strong>${esc(book)}</strong></div>
       <div><span>Stay:</span> ${fmt(b.arrival,true)} – ${fmt(b.departure,true)}</div>
+      ${b.provisionalExpiry && ['provisional','tentative'].includes(normalizeStatus(b.status)) ? `<div><span>Payment deadline:</span> <strong>${fmtDeadline(b.provisionalExpiry)}</strong></div>` : ''}
       <div><span>Room:</span> ${esc(room)} · ${esc(b.categoryName||'')}</div>
       <div><span>Plan:</span> ${esc(b.planName||'—')}</div>
       <div><span>Source:</span> ${esc(b.source||'—')}</div>

@@ -361,7 +361,7 @@ booked AS
     WHERE p.hotel_id = @hotelId
       AND p.Type = @categoryNamePayments
       AND p.descr = 'Room Rent'
-      AND p.res_status IN ('check in', 'reservation')
+      AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check in', 'checked in', 'checkin', 'reservation', 'provisional', 'tentative')
       /* Reservation overlaps selected date. */
       AND CAST(p.ArrivalDate AS DATE) < @dep
       AND @arr < CAST(p.DepartureDate AS DATE)

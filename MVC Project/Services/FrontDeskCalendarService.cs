@@ -215,7 +215,7 @@ PaymentRows AS
         ISNULL(g.is_virtual,n.is_virtual) AS is_virtual,
         ISNULL(g.createdRole,n.createdRole) AS createdRole,
         ISNULL(CONVERT(varchar(100),g.user_id),CONVERT(varchar(100),n.user_id)) AS created_user_id,
-        COALESCE(CONVERT(varchar(50),g.expirydate),CONVERT(varchar(50),n.expirydate),'') AS expirydate,
+        COALESCE(CONVERT(varchar(19),pd.deadline_at,120),NULLIF(CONVERT(varchar(50),g.expirydate),''),NULLIF(CONVERT(varchar(50),n.expirydate),''),'') AS expirydate,
         ISNULL(TRY_CONVERT(int,g.NumberOfAdults),ISNULL(TRY_CONVERT(int,n.number_of_adult),0)) AS master_adults,
         ISNULL(TRY_CONVERT(int,g.NumberOfMinors),ISNULL(TRY_CONVERT(int,n.number_of_minor),0)) AS master_children,
         ISNULL(TRY_CONVERT(decimal(18,2),u.grand_total),0) AS grand_total,
@@ -223,6 +223,7 @@ PaymentRows AS
         ISNULL(TRY_CONVERT(decimal(18,2),u.remaining_amount),0) AS remaining_amount,
         ISNULL(TRY_CONVERT(decimal(18,2),u.discount),0) AS discount
     FROM dbo.payments p WITH (READPAST)
+    LEFT JOIN dbo.ProvisionalReservationDeadlines pd ON pd.hotel_id=p.hotel_id AND pd.reg_id=p.reg_id
     LEFT JOIN LatestGuest g ON g.hotel_id=p.hotel_id AND g.reg_id=p.reg_id AND g.rn=1
     LEFT JOIN LatestReservation n ON n.hotel_id=p.hotel_id AND n.reg_id=p.reg_id AND n.rn=1
     LEFT JOIN dbo.create_room cr WITH (READPAST)
@@ -322,13 +323,15 @@ ORDER BY BlockStartDate, BlockID;
     WHERE arrival<=@viewEnd AND departure>@viewStart AND departure>arrival
 )
 SELECT m.reg_id,m.room_category,m.guest_name,m.phone,m.agency,m.res_status,
-       m.arrival,m.departure,m.visit_id,m.book_id,m.booking_id,m.expirydate,
+       m.arrival,m.departure,m.visit_id,m.book_id,m.booking_id,
+       COALESCE(CONVERT(varchar(19),pd.deadline_at,120),NULLIF(m.expirydate,''),'') AS expirydate,
        m.adults,m.children,m.master_total,m.room_count,
        COALESCE(TRY_CONVERT(decimal(18,2),pu.grand_total),m.master_total) AS grand_total,
        ISNULL(TRY_CONVERT(decimal(18,2),pu.paid_amount),0) AS paid_amount,
        ISNULL(TRY_CONVERT(decimal(18,2),pu.remaining_amount),
               COALESCE(TRY_CONVERT(decimal(18,2),pu.grand_total),m.master_total)) AS remaining_amount
 FROM RankedMasters m
+LEFT JOIN dbo.ProvisionalReservationDeadlines pd ON pd.hotel_id=@hotel AND pd.reg_id=m.reg_id
 OUTER APPLY (SELECT TOP (1) grand_total,paid_amount,remaining_amount
              FROM dbo.PaymentsUpdateTB WHERE hotel_id=@hotel AND reg_id=m.reg_id ORDER BY id DESC) pu
 WHERE m.rn=1
@@ -424,8 +427,8 @@ ORDER BY m.arrival,m.reg_id OPTION (MAXDOP 1);";
                 {
                     var expiryRaw = S(rd, "expirydate");
                     if (!string.IsNullOrWhiteSpace(expiryRaw) &&
-                        TryParseLegacyDate(expiryRaw, out var expiryDate) &&
-                        expiryDate.Date < hotelToday.Date)
+                        TryParseProvisionalDeadline(expiryRaw, out var expiryDate) &&
+                        expiryDate <= _hotelClock.GetHotelNow(hotelId))
                     {
                         continue;
                     }
@@ -463,6 +466,7 @@ ORDER BY m.arrival,m.reg_id OPTION (MAXDOP 1);";
                     IsSameDayCheckout = sameDayCheckout,
                     Status = DisplayStatus(statusRaw, arrival.Value, hotelToday),
                     StatusCode = statusCode,
+                    ProvisionalExpiry = statusCode == "P" && TryParseProvisionalDeadline(S(rd, "expirydate"), out var deadline) ? deadline : null,
                     Source = S(rd, "Agency"),
                     PlanName = S(rd, "planname"),
                     Rate = M(rd, "row_rate"),
@@ -528,7 +532,7 @@ ORDER BY m.arrival,m.reg_id OPTION (MAXDOP 1);";
                 if (!arrival.HasValue || !departure.HasValue || departure <= arrival) continue;
                 var status = S(rd, "res_status");
                 if (LegacyStatusCode(status) == "P" &&
-                    TryParseLegacyDate(S(rd, "expirydate"), out var expiry) && expiry.Date < hotelToday.Date)
+                    TryParseProvisionalDeadline(S(rd, "expirydate"), out var expiry) && expiry <= _hotelClock.GetHotelNow(hotelId))
                     continue;
 
                 var sourceCategory = S(rd, "room_category").Trim();
@@ -565,6 +569,7 @@ ORDER BY m.arrival,m.reg_id OPTION (MAXDOP 1);";
                     Departure = departure.Value,
                     Status = DisplayStatus(status, arrival.Value, hotelToday),
                     StatusCode = LegacyStatusCode(status),
+                    ProvisionalExpiry = LegacyStatusCode(status) == "P" && TryParseProvisionalDeadline(S(rd, "expirydate"), out var masterDeadline) ? masterDeadline : null,
                     Source = S(rd, "agency"),
                     Total = total,
                     Paid = paid,
@@ -705,8 +710,10 @@ SELECT TOP (1)
     ISNULL(G.booking_id,N.booking_id) AS booking_id,
     ISNULL(G.is_virtual,N.is_virtual) AS is_virtual,
     ISNULL(G.createdat,N.createdat) AS created_at,
+    COALESCE(CONVERT(varchar(19),dl.deadline_at,120),NULLIF(CONVERT(varchar(50),G.expirydate),''),NULLIF(CONVERT(varchar(50),N.expirydate),''),'') AS expirydate,
     ISNULL(GN.description,'') AS fdo_notes
 FROM dbo.payments p WITH (READPAST)
+LEFT JOIN dbo.ProvisionalReservationDeadlines dl ON dl.hotel_id=p.hotel_id AND dl.reg_id=p.reg_id
 LEFT JOIN G ON 1=1
 LEFT JOIN N ON 1=1
 LEFT JOIN dbo.create_room cr WITH (READPAST)
@@ -758,6 +765,7 @@ ORDER BY id DESC;";
             CategoryId = S(rd, "localcategoryid"),
             Status = DisplayStatus(S(rd, "res_status"), arrival, _hotelClock.GetHotelToday(hotelId)),
             CreatedAt = DTime(rd, "created_at"),
+            ProvisionalExpiry = LegacyStatusCode(S(rd, "res_status")) == "P" && TryParseProvisionalDeadline(S(rd, "expirydate"), out var detailsDeadline) ? detailsDeadline : null,
             Arrival = arrival,
             Departure = departure,
             Nights = Math.Max(1, (departure.Date - arrival.Date).Days),
@@ -1576,8 +1584,8 @@ SELECT TOP (1) category,st,guest,a,d,total,countText,expiry FROM src ORDER BY pr
                 return FrontDeskOperationResult.Fail("This reservation is no longer active.");
             if ((status.Equals("provisional",StringComparison.OrdinalIgnoreCase) ||
                  status.Equals("tentative",StringComparison.OrdinalIgnoreCase)) &&
-                TryParseLegacyDate(expiryText,out var expiry) &&
-                expiry.Date < _hotelClock.GetHotelToday(hotelId))
+                TryParseProvisionalDeadline(expiryText,out var expiry) &&
+                expiry <= _hotelClock.GetHotelNow(hotelId))
                 return FrontDeskOperationResult.Fail("This provisional reservation has expired.");
             if (arrival==DateTime.MinValue || departure<=arrival || request.NewArrival.Date!=arrival.Date)
                 return FrontDeskOperationResult.Fail("Reservation dates have changed. Refresh and retry.");
@@ -1873,8 +1881,8 @@ FROM src ORDER BY prio,id DESC;", cn, tx))
                 return FrontDeskOperationResult.Fail("The reservation is not active. Refresh the calendar.");
             if ((status.Equals("provisional", StringComparison.OrdinalIgnoreCase) ||
                  status.Equals("tentative", StringComparison.OrdinalIgnoreCase)) &&
-                TryParseLegacyDate(expiryText, out var expiredAt) &&
-                expiredAt.Date < _hotelClock.GetHotelToday(hotelId))
+                TryParseProvisionalDeadline(expiryText, out var expiredAt) &&
+                expiredAt <= _hotelClock.GetHotelNow(hotelId))
                 return FrontDeskOperationResult.Fail("This provisional reservation has expired.");
             if (arrival == DateTime.MinValue || departure <= arrival)
                 return FrontDeskOperationResult.Fail("The reservation has invalid stay dates.");
@@ -2506,6 +2514,32 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room R
                 await tx.RollbackAsync(ct);
                 return FrontDeskOperationResult.Fail(
                     "This booking is no longer provisional or could not be found. Please refresh the calendar.");
+            }
+
+            // Do not let a stale calendar action confirm a booking after its
+            // hotel-local provisional deadline. The expiry worker will cancel it.
+            const string deadlineSql = @"
+SELECT TOP (1) COALESCE(CONVERT(varchar(19),d.deadline_at,120),
+  NULLIF(CONVERT(varchar(50),g.expirydate),''),NULLIF(CONVERT(varchar(50),n.expirydate),''),'') AS expiry
+FROM dbo.payments p
+OUTER APPLY (SELECT TOP 1 expirydate FROM dbo.GuestInformationLogTB
+             WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id DESC) g
+OUTER APPLY (SELECT TOP 1 expirydate FROM dbo.NewReservationsTB
+             WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY id DESC) n
+LEFT JOIN dbo.ProvisionalReservationDeadlines d ON d.hotel_id=p.hotel_id AND d.reg_id=p.reg_id
+WHERE p.hotel_id=@hotel AND p.reg_id=@reg
+  AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('provisional','tentative');";
+            await using (var deadlineCmd = new SqlCommand(deadlineSql, cn, tx))
+            {
+                deadlineCmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+                deadlineCmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = regId;
+                var deadlineRaw = Convert.ToString(await deadlineCmd.ExecuteScalarAsync(ct)) ?? string.Empty;
+                if (TryParseProvisionalDeadline(deadlineRaw, out var payBy) &&
+                    payBy <= _hotelClock.GetHotelNow(hotelId))
+                {
+                    await tx.RollbackAsync(ct);
+                    return FrontDeskOperationResult.Fail("This provisional payment deadline has expired. Refresh the calendar.");
+                }
             }
 
             await ReservationChangeAudit.CaptureBeforeAsync(cn, tx, hotelId, regId, ct);
@@ -4211,7 +4245,7 @@ GROUP BY pa.action_id,pa.action_name;", cn);
         var s = (status ?? string.Empty).Trim().ToLowerInvariant();
         if (s is "check out" or "checked out" or "checkout") return "CO";
         if (s is "check in" or "checked in" or "checkin") return "O";
-        if (s == "provisional") return "P";
+        if (s is "provisional" or "tentative") return "P";
         return "R";
     }
 
@@ -4245,6 +4279,24 @@ GROUP BY pa.action_id,pa.action_name;", cn);
         }
 
         date = default;
+        return false;
+    }
+
+    // Historic expirydate is VARCHAR(10) (MM-dd-yyyy); it means end of that
+    // property-local day. New deadline_at has hour/minute, retained precisely.
+    private static bool TryParseProvisionalDeadline(string raw, out DateTime expiry)
+    {
+        var value = (raw ?? string.Empty).Trim();
+        if (DateTime.TryParseExact(value,
+            new[] { "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-ddTHH:mm:ss", "yyyy-MM-ddTHH:mm" },
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out expiry))
+            return true;
+        if (TryParseLegacyDate(value, out var day))
+        {
+            expiry = day.Date.AddDays(1).AddTicks(-1);
+            return true;
+        }
+        expiry = default;
         return false;
     }
 

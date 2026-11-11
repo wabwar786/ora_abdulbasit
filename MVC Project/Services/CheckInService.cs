@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
 using System.Net;
@@ -593,7 +593,7 @@ WHERE c.room_no<>''
         AND LTRIM(RTRIM(ISNULL(p.room_no,'')))=c.room_no
         AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
         AND (
-            LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','check in','checked in','checkin')
+            LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('reservation','provisional','tentative','check in','checked in','checkin')
             OR (@arrival < @hotelToday AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check out','checkout','checked out'))
         )
         AND COALESCE(
@@ -7522,15 +7522,19 @@ THEN 1 ELSE 0 END;", cn, tx))
 
         var sql = hasExtendedPaymentColumns
             ? @"
+DECLARE @InsertedPaymentsLogIds TABLE (id int NOT NULL);
 INSERT INTO dbo.PaymentsLogTB
 (reg_id,arrival_date,departure_date,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,payment_method,status,visit_id,user_id,hotel_id,cb_status,ipAddress,systemUser,systemName,PaymentId,chargeid,receipturl,paymentstatus,paymessage)
-OUTPUT INSERTED.id
-VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@remaining,@method,@status,@visit,@user,@hotel,'1',@ip,@systemUser,@systemName,@paymentId,@chargeId,@receipt,@paymentStatus,@paymessage);"
+OUTPUT INSERTED.id INTO @InsertedPaymentsLogIds(id)
+VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@remaining,@method,@status,@visit,@user,@hotel,'1',@ip,@systemUser,@systemName,@paymentId,@chargeId,@receipt,@paymentStatus,@paymessage);
+SELECT TOP (1) id FROM @InsertedPaymentsLogIds;"
             : @"
+DECLARE @InsertedPaymentsLogIds TABLE (id int NOT NULL);
 INSERT INTO dbo.PaymentsLogTB
 (reg_id,arrival_date,departure_date,currentdate,name,grand_total,room_security,payable,paid_amount,remaining_amount,payment_method,status,visit_id,user_id,hotel_id,cb_status,ipAddress,systemUser,systemName)
-OUTPUT INSERTED.id
-VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@remaining,@method,@status,@visit,@user,@hotel,'1',@ip,@systemUser,@systemName);";
+OUTPUT INSERTED.id INTO @InsertedPaymentsLogIds(id)
+VALUES(@reg,@arrival,@departure,@current,@name,@grand,@security,@payable,@paid,@remaining,@method,@status,@visit,@user,@hotel,'1',@ip,@systemUser,@systemName);
+SELECT TOP (1) id FROM @InsertedPaymentsLogIds;";
 
         await using var cmd = new SqlCommand(sql, cn, tx);
         cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=request.RegId;

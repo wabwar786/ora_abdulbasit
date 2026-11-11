@@ -105,6 +105,8 @@ public sealed class FrontDeskBookingDto
     // Legacy WebForms calendar status code used for bar colour/behaviour:
     // CO=checked out, O=checked in, R=reservation, P=provisional.
     public string StatusCode { get; set; } = string.Empty;
+    // Hotel-local provisional payment deadline (datetime, not checkout/departure).
+    public DateTime? ProvisionalExpiry { get; set; }
     public string Source { get; set; } = string.Empty;
     public string PlanName { get; set; } = string.Empty;
     // Selected Room Rent payment row amounts. Legacy payments.rate/GST/Bed are row totals,
@@ -175,6 +177,7 @@ public sealed class FrontDeskBookingDetailsDto
     public string CategoryId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public DateTime? CreatedAt { get; set; }
+    public DateTime? ProvisionalExpiry { get; set; }
     public DateTime Arrival { get; set; }
     public DateTime Departure { get; set; }
     public int Nights { get; set; }

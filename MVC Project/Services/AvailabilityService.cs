@@ -2478,7 +2478,7 @@ DECLARE @dayCount INT=DATEDIFF(DAY,@startDate,@endDate)+1;
     WHERE p.hotel_id=@hotel
       AND p.Type IN ({inClause})
       AND ISNULL(p.descr,'')='Room Rent'
-      AND ISNULL(p.res_status,'') IN ('check in','reservation')
+      AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check in','checked in','checkin','reservation','provisional','tentative')
       AND TRY_CONVERT(date,p.ArrivalDate)<DATEADD(DAY,1,@endDate)
       AND @startDate<TRY_CONVERT(date,p.DepartureDate)
     UNION ALL
@@ -2488,7 +2488,7 @@ DECLARE @dayCount INT=DATEDIFF(DAY,@startDate,@endDate)+1;
     WHERE p.hotel_id=@hotel
       AND p.Type IN ({inClause})
       AND ISNULL(p.descr,'')='Room Rent'
-      AND ISNULL(p.res_status,'') IN ('check in','reservation')
+      AND LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) IN ('check in','checked in','checkin','reservation','provisional','tentative')
       AND TRY_CONVERT(date,p.ArrivalDate)<DATEADD(DAY,1,@endDate)
       AND @startDate<TRY_CONVERT(date,p.DepartureDate)
 ), valid_occ AS
