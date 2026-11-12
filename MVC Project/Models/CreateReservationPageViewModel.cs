@@ -45,6 +45,9 @@ public sealed class CreateReservationQuoteRequest
     [Required] public DateTime ArrivalDate { get; set; }
     [Required] public DateTime DepartureDate { get; set; }
     [Range(0,10000000)] public decimal MonthlyRate { get; set; }
+    // User-adjusted rate for all selected rooms over the whole stay, before taxes/discount.
+    // Null retains the rate configured for the selected rate plan.
+    [Range(typeof(decimal), "0.01", "10000000")] public decimal? RateOverride { get; set; }
     [Range(0,10000000)] public decimal Discount { get; set;   }
     public bool ApplyGst { get; set; }
     public bool ApplyBedTax { get; set; }
@@ -96,6 +99,7 @@ public sealed class CreateReservationRoomRequest
     [Required] public DateTime ArrivalDate { get; set; }
     [Required] public DateTime DepartureDate { get; set; }
     [Range(0,10000000)] public decimal MonthlyRate { get; set; }
+    [Range(typeof(decimal), "0.01", "10000000")] public decimal? RateOverride { get; set; }
     [Range(0,10000000)] public decimal Discount { get; set; }
     public bool ApplyGst { get; set; }
     public bool ApplyBedTax { get; set; }

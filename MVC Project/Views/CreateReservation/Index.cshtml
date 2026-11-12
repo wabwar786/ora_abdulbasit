@@ -212,6 +212,7 @@
                             {
                                 <div class="room-plan-field"><label class="lbl" for="rMonthlyRate">Monthly rate (@Model.Currency)<span class="req">*</span></label><input id="rMonthlyRate" type="number" min="0.01" max="10000000" step="0.01" class="inp" placeholder="0.00" /></div>
                             }
+                            <div class="room-rate-field"><label class="lbl" for="rRate">Rate (@Model.Currency)<span class="req">*</span></label><input id="rRate" class="inp" type="number" min="0.01" max="10000000" step="0.01" inputmode="decimal" placeholder="0.00" title="Rate for the selected room(s) and entire stay, before taxes or discount" /></div>
                             <div class="room-total-field"><label class="lbl" for="rTotal">Total (@Model.Currency)<span class="req">*</span></label><input id="rTotal" class="inp" value="0.00" readonly /></div>
                             @if (Model.HasDiscountPermission)
                             {

@@ -347,6 +347,8 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
             return FailQuote("Quote request is missing.");
         if (request.Rooms is < 1 or > 20) return FailQuote("Number of rooms must be between 1 and 20.");
         if (request.MonthlyRate is < 0m or > 10000000m) return FailQuote("Monthly rate is outside the permitted range.");
+        if (request.RateOverride.HasValue && (request.RateOverride.Value <= 0m || request.RateOverride.Value > 10000000m))
+            return FailQuote("Enter a room rate greater than zero and not exceeding 10,000,000.");
         if (request.Discount is < 0m or > 10000000m) return FailQuote("Discount is outside the permitted range.");
         if (request.DepartureDate.Date <= request.ArrivalDate.Date)
             return FailQuote("Departure date must be later than arrival date.");
@@ -394,7 +396,12 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
                 return FailQuote("No rate is configured for the selected category, plan and dates.");
         }
 
-        var rate = Math.Round(oneRoomRate * rooms, 2, MidpointRounding.AwayFromZero);
+        // Keep resolving the selected category, plan, and stay dates; a custom rate changes
+        // only the quoted amount, not the plan or any hotel's configured rate settings.
+        var configuredRate = Math.Round(oneRoomRate * rooms, 2, MidpointRounding.AwayFromZero);
+        var rate = request.RateOverride.HasValue
+            ? Math.Round(request.RateOverride.Value, 2, MidpointRounding.AwayFromZero)
+            : configuredRate;
         var discount = settings.HasDiscount ? Math.Clamp(request.Discount, 0m, rate) : 0m;
         // Reservation.aspx calculates room taxes from the room rate/charge first,
         // then subtracts the fixed discount from the final line total.
@@ -719,6 +726,7 @@ WHEN NOT MATCHED THEN
             ArrivalDate = arrival,
             DepartureDate = departure,
             MonthlyRate = item.MonthlyRate,
+            RateOverride = item.RateOverride,
             Discount = item.Discount,
             ApplyGst = item.ApplyGst,
             ApplyBedTax = item.ApplyBedTax

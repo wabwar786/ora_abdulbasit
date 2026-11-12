@@ -21,6 +21,9 @@
   let occupancy = { adults: 1, children: 0, infants: 0 };
   let limits = { adults: 1, children: 0, infants: 0 };
   let lastQuote = null;
+  let rateEdited = false;
+  let quoteSequence = 0;
+  let rateQuoteTimer = null;
   let lastCreatedRegId = '';
   let lastCreatedTotal = 0;
   let lastSavedPaymentEmail = '';
@@ -53,6 +56,10 @@
     occupancy={adults:1,children:0,infants:0};
     limits={adults:1,children:0,infants:0};
     lastQuote=null;
+    rateEdited=false;
+    quoteSequence++;
+    if(rateQuoteTimer)clearTimeout(rateQuoteTimer);
+    $('rRate').value='';
     lastCreatedRegId=paymentContext?.registrationId||'';
     lastCreatedTotal=number(paymentContext?.grandTotal||0);
     lastSavedPaymentEmail=paymentContext?.email||'';
@@ -221,11 +228,41 @@
   function setCounter(key,value){const min=key==='adults'?1:0,max=Math.max(min,limits[key]||0);occupancy[key]=Math.max(min,Math.min(max,Number(value)||0));const id=key==='adults'?'adultOut':key==='children'?'childOut':'infantOut';$(id).textContent=occupancy[key];const step=page.querySelector(`.stepper[data-key="${key}"]`);step?.querySelector('[data-d="-1"]')?.toggleAttribute('disabled',occupancy[key]<=min);step?.querySelector('[data-d="1"]')?.toggleAttribute('disabled',occupancy[key]>=max);}
   async function loadLimits(){const cat=$('rCategory').value;if(!cat){limits={adults:1,children:0,infants:0};setCounter('adults',1);setCounter('children',0);setCounter('infants',0);return;}try{const x=await getJson(`/CreateReservation/OccupancyLimits?categoryId=${encodeURIComponent(cat)}`);limits={adults:Math.max(1,number(x?.adults)),children:Math.max(0,number(x?.children)),infants:Math.max(0,number(x?.infants))};setCounter('adults',1);setCounter('children',0);setCounter('infants',0);$('occupancyHint').textContent=`Maximum occupancy: ${limits.adults} adult(s), ${limits.children} child(ren), ${limits.infants} infant(s).`;}catch{$('occupancyHint').textContent='';}}
 
+  function resetRateOverride(){
+    rateEdited=false;
+    $('rRate').value='';
+    if(rateQuoteTimer)clearTimeout(rateQuoteTimer);
+  }
   async function quote(){
-    const cat=$('rCategory').value, a=activeArrival(), d=activeDeparture(); if(!cat||!a||!d||d<=a){lastQuote=null;$('rTotal').value='0.00';return null;}
-    const plan=isMonthWise?'':$('rPlan').value;if(!isMonthWise&&!plan){lastQuote=null;$('rTotal').value='0.00';return null;}
-    const body={categoryId:cat,planId:plan,rooms:getShuffle()==='Auto'?Math.min(20,Math.max(1,number($('rCount').value))):1,arrivalDate:a,departureDate:d,monthlyRate:isMonthWise?number($('rMonthlyRate').value):0,discount:hasDiscount?number($('rDiscount')?.value):0,applyGst:hasGst&&!!$('rVat')?.checked,applyBedTax:hasBedTax&&!!$('rBed')?.checked};
-    try{const q=await postJson('/CreateReservation/Quote',body);if(!q?.success)throw new Error(q?.message||'Unable to calculate room total.');lastQuote=q;$('rTotal').value=number(q.total).toFixed(2);error($('roomError'),'');return q;}catch(e){lastQuote=null;$('rTotal').value='0.00';error($('roomError'),e.message);return null;}
+    const sequence=++quoteSequence;
+    const cat=$('rCategory').value, a=activeArrival(), d=activeDeparture();
+    if(!cat||!a||!d||d<=a){lastQuote=null;$('rTotal').value='0.00';if(!rateEdited)$('rRate').value='';return null;}
+    const plan=isMonthWise?'':$('rPlan').value;
+    if(!isMonthWise&&!plan){lastQuote=null;$('rTotal').value='0.00';if(!rateEdited)$('rRate').value='';return null;}
+    const input=$('rRate');
+    const rawRate=input.value.trim();
+    const editedRate=rateEdited?Number(rawRate):null;
+    if(rateEdited&&(!rawRate||!Number.isFinite(editedRate)||editedRate<=0||editedRate>10000000)){
+      lastQuote=null;$('rTotal').value='0.00';
+      error($('roomError'),'Enter a valid room rate greater than zero.');
+      return null;
+    }
+    const body={categoryId:cat,planId:plan,rooms:getShuffle()==='Auto'?Math.min(20,Math.max(1,number($('rCount').value))):1,arrivalDate:a,departureDate:d,monthlyRate:isMonthWise?number($('rMonthlyRate').value):0,rateOverride:editedRate,discount:hasDiscount?number($('rDiscount')?.value):0,applyGst:hasGst&&!!$('rVat')?.checked,applyBedTax:hasBedTax&&!!$('rBed')?.checked};
+    try{
+      const q=await postJson('/CreateReservation/Quote',body);
+      if(sequence!==quoteSequence)return null;
+      if(!q?.success)throw new Error(q?.message||'Unable to calculate room total.');
+      lastQuote=q;
+      if(!rateEdited)input.value=number(q.rate).toFixed(2);
+      $('rTotal').value=number(q.total).toFixed(2);
+      error($('roomError'),'');
+      return q;
+    }catch(e){
+      if(sequence!==quoteSequence)return null;
+      lastQuote=null;$('rTotal').value='0.00';
+      error($('roomError'),e.message);
+      return null;
+    }
   }
 
   function totals(){return rooms.reduce((a,r)=>{a.sub+=r.rate;a.vat+=r.gst;a.bed+=r.bedTax;a.disc+=r.discount;a.total+=r.total;a.guests+=(r.adults+r.children+r.infants)*r.count;a.count+=r.count;return a;},{sub:0,vat:0,bed:0,disc:0,total:0,guests:0,count:0});}
@@ -269,8 +306,8 @@
     try{
       const q=await quote();if(!q)return;
       const a=activeArrival(),d=activeDeparture();
-      rooms.push({categoryId:cat.value,categoryName:cat.selectedOptions[0]?.text||cat.value,planId:isMonthWise?'':$('rPlan').value,planName:isMonthWise?'Monthly':($('rPlan').selectedOptions[0]?.text||''),count,roomNo:manual?$('rNumber').value:'',guestName:guest,arrivalDate:a,departureDate:d,monthlyRate:isMonthWise?number($('rMonthlyRate').value):0,discount:number(q.discount),applyGst:hasGst&&!!$('rVat')?.checked,applyBedTax:hasBedTax&&!!$('rBed')?.checked,adults:occupancy.adults,children:occupancy.children,infants:occupancy.infants,rate:number(q.rate),gst:number(q.gstAmount),bedTax:number(q.bedTaxAmount),total:number(q.total)});
-      renderRooms();$('rGuest').value='';await loadRooms();toast('Room added');
+      rooms.push({categoryId:cat.value,categoryName:cat.selectedOptions[0]?.text||cat.value,planId:isMonthWise?'':$('rPlan').value,planName:isMonthWise?'Monthly':($('rPlan').selectedOptions[0]?.text||''),count,roomNo:manual?$('rNumber').value:'',guestName:guest,arrivalDate:a,departureDate:d,monthlyRate:isMonthWise?number($('rMonthlyRate').value):0,rateOverride:rateEdited?number($('rRate').value):null,discount:number(q.discount),applyGst:hasGst&&!!$('rVat')?.checked,applyBedTax:hasBedTax&&!!$('rBed')?.checked,adults:occupancy.adults,children:occupancy.children,infants:occupancy.infants,rate:number(q.rate),gst:number(q.gstAmount),bedTax:number(q.bedTaxAmount),total:number(q.total)});
+      renderRooms();$('rGuest').value='';resetRateOverride();await loadRooms();await quote();toast('Room added');
     }finally{setButtonBusy(button,false);}
   }
 
@@ -324,7 +361,7 @@
     error($('deadlineError'),'');return true;
   }
 
-  function request(){const idType=$('IdType').value,idNo=$('IdNumber').value.trim();return{arrivalDate:$('ArrivalDate').value,departureDate:$('DepartureDate').value,firstName:$('FirstName').value.trim(),lastName:$('LastName').value.trim(),phone:$('Phone').value.trim(),email:$('Email').value.trim(),country:$('Country').value,city:$('City').value,address:$('Address').value.trim(),identification:idNo,source:$('BookingSource').value,isProvisional:isProvisional(),paymentDeadline:isProvisional()?($('PaymentDeadline').value||null):null,sendPaymentLink:false,paymentLinkEmail:$('PaymentLinkEmail').value.trim(),shuffleType:getShuffle(),reservationMode:getMode(),groupSameDates:sameDates(),rooms:rooms.map(r=>({categoryId:r.categoryId,planId:r.planId,count:r.count,roomNo:r.roomNo,guestName:r.guestName,arrivalDate:r.arrivalDate,departureDate:r.departureDate,monthlyRate:r.monthlyRate,discount:r.discount,applyGst:r.applyGst,applyBedTax:r.applyBedTax,adults:r.adults,children:r.children,infants:r.infants}))};}
+  function request(){const idType=$('IdType').value,idNo=$('IdNumber').value.trim();return{arrivalDate:$('ArrivalDate').value,departureDate:$('DepartureDate').value,firstName:$('FirstName').value.trim(),lastName:$('LastName').value.trim(),phone:$('Phone').value.trim(),email:$('Email').value.trim(),country:$('Country').value,city:$('City').value,address:$('Address').value.trim(),identification:idNo,source:$('BookingSource').value,isProvisional:isProvisional(),paymentDeadline:isProvisional()?($('PaymentDeadline').value||null):null,sendPaymentLink:false,paymentLinkEmail:$('PaymentLinkEmail').value.trim(),shuffleType:getShuffle(),reservationMode:getMode(),groupSameDates:sameDates(),rooms:rooms.map(r=>({categoryId:r.categoryId,planId:r.planId,count:r.count,roomNo:r.roomNo,guestName:r.guestName,arrivalDate:r.arrivalDate,departureDate:r.departureDate,monthlyRate:r.monthlyRate,rateOverride:r.rateOverride,discount:r.discount,applyGst:r.applyGst,applyBedTax:r.applyBedTax,adults:r.adults,children:r.children,infants:r.infants}))};}
 
   async function submit(){
     error($('linkError'),'');
@@ -452,6 +489,7 @@
     if(rooms.length){rooms=[];renderRooms();}
     previousArrival=$('ArrivalDate').value;previousDeparture=$('DepartureDate').value;
     refreshDates();
+    resetRateOverride();
     if(changed==='ArrivalDate')defaultDeadline();
     await loadRooms();await quote();
   }
@@ -465,10 +503,21 @@
   $('BookingSource').addEventListener('change',()=>{if($('BookingSource').value==='__add_new__')openSourceModal();else updateSummary();});
   $('IsProvisional')?.addEventListener('change',()=>{if(isProvisional()&&!$('PaymentDeadline').value)defaultDeadline();updateDeadlineUi();updateSummary();});
   $('btnSearch').addEventListener('click',searchGuests);$('findGuest').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchGuests();}});$('findGuestSuggestions').addEventListener('click',e=>{const item=e.target.closest('.suggestion');if(item)fillGuest(guestResults[Number(item.dataset.i)]);});
-  $('rCategory').addEventListener('change',async()=>{await Promise.all([loadRatePlans(),loadLimits()]);await loadRooms();await quote();});
-  $('rPlan')?.addEventListener('change',quote);$('rMonthlyRate')?.addEventListener('input',quote);$('rCount')?.addEventListener('input',quote);$('rDiscount')?.addEventListener('input',quote);$('rVat')?.addEventListener('change',quote);$('rBed')?.addEventListener('change',quote);$('btnAddRoom').addEventListener('click',addRoom);
+  $('rCategory').addEventListener('change',async()=>{resetRateOverride();await Promise.all([loadRatePlans(),loadLimits()]);await loadRooms();await quote();});
+  $('rPlan')?.addEventListener('change',()=>{resetRateOverride();quote();});
+  $('rMonthlyRate')?.addEventListener('input',()=>{resetRateOverride();quote();});
+  $('rCount')?.addEventListener('input',()=>{resetRateOverride();quote();});
+  $('rRate').addEventListener('input',()=>{
+    rateEdited=$('rRate').value.trim()!=='';
+    // Invalidate any earlier response immediately, before the short debounce.
+    quoteSequence++;
+    if(rateQuoteTimer)clearTimeout(rateQuoteTimer);
+    rateQuoteTimer=setTimeout(quote,220);
+  });
+  $('rRate').addEventListener('change',()=>{if(rateQuoteTimer)clearTimeout(rateQuoteTimer);quote();});
+  $('rDiscount')?.addEventListener('input',quote);$('rVat')?.addEventListener('change',quote);$('rBed')?.addEventListener('change',quote);$('btnAddRoom').addEventListener('click',addRoom);
   $$('.stepper button').forEach(b=>b.addEventListener('click',()=>{const key=b.closest('.stepper').dataset.key;setCounter(key,occupancy[key]+Number(b.dataset.d||0));}));
-  $$('input[name="reservationMode"]').forEach(x=>x.addEventListener('change',async()=>{modeUi();await loadRooms();await quote();}));$('sameDates')?.addEventListener('change',async()=>{modeUi();await loadRooms();await quote();});$$('input[name="shuffleType"]').forEach(x=>x.addEventListener('change',async()=>{modeUi();await loadRooms();await quote();}));$('RoomArrival').addEventListener('change',async()=>{await loadRooms();await quote();});$('RoomDeparture').addEventListener('change',async()=>{await loadRooms();await quote();});
+  $$('input[name="reservationMode"]').forEach(x=>x.addEventListener('change',async()=>{resetRateOverride();modeUi();await loadRooms();await quote();}));$('sameDates')?.addEventListener('change',async()=>{resetRateOverride();modeUi();await loadRooms();await quote();});$$('input[name="shuffleType"]').forEach(x=>x.addEventListener('change',async()=>{resetRateOverride();modeUi();await loadRooms();await quote();}));$('RoomArrival').addEventListener('change',async()=>{resetRateOverride();await loadRooms();await quote();});$('RoomDeparture').addEventListener('change',async()=>{resetRateOverride();await loadRooms();await quote();});
   $('roomRows').addEventListener('click',async e=>{
     const b=e.target.closest('[data-remove]');if(!b)return;
     const index=Number(b.dataset.remove);if(!Number.isInteger(index)||!rooms[index])return;
