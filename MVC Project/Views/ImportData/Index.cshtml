@@ -1,0 +1,163 @@
+@model Orapmshms.Models.ImportDataPageModel
+@{
+    ViewData["Title"] = "Import Data";
+    Layout = "_PmsLayout";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/importdata.css" asp-append-version="true" />
+}
+<div id="importdata-app" class="imp-root"
+     data-template-url="@Url.Action("Template", "ImportData")"
+     data-preview-url="@Url.Action("Preview", "ImportData")"
+     data-commit-url="@Url.Action("Commit", "ImportData")"
+     data-progress-url="@Url.Action("Progress", "ImportData")"
+     data-batch-url="@Url.Action("Batch", "ImportData")"
+     data-issues-url="@Url.Action("Issues", "ImportData")">
+    <form id="imp-antiforgery" hidden>@Html.AntiForgeryToken()</form>
+    <header class="imp-heading">
+        <div>
+            <div class="imp-overline">SYSTEM TOOLS / DATA MIGRATION</div>
+            <h1><i class="fa-solid fa-file-import" aria-hidden="true"></i> Import Data</h1>
+            <p>Move historic and current hotel data into ORA PMS with preview, checks and an audit trail.</p>
+        </div>
+        <div class="imp-hotel-picker">
+            <label for="imp-hotel">Import into hotel</label>
+            <select id="imp-hotel" name="hotelId" aria-label="Select hotel to import into">
+                <option value="">-- Select hotel --</option>
+                @foreach (var hotel in Model.Hotels)
+                {
+                    if (hotel.HotelId == Model.SelectedHotelId)
+                    {
+                        <option value="@hotel.HotelId" selected>@hotel.HotelName (@hotel.HotelId)</option>
+                    }
+                    else
+                    {
+                        <option value="@hotel.HotelId">@hotel.HotelName (@hotel.HotelId)</option>
+                    }
+                }
+            </select>
+            <small id="imp-hotel-label">@((Model.SelectedHotelId.Length == 0) ? "Choose a hotel before uploading." : "Selected Hotel ID: " + Model.SelectedHotelId)</small>
+        </div>
+    </header>
+
+    <section class="imp-intro" aria-label="Import process">
+        <div><span>1</span><strong>Choose data</strong><small>Select a section</small></div>
+        <div><span>2</span><strong>Upload & validate</strong><small>CSV or Excel (.xlsx)</small></div>
+        <div><span>3</span><strong>Review</strong><small>Resolve errors first</small></div>
+        <div><span>4</span><strong>Confirm import</strong><small>Audited SQL changes</small></div>
+    </section>
+
+    <div class="imp-layout">
+        <section class="imp-card imp-selection" aria-labelledby="imp-step-title">
+            <div class="imp-card-head"><h2 id="imp-step-title">Import section</h2><span class="imp-micro">Select in order</span></div>
+            <div class="imp-types" id="imp-types">
+                <button type="button" data-kind="Rooms" class="imp-type is-selected"><i class="fa-solid fa-bed"></i><span><strong>Rooms + Categories</strong><small>Missing categories created automatically</small></span></button>
+                <button type="button" data-kind="Reservations" class="imp-type"><i class="fa-regular fa-calendar-check"></i><span><strong>Reservations</strong><small>Guests, dates & charges</small></span></button>
+                <button type="button" data-kind="CheckIns" class="imp-type"><i class="fa-solid fa-right-to-bracket"></i><span><strong>Check-ins</strong><small>Historical & in-house stays</small></span></button>
+                <button type="button" data-kind="CheckOuts" class="imp-type"><i class="fa-solid fa-right-from-bracket"></i><span><strong>Check-outs</strong><small>Historic departure records</small></span></button>
+                <button type="button" data-kind="Payments" class="imp-type"><i class="fa-solid fa-credit-card"></i><span><strong>Payments</strong><small>Manual/imported collections</small></span></button>
+                <button type="button" data-kind="Cancellations" class="imp-type" style="display:none;"><i class="fa-solid fa-ban"></i><span><strong>Cancellations</strong><small>Archive a reservation</small></span></button>
+                <button type="button" data-kind="NoShows" class="imp-type" style="display:none;"><i class="fa-solid fa-user-slash"></i><span><strong>No-shows</strong><small>Archive missed arrivals</small></span></button>
+            </div>
+            <div class="imp-quick-note"><i class="fa-solid fa-circle-info"></i> Import rooms first; missing categories are created and linked automatically. Then import reservations. Use the same source name for all related files.</div>
+        </section>
+
+        <section class="imp-card imp-upload" aria-labelledby="imp-upload-title">
+            <div class="imp-card-head"><h2 id="imp-upload-title">Upload & preview</h2><a id="imp-template" href="@Url.Action("Template", "ImportData", new { kind = "Rooms" })"><i class="fa-solid fa-download"></i> CSV template (3 examples)</a></div>
+            <form id="imp-preview-form" enctype="multipart/form-data">
+                <div class="imp-form-row">
+                    <label>Source system
+                        <input id="imp-source" type="text" name="source" value="HOP" maxlength="80" autocomplete="off" required placeholder="e.g. HOP, Previous PMS" />
+                    </label>
+                    <label>Selected section
+                        <input id="imp-selected-kind" value="Rooms + Categories" disabled />
+                    </label>
+                </div>
+                <label class="imp-drop" for="imp-file">
+                    <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
+                    <strong id="imp-filename">Choose an Excel or CSV file</strong>
+                    <small>Supported: .csv, .xlsx &nbsp; • &nbsp; Maximum 5 MB / 5,000 rows</small>
+                    <input id="imp-file" type="file" name="file" accept=".csv,.xlsx" required />
+                </label>
+                <div class="imp-actions">
+                    <button type="submit" id="imp-preview-btn" class="imp-btn imp-primary"><i class="fa-regular fa-eye"></i> Validate & Preview</button>
+                    <button type="button" id="imp-clear" class="imp-btn imp-plain">Clear</button>
+                </div>
+            </form>
+            <p class="imp-review-caption"><strong>Template examples:</strong> Each downloaded CSV has 3 sample rows. Delete these rows before uploading real HOP data.</p>
+            <p id="imp-checkout-hint" class="imp-review-caption" hidden>
+                HOP Reservations exports can be used for check-outs when Status is Checked Out.
+                Departure Date is the scheduled date, not a verified actual check-out time.
+                When no imported booking exists, ORA can create a historical checked-out stay and Room Rent charge from the full HOP row. Payments must be imported separately.
+            </p>
+            <p id="imp-msg" class="imp-message" role="status" aria-live="polite" hidden></p>
+            <section id="imp-preview-area" hidden>
+                <div class="imp-divider"></div>
+                <div class="imp-card-head"><h2>Import preview</h2><span id="imp-preview-kind" class="imp-mini-badge"></span></div>
+                <div class="imp-stats">
+                    <div><strong id="imp-ready">0</strong><small>Ready</small></div>
+                    <div><strong id="imp-invalid">0</strong><small>Errors</small></div>
+                    <div><strong id="imp-duplicates">0</strong><small>Duplicates</small></div>
+                </div>
+                <div class="imp-table-wrap">
+                    <table class="imp-table"><thead><tr><th>Row</th><th>Source ID</th><th>Details</th><th>Status</th><th>Issue</th></tr></thead><tbody id="imp-preview-rows"></tbody></table>
+                </div>
+                <div class="imp-review-caption">Showing the first 100 rows. Invalid and duplicate rows will not be imported.
+                    <a id="imp-issues" href="#" hidden>Download issues CSV</a>
+                </div>
+                <section id="imp-live-progress" class="imp-live-progress" aria-label="Import progress" hidden>
+                    <div class="imp-progress-head">
+                        <strong>Import progress</strong>
+                        <span id="imp-progress-percent" aria-live="polite">0%</span>
+                    </div>
+                    <progress id="imp-progress-bar" max="100" value="0" aria-label="Import completed percentage"></progress>
+                    <div class="imp-progress-counts" aria-live="polite">
+                        <span><strong id="imp-progress-processed">0</strong> / <span id="imp-progress-total">0</span> processed</span>
+                        <span><strong id="imp-progress-imported">0</strong> imported</span>
+                        <span><strong id="imp-progress-failed">0</strong> failed</span>
+                        <span><strong id="imp-progress-remaining">0</strong> remaining</span>
+                        <span><strong id="imp-progress-skipped">0</strong> duplicates/skipped</span>
+                    </div>
+                    <small id="imp-progress-note" class="imp-muted">Only validated records are processed. Counts update after each saved row.</small>
+                </section>
+                <div class="imp-confirm">
+                    <div><strong>Final confirmation</strong><small>Only ready rows will be applied. Existing bookings are never overwritten.</small></div>
+                    <input id="imp-confirm-text" type="text" maxlength="6" placeholder="Type IMPORT" autocomplete="off" aria-label="Type IMPORT to confirm" />
+                    <button id="imp-commit-btn" type="button" class="imp-btn imp-primary" disabled>Import ready rows</button>
+                </div>
+            </section>
+        </section>
+    </div>
+
+    <section class="imp-card imp-history" aria-labelledby="imp-history-title">
+        <div class="imp-card-head"><h2 id="imp-history-title">Recent imports</h2><button type="button" id="imp-refresh-history" class="imp-btn imp-plain"><i class="fa-solid fa-rotate"></i> Refresh</button></div>
+        <div class="imp-table-wrap"><table class="imp-table">
+            <thead><tr><th>Uploaded (UTC)</th><th>Section</th><th>Source / File</th><th>Status</th><th>Applied</th><th>Errors</th><th></th></tr></thead>
+            <tbody>
+                @if (Model.History.Count == 0)
+                {
+                    <tr><td colspan="7" class="imp-empty">@(Model.SelectedHotelId.Length == 0 ? "Select a hotel to view its import history." : "No import batches yet for this hotel.")</td></tr>
+                }
+                @foreach (var row in Model.History)
+                {
+                    <tr>
+                        <td>@row.CreatedUtc.ToString("dd MMM yyyy HH:mm")</td>
+                        <td>@row.Kind</td>
+                        <td>@row.SourceSystem <small class="imp-muted">@row.FileName</small></td>
+                        <td>@row.Status</td>
+                        <td>@row.Imported</td>
+                        <td>@(row.Invalid + row.Failed + row.Duplicates)</td>
+                        <td><button type="button" class="imp-row-link" data-view-batch="@row.BatchId">View</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table></div>
+    </section>
+
+    <aside class="imp-footer-note"><i class="fa-solid fa-shield-halved"></i>
+        Imported payments do not run Stripe transactions. Reservation imports affect current/future availability in ORA PMS but do not automatically sync channels; review availability and coordinate external sync after migration.
+    </aside>
+</div>
+@section Scripts {
+    <script src="~/js/importdata.js" asp-append-version="true"></script>
+}
