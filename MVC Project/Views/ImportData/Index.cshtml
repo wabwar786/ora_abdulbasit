@@ -14,7 +14,16 @@
      data-batch-url="@Url.Action("Batch", "ImportData")"
      data-issues-url="@Url.Action("Issues", "ImportData")">
     <form id="imp-antiforgery" hidden>@Html.AntiForgeryToken()</form>
-    <header class="imp-heading">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <a href="@Url.Action("Index", "HotelTransfer")"
+       class="imp-btn imp-primary imp-transfer-link"
+       style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;padding:10px 16px;border-radius:8px;background:#173e6c;border:1px solid #173e6c;color:#fff !important;font-size:13px;font-weight:600;line-height:1.35;white-space:nowrap"
+       aria-label="Open Hotel to Hotel Transfer">
+        <i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true" style="color:#fff !important"></i>
+        <span style="color:#fff !important">Hotel to Hotel Transfer</span>
+    </a>
+</div>
+<header class="imp-heading">
         <div>
             <div class="imp-overline">SYSTEM TOOLS / DATA MIGRATION</div>
             <h1><i class="fa-solid fa-file-import" aria-hidden="true"></i> Import Data</h1>
@@ -56,8 +65,8 @@
                 <button type="button" data-kind="CheckIns" class="imp-type"><i class="fa-solid fa-right-to-bracket"></i><span><strong>Check-ins</strong><small>Historical & in-house stays</small></span></button>
                 <button type="button" data-kind="CheckOuts" class="imp-type"><i class="fa-solid fa-right-from-bracket"></i><span><strong>Check-outs</strong><small>Historic departure records</small></span></button>
                 <button type="button" data-kind="Payments" class="imp-type"><i class="fa-solid fa-credit-card"></i><span><strong>Payments</strong><small>Manual/imported collections</small></span></button>
-                <button type="button" data-kind="Cancellations" class="imp-type" style="display:none;"><i class="fa-solid fa-ban"></i><span><strong>Cancellations</strong><small>Archive a reservation</small></span></button>
-                <button type="button" data-kind="NoShows" class="imp-type" style="display:none;"><i class="fa-solid fa-user-slash"></i><span><strong>No-shows</strong><small>Archive missed arrivals</small></span></button>
+                <button type="button" data-kind="Cancellations" class="imp-type"><i class="fa-solid fa-ban"></i><span><strong>Cancellations</strong><small>Archive a reservation</small></span></button>
+                <button type="button" data-kind="NoShows" class="imp-type"><i class="fa-solid fa-user-slash"></i><span><strong>No-shows</strong><small>Archive missed arrivals</small></span></button>
             </div>
             <div class="imp-quick-note"><i class="fa-solid fa-circle-info"></i> Import rooms first; missing categories are created and linked automatically. Then import reservations. Use the same source name for all related files.</div>
         </section>

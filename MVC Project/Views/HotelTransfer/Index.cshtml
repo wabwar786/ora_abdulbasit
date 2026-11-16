@@ -1,0 +1,140 @@
+@model Orapmshms.Models.HotelTransferPage
+@{
+    ViewData["Title"] = "Hotel to Hotel Transfer";
+    Layout = "_PmsLayout";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/hoteltransfer.css" asp-append-version="true" />
+}
+<section id="hotel-transfer" class="ht-root"
+         data-preview="@Url.Action("Preview", "HotelTransfer")"
+         data-start="@Url.Action("Start", "HotelTransfer")"
+         data-step="@Url.Action("Step", "HotelTransfer")"
+         data-progress="@Url.Action("Progress", "HotelTransfer")"
+         data-demo-preview="@Url.Action("DemoResetPreview", "HotelTransfer")"
+         data-demo-reset="@Url.Action("DemoResetConfirm", "HotelTransfer")">
+    <form id="ht-antiforgery" hidden>@Html.AntiForgeryToken()</form>
+    <div class="ht-header">
+        <div>
+            <small>ORA PMS / IMPORTDATA</small>
+            <h1>Hotel to Hotel Transfer</h1>
+            <p>Copy selected hotel records directly between ORA properties. The source hotel is never changed.</p>
+        </div>
+        <a class="ht-back" href="@Url.Action("Index", "ImportData")">Back to CSV import</a>
+    </div>
+    <div class="ht-panel">
+        <div class="ht-two">
+            <label>Copy from hotel
+                <select id="ht-source" required>
+                    <option value="">Select source hotel</option>
+                    @foreach (var hotel in Model.Hotels)
+                    {
+                        <option value="@hotel.HotelId">@hotel.HotelName (@hotel.HotelId)</option>
+                    }
+                </select>
+            </label>
+            <label>Copy to hotel
+                <select id="ht-dest" required>
+                    @foreach (var hotel in Model.Hotels)
+                    {
+                        if (hotel.HotelId == "638935275363396747")
+                        {
+                            <option value="@hotel.HotelId" selected>@hotel.HotelName (@hotel.HotelId) — Demo only</option>
+                        }
+                    }
+                </select>
+            </label>
+        </div>
+        <div class="ht-two ht-date-row">
+            <label>From Date
+                <input id="ht-from" type="date" required />
+            </label>
+            <label>To Date (inclusive)
+                <input id="ht-to" type="date" required />
+            </label>
+        </div>
+        <div class="ht-subtitle">Transfer modules</div>
+        <div class="ht-options">
+            <label><input type="checkbox" name="ht-area" value="0" /> Room Categories</label>
+            <label><input type="checkbox" name="ht-area" value="1" /> Rooms</label>
+            <label><input type="checkbox" name="ht-area" value="2" /> Rate Plans</label>
+            <label><input type="checkbox" name="ht-area" value="3" checked /> Reservations</label>
+            <label><input type="checkbox" name="ht-area" value="4" checked /> Check-ins</label>
+            <label><input type="checkbox" name="ht-area" value="5" checked /> Check-outs</label>
+            <label><input type="checkbox" name="ht-area" value="6" checked /> Payments</label>
+            <label><input type="checkbox" name="ht-area" value="7" checked /> Cancellations</label>
+            <label><input type="checkbox" name="ht-area" value="8" checked /> No-shows</label>
+        </div>
+        <p class="ht-hint">Date range applies to Reservations (arrival), Check-ins (recorded check-in), Check-outs (actual checkout), Payments (payment date), Cancellations and No-shows (event date). Categories, Rooms and Rate Plans are copied without date filters.</p>
+        <div class="ht-replace" style="display:none;">
+            <label class="ht-check"><input type="checkbox" id="ht-replace" /> <strong>Delete existing matching destination bookings before transferring</strong></label>
+            <p>Optional, OFF by default. Only matching reservation IDs can be replaced. Full six-module selection is required. Bookings with fiscal/gateway links or payments outside the date range cannot be deleted.</p>
+            <div id="ht-delete-confirm" hidden>
+                <label>Type the destination hotel ID to confirm deletion
+                    <input type="text" id="ht-confirm-id" autocomplete="off" placeholder="Exact destination hotel ID" />
+                </label>
+            </div>
+        </div>
+        <div class="ht-actions">
+            <button type="button" id="ht-preview" class="ht-button">Validate &amp; Preview</button>
+            <button type="button" id="ht-start" class="ht-button ht-primary" disabled>Confirm &amp; Transfer</button>
+            <button type="button" id="ht-resume" class="ht-button" hidden>Resume last transfer</button>
+            <span id="ht-status" role="status" aria-live="polite"></span>
+        </div>
+    </div>
+  
+    <div id="ht-preview-panel" class="ht-panel" hidden>
+        <h2>Transfer preview</h2>
+        <table class="ht-table">
+            <thead><tr><th>Module</th><th>Source records</th><th>Existing destination records</th></tr></thead>
+            <tbody id="ht-counts"></tbody>
+        </table>
+        <div id="ht-warnings" class="ht-warnings"></div>
+    </div>
+    <div id="ht-progress-panel" class="ht-panel" hidden>
+        <div class="ht-progress-title"><h2>Transfer progress</h2><strong id="ht-percent">0%</strong></div>
+        <div class="ht-track"><div id="ht-bar" class="ht-bar"></div></div>
+        <div class="ht-metrics">
+            <span><strong id="ht-processed">0</strong> Processed</span>
+            <span><strong id="ht-copied">0</strong> Copied</span>
+            <span><strong id="ht-skipped">0</strong> Skipped</span>
+            <span><strong id="ht-failed">0</strong> Failed</span>
+        </div>
+        <div id="ht-log" class="ht-log" aria-live="polite"></div>
+        <p class="ht-hint">Refresh the destination's availability via your existing PMS availability service after transferring active/future stays. This tool does not submit invoices, charge cards or update Channex.</p>
+    </div>
+      <div class="ht-panel ht-demo-panel">
+        <div class="ht-demo-header">
+            <div>
+                <h2>Reset Demo Hotel Data</h2>
+                <p class="ht-hint">Optional, separate action for destination <strong>638935275363396747</strong> only.
+                    Removes all records in the 15 listed demo tables, including rooms, plans, bookings,
+                    payments, cancellations and history. It does not remove data from the source hotel.</p>
+                <p class="ht-hint ht-critical">This is a full demo reset, not the date-limited “Replace Matching” option.
+                    Do it only after a verified database backup. Resetting is not automatically undone if a later transfer fails.</p>
+            </div>
+            <button type="button" id="ht-demo-preview" class="ht-button ht-danger-outline" disabled>Preview demo reset</button>
+        </div>
+        <label class="ht-check ht-demo-enable">
+            <input type="checkbox" id="ht-demo-enable" /> Enable deletion of existing demo-hotel data
+        </label>
+        <div id="ht-demo-confirm-panel" hidden>
+            <div class="ht-demo-count-header"><strong>Records to delete</strong>
+                <span id="ht-demo-total">0 rows</span></div>
+            <div class="ht-demo-counts" id="ht-demo-counts"></div>
+            <label class="ht-check ht-backup-confirm">
+                <input type="checkbox" id="ht-demo-backup" /> I have verified a backup of the demo hotel's database records.
+            </label>
+            <label class="ht-demo-typed-label">Type <code>DELETE DEMO HOTEL 638935275363396747</code> to confirm
+                <input id="ht-demo-phrase" type="text" autocomplete="off" spellcheck="false" />
+            </label>
+            <div class="ht-actions">
+                <button type="button" id="ht-demo-execute" class="ht-button ht-danger" disabled>Delete all demo hotel data</button>
+                <span id="ht-demo-status" role="status" aria-live="polite"></span>
+            </div>
+        </div>
+    </div>
+</section>
+@section Scripts {
+    <script src="~/js/hoteltransfer.js" asp-append-version="true"></script>
+}
