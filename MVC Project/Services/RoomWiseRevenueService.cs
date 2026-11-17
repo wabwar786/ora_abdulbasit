@@ -1,6 +1,8 @@
 using System;
 using System.Data;
 using System.Globalization;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
@@ -27,6 +29,7 @@ public sealed class RoomWiseRevenueService
     // [arrival, departure). Extras and saved extra taxes are recognised only
     // on payments.currentdate, even when the room has no occupied night that day.
     // All extras for one reservation/posting date are summed on one saved room.
+    // Restaurant (F&B) is classified from descr='Extras' AND PaymentMethod='Extra(s)'.
     // Room selection uses the reservation's complete room history, regardless of
     // when each room record was created, occupied, checked out or recorded.
     // Extras with no room anywhere on their reservation require review;
@@ -91,6 +94,7 @@ public sealed class RoomWiseRevenueService
         NULLIF(LTRIM(RTRIM(CONVERT(varchar(50),p.reg_id))), '') AS RegId,
         ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.room_no))),''),'') AS RoomNo,
         ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(varchar(150),p.descr))),''),'') AS Descr,
+        LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.PaymentMethod),'')))) AS PaymentMethodName,
         ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(varchar(120),p.[Type]))),''),'') AS ChargeType,
         LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(50),p.res_status),'')))) AS StayStatus,
         COALESCE(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200),p.guestname))),''),g.GuestName,'') AS GuestName,
@@ -178,7 +182,10 @@ public sealed class RoomWiseRevenueService
 (
     SELECT r.*,
            CASE WHEN r.TotalAmt=0 AND r.ChargeAmt<>0
-                THEN r.ChargeAmt ELSE r.TotalAmt END AS ExtraGross
+                THEN r.ChargeAmt ELSE r.TotalAmt END AS ExtraGross,
+           CASE WHEN LOWER(r.Descr)='extras'
+                     AND r.PaymentMethodName IN ('extra','extras')
+                THEN 1 ELSE 0 END AS IsFoodAndBeverage
     FROM Raw r
     WHERE LOWER(r.Descr)<>'room rent'
       AND LOWER(r.Descr) NOT IN ('refund','room security','security deposit','security refund')
@@ -195,9 +202,21 @@ public sealed class RoomWiseRevenueService
     -- room-less extras when the booking contains multiple rooms.
     SELECT RegId,PostedDt AS RevenueDate,
            MAX(GuestName) AS GuestName,MAX(SourceName) AS SourceName,
-           CAST(SUM(ExtraGross-GstAmt-BedAmt) AS decimal(18,2)) AS ExtraRevenue,
-           CAST(SUM(GstAmt) AS decimal(18,2)) AS ExtraVat,
-           CAST(SUM(BedAmt) AS decimal(18,2)) AS ExtraBedTax,
+           -- Restaurant/F&B = payments.descr 'Extras' + PaymentMethod 'Extra(s)'.
+           -- Other extra charges remain in the Extras columns. All amounts use
+           -- the actual saved tax and posted date; tax is never recalculated.
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=0
+                    THEN ExtraGross-GstAmt-BedAmt ELSE 0 END) AS decimal(18,2)) AS ExtraRevenue,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=0
+                    THEN GstAmt ELSE 0 END) AS decimal(18,2)) AS ExtraVat,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=0
+                    THEN BedAmt ELSE 0 END) AS decimal(18,2)) AS ExtraBedTax,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=1
+                    THEN ExtraGross-GstAmt-BedAmt ELSE 0 END) AS decimal(18,2)) AS FnbRevenue,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=1
+                    THEN GstAmt ELSE 0 END) AS decimal(18,2)) AS FnbVat,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=1
+                    THEN BedAmt ELSE 0 END) AS decimal(18,2)) AS FnbBedTax,
            CAST(SUM(ExtraGross) AS decimal(18,2)) AS ExtraGrossTotal
     FROM ExtraCandidates
     GROUP BY RegId,PostedDt
@@ -230,7 +249,7 @@ public sealed class RoomWiseRevenueService
 ), ExtraTotals AS
 (
     SELECT RegId,MappedRoomNo AS RoomNo,RevenueDate,GuestName,SourceName,
-           ExtraRevenue,ExtraVat,ExtraBedTax
+           ExtraRevenue,ExtraVat,ExtraBedTax,FnbRevenue,FnbVat,FnbBedTax
     FROM ExtraMapped
     WHERE MappedRoomNo IS NOT NULL
 ), ExtraTotalsWithStay AS
@@ -268,7 +287,9 @@ public sealed class RoomWiseRevenueService
            CAST(ISNULL(rt.RoomRevenue,0) AS decimal(18,2)) AS RoomRevenue,
            CAST(ISNULL(rt.RoomVat,0)+ISNULL(rt.BedTax,0) AS decimal(18,2)) AS RoomVat,
            CAST(ISNULL(et.ExtraRevenue,0) AS decimal(18,2)) AS ExtraRevenue,
-           CAST(ISNULL(et.ExtraVat,0)+ISNULL(et.ExtraBedTax,0) AS decimal(18,2)) AS ExtraVat
+           CAST(ISNULL(et.ExtraVat,0)+ISNULL(et.ExtraBedTax,0) AS decimal(18,2)) AS ExtraVat,
+           CAST(ISNULL(et.FnbRevenue,0) AS decimal(18,2)) AS FnbRevenue,
+           CAST(ISNULL(et.FnbVat,0)+ISNULL(et.FnbBedTax,0) AS decimal(18,2)) AS FnbVat
     FROM RoomTotals rt
     FULL OUTER JOIN ExtraTotalsWithStay et
       ON et.RegId=rt.RegId AND et.RoomNo=rt.RoomNo
@@ -311,22 +332,24 @@ public sealed class RoomWiseRevenueService
     SELECT 0 AS SortOrder,CAST('DATA' AS varchar(10)) AS Kind,
            CAST('' AS nvarchar(160)) AS IssueReason,
            RegId,RoomNo,GuestName,SourceName,RevenueDate,ArrivalDt,DepartureDt,
-           RoomNights,RoomRevenue,RoomVat,
-           ExtraRevenue,ExtraVat,CAST(0 AS decimal(18,2)) AS ExcludedGross
+           RoomNights,RoomRevenue,RoomVat,ExtraRevenue,ExtraVat,
+           FnbRevenue,FnbVat,CAST(0 AS decimal(18,2)) AS ExcludedGross
     FROM RoomResults
     UNION ALL
     SELECT 1,'ISSUE',IssueReason,RegId,RoomNo,GuestName,SourceName,RevenueDate,
            ArrivalDt,DepartureDt,0,CAST(0 AS decimal(18,2)),CAST(0 AS decimal(18,2)),
+           CAST(0 AS decimal(18,2)),CAST(0 AS decimal(18,2)),
            CAST(0 AS decimal(18,2)),CAST(0 AS decimal(18,2)),ExcludedGross
     FROM IssueRooms
     UNION ALL
     SELECT 1,'ISSUE',IssueReason,RegId,RoomNo,GuestName,SourceName,RevenueDate,
            ArrivalDt,DepartureDt,0,CAST(0 AS decimal(18,2)),CAST(0 AS decimal(18,2)),
+           CAST(0 AS decimal(18,2)),CAST(0 AS decimal(18,2)),
            CAST(0 AS decimal(18,2)),CAST(0 AS decimal(18,2)),ExcludedGross
     FROM IssueExtras
 )
 SELECT Kind,IssueReason,RegId,RoomNo,GuestName,SourceName,RevenueDate,ArrivalDt,DepartureDt,RoomNights,
-       RoomRevenue,RoomVat,ExtraRevenue,ExtraVat,ExcludedGross
+       RoomRevenue,RoomVat,ExtraRevenue,ExtraVat,FnbRevenue,FnbVat,ExcludedGross
 FROM Feed
 WHERE @search='' OR RegId LIKE @searchLike OR RoomNo LIKE @searchLike
    OR GuestName LIKE @searchLike
@@ -408,7 +431,8 @@ FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;", cn))
         var s = model.Search.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]");
         cmd.Parameters.Add("@searchLike", SqlDbType.NVarChar, 220).Value = "%" + s + "%";
 
-        await using var rows = await cmd.ExecuteReaderAsync(ct);
+        await using (var rows = await cmd.ExecuteReaderAsync(ct))
+        {
         while (await rows.ReadAsync(ct))
         {
             if (GetText(rows, "Kind") == "ISSUE")
@@ -440,8 +464,110 @@ FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;", cn))
                 RoomRevenue = GetMoney(rows, "RoomRevenue"),
                 RoomVat = GetMoney(rows, "RoomVat"),
                 ExtraRevenue = GetMoney(rows, "ExtraRevenue"),
-                ExtraVat = GetMoney(rows, "ExtraVat")
+                ExtraVat = GetMoney(rows, "ExtraVat"),
+                FnbRevenue = GetMoney(rows, "FnbRevenue"),
+                FnbVat = GetMoney(rows, "FnbVat")
             });
+        }
+        } // close the first data reader before fetching related extras
+
+        // Show the rest of the reservation's extras as contextual information when
+        // looking at ONE reporting day. Do not add them to Rows or financial totals.
+        // The SQL report above still recognises extra revenue on its actual posting day.
+        if (model.IsSingleDay && model.Rows.Count > 0)
+            await LoadOtherDateExtrasAsync(cn, hotelId, model, ct);
+    }
+
+    // Query only reservations visible in the selected-day report, in parameterised
+    // chunks (no new SQL tables / no dynamic customer values inserted into SQL text).
+    private static async Task LoadOtherDateExtrasAsync(SqlConnection cn, string hotelId,
+        RoomWiseRevenueViewModel model, CancellationToken ct)
+    {
+        var ids = model.Rows.Select(x => x.ReservationNo)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        for (var offset = 0; offset < ids.Count; offset += 200)
+        {
+            var batch = ids.Skip(offset).Take(200).ToList();
+            var parameters = string.Join(",", Enumerable.Range(0, batch.Count)
+                .Select(i => "@reg" + i.ToString(CultureInfo.InvariantCulture)));
+            var sql = @"
+;WITH X AS
+(
+    SELECT NULLIF(LTRIM(RTRIM(CONVERT(varchar(50),p.reg_id))), '') AS RegId,
+           COALESCE(TRY_CONVERT(date,p.currentdate,103),
+                    TRY_CONVERT(date,p.currentdate,110),
+                    TRY_CONVERT(date,p.currentdate)) AS PostedDt,
+           COALESCE(TRY_CONVERT(decimal(18,2),REPLACE(REPLACE(REPLACE(REPLACE(
+                CONVERT(nvarchar(80),p.totalamount),',',''),N'£',''),N'$',''),N'Rs.','')),0) AS TotalAmt,
+           COALESCE(TRY_CONVERT(decimal(18,2),REPLACE(REPLACE(REPLACE(REPLACE(
+                CONVERT(nvarchar(80),p.Charge),',',''),N'£',''),N'$',''),N'Rs.','')),0) AS ChargeAmt,
+           COALESCE(TRY_CONVERT(decimal(18,2),REPLACE(REPLACE(REPLACE(REPLACE(
+                CONVERT(nvarchar(80),p.GST),',',''),N'£',''),N'$',''),N'Rs.','')),0) AS GstAmt,
+           COALESCE(TRY_CONVERT(decimal(18,2),REPLACE(REPLACE(REPLACE(REPLACE(
+                CONVERT(nvarchar(80),p.Bed),',',''),N'£',''),N'$',''),N'Rs.','')),0) AS BedAmt,
+           CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(150),p.descr),''))))='extras'
+                   AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.PaymentMethod),''))))
+                     IN ('extra','extras')
+                THEN 1 ELSE 0 END AS IsFoodAndBeverage
+    FROM dbo.payments p
+    WHERE p.hotel_id=@hotel AND p.reg_id IN (" + parameters + @")
+      AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(150),p.descr),''))))<>'room rent'
+      AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(150),p.descr),'')))) NOT IN
+           ('refund','room security','security deposit','security refund')
+      AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(120),p.[Type]),'')))) NOT IN
+           ('refund','discount offers')
+      AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(50),p.res_status),'')))) NOT IN
+           ('cancel','cancelled','canceled','no show','noshow','no-show')
+), Y AS
+(
+    SELECT RegId,PostedDt, CASE WHEN TotalAmt=0 AND ChargeAmt<>0
+                         THEN ChargeAmt ELSE TotalAmt END AS Gross,
+           GstAmt+BedAmt AS Tax,IsFoodAndBeverage
+    FROM X
+    WHERE PostedDt IS NOT NULL AND (PostedDt<@from OR PostedDt>@to)
+), Z AS
+(
+    SELECT RegId,PostedDt,COUNT(1) AS EntryCount,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=0 THEN Gross-Tax ELSE 0 END) AS decimal(18,2)) AS ExtraRevenue,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=0 THEN Tax ELSE 0 END) AS decimal(18,2)) AS ExtraTax,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=1 THEN Gross-Tax ELSE 0 END) AS decimal(18,2)) AS FnbRevenue,
+           CAST(SUM(CASE WHEN IsFoodAndBeverage=1 THEN Tax ELSE 0 END) AS decimal(18,2)) AS FnbTax
+    FROM Y WHERE Gross<>0 OR Tax<>0
+    GROUP BY RegId,PostedDt
+)
+SELECT RegId,PostedDt,EntryCount,ExtraRevenue,ExtraTax,FnbRevenue,FnbTax
+FROM Z ORDER BY PostedDt,RegId;";
+            await using var cmd = new SqlCommand(sql, cn) { CommandTimeout = 90 };
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@from", SqlDbType.Date).Value = model.From.Date;
+            cmd.Parameters.Add("@to", SqlDbType.Date).Value = model.To.Date;
+            for (var i = 0; i < batch.Count; i++)
+                cmd.Parameters.Add("@reg" + i.ToString(CultureInfo.InvariantCulture),
+                    SqlDbType.VarChar, 50).Value = batch[i];
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct))
+            {
+                var reg = GetText(rd, "RegId");
+                // Room is a visual reference for context, not an extra charge reassignment.
+                var displayRoom = model.Rows.Where(r => string.Equals(r.ReservationNo, reg,
+                        StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(r => r.RevenueDate).ThenBy(r => r.RoomNo, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+                model.OtherDateExtras.Add(new RoomWiseOtherDateExtra
+                {
+                    ReservationNo = reg,
+                    RoomNo = displayRoom?.RoomNo ?? "",
+                    GuestName = displayRoom?.GuestName ?? "",
+                    PostingDate = GetDate(rd, "PostedDt"),
+                    Entries = GetInt(rd, "EntryCount"),
+                    ExtraRevenue = GetMoney(rd, "ExtraRevenue"),
+                    ExtraVat = GetMoney(rd, "ExtraTax"),
+                    FnbRevenue = GetMoney(rd, "FnbRevenue"),
+                    FnbVat = GetMoney(rd, "FnbTax")
+                });
+            }
         }
     }
 

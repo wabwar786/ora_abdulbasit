@@ -89,3 +89,44 @@
 .rwr-root .rwr-invoice-link:hover { color: #113b67; text-decoration: underline; }
 .rwr-root .rwr-invoice-link:focus-visible { outline: 2px solid #246ba7; outline-offset: 2px; border-radius: 2px; }
 @media print { .rwr-root .rwr-invoice-link { color: inherit; text-decoration: none; } }
+
+/* Single-day reservation context: clearly separate from audited daily revenue. */
+.rwr-related-link { display:block; margin-top:4px; font-size:10px; color:#316ba0;
+    font-weight:500; text-decoration:underline; white-space:nowrap; }
+.rwr-related-panel { margin-top:12px; background:#fff; border:1px solid #d7e3f1;
+    border-radius:10px; overflow:hidden; }
+.rwr-related-title { padding:12px 15px; background:#f1f6fc; }
+.rwr-related-title h2 { margin:0 0 4px; font-size:13px; font-weight:650; }
+.rwr-related-title span { display:block; font-size:11px; color:#526a83; line-height:1.5; }
+.rwr-related-table { min-width:850px; }
+@media print { .rwr-related-link { display:none; } }
+
+/* Room-wise report: distinct accounting sections; colours are subtle for legibility. */
+.rwr-revenue-table { min-width: 1440px; }
+.rwr-revenue-table th, .rwr-revenue-table td { padding:8px 7px; }
+.rwr-revenue-table .rwr-sr { width:38px; text-align:center; color:#66798d; font-variant-numeric:tabular-nums; }
+.rwr-revenue-table .rwr-description { min-width:190px; max-width:265px; line-height:1.25; }
+.rwr-guest-link { display:block; line-height:1.35; font-weight:600!important; white-space:normal!important; }
+.rwr-description-dates { display:block; margin-top:3px; font-size:10px; line-height:1.25; color:#72859a; white-space:nowrap; }
+.rwr-source-name { white-space:nowrap; }
+.rwr-root .rwr-col-room { background-color:#eef5ff; color:#1e5286; }
+.rwr-root .rwr-col-extra { background-color:#fff5e7; color:#835317; }
+.rwr-root .rwr-col-fnb { background-color:#eaf7f0; color:#207052; }
+.rwr-root .rwr-table th.rwr-col-room { background-color:#dceaff; }
+.rwr-root .rwr-table th.rwr-col-extra { background-color:#fcebcf; }
+.rwr-root .rwr-table th.rwr-col-fnb { background-color:#d7eee1; }
+.rwr-root .rwr-table tbody tr:hover .rwr-col-room { background-color:#e3efff; }
+.rwr-root .rwr-table tbody tr:hover .rwr-col-extra { background-color:#fff0d5; }
+.rwr-root .rwr-table tbody tr:hover .rwr-col-fnb { background-color:#dbf1e4; }
+.rwr-root .rwr-table tfoot td.rwr-col-room { background-color:#dceaff; }
+.rwr-root .rwr-table tfoot td.rwr-col-extra { background-color:#fcebcf; }
+.rwr-root .rwr-table tfoot td.rwr-col-fnb { background-color:#d7eee1; }
+.rwr-related-table { min-width:1000px; }
+@media print {
+  .rwr-revenue-table { min-width:0; font-size:7px; }
+  .rwr-revenue-table th, .rwr-revenue-table td { padding:3px 3px; }
+  .rwr-description-dates { font-size:6px; white-space:normal; }
+  .rwr-root .rwr-col-room, .rwr-root .rwr-col-extra, .rwr-root .rwr-col-fnb {
+    print-color-adjust:exact; -webkit-print-color-adjust:exact;
+  }
+}

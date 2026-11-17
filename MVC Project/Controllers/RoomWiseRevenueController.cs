@@ -241,25 +241,48 @@ ORDER BY id DESC;", cn))
             }
             static string Money(decimal amount) => amount.ToString("0.00", CultureInfo.InvariantCulture);
             var csv = new StringBuilder();
-            csv.AppendLine("Revenue Date,Arrival - Departure,Reservation,Room No,Guest Name,Source,Room Revenue Ex Tax,Room VAT GST Incl Bed Tax,Extra Revenue Ex Tax,Extra VAT GST Incl Bed Tax,Gross Revenue,Net Revenue,Currency");
+            // Same visible column order as screen and print. Description uses
+            // one CSV cell with guest name + stay dates on separate lines.
+            csv.AppendLine("Sr#,Date,Description,Room No,Source,Room Revenue,Room VAT GST,Extras,Extras VAT GST,F&B,F&B Tax VAT,Gross Revenue,Net Revenue");
+            var serial = 0;
             foreach (var r in model.Rows)
             {
                 csv.AppendLine(string.Join(",", new[]
                 {
+                    (++serial).ToString(CultureInfo.InvariantCulture),
                     Csv(r.RevenueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
-                    Csv(r.StayDates),
-                    Csv(r.ReservationNo), Csv(r.RoomNo), Csv(r.GuestName), Csv(r.SourceName),
-                    Money(r.RoomRevenue),Money(r.RoomVat),Money(r.ExtraRevenue),Money(r.ExtraVat),
-                    Money(r.GrossRevenue),Money(r.NetRevenue),Csv(model.CurrencySign)
+                    Csv((string.IsNullOrWhiteSpace(r.GuestName) ? r.ReservationNo : r.GuestName)
+                        + "\n" + r.StayDates),
+                    Csv(r.RoomNo), Csv(r.SourceName),
+                    Money(r.RoomRevenue), Money(r.RoomVat),
+                    Money(r.ExtraRevenue), Money(r.ExtraVat),
+                    Money(r.FnbRevenue), Money(r.FnbVat),
+                    Money(r.GrossRevenue), Money(r.NetRevenue)
                 }));
             }
             csv.AppendLine(string.Join(",", new[]
             {
-                Csv(""),Csv(""),Csv("TOTAL"),Csv(""),Csv(""),Csv(""),
+                Csv(""),Csv(""),Csv("Grand Total"),Csv(""),Csv(""),
                 Money(model.RoomRevenue),Money(model.RoomVat),
-                Money(model.ExtraRevenue),Money(model.ExtraVat),Money(model.GrossRevenue),
-                Money(model.NetRevenue),Csv(model.CurrencySign)
+                Money(model.ExtraRevenue),Money(model.ExtraVat),
+                Money(model.FnbRevenue),Money(model.FnbVat),
+                Money(model.GrossRevenue),Money(model.NetRevenue)
             }));
+            if (model.IsSingleDay && model.OtherDateExtras.Count > 0)
+            {
+                csv.AppendLine();
+                csv.AppendLine("RELATED EXTRAS ON OTHER DATES - CONTEXT ONLY; EXCLUDED FROM REPORT TOTALS");
+                csv.AppendLine("Posting Date,Room Reference,Guest,Reservation,Entry Count,Extras,Extras Tax,F&B,F&B Tax,Gross");
+                foreach (var extra in model.OtherDateExtras.OrderBy(x => x.PostingDate).ThenBy(x => x.ReservationNo))
+                    csv.AppendLine(string.Join(",", new[]
+                    {
+                        Csv(extra.PostingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                        Csv(extra.RoomNo), Csv(extra.GuestName), Csv(extra.ReservationNo),
+                        extra.Entries.ToString(CultureInfo.InvariantCulture),
+                        Money(extra.ExtraRevenue), Money(extra.ExtraVat),
+                        Money(extra.FnbRevenue), Money(extra.FnbVat), Money(extra.Gross)
+                    }));
+            }
             if (model.Issues.Count > 0)
             {
                 csv.AppendLine();
