@@ -330,7 +330,9 @@ rows AS (
 )
 SELECT
     r.line_date,
-    r.display_name,
+    CASE WHEN r.is_room_rent = 0 AND r.line_date IS NOT NULL
+         THEN CONCAT(r.display_name, ' — Posted: ', CONVERT(varchar(11),r.line_date,106))
+         ELSE r.display_name END AS display_name,
     COALESCE(NULLIF(r.rateplanname, ''), NULLIF(r.rateplan, ''), '') AS rate_plan_display,
     r.vat_amount,
     r.bed_amount,

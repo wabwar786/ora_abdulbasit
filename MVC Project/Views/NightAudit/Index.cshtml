@@ -1,0 +1,137 @@
+@model Orapmshms.Models.NightAuditViewModel
+@using System.Linq
+@using System.Globalization
+@{
+    ViewData["Title"] = "Night Audit";
+    Layout = "~/Views/Shared/_PmsLayout.cshtml";
+    var dayText = Model.ReportDate.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+}
+<link rel="stylesheet" href="~/css/night-audit.css" asp-append-version="true" />
+<main class="na-root">
+    <div class="na-toolbar">
+        <div class="na-title"><h1>Night Audit</h1><span>@Model.HotelName</span></div>
+        <form class="na-date-panel" asp-controller="NightAudit" asp-action="Index" method="get">
+            <label for="na-audit-date">Audit Date</label>
+            <input id="na-audit-date" type="date" name="date" value="@Model.ReportDate.ToString("yyyy-MM-dd")" required />
+            <button type="submit" class="na-button na-primary">Generate</button>
+            <a asp-controller="NightAudit" asp-action="Index" class="na-button na-light">Reset</a>
+        </form>
+        <a class="na-button na-print" asp-controller="NightAudit" asp-action="Print"
+           asp-route-date="@Model.ReportDate.ToString("yyyy-MM-dd")" target="_blank" rel="noopener">Print</a>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Model.Error)) { <div class="na-alert na-alert-error">@Model.Error</div> }
+    @if (!string.IsNullOrWhiteSpace(Model.Info)) { <div class="na-alert">@Model.Info</div> }
+    @if (string.IsNullOrWhiteSpace(Model.Error))
+    {
+        <section class="na-section na-room-section">
+            <div class="na-section-head"><h2>Room Revenue &amp; Posted Extras</h2><span>@dayText</span></div>
+            <div class="na-scroll">
+                <table class="na-table na-bookings">
+                    <thead><tr>
+                        <th>Sr#</th><th>Booking Number</th><th>Guest Name</th><th>Room</th>
+                        <th>Arrival</th><th>Payment Mode</th>
+                        <th class="num na-room-col">Room Revenue</th>
+                        <th class="num na-extra-col">Extras / Other</th>
+                        <th class="num na-food-col">F&amp;B</th>
+                        <th class="num na-security-col">Refundable Security</th>
+                        <th class="num">Total</th><th>Booking Source</th>
+                    </tr></thead>
+                    <tbody>
+                        @if (Model.Accommodation.Count == 0)
+                        {
+                            <tr><td colspan="12" class="na-empty">No room revenue or room-linked extras on this date.</td></tr>
+                        }
+                        else
+                        {
+                            var index = 0;
+                            foreach (var a in Model.Accommodation)
+                            {
+                                <tr>
+                                    <td>@(++index)</td>
+                                    <td class="na-nowrap">@a.ReservationNo</td>
+                                    <td class="na-guest"><a asp-controller="RoomWiseRevenue" asp-action="Invoice"
+                                        asp-route-regId="@a.ReservationNo" target="_blank" rel="noopener">@a.GuestName</a></td>
+                                    <td>@a.RoomNo</td>
+                                    <td class="na-nowrap">@(a.ArrivalDate?.ToString("dd-MM-yyyy") ?? "—")</td>
+                                    <td>@(string.IsNullOrWhiteSpace(a.PaymentMethod) ? "—" : a.PaymentMethod)</td>
+                                    <td class="num na-room-col">@Model.Money(a.RoomAmount)</td>
+                                    <td class="num na-extra-col">@Model.Money(a.ExtraAmount)</td>
+                                    <td class="num na-food-col">@Model.Money(a.FoodAmount)</td>
+                                    <td class="num na-security-col">@(a.RefundableSecurity > 0 ? Model.Money(a.RefundableSecurity) : "—")</td>
+                                    <td class="num na-strong">@Model.Money(a.Amount)</td>
+                                    <td>@a.BookingSource</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="na-grid-total"><th colspan="6">Grand Total</th>
+                            <th class="num">@Model.Money(Model.RoomRevenue)</th>
+                            <th class="num">@Model.Money(Model.ExtrasRevenue)</th>
+                            <th class="num">@Model.Money(Model.TotalFoodRevenue)</th>
+                            <th class="num">@Model.Money(Model.RefundableSecurityTotal)</th>
+                            <th class="num">@Model.Money(Model.HotelRevenue)</th><th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </section>
+        <div class="na-revenue-strip">
+            <div><span>Room Revenue</span><strong>@Model.Money(Model.RoomRevenue)</strong></div>
+            <div><span>Extras / Other</span><strong>@Model.Money(Model.ExtrasRevenue)</strong></div>
+            <div><span>F&amp;B</span><strong>@Model.Money(Model.TotalFoodRevenue)</strong></div>
+            <div class="na-final"><span>Total Hotel Revenue</span><strong>@Model.Money(Model.HotelRevenue)</strong></div>
+        </div>
+        <div class="na-lower-grid">
+            <div class="na-financial">
+                <section class="na-section"><div class="na-section-head"><h2>Payments Received</h2></div>
+                    <table class="na-table na-compact"><thead><tr><th>Payment Method</th><th class="num">Amount</th></tr></thead><tbody>
+                        @if (Model.Received.Count == 0) { <tr><td colspan="2" class="na-empty">No receipts for this date.</td></tr> }
+                        @foreach (var x in Model.Received) { <tr><td>@x.Method</td><td class="num">@Model.Money(x.Amount)</td></tr> }
+                        <tr class="na-subtotal"><th>Total Received</th><th class="num">@Model.Money(Model.TotalReceived)</th></tr>
+                    </tbody></table>
+                </section>
+                <section class="na-section"><div class="na-section-head"><h2>Refunds &amp; Discount</h2></div>
+                    <table class="na-table na-compact"><thead><tr><th>Type</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead><tbody>
+                        <tr><td>Refund — Cash</td><td class="num">@Model.RefundCashCount</td><td class="num">@Model.Money(Model.RefundCash)</td></tr>
+                        <tr><td>Refund — Card / Other</td><td class="num">@Model.RefundCardCount</td><td class="num">@Model.Money(Model.RefundCard)</td></tr>
+                        <tr><td>Booking Discount (allocated)</td><td class="num">—</td><td class="num">@Model.Money(Model.BookingDiscount)</td></tr>
+                    </tbody></table>
+                </section>
+            </div>
+            <aside class="na-stats">
+                <section class="na-section"><div class="na-section-head"><h2>Figures for @dayText</h2></div>
+                    <dl class="na-facts">
+                        <div><dt>Occupancy</dt><dd>@Model.OccupancyPct.ToString("N1")%</dd></div>
+                        <div><dt>Rooms Occupied</dt><dd>@Model.RoomsOccupied</dd></div>
+                        <div><dt>Rooms Available (excl. blocked)</dt><dd>@Model.TotalRoomsAvailable</dd></div>
+                        <div><dt>Blocked / Out of Service</dt><dd>@(Model.OutOfServiceRooms?.ToString() ?? "—")</dd></div>
+                        <div><dt>ADR (room revenue)</dt><dd>@Model.Money(Model.Adr)</dd></div>
+                        <div><dt>No Shows</dt><dd>@Model.NoShows</dd></div>
+                        <div><dt>Complimentary / House Use</dt><dd>@Model.Complimentary</dd></div>
+                    </dl>
+                </section>
+                <section class="na-section"><div class="na-section-head"><h2>Figures for @Model.NextDate.ToString("dd MMM yyyy")</h2></div>
+                    <dl class="na-facts">
+                        <div><dt>Arrivals</dt><dd>@Model.ArrivalsNextDay</dd></div>
+                        <div><dt>Departures</dt><dd>@Model.DeparturesNextDay</dd></div>
+                        <div><dt>In House (rooms)</dt><dd>@Model.InHouseNextDay</dd></div>
+                        <div><dt>Expected Occupancy</dt><dd>@Model.ExpectedOccupancyPct.ToString("N1")%</dd></div>
+                    </dl>
+                </section>
+                <section class="na-section na-ratings"><div class="na-section-head"><h2>Online Ratings</h2><span>@dayText</span></div>
+                    <form asp-controller="NightAudit" asp-action="SaveRatings" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="ReportDate" value="@Model.ReportDate.ToString("yyyy-MM-dd")" />
+                        <div class="na-rating-row"><label for="na-booking">Booking.com <small>/ 10</small></label><input id="na-booking" type="number" name="Booking" min="0" max="10" step="0.01" value="@Model.Ratings.Booking?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
+                        <div class="na-rating-row"><label for="na-google">Google <small>/ 5</small></label><input id="na-google" type="number" name="Google" min="0" max="5" step="0.01" value="@Model.Ratings.Google?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
+                        <div class="na-rating-row"><label for="na-trip">Trip <small>/ 10</small></label><input id="na-trip" type="number" name="Trip" min="0" max="10" step="0.01" value="@Model.Ratings.Trip?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
+                        <div class="na-rating-row"><label for="na-agoda">Agoda <small>/ 10</small></label><input id="na-agoda" type="number" name="Agoda" min="0" max="10" step="0.01" value="@Model.Ratings.Agoda?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
+                        <button type="submit" class="na-button na-primary" disabled="@(!Model.RatingsTableReady)">Save Ratings</button>
+                    </form>
+                    @if (Model.Ratings.LastSavedAtUtc.HasValue) { <p class="na-saved">Saved @Model.Ratings.LastSavedAtUtc.Value.ToString("dd MMM yyyy HH:mm") UTC by @Model.Ratings.LastSavedBy</p> }
+                </section>
+            </aside>
+        </div>
+    }
+</main>

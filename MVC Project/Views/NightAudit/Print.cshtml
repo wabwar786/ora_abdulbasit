@@ -1,0 +1,133 @@
+@model Orapmshms.Models.NightAuditViewModel
+@using System.Linq
+@using System.Globalization
+@{
+    Layout = null;
+    var day = Model.ReportDate.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+    string Rating(decimal? value) => value?.ToString("0.##", CultureInfo.InvariantCulture) ?? "—";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Night Audit - @Model.HotelName - @day</title>
+<style>
+@@page { size:A3 landscape; margin:10mm; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:Arial,'Segoe UI',sans-serif; color:#183049; font-size:10pt; background:#fff; }
+.actions { text-align:right; padding:10px; }
+.actions button { border:0; background:#15385c; color:white; padding:8px 16px; cursor:pointer; }
+.paper { width:100%; }
+.head { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:2px solid #143961; padding:0 0 7px; margin-bottom:8px; }
+.head h1 { margin:0; font-size:19pt; }
+.head strong,.head time { font-size:11pt; }
+section { break-inside:avoid; border:1px solid #c7d4e2; margin-bottom:8px; }
+h2 { background:#163a60; color:white; margin:0; padding:5px 7px; font-size:10.5pt; }
+table { width:100%; border-collapse:collapse; }
+th,td { border-bottom:1px solid #dce5ee; padding:4px 4px; vertical-align:middle; }
+th { text-align:left; background:#eaf1f8; font-size:9pt; }
+td { font-size:9.4pt; }
+.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.bookings { table-layout:auto; }
+.bookings td { overflow-wrap:anywhere; }
+.bookings .id,.bookings .date { white-space:nowrap; }
+.room { color:#235d9d; background:#eef5fd; } .extra { color:#965c13; background:#fff7e8; } .food { color:#166e4e; background:#eaf8f0; }
+.sec { color:#67468c; } .grand { background:#e6eef7; font-weight:bold; }
+.summary { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid #cbd8e6; margin:6px 0 9px; }
+.summary div { display:flex; flex-direction:column; gap:4px; padding:7px 9px; border-right:1px solid #cbd8e6; }
+.summary span { color:#5b7087; font-size:9pt; }
+.summary strong { font-size:11pt; }
+.summary .final { background:#17385f; color:white; } .summary .final span { color:#deebf6; }
+.lower { display:grid; grid-template-columns:1fr 1.05fr 1fr; gap:8px; align-items:start; }
+.fact { display:flex; justify-content:space-between; gap:7px; padding:5px 7px; border-bottom:1px solid #e3e9f1; }
+.fact b { white-space:nowrap; }
+.money-line { display:flex; justify-content:space-between; padding:5px 7px; border-bottom:1px solid #e3e9f1; }
+@@media print { .actions { display:none; } html,body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+@@media screen { body { background:#e8edf3; } .paper { max-width:1600px; width:98%; background:white; margin:12px auto; padding:15px; box-shadow:0 2px 12px #a4b3c0; } }
+</style>
+</head>
+<body>
+<div class="actions"><button type="button" onclick="window.print()">Print Night Audit</button></div>
+@if (!string.IsNullOrWhiteSpace(Model.Error))
+{
+    <div class="paper">@Model.Error</div>
+}
+else
+{
+<div class="paper">
+    <header class="head"><strong>@Model.HotelName</strong><h1>Night Audit</h1><time>@day</time></header>
+    <section><h2>Room Revenue &amp; Posted Extras</h2>
+        <table class="bookings"><thead><tr>
+            <th>Sr#</th><th>Booking Number</th><th>Guest Name</th><th>Room</th><th>Arrival</th><th>Payment Mode</th>
+            <th class="num room">Room Revenue</th><th class="num extra">Extras / Other</th><th class="num food">F&amp;B</th>
+            <th class="num sec">Refundable Security</th><th class="num">Total</th><th>Source</th>
+        </tr></thead><tbody>
+        @if (Model.Accommodation.Count == 0) { <tr><td colspan="12">No room revenue or room-linked extras on this date.</td></tr> }
+        else { var i = 0; foreach (var a in Model.Accommodation) {
+            <tr><td>@(++i)</td><td class="id">@a.ReservationNo</td><td>@a.GuestName</td><td>@a.RoomNo</td>
+                <td class="date">@(a.ArrivalDate?.ToString("dd-MM-yyyy") ?? "—")</td>
+                <td>@(string.IsNullOrWhiteSpace(a.PaymentMethod) ? "—" : a.PaymentMethod)</td>
+                <td class="num room">@Model.Money(a.RoomAmount)</td>
+                <td class="num extra">@Model.Money(a.ExtraAmount)</td>
+                <td class="num food">@Model.Money(a.FoodAmount)</td>
+                <td class="num sec">@(a.RefundableSecurity > 0 ? Model.Money(a.RefundableSecurity) : "—")</td>
+                <td class="num">@Model.Money(a.Amount)</td><td>@a.BookingSource</td>
+            </tr>
+        }}
+        </tbody><tfoot><tr class="grand"><th colspan="6">Grand Total</th>
+            <th class="num">@Model.Money(Model.RoomRevenue)</th>
+            <th class="num">@Model.Money(Model.ExtrasRevenue)</th>
+            <th class="num">@Model.Money(Model.TotalFoodRevenue)</th>
+            <th class="num">@Model.Money(Model.RefundableSecurityTotal)</th>
+            <th class="num">@Model.Money(Model.HotelRevenue)</th><th></th></tr></tfoot>
+        </table>
+    </section>
+    <div class="summary">
+        <div><span>Room Revenue</span><strong>@Model.Money(Model.RoomRevenue)</strong></div>
+        <div><span>Extras / Other</span><strong>@Model.Money(Model.ExtrasRevenue)</strong></div>
+        <div><span>F&amp;B</span><strong>@Model.Money(Model.TotalFoodRevenue)</strong></div>
+        <div class="final"><span>Total Hotel Revenue</span><strong>@Model.Money(Model.HotelRevenue)</strong></div>
+    </div>
+    <div class="lower">
+        <div>
+            <section><h2>Payments Received</h2>
+                @foreach (var x in Model.Received) { <div class="money-line"><span>@x.Method</span><b>@Model.Money(x.Amount)</b></div> }
+                <div class="money-line"><strong>Total Received</strong><strong>@Model.Money(Model.TotalReceived)</strong></div>
+            </section>
+            <section><h2>Refunds &amp; Discount</h2>
+                <div class="money-line"><span>Cash Refund (@Model.RefundCashCount)</span><b>@Model.Money(Model.RefundCash)</b></div>
+                <div class="money-line"><span>Card / Other Refund (@Model.RefundCardCount)</span><b>@Model.Money(Model.RefundCard)</b></div>
+                <div class="money-line"><span>Booking Discount</span><b>@Model.Money(Model.BookingDiscount)</b></div>
+            </section>
+        </div>
+        <div>
+            <section><h2>Figures for @day</h2>
+                <div class="fact"><span>Occupancy</span><b>@Model.OccupancyPct.ToString("N1")%</b></div>
+                <div class="fact"><span>Rooms Occupied</span><b>@Model.RoomsOccupied</b></div>
+                <div class="fact"><span>Available (excl. blocked)</span><b>@Model.TotalRoomsAvailable</b></div>
+                <div class="fact"><span>Blocked / Out of Service</span><b>@(Model.OutOfServiceRooms?.ToString() ?? "—")</b></div>
+                <div class="fact"><span>ADR</span><b>@Model.Money(Model.Adr)</b></div>
+                <div class="fact"><span>No Shows</span><b>@Model.NoShows</b></div>
+                <div class="fact"><span>Complimentary / House Use</span><b>@Model.Complimentary</b></div>
+            </section>
+            <section><h2>Figures for @Model.NextDate.ToString("dd MMM yyyy")</h2>
+                <div class="fact"><span>Arrivals</span><b>@Model.ArrivalsNextDay</b></div>
+                <div class="fact"><span>Departures</span><b>@Model.DeparturesNextDay</b></div>
+                <div class="fact"><span>In House</span><b>@Model.InHouseNextDay</b></div>
+                <div class="fact"><span>Expected Occupancy</span><b>@Model.ExpectedOccupancyPct.ToString("N1")%</b></div>
+            </section>
+        </div>
+        <div>
+            <section><h2>Online Ratings — @day</h2>
+                <div class="fact"><span>Booking.com</span><b>@Rating(Model.Ratings.Booking)</b></div>
+                <div class="fact"><span>Google</span><b>@Rating(Model.Ratings.Google)</b></div>
+                <div class="fact"><span>Trip</span><b>@Rating(Model.Ratings.Trip)</b></div>
+                <div class="fact"><span>Agoda</span><b>@Rating(Model.Ratings.Agoda)</b></div>
+            </section>
+        </div>
+    </div>
+</div>
+}
+</body>
+</html>
