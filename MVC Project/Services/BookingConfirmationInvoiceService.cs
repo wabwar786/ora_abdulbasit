@@ -525,7 +525,7 @@ VALUES (@PageName, @Description, @Date, @HotelId, @Ip, @System, @Username);";
                     model.Guest.Company = Str(reader, "Agency");
                     model.Guest.VatNo = Str(reader, "vatno");
                     model.Guest.Phone = Str(reader, "PhoneNo");
-                    model.Guest.BookingSource = Str(reader, "Status");
+                    model.Guest.BookingSource = Str(reader, "Agency");
                     model.Guest.Adults = Str(reader, "NumberOfAdults");
                     model.Guest.Minors = Str(reader, "NumberOfMinors");
                     model.Guest.Nights = Str(reader, "totalnights");
@@ -655,29 +655,29 @@ VALUES (@PageName, @Description, @Date, @HotelId, @Ip, @System, @Username);";
             // sub-query cost one panel and never the invoice. That is kept.
             try
             {
-                var hasReceiptColumn = await ColumnExistsAsync(connection, "RoomSecurityTB", "receipt_url", cancellationToken)
-                    .ConfigureAwait(false);
+            var hasReceiptColumn = await ColumnExistsAsync(connection, "RoomSecurityTB", "receipt_url", cancellationToken)
+                .ConfigureAwait(false);
 
-                await using (var command = new SqlCommand(
-                    hasReceiptColumn ? RoomSecurityWithReceiptSql : RoomSecurityWithoutReceiptSql, connection)
+            await using (var command = new SqlCommand(
+                hasReceiptColumn ? RoomSecurityWithReceiptSql : RoomSecurityWithoutReceiptSql, connection)
                 { CommandTimeout = CommandTimeoutSeconds })
+            {
+                Text(command, "@RegId", IdSize, request.RegId);
+                Text(command, "@HotelId", IdSize, request.HotelId);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    Text(command, "@RegId", IdSize, request.RegId);
-                    Text(command, "@HotelId", IdSize, request.HotelId);
-                    await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                    while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    model.RoomSecurity.Add(new BookingConfirmationInvoiceSecurityRow
                     {
-                        model.RoomSecurity.Add(new BookingConfirmationInvoiceSecurityRow
-                        {
-                            Date = Str(reader, "currentdate"),
-                            Security = Str(reader, "security"),
-                            Status = Str(reader, "status"),
-                            Note = Str(reader, "note"),
-                            ReceiptUrl = SafeUrl(Str(reader, "receipt_url")),
-                            Amount = ToDecimal(reader["security"])
-                        });
-                    }
+                        Date = Str(reader, "currentdate"),
+                        Security = Str(reader, "security"),
+                        Status = Str(reader, "status"),
+                        Note = Str(reader, "note"),
+                        ReceiptUrl = SafeUrl(Str(reader, "receipt_url")),
+                        Amount = ToDecimal(reader["security"])
+                    });
                 }
+            }
             }
             catch (Exception ex) when (IsSectionFailure(ex, cancellationToken))
             {
@@ -688,24 +688,24 @@ VALUES (@PageName, @Description, @Date, @HotelId, @Ip, @System, @Username);";
             // ---------------- the restaurant log ----------------
             try
             {
-                await using (var command = new SqlCommand(RestaurantSql, connection)
+            await using (var command = new SqlCommand(RestaurantSql, connection)
                 { CommandTimeout = CommandTimeoutSeconds })
+            {
+                Text(command, "@RegId", IdSize, request.RegId);
+                Text(command, "@HotelId", IdSize, request.HotelId);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    Text(command, "@RegId", IdSize, request.RegId);
-                    Text(command, "@HotelId", IdSize, request.HotelId);
-                    await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                    while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    model.Restaurant.Add(new BookingConfirmationInvoiceRestaurantRow
                     {
-                        model.Restaurant.Add(new BookingConfirmationInvoiceRestaurantRow
-                        {
-                            Category = Str(reader, "catgname"),
-                            ItemName = Str(reader, "itemname"),
-                            Quantity = Str(reader, "qty"),
-                            Price = Str(reader, "price"),
-                            TotalBill = Str(reader, "totalbill")
-                        });
-                    }
+                        Category = Str(reader, "catgname"),
+                        ItemName = Str(reader, "itemname"),
+                        Quantity = Str(reader, "qty"),
+                        Price = Str(reader, "price"),
+                        TotalBill = Str(reader, "totalbill")
+                    });
                 }
+            }
             }
             catch (Exception ex) when (IsSectionFailure(ex, cancellationToken))
             {
@@ -716,31 +716,31 @@ VALUES (@PageName, @Description, @Date, @HotelId, @Ip, @System, @Username);";
             // ---------------- the security summary line (kept, still hidden) ----------------
             try
             {
-                await using (var command = new SqlCommand(SecurityHeldSql, connection) { CommandTimeout = CommandTimeoutSeconds })
+            await using (var command = new SqlCommand(SecurityHeldSql, connection) { CommandTimeout = CommandTimeoutSeconds })
+            {
+                Text(command, "@VisitId", IdSize, request.VisitId);
+                Text(command, "@RegId", IdSize, request.RegId);
+                Text(command, "@HotelId", IdSize, request.HotelId);
+                var held = ToDecimal(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+
+                if (held > 0m)
                 {
-                    Text(command, "@VisitId", IdSize, request.VisitId);
-                    Text(command, "@RegId", IdSize, request.RegId);
-                    Text(command, "@HotelId", IdSize, request.HotelId);
-                    var held = ToDecimal(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
-
-                    if (held > 0m)
-                    {
-                        model.SecurityLabel = "Refundable Room Security";
-                        model.SecurityAmount = model.CurrencySymbol + " " + held.ToString("0.##", CultureInfo.InvariantCulture) + "/-";
-                    }
-                    else
-                    {
-                        await using var refundCommand = new SqlCommand(SecurityRefundedSql, connection) { CommandTimeout = CommandTimeoutSeconds };
-                        Text(refundCommand, "@VisitId", IdSize, request.VisitId);
-                        Text(refundCommand, "@RegId", IdSize, request.RegId);
-                        Text(refundCommand, "@HotelId", IdSize, request.HotelId);
-                        Text(refundCommand, "@Status", 50, "refund");
-
-                        var refunded = ToDecimal(await refundCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
-                        model.SecurityLabel = "Refunded Room Security";
-                        model.SecurityAmount = model.CurrencySymbol + " " + refunded.ToString("0.##", CultureInfo.InvariantCulture) + "/-";
-                    }
+                    model.SecurityLabel = "Refundable Room Security";
+                    model.SecurityAmount = model.CurrencySymbol + " " + held.ToString("0.##", CultureInfo.InvariantCulture) + "/-";
                 }
+                else
+                {
+                    await using var refundCommand = new SqlCommand(SecurityRefundedSql, connection) { CommandTimeout = CommandTimeoutSeconds };
+                    Text(refundCommand, "@VisitId", IdSize, request.VisitId);
+                    Text(refundCommand, "@RegId", IdSize, request.RegId);
+                    Text(refundCommand, "@HotelId", IdSize, request.HotelId);
+                    Text(refundCommand, "@Status", 50, "refund");
+
+                    var refunded = ToDecimal(await refundCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+                    model.SecurityLabel = "Refunded Room Security";
+                    model.SecurityAmount = model.CurrencySymbol + " " + refunded.ToString("0.##", CultureInfo.InvariantCulture) + "/-";
+                }
+            }
             }
             catch (Exception ex) when (IsSectionFailure(ex, cancellationToken))
             {

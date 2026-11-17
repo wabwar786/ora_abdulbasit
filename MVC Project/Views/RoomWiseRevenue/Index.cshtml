@@ -1,0 +1,175 @@
+@model Orapmshms.Models.RoomWiseRevenueViewModel
+@{
+    ViewData["Title"] = "Room-wise Revenue Report";
+    Layout = "~/Views/Shared/_PmsLayout.cshtml";
+}
+<link rel="stylesheet" href="~/css/room-wise-revenue.css" asp-append-version="true" />
+<main class="rwr-root" id="rwrReport">
+    <header class="rwr-header">
+        <div>
+            <div class="rwr-eyebrow">REPORTS / REVENUE</div>
+            <h1>Room-wise Revenue Report</h1>
+            <p>Room revenue by occupied night; extras on the date entered in ORA PMS.</p>
+        </div>
+        <div class="rwr-actions">
+            <a class="rwr-button rwr-button-light" asp-controller="RoomWiseRevenue" asp-action="Export"
+               asp-route-from="@Model.From.ToString("yyyy-MM-dd")"
+               asp-route-to="@Model.To.ToString("yyyy-MM-dd")"
+               asp-route-search="@Model.Search" asp-route-source="@Model.Source">Export CSV</a>
+            <a class="rwr-button rwr-button-light" asp-controller="RoomWiseRevenue" asp-action="Print"
+               asp-route-from="@Model.From.ToString("yyyy-MM-dd")"
+               asp-route-to="@Model.To.ToString("yyyy-MM-dd")"
+               asp-route-search="@Model.Search" asp-route-source="@Model.Source"
+               target="_blank" rel="noopener">Print Report</a>
+        </div>
+    </header>
+
+    <section class="rwr-panel">
+        <form asp-controller="RoomWiseRevenue" asp-action="Index" method="get" class="rwr-filters">
+            <label>From date
+                <input type="date" name="from" required value="@Model.From.ToString("yyyy-MM-dd")" />
+            </label>
+            <label>To date
+                <input type="date" name="to" required value="@Model.To.ToString("yyyy-MM-dd")" />
+            </label>
+            <label>Reservation Source
+                <select name="source" class="rwr-source">
+                    <option value="">All Sources</option>
+                    @foreach (var source in Model.Sources)
+                    {
+                        if (string.Equals(source, Model.Source, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <option value="@source" selected="selected">@source</option>
+                        }
+                        else
+                        {
+                            <option value="@source">@source</option>
+                        }
+                    }
+                </select>
+            </label>
+            <label class="rwr-search">Room / Guest / Reservation
+                <input name="search" value="@Model.Search" maxlength="100"
+                       placeholder="Search any room, guest or reservation" />
+            </label>
+            <button class="rwr-button rwr-button-primary" type="submit">Generate</button>
+            <a class="rwr-button rwr-button-light" asp-controller="RoomWiseRevenue" asp-action="Index">Reset</a>
+        </form>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Error))
+    {
+        <div class="rwr-error" role="alert">@Model.Error</div>
+    }
+    else
+    {
+        <div class="rwr-report-context">
+            <strong>@Model.HotelName</strong>
+            <span>@Model.From.ToString("dd MMM yyyy") – @Model.To.ToString("dd MMM yyyy")</span>
+            <span>Source: @(string.IsNullOrWhiteSpace(Model.Source) ? "All" : Model.Source)</span>
+            <span>Room charges by stay night · extras by payments.currentdate</span>
+        </div>
+        <section class="rwr-panel rwr-results">
+            <div class="rwr-table-top">
+                <div>
+                    <h2>Room Revenue Details</h2>
+                    <span>@Model.Rows.Count dated revenue rows · @Model.Reservations reservations</span>
+                </div>
+                <span class="rwr-saved-tax">GST + Bed Tax from saved charges only</span>
+            </div>
+            <div class="rwr-table-scroll">
+                <table class="rwr-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Arrival – Departure</th><th>Room No.</th><th>Guest Name</th><th>Reservation #</th><th>Source</th>
+                            <th class="rwr-number">Room Revenue<br /><small>Excl. Tax</small></th>
+                            <th class="rwr-number">Room VAT/GST</th>
+                            <th class="rwr-number">Extra Revenue<br /><small>Excl. Tax</small></th>
+                            <th class="rwr-number">Extra VAT/GST</th>
+                            <th class="rwr-number">Gross Revenue</th>
+                            <th class="rwr-number">Net Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Model.Rows.Count == 0)
+                        {
+                            <tr><td class="rwr-empty" colspan="12">No room revenue or room-assigned extras for the selected dates.</td></tr>
+                        }
+                        else
+                        {
+                            foreach (var r in Model.Rows)
+                            {
+                                <tr class="@(r.RoomNights == 0 && r.ExtraRevenue != 0 ? "rwr-extra-only" : "")">
+                                    <td class="rwr-date">@r.RevenueDate.ToString("dd MMM yyyy")</td>
+                                    <td class="rwr-staydates">@r.StayDates</td>
+                                    <td class="rwr-room">@r.RoomNo</td>
+                                    <td>@(string.IsNullOrWhiteSpace(r.GuestName) ? "—" : r.GuestName)</td>
+                                    <td class="rwr-reservation">
+                                        <a class="rwr-invoice-link"
+                                           asp-controller="RoomWiseRevenue" asp-action="Invoice"
+                                           asp-route-regId="@r.ReservationNo"
+                                           target="_blank" rel="noopener noreferrer"
+                                           title="Open reservation invoice">@r.ReservationNo</a>
+                                    </td>
+                                    <td>@r.SourceName</td>
+                                    <td class="rwr-number">@Model.Format(r.RoomRevenue)</td>
+                                    <td class="rwr-number">@Model.Format(r.RoomVat)</td>
+                                    <td class="rwr-number">@Model.Format(r.ExtraRevenue)</td>
+                                    <td class="rwr-number">@Model.Format(r.ExtraVat)</td>
+                                    <td class="rwr-number">@Model.Format(r.GrossRevenue)</td>
+                                    <td class="rwr-number">@Model.Format(r.NetRevenue)</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                    @if (Model.Rows.Count > 0)
+                    {
+                        <tfoot>
+                            <tr>
+                                <td colspan="6">Grand Total</td>
+                                <td class="rwr-number">@Model.Format(Model.RoomRevenue)</td>
+                                <td class="rwr-number">@Model.Format(Model.RoomVat)</td>
+                                <td class="rwr-number">@Model.Format(Model.ExtraRevenue)</td>
+                                <td class="rwr-number">@Model.Format(Model.ExtraVat)</td>
+                                <td class="rwr-number">@Model.Format(Model.GrossRevenue)</td>
+                                <td class="rwr-number">@Model.Format(Model.NetRevenue)</td>
+                            </tr>
+                        </tfoot>
+                    }
+                </table>
+            </div>
+        </section>
+        @if (Model.Issues.Count > 0)
+        {
+            <details class="rwr-issues">
+                <summary>@Model.Issues.Count entries need room assignment review — excluded from room-wise totals
+                    <span>@Model.Format(Model.ExcludedGross) gross value for reconciliation</span>
+                </summary>
+                <div class="rwr-issues-explanation">Room Rent charges with no room and extras for reservations without a saved room are listed here for review. Checkout-day extras are assigned to one room from the same reservation and appear on their posting date.</div>
+                <div class="rwr-table-scroll">
+                    <table class="rwr-table rwr-issue-table">
+                        <thead><tr><th>Date</th><th>Arrival – Departure</th><th>Room</th><th>Guest</th><th>Reservation #</th><th>Source</th><th>Reason</th><th class="rwr-number">Excluded Gross</th></tr></thead>
+                        <tbody>
+                            @foreach (var issue in Model.Issues)
+                            {
+                                <tr>
+                                    <td class="rwr-date">@issue.RevenueDate.ToString("dd MMM yyyy")</td>
+                                    <td class="rwr-staydates">@issue.StayDates</td>
+                                    <td>@issue.RoomNo</td><td>@issue.GuestName</td>
+                                    <td><a class="rwr-invoice-link" asp-controller="RoomWiseRevenue"
+                                           asp-action="Invoice" asp-route-regId="@issue.ReservationNo"
+                                           target="_blank" rel="noopener noreferrer"
+                                           title="Open reservation invoice">@issue.ReservationNo</a></td><td>@issue.SourceName</td>
+                                    <td>@issue.Reason</td>
+                                    <td class="rwr-number">@Model.Format(issue.ExcludedGross)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        }
+        <p class="rwr-footnote">Room Revenue = saved Rate less discount, allocated by occupied night. Saved Bed Tax is included in the relevant GST column. All extras for the same reservation and posting date are summed once and shown under one room, even on checkout day. No tax is recalculated.</p>
+    }
+</main>
+<script src="~/js/room-wise-revenue.js" asp-append-version="true"></script>

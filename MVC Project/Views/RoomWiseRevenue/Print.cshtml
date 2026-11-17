@@ -1,0 +1,91 @@
+@model Orapmshms.Models.RoomWiseRevenueViewModel
+@{
+    Layout = null;
+    ViewData["Title"] = "Print Room-wise Revenue Report";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Room-wise Revenue - @Model.HotelName</title>
+    <style>
+        * { box-sizing:border-box; }
+        body { margin:0; padding:18px 20px; font:11px Arial,Helvetica,sans-serif; color:#1b2e45; }
+        .toolbar { display:flex; justify-content:flex-end; gap:8px; padding-bottom:12px; }
+        .toolbar button { background:#173e6c; color:white; border:0; border-radius:5px; padding:9px 16px; cursor:pointer; }
+        .toolbar button:last-child { background:#eef3f9; color:#173e6c; }
+        .header { border-bottom:2px solid #173e6c; padding-bottom:10px; display:flex; justify-content:space-between; align-items:flex-end; }
+        h1 { font-size:20px; margin:0 0 5px; }
+        .muted { color:#6c7d90; font-size:10px; }
+        .period { line-height:1.8; text-align:right; }
+        table { border-collapse:collapse; width:100%; table-layout:auto; }
+        th { background:#eaf1f8; color:#2a4666; font-size:8px; font-weight:700; }
+        th,td { padding:6px 4px; border:1px solid #dce4ef; vertical-align:top; }
+        td { font-size:8.5px; }
+        .number { text-align:right; white-space:nowrap; }
+        .nowrap { white-space:nowrap; }
+        tfoot td { background:#eaf1f8; font-weight:700; }
+        .note { margin-top:10px; font-size:9px; line-height:1.5; color:#52667a; }
+        .warning { margin-top:9px; padding:7px 9px; border:1px solid #efd5a7; background:#fff9ec; }
+        thead { display:table-header-group; } tfoot { display:table-footer-group; }
+        tr { break-inside:avoid; page-break-inside:avoid; }
+        @@page { size:A3 landscape; margin:10mm; }
+        @@media print { body { padding:0; color:#111; } .toolbar { display:none; } .header { margin-top:0; } }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button type="button" onclick="window.print()">Print</button>
+        <button type="button" onclick="window.close()">Close</button>
+    </div>
+    <header class="header">
+        <div><h1>Room-wise Revenue Report</h1><div class="muted">@Model.HotelName</div></div>
+        <div class="period">
+            <div><strong>@Model.From.ToString("dd MMM yyyy") – @Model.To.ToString("dd MMM yyyy")</strong></div>
+            <div>Reservation Source: @(string.IsNullOrWhiteSpace(Model.Source) ? "All Sources" : Model.Source)</div>
+            <div class="muted">Rooms by occupied night · extras by payments.currentdate</div>
+        </div>
+    </header>
+    <table>
+        <thead>
+            <tr><th>Date</th><th>Arrival – Departure</th><th>Room No.</th><th>Guest Name</th><th>Reservation #</th><th>Source</th>
+                <th class="number">Room Revenue<br />Excl. Tax</th>
+                <th class="number">Room GST</th>
+                <th class="number">Extra Revenue<br />Excl. Tax</th><th class="number">Extra GST</th>
+                <th class="number">Gross</th><th class="number">Net</th></tr>
+        </thead>
+        <tbody>
+            @if (Model.Rows.Count == 0)
+            {
+                <tr><td colspan="12" style="text-align:center;">No room revenue or assigned extra revenue for this period.</td></tr>
+            }
+            else
+            {
+                foreach (var r in Model.Rows)
+                {
+                    <tr><td class="nowrap">@r.RevenueDate.ToString("dd MMM yyyy")</td><td class="nowrap">@r.StayDates</td><td class="nowrap">@r.RoomNo</td><td>@r.GuestName</td><td class="nowrap">@r.ReservationNo</td><td>@r.SourceName</td>
+                        <td class="number">@Model.Format(r.RoomRevenue)</td>
+                        <td class="number">@Model.Format(r.RoomVat)</td>
+                        <td class="number">@Model.Format(r.ExtraRevenue)</td><td class="number">@Model.Format(r.ExtraVat)</td>
+                        <td class="number">@Model.Format(r.GrossRevenue)</td><td class="number">@Model.Format(r.NetRevenue)</td></tr>
+                }
+            }
+        </tbody>
+        <tfoot>
+            <tr><td colspan="6">Grand Total</td>
+                <td class="number">@Model.Format(Model.RoomRevenue)</td><td class="number">@Model.Format(Model.RoomVat)</td>
+                <td class="number">@Model.Format(Model.ExtraRevenue)</td>
+                <td class="number">@Model.Format(Model.ExtraVat)</td><td class="number">@Model.Format(Model.GrossRevenue)</td>
+                <td class="number">@Model.Format(Model.NetRevenue)</td></tr>
+        </tfoot>
+    </table>
+    @if (Model.Issues.Count > 0)
+    {
+        <div class="warning"><strong>@Model.Issues.Count entries excluded for room assignment review</strong>
+            — @Model.Format(Model.ExcludedGross) gross value outside room-wise totals. See the main report for details.</div>
+    }
+    <div class="note">Saved Rate minus discount is apportioned across nights from arrival (inclusive) to departure (exclusive). Actual GST and Bed Tax are taken from saved charges, not recalculated from tax rates. All extras posted on the same date for one reservation are combined and assigned once to a saved room, preferring a room referenced by an extra, otherwise a room from that stay. Extras are recognised on payments.currentdate, including checkout day.</div>
+    <script>window.addEventListener('load', function () { window.print(); });</script>
+</body>
+</html>

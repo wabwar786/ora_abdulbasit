@@ -1,0 +1,91 @@
+.rwr-root {
+  --rwr-ink:#173253; --rwr-muted:#788aa3; --rwr-line:#e1e9f2;
+  --rwr-blue:#173e6c; --rwr-surface:#fff; --rwr-bg:#f6f8fc;
+  padding:18px 22px 30px; color:var(--rwr-ink); font-family:inherit;
+}
+.rwr-root * {box-sizing:border-box}
+.rwr-header {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:15px}
+.rwr-eyebrow {font-size:10px;font-weight:700;letter-spacing:1px;color:#6f88a4}
+.rwr-header h1 {margin:4px 0;font-size:23px;font-weight:700}
+.rwr-header p {font-size:12px;color:var(--rwr-muted);margin:0}
+.rwr-actions {display:flex;align-items:center;gap:9px}
+.rwr-button {font-family:inherit;font-size:12px;font-weight:600;line-height:1.3;display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:9px 16px;white-space:nowrap;border-radius:7px;text-decoration:none;cursor:pointer}
+.rwr-button-light {background:#fff;color:#173e6c;border:1px solid #dae3ee}
+.rwr-button-light:hover {background:#eff5fb;color:#173e6c}
+.rwr-button-primary {background:#173e6c;color:#fff;border:1px solid #173e6c}
+.rwr-button-primary:hover {background:#102c4e}
+.rwr-panel {background:var(--rwr-surface);border:1px solid var(--rwr-line);border-radius:11px;box-shadow:0 3px 15px rgba(18,40,74,.04)}
+.rwr-filters {padding:14px;display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px}
+.rwr-filters label {display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:600;color:#5b6d86}
+.rwr-filters input {height:36px;border:1px solid #d6e0ed;border-radius:7px;min-width:155px;padding:8px 10px;outline:none;background:white;color:#193858;font-family:inherit;font-size:12px;font-weight:400}
+.rwr-filters input:focus {border-color:#3980c0;box-shadow:0 0 0 3px #d9eafd}
+.rwr-search {flex:1 1 260px}.rwr-search input {width:100%}
+.rwr-error {padding:14px 16px;border-radius:8px;color:#a43b3b;background:#fff0f0;margin-top:14px;border:1px solid #f5d9d9}
+.rwr-report-context {display:flex;gap:12px 20px;align-items:center;flex-wrap:wrap;font-size:12px;margin:17px 0 12px;color:#687e99}
+.rwr-report-context strong {color:#203d62;font-weight:700}
+.rwr-results {overflow:hidden}
+.rwr-table-top {padding:13px 15px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--rwr-line)}
+.rwr-table-top h2 {font-size:14px;margin:0 0 4px;font-weight:700}
+.rwr-table-top span {font-size:11px;color:var(--rwr-muted)}
+.rwr-saved-tax {white-space:nowrap}
+.rwr-table-scroll {overflow:auto;max-width:100%}
+.rwr-table {border-collapse:collapse;width:100%;min-width:1400px;font-size:11.5px}
+.rwr-table th {background:#f3f7fb;color:#627894;font-weight:650;font-size:10px;letter-spacing:.15px;text-transform:uppercase;text-align:left;white-space:nowrap;padding:11px 10px;border-bottom:1px solid #e0e7ef}
+.rwr-table th small {font-weight:500;font-size:9px;color:#98a5b5}
+.rwr-table td {padding:9px 10px;border-bottom:1px solid #eaf0f5;color:#2b425d}
+.rwr-table tbody tr:hover {background:#f9fbfe}
+.rwr-table .rwr-number {text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:400}
+.rwr-room {font-weight:600!important;color:#133c68!important;white-space:nowrap}
+.rwr-reservation {color:#4f6b8d!important;white-space:nowrap}
+.rwr-table tfoot td {background:#ebf3fb;border-top:1px solid #d6e5f4;border-bottom:0;font-weight:600!important}
+.rwr-table .rwr-empty {padding:28px;text-align:center;color:#8999a9}
+.rwr-footnote {margin:12px 2px 0;font-size:11px;color:#8293a7;line-height:1.5}
+@media (max-width:700px) {
+ .rwr-root {padding:12px}.rwr-header h1 {font-size:20px}
+ .rwr-filters {gap:9px}.rwr-filters label {flex:1 1 100%}.rwr-filters input {width:100%}
+ .rwr-table-top {flex-wrap:wrap}
+}
+@media print {
+ @page {size:landscape;margin:10mm}
+ body {background:white!important}
+ .rwr-root {padding:0!important;color:#000}
+ .rwr-no-print,.rwr-footnote {display:none!important}
+ .rwr-table {min-width:0;font-size:8px}
+ .rwr-table th,.rwr-table td {padding:4px 5px;white-space:normal}
+ .rwr-table-scroll {overflow:visible}
+ .rwr-header {margin-bottom:8px}
+ .rwr-panel {box-shadow:none}
+}
+/* Source selector and flagged entries - scoped to this report only */
+.rwr-filters select {
+  height:36px;border:1px solid #d6e0ed;border-radius:7px;
+  padding:7px 10px;min-width:175px;background:#fff;color:#193858;
+  font-size:12px;font-weight:400;font-family:inherit;
+}
+.rwr-filters select:focus {border-color:#3980c0;box-shadow:0 0 0 3px #d9eafd;outline:0}
+.rwr-issues {background:#fff;border:1px solid #e7d7ae;border-radius:9px;margin-top:12px;overflow:hidden}
+.rwr-issues summary {cursor:pointer;background:#fffaf0;padding:12px 15px;color:#785323;font-size:12px;font-weight:600}
+.rwr-issues summary span {font-weight:400;margin-left:12px;color:#926d38}
+.rwr-issues-explanation {padding:10px 14px;color:#677b90;font-size:11px}
+.rwr-issue-table {min-width:880px}
+.rwr-issue-table td:last-child {color:#87511a}
+@media (max-width:700px) {.rwr-filters select {width:100%}}
+
+/* Daily rows make the saved extra posting date visible. */
+.rwr-date { white-space:nowrap; font-variant-numeric:tabular-nums; color:#566d87!important; }
+.rwr-table tbody tr.rwr-extra-only td { background:#f6faff; }
+.rwr-table tbody tr.rwr-extra-only:hover td { background:#edf5ff; }
+
+
+/* Original reservation stay dates; no changes to revenue calculations. */
+.rwr-staydates { white-space:nowrap; color:#425a76; font-variant-numeric:tabular-nums; }
+
+
+/* Streamlined revenue detail: no duplicate summary cards, nights or bed-tax columns. */
+.rwr-table { min-width:1390px; }
+
+/* Same reservation-to-invoice action as the FBR Failed Invoice Report. */
+.rwr-root .rwr-invoice-link { color: #1e5a95; text-decoration: none; font-weight: 500; white-space: nowrap; }
+.rwr-root .rwr-invoice-link:hover { color: #113b67; text-decoration: underline; }
+.rwr-root .rwr-invoice-link:focus-visible { outline: 2px solid #246ba7; outline-offset: 2px; border-radius: 2px; }
+@media print { .rwr-root .rwr-invoice-link { color: inherit; text-decoration: none; } }
