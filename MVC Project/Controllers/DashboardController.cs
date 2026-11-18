@@ -250,7 +250,7 @@ public sealed class DashboardController : Controller
             // Financial KPI cards display the filtered period; other cards retain their
             // original end-date/MTD definitions. ResolveDateRange validates the user input.
             var (rangeStart, rangeEnd) = ResolveDateRange(hotelId, startDate, endDate);
-            var operationalStat = new[] { "checkin", "checkout", "available", "occupied", "blocked", "dirty" }
+            var operationalStat = new[] { "checkin", "dueout", "checkout", "createdtoday", "available", "occupied", "blocked", "dirty" }
                 .Contains((type ?? string.Empty).Trim().ToLowerInvariant());
             if (operationalStat)
                 selectedDate = _hotelClock.GetHotelToday(hotelId).Date;

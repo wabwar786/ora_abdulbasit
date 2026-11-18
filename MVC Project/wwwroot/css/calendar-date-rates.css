@@ -1,0 +1,97 @@
+/* ORA PMS | Compact, read-only calendar rate matrix */
+.fdc-day.ora-rates-date-trigger,.fdcmw-fdc-day.ora-rates-date-trigger{cursor:pointer;transition:background .15s ease,box-shadow .15s ease}
+.fdc-day.ora-rates-date-trigger:hover,.fdcmw-fdc-day.ora-rates-date-trigger:hover{background:#e8f2ff!important;box-shadow:inset 0 -3px #3275d9}
+.ora-rates-date-trigger:focus-visible{outline:2px solid #2679e4;outline-offset:-3px;z-index:1}
+.fdc-day.ora-rates-selected-date,.fdcmw-fdc-day.ora-rates-selected-date{background:#e4f0ff!important;box-shadow:inset 0 -3px #1c5ec1}
+.ora-rates-backdrop{position:fixed;inset:0;z-index:4200;padding:20px;background:rgba(7,24,44,.57);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .16s ease,visibility .16s ease}
+.ora-rates-backdrop.ora-rates-open{visibility:visible;opacity:1;pointer-events:auto}
+.ora-rates-backdrop *{box-sizing:border-box}
+.ora-rates-panel{width:min(1400px,100%);max-height:calc(100dvh - 40px);display:flex;flex-direction:column;min-width:0;background:#f8fafc;color:#193550;border:1px solid #d8e4f1;border-radius:13px;box-shadow:0 26px 75px rgba(2,19,36,.28);font-family:inherit;font-size:13px;overflow:hidden;transform:translateY(7px);transition:transform .16s ease}
+.ora-rates-open .ora-rates-panel{transform:translateY(0)}
+.ora-rates-panel button,.ora-rates-panel input{font-family:inherit}
+.ora-rates-panel button{cursor:pointer}
+.ora-rates-panel button:focus-visible,.ora-rates-panel input:focus-visible,.ora-rates-content:focus-visible{outline:2px solid #6eaae9;outline-offset:2px}
+/* Single-row header: title, date picker and close. */
+.ora-rates-hero{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:66px;padding:12px 18px;background:linear-gradient(110deg,#132f49,#1b4b70);color:#fff}
+.ora-rates-hero h2{display:flex;align-items:center;gap:10px;min-width:0;margin:0;color:#fff;font-size:19px;font-weight:800;letter-spacing:-.025em;line-height:1.25}
+.ora-rates-hero h2 i{color:#a9d7f8;font-size:16px}
+.ora-rates-header-actions{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.ora-rates-day-picker{display:flex;align-items:center;gap:3px;padding:3px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.19);border-radius:8px}
+.ora-rates-step,.ora-rates-icon-btn{display:grid;place-items:center;flex:0 0 auto;width:32px;height:32px;border-radius:6px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.09);color:#fff;font-size:12px}
+.ora-rates-step:hover,.ora-rates-icon-btn:hover{background:rgba(255,255,255,.23)}
+.ora-rates-icon-btn{width:34px;height:34px;font-size:15px}
+.ora-rates-date-input-wrap{display:flex;align-items:center;gap:8px;color:#d9ecf9;padding:0 9px;min-height:32px;cursor:pointer}
+.ora-rates-date-input-wrap i{font-size:13px}
+.ora-rates-date-input{width:143px;max-width:35vw;min-height:30px;padding:0 1px;border:0;background:transparent;color:#fff;color-scheme:dark;font-size:12px;font-weight:730;cursor:pointer}
+.ora-rates-date-input::-webkit-calendar-picker-indicator{cursor:pointer}
+/* Only search is visible. Counts appear when a search is active. */
+.ora-rates-toolbar{display:flex;flex:0 0 auto;align-items:center;gap:12px;min-height:52px;padding:9px 16px}
+.ora-rates-search{display:flex;align-items:center;gap:9px;height:34px;min-width:0;width:min(330px,100%);padding:0 11px;border:1px solid #d6e3ee;border-radius:7px;background:#fff;color:#8496a9}
+.ora-rates-search:focus-within{border-color:#408ad6;box-shadow:0 0 0 3px rgba(66,138,224,.12)}
+.ora-rates-search i{font-size:12px}
+.ora-rates-search input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:#1d3b54;font-size:12px}
+.ora-rates-result-count{color:#71869b;font-size:11px;font-weight:650}
+.ora-rates-result-count:empty{display:none}
+/* Dense table; scrolling is inside the matrix only. */
+.ora-rates-content{flex:0 1 auto;min-height:100px;max-height:min(64vh,610px);min-width:0;overflow:auto;overscroll-behavior:contain;margin:0 16px 16px;border:1px solid #d8e4ee;background:#fff;border-radius:8px;scrollbar-color:#bbcbd9 #f2f6f9}
+.ora-rates-matrix-wrap{width:max-content;min-width:100%}
+.ora-rates-matrix{border-collapse:separate;border-spacing:0;table-layout:fixed;width:max-content;min-width:100%;color:#183a56}
+.ora-rates-matrix th,.ora-rates-matrix td{padding:0;text-align:left;vertical-align:middle;border-right:1px solid #e4ebf2;border-bottom:1px solid #e9eef3}
+.ora-rates-matrix tr>:last-child{border-right:0}
+.ora-rates-matrix tbody tr:last-child>*{border-bottom:0}
+.ora-rates-matrix thead th{position:sticky;top:0;z-index:4;width:164px;min-width:164px;max-width:164px;height:58px;padding:9px 13px;vertical-align:middle;background:#edf4fb;border-bottom:1px solid #cbdceb}
+.ora-rates-matrix thead th.ora-rates-corner{left:0;z-index:7;width:212px;min-width:212px;max-width:212px;background:#e2edf7;border-right:2px solid #cbdae7}
+.ora-rates-corner span{display:block;color:#244a68;font-size:11px;font-weight:850;letter-spacing:.065em}
+.ora-rates-category-name{display:block;color:#244767;font-size:11px;font-weight:800;line-height:1.3;overflow-wrap:anywhere}
+.ora-rates-matrix tbody tr>*{height:50px}
+.ora-rates-matrix tbody th.ora-rates-plan-name{position:sticky;left:0;z-index:2;width:212px;min-width:212px;max-width:212px;padding:9px 13px;background:#fff;border-right:2px solid #d6e2ed}
+.ora-rates-plan-text{display:block;color:#25435d;font-size:14px;font-weight:500;line-height:1.32;overflow-wrap:anywhere}
+.ora-rates-matrix tbody td{width:164px;min-width:164px;max-width:164px;padding:8px 13px;transition:background .12s ease}
+.ora-rates-cell-price{color:#173f62;font-size:15px;font-weight:500;white-space:nowrap;letter-spacing:-.025em}
+.ora-rates-matrix tbody tr:nth-child(even)>*{background:#f8fafc}
+.ora-rates-matrix tbody tr:hover>th,.ora-rates-matrix tbody tr:hover>td{background:#deefff!important}
+.ora-rates-matrix tbody tr:hover>th.ora-rates-plan-name{box-shadow:inset 3px 0 #247dcd}
+.ora-rates-matrix tbody tr:hover .ora-rates-cell-price{color:#105b9b}
+.ora-rates-matrix tbody tr>td:hover{background:#cee6fc!important;box-shadow:inset 0 0 0 1px #a6cfee}
+.ora-rates-stop-tag{display:inline-block;vertical-align:middle;margin-left:7px;padding:3px 5px;border-radius:4px;background:#ffe9e6;color:#ac3937;font-size:9px;font-weight:800}
+.ora-rates-matrix tbody .ora-rates-stopped .ora-rates-cell-price{color:#a84e48}
+.ora-rates-matrix tbody td.ora-rates-unmapped{text-align:center;color:#9cabb9;font-size:17px}
+.ora-rates-loading,.ora-rates-empty{min-height:165px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;gap:8px;color:#788b9c;padding:20px}
+.ora-rates-loading strong,.ora-rates-empty strong{color:#1f3852;font-size:13px}
+.ora-rates-empty span{color:#8596a8;font-size:11px}
+.ora-rates-empty>i{font-size:23px;color:#8eafcc}
+.ora-rates-spinner{width:26px;height:26px;border-radius:50%;border:3px solid #d7e8f9;border-top-color:#267fbb;animation:ora-rates-spin .75s linear infinite}
+@keyframes ora-rates-spin{to{transform:rotate(360deg)}}
+.ora-rates-retry{border:0;border-radius:7px;background:#22699f;color:#fff;padding:9px 15px;font-weight:800}
+@media(max-width:720px){
+  .ora-rates-backdrop{padding:10px}.ora-rates-panel{max-height:calc(100dvh - 20px)}
+  .ora-rates-hero{padding:11px 12px;gap:9px;flex-wrap:wrap}.ora-rates-hero h2{font-size:17px}.ora-rates-header-actions{width:100%;justify-content:space-between}
+  .ora-rates-toolbar{padding:8px 10px}.ora-rates-content{margin:0 10px 10px;max-height:calc(100dvh - 170px)}
+  .ora-rates-matrix thead th,.ora-rates-matrix tbody td{width:152px;min-width:152px;max-width:152px}
+  .ora-rates-matrix thead th.ora-rates-corner,.ora-rates-matrix tbody th.ora-rates-plan-name{width:157px;min-width:157px;max-width:157px}
+  .ora-rates-matrix tbody tr>*{height:47px}.ora-rates-matrix tbody td,.ora-rates-matrix tbody th.ora-rates-plan-name{padding:8px 9px}
+  .ora-rates-cell-price{font-size:14px}.ora-rates-category-name,.ora-rates-plan-text{font-size:11px}
+}
+@media(max-width:440px){.ora-rates-backdrop{padding:0}.ora-rates-panel{width:100%;max-height:100dvh;border:0;border-radius:0}.ora-rates-date-input{width:128px}.ora-rates-day-picker{flex:1;justify-content:space-between}.ora-rates-search{width:100%}}
+@media(prefers-reduced-motion:reduce){.ora-rates-backdrop,.ora-rates-panel,.ora-rates-matrix tbody td{transition:none}.ora-rates-spinner{animation:none}}
+
+/* Final refinement: availability is visible inside each category, not a separate statistics row. */
+.ora-rates-matrix thead th{height:72px;vertical-align:middle;padding:8px 12px}
+.ora-rates-category-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:15px;max-height:30px;margin-bottom:6px}
+.ora-rates-avail{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 8px;border:1px solid transparent;border-radius:5px;font-size:10px;font-weight:800;line-height:1;white-space:nowrap}
+.ora-rates-avail-dot{width:6px;height:6px;flex:0 0 auto;border-radius:50%;background:currentColor}
+.ora-rates-avail-available{color:#147d60;background:#e2f5ed;border-color:#c6e6d9}
+.ora-rates-avail-soldout{color:#b54b4b;background:#fce9e9;border-color:#f3d1d1}
+.ora-rates-avail-unknown{color:#687f93;background:#e9eef3;border-color:#dde6ed}
+.ora-rates-day-picker{gap:4px}
+.ora-rates-date-caption{padding:0 4px 0 9px;min-width:153px;max-width:230px;white-space:nowrap;font-size:12px;font-weight:730}
+.ora-rates-date-input-wrap{position:relative;display:grid;place-items:center;width:32px;height:32px;padding:0;cursor:pointer;border-radius:6px}
+.ora-rates-date-input-wrap:hover,.ora-rates-date-input-wrap:focus-within{background:rgba(255,255,255,.17)}
+.ora-rates-date-input-wrap i{font-size:14px;pointer-events:none}
+.ora-rates-date-input{position:absolute;inset:0;width:100%;height:100%;padding:0;margin:0;opacity:0;cursor:pointer;color-scheme:dark}
+.ora-rates-date-input:focus-visible{outline:2px solid #a9d7f8;outline-offset:-1px}
+@media(max-width:720px){
+.ora-rates-date-caption{min-width:0;max-width:175px;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.ora-rates-matrix thead th{height:72px}
+}
+@media(max-width:440px){.ora-rates-date-caption{max-width:150px}.ora-rates-hero h2{font-size:16px}}

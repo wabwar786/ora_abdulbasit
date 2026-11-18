@@ -19,10 +19,15 @@ public sealed class DashboardViewModel
     public int TotalRooms { get; set; }
     public int SellableRoomsToday { get; set; }
     public int RoomsSoldToday { get; set; }
+    // Distinguish held bookings from actual checked-in rooms.
+    public int ReservedRoomsToday { get; set; }
+    public int InHouseRoomsToday { get; set; }
+    public int DueOutRoomsToday { get; set; }
     public int AvailableRoomsToday { get; set; }
     public int DirtyRoomsToday { get; set; }
     public int BlockedRoomsToday { get; set; }
     public int ArrivalsToday { get; set; }
+    public int ReservationsCreatedToday { get; set; }
     public int DeparturesToday { get; set; }
     public int InHouseGuests { get; set; }
     public decimal AverageStayNights { get; set; }

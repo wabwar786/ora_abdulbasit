@@ -246,7 +246,7 @@
     const unassignedByCat = new Set(bookings.filter(b => !b.roomNo || String(b.roomNo).toUpperCase()==='UNASSIGNED').map(b=>String(b.categoryId)));
 
     let html = `<div class="fdc-date-head"><div class="fdc-rooms-head">Rooms</div>`;
-    for (const [dayIndex,d] of dates.entries()) html += `<div class="fdc-day ${isWeekend(d)?'weekend':''} ${sameDate(d,state.hotelToday)?'today':''}" data-day="${dayIndex}" data-date="${iso(d)}"><span>${esc(d.toLocaleDateString('en-GB',{weekday:'short'}))}</span><b>${d.getDate()}</b><small>${esc(d.toLocaleDateString('en-GB',{month:'short'}))}</small></div>`;
+    for (const [dayIndex,d] of dates.entries()) html += `<div class="fdc-day ora-rates-date-trigger ${isWeekend(d)?'weekend':''} ${sameDate(d,state.hotelToday)?'today':''}" data-day="${dayIndex}" data-date="${iso(d)}" role="button" tabindex="0" aria-label="View rates for ${esc(fmt(d,true))}" title="View room rates for ${esc(fmt(d,true))}"><span>${esc(d.toLocaleDateString('en-GB',{weekday:'short'}))}</span><b>${d.getDate()}</b><small>${esc(d.toLocaleDateString('en-GB',{month:'short'}))}</small></div>`;
     html += '</div>';
 
     for (const cat of cats) {

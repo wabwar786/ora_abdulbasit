@@ -1026,8 +1026,8 @@
         var select = controls.querySelector('#dashboardRoomDate');
         var filters = [
             ['all', 'All'],
-            ['checkin', 'Check in'],
-            ['reservation', 'Reservation'],
+            ['checkin', 'In house'],
+            ['reservation', 'Reserved-only'],
             ['checkout', 'Check out'],
             ['vacant', 'Vacant'],
             ['ooo', 'Blocked']
@@ -1058,8 +1058,8 @@
 
             [
                 ['all', 'dashboard-legend-all', 'Total rooms'],
-                ['checkin', 'dashboard-legend-checkin', 'Checked in'],
-                ['reservation', 'dashboard-legend-reservation', 'Reservation'],
+                ['checkin', 'dashboard-legend-checkin', 'In house'],
+                ['reservation', 'dashboard-legend-reservation', 'Reserved-only'],
                 ['checkout', 'dashboard-legend-checkout', 'Checked out'],
                 ['vacant', 'dashboard-legend-vacant', 'Vacant'],
                 ['ooo', 'dashboard-legend-ooo', 'Out of order'],
@@ -1186,7 +1186,7 @@
 
         try {
             var dashboardDate = page.getAttribute('data-dashboard-date') || '';
-            if (['checkin', 'checkout', 'available', 'occupied', 'blocked', 'dirty'].indexOf(type) >= 0)
+            if (['checkin', 'checkout', 'available', 'reserved', 'occupied', 'dueout', 'blocked', 'dirty'].indexOf(type) >= 0)
                 dashboardDate = page.getAttribute('data-hotel-today') || dashboardDate;
             var period = selectedPeriod();
             var response = await fetch(url + '?type=' + encodeURIComponent(type)

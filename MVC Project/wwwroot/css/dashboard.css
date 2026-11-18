@@ -7140,3 +7140,78 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
         font-size: 10px;
     }
 }
+
+/* Room movement separation: reserved is not physically occupied. */
+.dashboard-page .dashboard-operations-card .dashboard-operation-reserved {
+    background: #f2f3fe;
+    border-color: #d8daf5;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operation-dueout {
+    background: #fff5e7;
+    border-color: #eed8ae;
+}
+.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="reserved"] {
+    --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2036%2036'%3E%3Crect%20x='1'%20y='1'%20width='34'%20height='34'%20rx='10'%20fill='%23efefff'/%3E%3Crect%20x='8'%20y='9'%20width='20'%20height='19'%20rx='3'%20fill='none'%20stroke='%235c609a'%20stroke-width='2'/%3E%3Cpath%20d='M8%2015h20M13%206v6M23%206v6M13%2020h10'%20stroke='%235c609a'%20stroke-width='2'%20stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="dueout"] {
+    --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2036%2036'%3E%3Crect%20x='1'%20y='1'%20width='34'%20height='34'%20rx='10'%20fill='%23fff4df'/%3E%3Cpath%20d='M8%2012h11v14H8zM16%2019h12m-5-5%205%205-5%205'%20fill='none'%20stroke='%23a47632'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+
+/* 18 Nov 2026: Six concise, non-redundant Operations cards.
+   Room-level counts and existing detail-modal handlers are unchanged. */
+.dashboard-page .dashboard-operations-card .dashboard-operations-six {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation {
+    min-width: 0;
+    /* Content-driven cards: avoid empty bands between the value and note. */
+    min-height: 0;
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 3px;
+    text-align: left;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > span {
+    max-width: calc(100% - 26px);
+    font-size: 11px;
+    line-height: 1.2;
+    font-weight: 600;
+    color: #354c64;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > strong {
+    font-size: 22px;
+    line-height: 1.1;
+    font-weight: 700;
+    margin: 1px 0 0;
+}
+.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > small.dashboard-operation-note {
+    display: block;
+    max-width: 100%;
+    margin-top: 1px;
+    font-size: 9.5px;
+    line-height: 1.25;
+    font-weight: 400;
+    color: #65778b;
+    text-wrap: pretty;
+}
+@media (max-width: 600px) {
+    .dashboard-page .dashboard-operations-card .dashboard-operations-six {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 370px) {
+    .dashboard-page .dashboard-operations-card .dashboard-operations-six {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* Reservation creation is a distinct daily KPI, not current reserved inventory. */
+.dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="createdtoday"] {
+    --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2036%2036'%3E%3Crect%20x='1'%20y='1'%20width='34'%20height='34'%20rx='10'%20fill='%23efefff'/%3E%3Crect%20x='8'%20y='9'%20width='20'%20height='19'%20rx='3'%20fill='none'%20stroke='%235c609a'%20stroke-width='2'/%3E%3Cpath%20d='M8%2015h20M13%206v6M23%206v6M13%2020h10M18%2018v7M14.5%2021.5h7'%20stroke='%235c609a'%20stroke-width='2'%20stroke-linecap='round'/%3E%3C/svg%3E");
+}

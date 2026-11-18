@@ -398,8 +398,8 @@
                     </div>
                     <div class="dashboard-room-controls">
                         <button type="button" class="dashboard-pill is-active" data-room-filter="all">All <span data-room-filter-count="all">@roomTotal</span></button>
-                        <button type="button" class="dashboard-pill" data-room-filter="checkin">Check in <span data-room-filter-count="checkin">@roomCheckIn</span></button>
-                        <button type="button" class="dashboard-pill" data-room-filter="reservation">Reservation <span data-room-filter-count="reservation">@roomReservation</span></button>
+                        <button type="button" class="dashboard-pill" data-room-filter="checkin">In house <span data-room-filter-count="checkin">@roomCheckIn</span></button>
+                        <button type="button" class="dashboard-pill" data-room-filter="reservation" title="Rooms whose primary physical status is reserved. Reservations arriving on currently occupied rooms are counted separately in Reserved rooms.">Reserved-only <span data-room-filter-count="reservation">@roomReservation</span></button>
                         <button type="button" class="dashboard-pill" data-room-filter="checkout">Check out <span data-room-filter-count="checkout">@roomCheckout</span></button>
                         <button type="button" class="dashboard-pill" data-room-filter="vacant">Vacant <span data-room-filter-count="vacant">@roomVacant</span></button>
                         <button type="button" class="dashboard-pill" data-room-filter="ooo">Blocked <span data-room-filter-count="ooo">@roomBlocked</span></button>
@@ -541,8 +541,8 @@
 
                     <div id="dashboardRoomLegend" class="dashboard-room-legend" aria-label="Room status legend">
                         <span class="dashboard-room-legend-item dashboard-room-total"><i class="dashboard-legend-all"></i>Total rooms <b data-room-legend-count="all">@roomTotal</b></span>
-                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-checkin"></i>Checked in <b data-room-legend-count="checkin">@roomCheckIn</b></span>
-                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-reservation"></i>Reservation <b data-room-legend-count="reservation">@roomReservation</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-checkin"></i>In house <b data-room-legend-count="checkin">@roomCheckIn</b></span>
+                        <span class="dashboard-room-legend-item"><i class="dashboard-legend-reservation"></i>Reserved-only <b data-room-legend-count="reservation">@roomReservation</b></span>
                         <span class="dashboard-room-legend-item"><i class="dashboard-legend-checkout"></i>Checked out <b data-room-legend-count="checkout">@roomCheckout</b></span>
                         <span class="dashboard-room-legend-item"><i class="dashboard-legend-vacant"></i>Vacant <b data-room-legend-count="vacant">@roomVacant</b></span>
                         <span class="dashboard-room-legend-item"><i class="dashboard-legend-ooo"></i>Out of order <b data-room-legend-count="ooo">@roomBlocked</b></span>
@@ -676,18 +676,45 @@
                     <a class="dashboard-pill dashboard-link-pill" href="/Calendar">Front desk</a>
                 </header>
                 <div class="dashboard-card-body">
-                    <div class="dashboard-operations">
-                        <button type="button" class="dashboard-operation" data-info="Arrivals and check-ins counted for the hotel business date (today)." data-dashboard-statistic="checkin"><span>Check-ins Today </span><strong>@Model.ArrivalsToday</strong></button>
-                        <button type="button" class="dashboard-operation" data-info="Departures and check-outs counted for the current hotel business date." data-dashboard-statistic="checkout"><span>Check-outs Today </span><strong>@Model.DeparturesToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-available" data-info="Rooms available to sell on the current hotel business date." data-dashboard-statistic="available"><span>Available rooms </span><strong>@Model.AvailableRoomsToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-occupied" data-info="Rooms occupied or sold for the current hotel business date." data-dashboard-statistic="occupied"><span>Occupied rooms </span><strong>@Model.RoomsSoldToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-danger" data-info="Rooms blocked or out of order on the current hotel business date." data-dashboard-statistic="blocked"><span>Blocked </span><strong>@Model.BlockedRoomsToday</strong></button>
-                        <button type="button" class="dashboard-operation dashboard-operation-warning" data-info="Rooms marked dirty for housekeeping on the current hotel business date." data-dashboard-statistic="dirty"><span>Dirty rooms </span><strong>@Model.DirtyRoomsToday</strong></button>
-                    </div>
-                    <div class="dashboard-mini-stats">
-                        <div data-info="Guests currently checked in according to the dashboard snapshot." tabindex="0"><span>In-house guests </span><strong>@Model.InHouseGuests</strong></div>
-                        <div data-info="Average length of stay for the dashboard guest population, in nights." tabindex="0"><span>Average stay </span><strong>@Model.AverageStayNights.ToString("0.#") <small>nights</small></strong></div>
-                        <div data-info="Percentage of dashboard guests identified as returning guests." tabindex="0"><span>Repeat guests </span><strong>@Model.RepeatGuestPercent.ToString("0.#")%</strong></div>
+                    @* Six independent daily operational metrics. Each clickable
+                       detail view uses the identical SQL definition as its KPI. *@
+                    <div class="dashboard-operations dashboard-operations-six" aria-label="Today's room operations">
+                        <button type="button" class="dashboard-operation" data-dashboard-statistic="checkin"
+                                data-info="Distinct reservations arriving today, whether still reserved, provisional, checked in or already checked out. Arrivals are counted by reservation number, not room count.">
+                            <span>Check-ins Today</span>
+                            <strong>@Model.ArrivalsToday</strong>
+                            <small class="dashboard-operation-note">All reservations arriving today</small>
+                        </button>
+                        <button type="button" class="dashboard-operation dashboard-operation-dueout" data-dashboard-statistic="dueout"
+                                data-info="Rooms still checked in whose scheduled departure date is today. Rooms already checked out are excluded.">
+                            <span>Due Outs Today</span>
+                            <strong>@Model.DueOutRoomsToday</strong>
+                            <small class="dashboard-operation-note">Still in house; due to depart</small>
+                        </button>
+                        <button type="button" class="dashboard-operation" data-dashboard-statistic="checkout"
+                                data-info="Rooms actually marked checked out today, based on actual checkout date. Older records without this timestamp use the scheduled departure date.">
+                            <span>Check-outs Today</span>
+                            <strong>@Model.DeparturesToday</strong>
+                            <small class="dashboard-operation-note">Rooms checked out today</small>
+                        </button>
+                        <button type="button" class="dashboard-operation dashboard-operation-reserved" data-dashboard-statistic="createdtoday"
+                                data-info="Distinct reservations created today, using their original creation date, irrespective of the arrival date. Bookings are counted once, even when they contain several rooms.">
+                            <span>Reservations Today</span>
+                            <strong>@Model.ReservationsCreatedToday</strong>
+                            <small class="dashboard-operation-note">New bookings created today</small>
+                        </button>
+                        <button type="button" class="dashboard-operation dashboard-operation-occupied" data-dashboard-statistic="occupied"
+                                data-info="Physical rooms currently checked in according to the room-level status, excluding reservation-only rooms. Guest count is shown beneath the room count.">
+                            <span>In-house Rooms</span>
+                            <strong>@Model.InHouseRoomsToday</strong>
+                            <small class="dashboard-operation-note">@Model.InHouseGuests guest@(Model.InHouseGuests == 1 ? "" : "s") in-house</small>
+                        </button>
+                        <button type="button" class="dashboard-operation dashboard-operation-available" data-dashboard-statistic="available"
+                                data-info="Rooms available to sell today. Blocked/out-of-order inventory and booked rooms are excluded.">
+                            <span>Available Rooms</span>
+                            <strong>@Model.AvailableRoomsToday</strong>
+                            <small class="dashboard-operation-note">@Model.BlockedRoomsToday blocked / OOS excluded</small>
+                        </button>
                     </div>
                 </div>
             </section>

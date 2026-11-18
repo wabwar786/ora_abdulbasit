@@ -5,6 +5,7 @@
 }
 @section Styles {
     <link rel="stylesheet" href="~/css/frontdesk-calendar-template.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/calendar-date-rates.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/record-payment.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/room-security.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/refund-payment.css" asp-append-version="true" />
@@ -19,6 +20,7 @@
      data-restaurant-enabled="@(Model.IsRestaurantEnabled ? "1" : "0")"
      data-restaurant-url="@Url.Action("Home", "Restaurant")"
      data-restaurant-link-url="@Url.Action("RestaurantAccessUrl", "FrontDeskCalendar")"
+     data-rates-url="@Url.Action("ForDate", "CalendarDateRates")"
      data-hotel-id="@Model.HotelId"
      data-user-id="@Model.UserId"
      data-user-name="@Model.UserName"
@@ -127,4 +129,5 @@
     <script src="~/js/refund-payment.js" asp-append-version="true"></script>
     <script src="~/js/payment-adjustment.js" asp-append-version="true"></script>
     <script src="~/js/frontdesk-calendar-template.js" asp-append-version="true"></script>
+    <script src="~/js/calendar-date-rates.js" asp-append-version="true"></script>
 }

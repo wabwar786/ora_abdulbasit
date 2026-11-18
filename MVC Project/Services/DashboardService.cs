@@ -9,7 +9,7 @@ using Orapmshms.Models;
 
 namespace Orapmshms.Services;
 
-public sealed class DashboardService : IDashboardService
+public sealed partial class DashboardService : IDashboardService
 {
     // One in-flight room-type query per hotel, shared by the quick graph and
     // lower-page analytics, avoids duplicate SQL work on a cold load.
@@ -76,7 +76,7 @@ public sealed class DashboardService : IDashboardService
         // Deliberately let the one shared load complete if its first browser
         // disconnects. Otherwise the next 14 hotel sessions repeatedly restart it.
         // Only dashboard reporting data is affected; operational services are not.
-        var cacheKey = $"dashboard:page-snapshot:v1:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}:{_hotelClock.GetHotelToday(hotelId):yyyyMMdd}";
+        var cacheKey = $"dashboard:page-snapshot:v2:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}:{_hotelClock.GetHotelToday(hotelId):yyyyMMdd}";
         var model = await CachedAsync(cacheKey, TimeSpan.FromSeconds(20),
             () => BuildPageSnapshotAsync(hotelId, start, end, CancellationToken.None),
             SnapshotCacheLocks);
@@ -122,9 +122,21 @@ public sealed class DashboardService : IDashboardService
             new List<DashboardRoomStatusItem>(),
             "room status");
 
+        // A room can be checked in for a departing guest AND reserved for a
+        // different arriving guest on the same hotel day. The room rack intentionally
+        // shows only one physical state; the Reserved Rooms KPI must count the
+        // incoming Room Rent reservations independently.
+        var reservedStaysTask = SafeLoadAsync(
+            () => CachedAsync(
+                $"dashboard:reserved-stays:v1:{hotelId}:{businessToday:yyyyMMdd}",
+                TimeSpan.FromSeconds(10),
+                () => LoadReservedRoomStaysInternalAsync(hotelId, businessToday, cancellationToken)),
+            new List<DashboardRoomStatusItem>(),
+            "reserved room stays");
+
         var operationsTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:operations:v28:{hotelId}:{businessToday:yyyyMMdd}",
+                $"dashboard:operations:v29:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(5),
                 () => LoadOperationsAsync(hotelId, businessToday, cancellationToken)),
             new DashboardOperationsData(),
@@ -210,6 +222,7 @@ public sealed class DashboardService : IDashboardService
         await Task.WhenAll(
             hotelTask,
             roomTask,
+            reservedStaysTask,
             operationsTask,
             guestsTask,
             occupancy30Task,
@@ -223,6 +236,7 @@ public sealed class DashboardService : IDashboardService
 
         var hotel = await hotelTask;
         var rooms = await roomTask;
+        var reservedStays = await reservedStaysTask;
         var operations = await operationsTask;
         var guests = await guestsTask;
         var occupancy30 = await occupancy30Task;
@@ -255,6 +269,7 @@ public sealed class DashboardService : IDashboardService
             ExceptionSeries = exceptions.Series,
             ExceptionSources = exceptions.Sources,
             ArrivalsToday = operations.Arrivals,
+            ReservationsCreatedToday = operations.ReservationsCreated,
             DeparturesToday = operations.Departures,
             InHouseGuests = operations.InHouseGuests,
             AverageStayNights = operations.AverageStay,
@@ -280,6 +295,17 @@ public sealed class DashboardService : IDashboardService
         model.TotalRooms = rooms.Count;
         model.DirtyRoomsToday = rooms.Count(x => x.IsDirty || string.Equals(x.State, "dirty", StringComparison.OrdinalIgnoreCase));
         model.BlockedRoomsToday = rooms.Count(x => string.Equals(x.State, "ooo", StringComparison.OrdinalIgnoreCase));
+        // A reservation is NOT an occupied room: use the room-level Room Rent status.
+        // A checked-in guest departing today remains in house until checkout is recorded.
+        // Count incoming reservations independently of the rack, including
+        // same-day turnover and arrivals already checked in today.
+        model.ReservedRoomsToday = reservedStays.Count;
+        model.InHouseRoomsToday = rooms.Count(x => x.State == "checkin");
+        model.DueOutRoomsToday = rooms.Count(x =>
+            x.State == "checkin" && x.DepartureDate?.Date == businessToday);
+
+        // Keep the existing booked-room / sellable-inventory calculation separate.
+        // Each physical room is counted once (even on a same-day turnover).
         model.RoomsSoldToday = rooms.Count(x => x.State is "checkin" or "reservation");
         model.AvailableRoomsToday = Math.Max(0, model.TotalRooms - model.BlockedRoomsToday - model.RoomsSoldToday);
 
@@ -1132,10 +1158,13 @@ GROUP BY ExceptionType, MONTH(EventDate);";
             "cancellations" => await LoadExceptionDetailsAsync(hotelId, date.Date, true, cancellationToken, periodStart),
             "occupancy" => await LoadOccupancyDetailsAsync(hotelId, date.Date, cancellationToken, periodStart),
             "profitmargin" => await LoadProfitMarginDetailsAsync(hotelId, date.Date, currency, cancellationToken, periodStart),
-            "checkin" => await LoadMovementDetailsAsync(hotelId, date.Date, true, cancellationToken),
-            "checkout" => await LoadMovementDetailsAsync(hotelId, date.Date, false, cancellationToken),
+            "checkin" => await GetArrivalsTodayDetailsAsync(hotelId, date.Date, cancellationToken),
+            "checkout" => await GetCheckoutsTodayDetailsAsync(hotelId, date.Date, cancellationToken),
+            "createdtoday" => await GetCreatedTodayDetailsAsync(hotelId, date.Date, cancellationToken),
             "available" => await LoadRoomStateDetailsAsync(hotelId, date.Date, "vacant", cancellationToken),
+            "reserved" => await LoadReservedRoomDetailsAsync(hotelId, date.Date, cancellationToken),
             "occupied" => await LoadOccupiedRoomDetailsAsync(hotelId, date.Date, cancellationToken),
+            "dueout" => await LoadDueOutRoomDetailsAsync(hotelId, date.Date, cancellationToken),
             "blocked" => await LoadRoomStateDetailsAsync(hotelId, date.Date, "ooo", cancellationToken),
             "dirty" => await LoadRoomStateDetailsAsync(hotelId, date.Date, "dirty", cancellationToken),
             _ => new DashboardStatisticDetailResult
@@ -1739,6 +1768,152 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
         return BuildRoomDetail(state, date, selected);
     }
 
+    private async Task<DashboardStatisticDetailResult> LoadReservedRoomDetailsAsync(
+        string hotelId,
+        DateTime date,
+        CancellationToken cancellationToken)
+    {
+        var reserved = await CachedAsync(
+            $"dashboard:reserved-stays:v1:{hotelId}:{date:yyyyMMdd}",
+            TimeSpan.FromSeconds(10),
+            () => LoadReservedRoomStaysInternalAsync(hotelId, date.Date, cancellationToken));
+
+        var result = BuildRoomDetail("reservation", date, reserved);
+        result.Title = "Reserved rooms / today's arrivals";
+        result.Subtitle = date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+            + " · Includes incoming bookings and rooms checked in on this date.";
+        return result;
+    }
+
+    // Count reservation Room Rent rows directly rather than the single chosen
+    // physical-room state. The room rack favours an outgoing checked-in guest,
+    // so using rack.State == reservation would miss today's incoming booking
+    // on the same room. The calendar draws both bars; this query does too.
+    private async Task<List<DashboardRoomStatusItem>> LoadReservedRoomStaysInternalAsync(
+        string hotelId,
+        DateTime date,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+;WITH Candidate AS
+(
+    SELECT
+        p.ID,
+        LTRIM(RTRIM(p.room_no)) AS room_no,
+        NULLIF(LTRIM(RTRIM(p.reg_id)), '') AS reg_id,
+        LOWER(LTRIM(RTRIM(ISNULL(p.res_status,'')))) AS res_status,
+        NULLIF(LTRIM(RTRIM(ISNULL(p.guestname,''))), '') AS payment_guest_name,
+        NULLIF(LTRIM(RTRIM(ISNULL(p.[Type],''))), '') AS category_name,
+        d.arrival_date,
+        d.departure_date,
+        ROW_NUMBER() OVER
+        (
+            PARTITION BY LTRIM(RTRIM(p.room_no))
+            ORDER BY d.arrival_date DESC, p.ID DESC
+        ) AS rn
+    FROM dbo.payments p
+    CROSS APPLY
+    (
+        SELECT
+            COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),
+                     TRY_CONVERT(date,p.ArrivalDate,103),
+                     TRY_CONVERT(date,p.ArrivalDate,101),
+                     TRY_CONVERT(date,p.ArrivalDate)) AS arrival_date,
+            COALESCE(TRY_CONVERT(date,p.DepartureDate,110),
+                     TRY_CONVERT(date,p.DepartureDate,103),
+                     TRY_CONVERT(date,p.DepartureDate,101),
+                     TRY_CONVERT(date,p.DepartureDate)) AS departure_date
+    ) d
+    WHERE p.hotel_id = @hotel
+      AND LTRIM(RTRIM(ISNULL(p.descr,''))) = 'Room Rent'
+      AND
+      (
+          LOWER(LTRIM(RTRIM(ISNULL(p.res_status,''))))
+              IN ('reservation','provisional','tentative')
+          OR
+          (
+              -- If today's arrival has already checked in, it is still one
+              -- of today's bookings shown on the calendar (but is occupied too).
+              LOWER(LTRIM(RTRIM(ISNULL(p.res_status,''))))
+                  IN ('check in','check-in','checked in','checked-in')
+              AND d.arrival_date = @day
+          )
+      )
+      AND NULLIF(LTRIM(RTRIM(p.room_no)), '') IS NOT NULL
+      AND UPPER(LTRIM(RTRIM(p.room_no))) <> 'UNASSIGNED'
+      AND d.arrival_date <= @day
+      AND d.departure_date > @day
+      -- Restrict to actual physical room names in the selected hotel.
+      AND EXISTS
+      (
+          SELECT 1 FROM dbo.RoomsTB r
+          WHERE r.Hotel_id = @hotel
+            AND LTRIM(RTRIM(r.room_no)) = LTRIM(RTRIM(p.room_no))
+      )
+      -- Mirror the calendar's orphan-payment protection.
+      AND
+      (
+          EXISTS (SELECT 1 FROM dbo.NewReservationsTB n
+                  WHERE n.hotel_id=@hotel AND n.reg_id=p.reg_id)
+          OR EXISTS (SELECT 1 FROM dbo.GuestInformationLogTB g
+                     WHERE g.hotel_id=@hotel AND g.reg_id=p.reg_id)
+      )
+)
+SELECT
+    c.room_no,
+    ISNULL(c.category_name,'') AS category_name,
+    ISNULL(c.reg_id,'') AS reg_id,
+    c.res_status,
+    COALESCE(g.GuestName,n.GuestName,c.payment_guest_name,'') AS GuestName,
+    c.arrival_date,
+    c.departure_date
+FROM Candidate c
+OUTER APPLY
+(
+    SELECT TOP (1)
+        NULLIF(LTRIM(RTRIM(CONCAT(ISNULL(gi.GuestName,''),' ',ISNULL(gi.LastName,'')))), '') AS GuestName
+    FROM dbo.GuestInformationLogTB gi
+    WHERE gi.hotel_id=@hotel AND gi.reg_id=c.reg_id
+    ORDER BY gi.id DESC
+) g
+OUTER APPLY
+(
+    SELECT TOP (1)
+        NULLIF(LTRIM(RTRIM(CONCAT(ISNULL(nr.GuestName,''),' ',ISNULL(nr.LastName,'')))), '') AS GuestName
+    FROM dbo.NewReservationsTB nr
+    WHERE nr.hotel_id=@hotel AND nr.reg_id=c.reg_id
+    ORDER BY nr.id DESC
+) n
+WHERE c.rn = 1
+ORDER BY TRY_CONVERT(int,c.room_no),c.room_no;";
+
+        var result = new List<DashboardRoomStatusItem>();
+        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
+        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId;
+        command.Parameters.Add("@day", SqlDbType.Date).Value = date.Date;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DashboardRoomStatusItem
+            {
+                RoomNo = Convert.ToString(reader["room_no"])?.Trim() ?? string.Empty,
+                Category = Convert.ToString(reader["category_name"])?.Trim() ?? string.Empty,
+                State = (Convert.ToString(reader["res_status"])?.Trim() ?? string.Empty)
+                    is "check in" or "check-in" or "checked in" or "checked-in"
+                        ? "checkin"
+                        : "reservation",
+                GuestName = Convert.ToString(reader["GuestName"])?.Trim() ?? string.Empty,
+                ReservationId = Convert.ToString(reader["reg_id"])?.Trim() ?? string.Empty,
+                ArrivalDate = ToNullableDate(reader["arrival_date"]),
+                DepartureDate = ToNullableDate(reader["departure_date"])
+            });
+        }
+        return result;
+    }
+
     private async Task<DashboardStatisticDetailResult> LoadOccupiedRoomDetailsAsync(
         string hotelId,
         DateTime date,
@@ -1746,7 +1921,17 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
     {
         var rooms = await GetRoomStatusAsync(hotelId, date, cancellationToken);
         return BuildRoomDetail("occupied", date,
-            rooms.Where(x => x.State is "checkin" or "reservation").ToList());
+            rooms.Where(x => x.State == "checkin").ToList());
+    }
+
+    private async Task<DashboardStatisticDetailResult> LoadDueOutRoomDetailsAsync(
+        string hotelId,
+        DateTime date,
+        CancellationToken cancellationToken)
+    {
+        var rooms = await GetRoomStatusAsync(hotelId, date, cancellationToken);
+        return BuildRoomDetail("dueout", date,
+            rooms.Where(x => x.State == "checkin" && x.DepartureDate?.Date == date.Date).ToList());
     }
 
     private static DashboardStatisticDetailResult BuildRoomDetail(
@@ -1759,9 +1944,11 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
             "checkin" => "Checked-in rooms",
             "checkout" => "Check-outs",
             "vacant" => "Available rooms",
+            "reservation" => "Reserved rooms (not checked in)",
+            "dueout" => "Due out rooms (still checked in)",
             "ooo" => "Blocked / out of order rooms",
             "dirty" => "Dirty rooms",
-            "occupied" => "Occupied / reserved rooms",
+            "occupied" => "Occupied / in-house rooms",
             _ => "Room details"
         };
         var result = NewDetail(title, date, "Rooms", rooms.Count.ToString(CultureInfo.InvariantCulture),
@@ -1896,10 +2083,19 @@ PaymentRanked AS
     WHERE
         (
             pc.arrival_date <= @day
-            AND @day < pc.departure_date
-            AND pc.res_status IN ('check in','check-in','checked in','checked-in','reservation','provisional','tentative')
             AND (
-                EXISTS (
+                (@day < pc.departure_date AND pc.res_status IN
+                    ('check in','check-in','checked in','checked-in','reservation','provisional','tentative'))
+                OR
+                -- A guest departing TODAY is still occupied until check-out is recorded.
+                (pc.departure_date = @day AND pc.res_status IN
+                    ('check in','check-in','checked in','checked-in'))
+            )
+            AND (
+                -- Room Rent check-in status is the physical occupancy source;
+                -- legacy checked-in rows may not have a surviving guest table entry.
+                pc.res_status IN ('check in','check-in','checked in','checked-in')
+                OR EXISTS (
                     SELECT 1
                     FROM dbo.GuestInformationLogTB gi
                     WHERE gi.hotel_id = @hotel
@@ -2096,155 +2292,40 @@ ORDER BY r.room_category, TRY_CONVERT(int, r.room_no), r.room_no;";
         DateTime today,
         CancellationToken cancellationToken)
     {
-        // Keep today's actual room movements separate from the secondary
-        // operational metrics. This prevents a legacy guest/phone/date issue
-        // from zeroing Check-ins Today / Check-outs Today.
-        //
-        // Movement rules follow the active WebForms Dashboard:
-        // - Check-in today: Room Rent payment row is currently "check in"
-        //   and its ArrivalDate is the hotel-local today.
-        // - Check-out today: Room Rent payment row is currently "check out"
-        //   and its DepartureDate is the hotel-local today.
-        // - UNASSIGNED rows are excluded.
-        var movementTask = SafeLoadAsync(
-            () => LoadTodayMovementCountsAsync(hotelId, today, cancellationToken),
-            new DashboardOperationsData(),
-            "today check-in/check-out");
-
+        // Each metric is independent. Its popup uses the *same* cached query
+        // as the headline, so counting rules cannot drift apart:
+        // 1. Today's arrivals: distinct reservations with ArrivalDate=today,
+        //    whether reserved, provisional, in house or checked out.
+        // 2. Today's completed checkouts: checked-out room rows, using the
+        //    actual checkout date where recorded, with a legacy fallback.
+        // 3. Today's new reservations: distinct booking IDs with earliest
+        //    original booking creation timestamp=today (not arrival date).
+        var arrivalTask = SafeLoadAsync(
+            () => GetArrivalsTodayDetailsAsync(hotelId, today, cancellationToken),
+            new DashboardStatisticDetailResult(), "today's arriving reservations");
+        var checkoutTask = SafeLoadAsync(
+            () => GetCheckoutsTodayDetailsAsync(hotelId, today, cancellationToken),
+            new DashboardStatisticDetailResult(), "today's completed checkouts");
+        var createdTask = SafeLoadAsync(
+            () => GetCreatedTodayDetailsAsync(hotelId, today, cancellationToken),
+            new DashboardStatisticDetailResult(), "today's newly created reservations");
         var metricsTask = SafeLoadAsync(
             () => LoadOperationalMetricsAsync(hotelId, today, cancellationToken),
-            new DashboardOperationsData(),
-            "operational metrics");
+            new DashboardOperationsData(), "operational metrics");
 
-        await Task.WhenAll(movementTask, metricsTask);
-
-        var movements = await movementTask;
+        await Task.WhenAll(arrivalTask, checkoutTask, createdTask, metricsTask);
         var metrics = await metricsTask;
-
         return new DashboardOperationsData
         {
-            Arrivals = movements.Arrivals,
-            Departures = movements.Departures,
+            Arrivals = (await arrivalTask).Rows.Count,
+            Departures = (await checkoutTask).Rows.Count,
+            ReservationsCreated = (await createdTask).Rows.Count,
             InHouseGuests = metrics.InHouseGuests,
             OccupiedRooms = metrics.OccupiedRooms,
             AverageStay = metrics.AverageStay,
             RepeatGuestPercent = metrics.RepeatGuestPercent,
             GuestsPerRoom = metrics.GuestsPerRoom
         };
-    }
-
-    private async Task<DashboardOperationsData> LoadTodayMovementCountsAsync(
-        string hotelId,
-        DateTime today,
-        CancellationToken cancellationToken)
-    {
-        /*
-         * IMPORTANT:
-         * Today's movement cards must represent room movements, not only the
-         * guest's current state.
-         *
-         * A room that checked in today and later checked out today must still
-         * remain in BOTH figures:
-         *   - Check-ins today
-         *   - Check-outs today
-         *
-         * Therefore Check-ins Today accepts Room Rent rows whose CURRENT
-         * payment status is either check-in OR check-out, provided the room's
-         * ArrivalDate is hotel-local today.
-         *
-         * This also avoids the previous dependency on GuestInformationLogTB
-         * for the headline counts. Front Desk writes the room-level movement
-         * status directly into dbo.payments, so dbo.payments is the correct
-         * source for these room movement cards.
-         */
-        const string sql = @"
-WITH RoomMovements AS
-(
-    SELECT
-        p.ID,
-        LOWER(
-            REPLACE(
-                REPLACE(
-                    LTRIM(RTRIM(ISNULL(CONVERT(varchar(50),p.res_status),''))),
-                    '-',
-                    ' '
-                ),
-                '  ',
-                ' '
-            )
-        ) AS status_norm,
-
-        COALESCE(
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.ArrivalDate))), ''), 110),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.ArrivalDate))), ''), 103),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.ArrivalDate))), ''), 101),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.ArrivalDate))), ''), 100),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.ArrivalDate))), ''))
-        ) AS arrival_date,
-
-        COALESCE(
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''), 110),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''), 103),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''), 101),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''), 100),
-            TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.DepartureDate))), ''))
-        ) AS departure_date
-    FROM dbo.payments p
-    WHERE p.hotel_id = @hotel
-      AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.descr),'')))) = 'room rent'
-      AND NULLIF(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))), '') IS NOT NULL
-      AND UPPER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),'')))) <> 'UNASSIGNED'
-)
-SELECT
-    COALESCE(SUM(
-        CASE
-            WHEN arrival_date = @today
-             AND status_norm IN
-                 ('check in','checked in','check out','checked out')
-            THEN 1
-            ELSE 0
-        END
-    ),0) AS CheckInsToday,
-
-    COALESCE(SUM(
-        CASE
-            WHEN departure_date = @today
-             AND status_norm IN ('check out','checked out')
-            THEN 1
-            ELSE 0
-        END
-    ),0) AS CheckOutsToday
-FROM RoomMovements;";
-
-        var result = new DashboardOperationsData();
-
-        using var dashboardSqlLease = await EnterDashboardSqlAsync(cancellationToken);
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = new SqlCommand(sql, connection)
-        {
-            CommandTimeout = 15
-        };
-
-        command.Parameters.Add("@hotel", SqlDbType.VarChar, 20).Value = hotelId.Trim();
-        command.Parameters.Add("@today", SqlDbType.Date).Value = today.Date;
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
-        {
-            result.Arrivals = ToInt(reader["CheckInsToday"]);
-            result.Departures = ToInt(reader["CheckOutsToday"]);
-        }
-
-        _logger.LogInformation(
-            "Dashboard movements for hotel {HotelId} on {Date}: check-ins={CheckIns}, check-outs={CheckOuts}.",
-            hotelId,
-            today.Date,
-            result.Arrivals,
-            result.Departures);
-
-        return result;
     }
 
     private async Task<DashboardOperationsData> LoadOperationalMetricsAsync(
@@ -4348,6 +4429,7 @@ ORDER BY CategoryName;";
     private sealed class DashboardOperationsData
     {
         public int Arrivals { get; set; }
+        public int ReservationsCreated { get; set; }
         public int Departures { get; set; }
         public int InHouseGuests { get; set; }
         public int OccupiedRooms { get; set; }
