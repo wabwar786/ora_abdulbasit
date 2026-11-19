@@ -84,6 +84,9 @@
     let searchAbortController = null;
     const searchCache = new Map();
     const cityCache = new Map();
+    // Do not submit an incomplete city while reservation/country options load.
+    let pendingCityLoadPromise = Promise.resolve();
+    let updatingGuestInfo = false;
 
     // Rate plans are loaded once when the page starts, then served from memory when
     // the user changes room category. This removes the visible category-change delay.
@@ -826,6 +829,15 @@
                     o.value.localeCompare(selected, undefined, { sensitivity: 'accent' }) === 0 ||
                     o.textContent.trim().localeCompare(selected, undefined, { sensitivity: 'accent' }) === 0);
                 if (match) city.value = match.value;
+                else {
+                    // Saved free-text/legacy cities may not be in the current
+                    // country lookup. Retain them instead of blanking guest data.
+                    const original = document.createElement('option');
+                    original.value = selected;
+                    original.textContent = selected;
+                    city.appendChild(original);
+                    city.value = selected;
+                }
             }
         } finally {
             city.disabled = false;
@@ -1103,6 +1115,7 @@
                 city.disabled = false;
             }
         });
+        pendingCityLoadPromise = cityLoadPromise;
 
         applyTotalsSnapshot(fresh.totals || {});
         const freshRegId = String(fresh.reservationId || fresh.guest?.regId || '').trim();
@@ -1333,7 +1346,12 @@
     async function updateGuest() {
         if (isCheckedOutReadOnly() && state.canEditCheckedOutGuest !== true)
             return message('Edit Details After Checkout and Update Guest Info permissions are required after checkout.', 'error');
-        if (!regId || !validateGuest()) return;
+        if (!regId || updatingGuestInfo) return;
+        // The city options are fetched separately when a guest is loaded or the
+        // country changes. Wait until those options are ready before capturing
+        // the form, otherwise an untouched city can be silently cleared.
+        await pendingCityLoadPromise;
+        if (!validateGuest()) return;
 
         const guest = guestPayload();
         const newArrival = byId('checkIn')?.value || '';
@@ -1358,6 +1376,9 @@
                 return message('Arrival date is locked after checkout. Only departure may be corrected.', 'error');
             if (!window.confirm('Correct this completed stay departure date? Only Room Rent dates and nights will be corrected. Charged amounts, payment transactions and any issued fiscal invoice remain unchanged.')) return;
         }
+        updatingGuestInfo = true;
+        const updateButton = byId('updateGuest');
+        if (updateButton) updateButton.disabled = true;
         showBusy('Updating guest…');
         try {
             const result = await api(urls.updateGuest, {
@@ -1369,11 +1390,19 @@
                     applyBedTaxToDateChange: !!dateTaxSelection.applyBedTax
                 }
             });
-            if (!result.ok) return message(result.message, 'error');
+            if (!result.ok) return message(result.message || 'Guest information was not saved.', 'error');
             lastQuickNameSnapshot = currentNameSnapshot();
-            await refreshReservationUi(regId, result.message || 'Guest details updated successfully.', 'success');
+            try {
+                await refreshReservationUi(regId, result.message || 'Guest details updated successfully.', 'success');
+            } catch (refreshError) {
+                message('Guest details were saved, but the screen could not reload the updated record. Refresh this page to verify. ' + refreshError.message, 'error');
+            }
         } catch (e) { message(e.message, 'error'); }
-        finally { hideBusy(); }
+        finally {
+            updatingGuestInfo = false;
+            if (updateButton) updateButton.disabled = false;
+            hideBusy();
+        }
     }
 
     async function proceedFromGuestInfo() {
@@ -3469,7 +3498,11 @@
 
     byId('phone')?.addEventListener('blur', e => tryAutofillGuest(e.target.value).catch(() => { }));
     byId('email')?.addEventListener('blur', e => tryAutofillGuest(e.target.value).catch(() => { }));
-    byId('country')?.addEventListener('change', () => loadCities('').catch(e => message(e.message, 'error')));
+    byId('country')?.addEventListener('change', () => {
+        // Do not reuse the previous country's city as the new default.
+        if (byId('city')) byId('city').value = '';
+        pendingCityLoadPromise = loadCities('').catch(e => message(e.message, 'error'));
+    });
 
     byId('stayDateDisplay')?.addEventListener('click', () => setCalendarOpen(byId('dateCalendar')?.classList.contains('hidden')));
     byId('dateCalendar')?.addEventListener('click', e => e.stopPropagation());

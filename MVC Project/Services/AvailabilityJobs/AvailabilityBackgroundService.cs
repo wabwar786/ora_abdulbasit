@@ -327,17 +327,17 @@ DECLARE @dep DATE = DATEADD(DAY, 1, @theDate);
        AND rb.RoomNo = rt.room_no
        AND rb.IsActive = 1
        AND (
-                CAST(rb.BlockStartDate AS DATE) < @dep
-            AND @arr < DATEADD(
-                            DAY,
-                            1,
-                            CAST(
-                                ISNULL(
-                                    rb.BlockEndDate,
-                                    '9999-12-31'
-                                ) AS DATE
-                            )
-                        )
+                COALESCE(
+                    TRY_CONVERT(DATE, rb.BlockStartDate, 110), -- stored MM-dd-yyyy
+                    TRY_CONVERT(DATE, rb.BlockStartDate, 23),  -- ISO yyyy-MM-dd
+                    TRY_CONVERT(DATE, rb.BlockStartDate, 101)
+                ) < @dep
+            AND @arr <= COALESCE(
+                    TRY_CONVERT(DATE, rb.BlockEndDate, 110),
+                    TRY_CONVERT(DATE, rb.BlockEndDate, 23),
+                    TRY_CONVERT(DATE, rb.BlockEndDate, 101),
+                    CONVERT(DATE, '99991231', 112)
+                )
        )
 
     WHERE rt.Hotel_id = @hotelId

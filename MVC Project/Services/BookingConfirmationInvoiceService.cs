@@ -135,8 +135,11 @@ ORDER BY
     ID ASC;";
 
         /// <summary>
-        /// The old guest union. The four branches, the four tables and the WHERE clauses are
-        /// unchanged; GuestData.* became the twelve columns the page reads.
+        /// Read the booking header from the existing four reservation sources. Keep guest-log
+        /// priority for checked-in guests, but use the VAT/NTN saved against the same hotel and
+        /// registration in NewReservationsTB when the selected guest record has no VAT/NTN.
+        /// Company is stored in Status, while Agency is the booking source. The selected
+        /// guest's Status is used first; NewReservationsTB.Status is the fallback if blank.
         /// </summary>
         private const string GuestSql = @"
 SELECT TOP 1
@@ -148,8 +151,16 @@ SELECT TOP 1
     GuestData.Address,
     GuestData.Agency,
     GuestData.PhoneNo,
-    GuestData.vatno,
-    GuestData.Status,
+    COALESCE(
+        NULLIF(LTRIM(RTRIM(GuestData.vatno)), ''),
+        ReservationVat.VatNo,
+        ''
+    ) AS vatno,
+    COALESCE(
+        NULLIF(LTRIM(RTRIM(GuestData.Status)), ''),
+        ReservationCompany.CompanyName,
+        ''
+    ) AS Status,
     GuestData.res_status,
     GuestData.NumberOfAdults,
     GuestData.NumberOfMinors,
@@ -172,7 +183,7 @@ FROM
     SELECT
         1 AS SourceOrder,
         nr.reg_id, '' AS visit_id, nr.GuestName, nr.LastName, nr.Address, nr.Agency, nr.PhoneNo,
-        '' AS vatno, nr.Status, nr.res_status, nr.number_of_adult AS NumberOfAdults,
+        nr.vatno, nr.Status, nr.res_status, nr.number_of_adult AS NumberOfAdults,
         nr.number_of_minor AS NumberOfMinors,
         CONVERT(varchar(20), ISNULL(DATEDIFF(DAY, TRY_CONVERT(date, nr.ArrivalDate, 110), TRY_CONVERT(date, nr.dept_date, 110)), 0)) AS totalnights,
         nr.ArrivalDate, nr.dept_date AS DepartureDate
@@ -206,6 +217,24 @@ FROM
     WHERE cr.reg_id = @RegId
       AND cr.hotel_id = @HotelId
 ) GuestData
+OUTER APPLY
+(
+    SELECT TOP (1)
+        NULLIF(LTRIM(RTRIM(nrVat.vatno)), '') AS VatNo
+    FROM dbo.NewReservationsTB nrVat
+    WHERE nrVat.reg_id = @RegId
+      AND nrVat.hotel_id = @HotelId
+      AND NULLIF(LTRIM(RTRIM(nrVat.vatno)), '') IS NOT NULL
+) ReservationVat
+OUTER APPLY
+(
+    SELECT TOP (1)
+        NULLIF(LTRIM(RTRIM(nrCompany.Status)), '') AS CompanyName
+    FROM dbo.NewReservationsTB nrCompany
+    WHERE nrCompany.reg_id = @RegId
+      AND nrCompany.hotel_id = @HotelId
+      AND NULLIF(LTRIM(RTRIM(nrCompany.Status)), '') IS NOT NULL
+) ReservationCompany
 ORDER BY GuestData.SourceOrder;";
 
         /// <summary>
@@ -524,7 +553,7 @@ VALUES (@PageName, @Description, @Date, @HotelId, @Ip, @System, @Username);";
                     model.Guest.BillNo = Str(reader, "reg_id") + Str(reader, "visit_id");
                     model.Guest.Name = (first + " " + last).Trim();
                     model.Guest.Address = Str(reader, "Address");
-                    model.Guest.Company = Str(reader, "Agency");
+                    model.Guest.Company = Str(reader, "Status");
                     model.Guest.VatNo = Str(reader, "vatno");
                     model.Guest.Phone = Str(reader, "PhoneNo");
                     model.Guest.BookingSource = Str(reader, "Agency");

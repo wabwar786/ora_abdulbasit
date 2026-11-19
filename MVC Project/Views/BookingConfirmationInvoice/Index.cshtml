@@ -136,7 +136,7 @@ else
                     <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.Address) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.Address)</b>
                 </div>
                 <div class="bcinvoice-row">
-                    <label>Vat #</label>
+                    <label>VAT/NTN</label>
                     <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.VatNo) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.VatNo)</b>
                 </div>
                 <div class="bcinvoice-row">
@@ -146,6 +146,10 @@ else
                 <div class="bcinvoice-row">
                     <label>Booking Source</label>
                     <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.BookingSource) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.BookingSource)</b>
+                </div>
+                <div class="bcinvoice-row">
+                    <label>Company</label>
+                    <b class="@(BookingConfirmationInvoiceRules.IsUnset(Model.Guest.Company) ? "is-empty" : null)">@BookingConfirmationInvoiceRules.OrDash(Model.Guest.Company)</b>
                 </div>
             </div>
         </section>

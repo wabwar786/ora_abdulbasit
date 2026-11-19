@@ -1,0 +1,1202 @@
+/* =============================================================================
+   BlockedRooms - module stylesheet
+   Every class is prefixed blockedrooms-. No :root, no pms- class, no shared file
+   touched: the custom properties are declared on the page root and on the two
+   things that can render outside it - the date panel and the modal.
+   ============================================================================= */
+
+.blockedrooms-page,
+.blockedrooms-daterange-panel,
+.blockedrooms-modal,
+.blockedrooms-toasts{
+  --blockedrooms-ink:#16233A;
+  --blockedrooms-ink-2:#33425C;
+  --blockedrooms-muted:#6B7A93;
+  --blockedrooms-soft:#93A1B5;
+  --blockedrooms-line:#E7ECF4;
+  --blockedrooms-line-2:#F1F5FA;
+  --blockedrooms-bg:#F4F7FC;
+  --blockedrooms-blue:#2F5078;
+  --blockedrooms-blue-2:#24405F;
+  --blockedrooms-blue-3:#3E6592;
+  --blockedrooms-blue-soft:#EBF1F8;
+  --blockedrooms-red:#D63B3B;
+  --blockedrooms-red-soft:#FBEDED;
+  --blockedrooms-green:#15803D;
+  --blockedrooms-green-soft:#E7F4EC;
+  --blockedrooms-amber:#A16207;
+  --blockedrooms-amber-soft:#FDF6E7;
+  --blockedrooms-shadow:0 2px 8px rgba(22,35,58,.05);
+  --blockedrooms-shadow-lg:0 18px 40px rgba(22,35,58,.16);
+}
+
+.blockedrooms-page{
+  max-width:1320px;
+  margin:0 auto;
+  padding:14px 12px 12px;
+  color:var(--blockedrooms-ink);
+  -webkit-font-smoothing:antialiased;
+}
+
+.blockedrooms-page *,
+.blockedrooms-daterange-panel *,
+.blockedrooms-modal *,
+.blockedrooms-toasts *{ box-sizing:border-box; }
+
+/* the module never sets a font-family: it inherits the layout's */
+
+/* ------------------------------------------------------- the page heading bar */
+.blockedrooms-topbar{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+}
+
+.blockedrooms-topbar-left{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  min-width:0;
+}
+
+.blockedrooms-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:36px;
+  height:36px;
+  flex:0 0 auto;
+  border-radius:10px;
+  background:var(--blockedrooms-blue-soft);
+  color:var(--blockedrooms-blue);
+}
+
+.blockedrooms-icon svg{ width:19px; height:19px; }
+
+.blockedrooms-title{
+  margin:0;
+  font-size:19px;
+  font-weight:700;
+  letter-spacing:-.2px;
+  color:var(--blockedrooms-ink);
+}
+
+.blockedrooms-subtitle{
+  margin:2px 0 0;
+  font-size:12.5px;
+  font-weight:400;
+  color:var(--blockedrooms-muted);
+}
+
+/* --------------------------------------------------- the page cannot be shown */
+/* session gone, hotel not granted, database down: one card, no form and no table */
+.blockedrooms-notice{
+  display:flex;
+  align-items:flex-start;
+  gap:11px;
+  background:#fff;
+  border:1px solid var(--blockedrooms-line);
+  border-left:4px solid var(--blockedrooms-red);
+  border-radius:12px;
+  box-shadow:var(--blockedrooms-shadow);
+  padding:16px 18px;
+  font-size:13px;
+  font-weight:600;
+  color:var(--blockedrooms-red);
+}
+
+.blockedrooms-notice svg{ width:18px; height:18px; flex:0 0 auto; margin-top:1px; }
+
+/* ------------------------------------------------------------------ the cards */
+.blockedrooms-card{
+  background:#fff;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:14px;
+  box-shadow:var(--blockedrooms-shadow);
+  padding:14px 16px;
+  margin-bottom:14px;
+}
+
+/* the list card holds the table and nothing else: the count, the category
+   filter and the search all sit in the page heading row above */
+.blockedrooms-card.is-list{ padding:0; overflow:hidden; }
+.blockedrooms-card.is-list .blockedrooms-tablewrap{ border:none; border-radius:14px; }
+
+.blockedrooms-card-title{
+  margin:0 0 12px;
+  font-size:13px;
+  font-weight:700;
+  color:var(--blockedrooms-ink);
+}
+
+/* Block New Room: four fields and the button on one line. The button is the
+   last cell rather than a row of its own, which is what the old markup used. */
+.blockedrooms-form{
+  display:flex;
+  align-items:flex-end;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.blockedrooms-field{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  flex:1 1 190px;
+  min-width:0;
+}
+
+.blockedrooms-field.is-range{ flex:1 1 260px; }
+.blockedrooms-field.is-action{ flex:0 0 auto; }
+
+.blockedrooms-field > label{
+  font-size:11.5px;
+  font-weight:500;
+  color:var(--blockedrooms-ink);
+}
+
+.blockedrooms-req{ color:var(--blockedrooms-red); }
+
+.blockedrooms-field-spacer{ font-size:11.5px; line-height:1.2; }
+
+/* ------------------------------------------------------- inputs and dropdowns */
+.blockedrooms-input,
+.blockedrooms-select{
+  width:100%;
+  height:40px;
+  padding:0 12px;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:10px;
+  background:#fff;
+  font-family:inherit;
+  font-size:13px;
+  font-weight:500;
+  color:var(--blockedrooms-ink);
+  transition:border-color .16s ease, box-shadow .16s ease;
+}
+
+.blockedrooms-select{
+  appearance:none;
+  -webkit-appearance:none;
+  padding-right:32px;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B7A93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 10px center;
+  background-size:15px 15px;
+  cursor:pointer;
+}
+
+.blockedrooms-input::placeholder{ color:var(--blockedrooms-soft); font-weight:400; }
+
+.blockedrooms-input:hover,
+.blockedrooms-select:hover{ border-color:var(--blockedrooms-soft); }
+
+.blockedrooms-input:focus,
+.blockedrooms-select:focus{
+  outline:none;
+  border-color:var(--blockedrooms-blue-3);
+  box-shadow:0 0 0 4px rgba(47,80,120,.12);
+}
+
+.blockedrooms-input:disabled,
+.blockedrooms-select:disabled{
+  background:var(--blockedrooms-line-2);
+  color:var(--blockedrooms-ink-2);
+  cursor:not-allowed;
+}
+
+.blockedrooms-textarea{
+  width:100%;
+  min-height:74px;
+  padding:9px 12px;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:10px;
+  background:#fff;
+  font-family:inherit;
+  font-size:13px;
+  font-weight:500;
+  color:var(--blockedrooms-ink);
+  resize:vertical;
+}
+
+.blockedrooms-textarea:disabled{ background:var(--blockedrooms-line-2); color:var(--blockedrooms-ink-2); }
+
+/* a field that failed validation - the old page used alert() for all of them */
+.blockedrooms-field.is-invalid .blockedrooms-input,
+.blockedrooms-field.is-invalid .blockedrooms-select,
+.blockedrooms-field.is-invalid .blockedrooms-daterange-input{
+  border-color:var(--blockedrooms-red);
+  box-shadow:0 0 0 4px rgba(214,59,59,.10);
+}
+
+/* ------------------------------------------------------------ the date range */
+/* One field, two calendars underneath it - the same component the other pages
+   use. The two dates the server reads live in hidden inputs in dd/MM/yyyy,
+   exactly the format the old hfBlockStartDate / hfBlockEndDate posted. */
+.blockedrooms-daterange{ position:relative; }
+
+/* "Inactive" in the modal means unblock, so the dates stop applying */
+.blockedrooms-daterange.is-disabled{ opacity:.55; }
+.blockedrooms-daterange.is-disabled .blockedrooms-daterange-input{ cursor:not-allowed; background:var(--blockedrooms-line-2); }
+
+.blockedrooms-daterange-input{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  width:100%;
+  height:40px;
+  padding:0 12px;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:10px;
+  background:#fff;
+  font-family:inherit;
+  font-size:13px;
+  font-weight:500;
+  color:var(--blockedrooms-ink);
+  cursor:pointer;
+  text-align:left;
+  transition:border-color .16s ease, box-shadow .16s ease;
+}
+
+.blockedrooms-daterange-input:hover{ border-color:var(--blockedrooms-soft); }
+
+.blockedrooms-daterange-input:focus-visible,
+.blockedrooms-daterange.is-open .blockedrooms-daterange-input{
+  outline:none;
+  border-color:var(--blockedrooms-blue-3);
+  box-shadow:0 0 0 4px rgba(47,80,120,.12);
+}
+
+.blockedrooms-daterange-input svg{ width:15px; height:15px; flex:0 0 auto; color:var(--blockedrooms-muted); }
+.blockedrooms-daterange-text{ flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.blockedrooms-daterange-text.is-empty{ color:var(--blockedrooms-soft); font-weight:400; }
+.blockedrooms-daterange-caret{ transition:transform .16s ease; }
+.blockedrooms-daterange.is-open .blockedrooms-daterange-caret{ transform:rotate(180deg); }
+
+.blockedrooms-daterange-panel{
+  position:absolute;
+  top:calc(100% + 6px);
+  left:0;
+  max-width:calc(100vw - 24px);
+  z-index:60;
+  background:#fff;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:14px;
+  box-shadow:var(--blockedrooms-shadow-lg);
+  padding:12px;
+  color:var(--blockedrooms-ink);
+}
+
+.blockedrooms-daterange-panel[hidden]{ display:none; }
+
+/* the arrows sit on the corners so each month name lines up over its own
+   calendar rather than being pushed across by the button's width */
+.blockedrooms-cal-nav{
+  position:relative;
+  display:flex;
+  align-items:center;
+  margin-bottom:10px;
+}
+
+.blockedrooms-cal-months{ display:flex; gap:18px; }
+
+.blockedrooms-cal-month{
+  width:232px;
+  text-align:center;
+  font-size:13px;
+  font-weight:600;
+  color:var(--blockedrooms-ink);
+}
+
+.blockedrooms-nav-btn{
+  position:absolute;
+  top:50%;
+  transform:translateY(-50%);
+  width:28px;
+  height:28px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:8px;
+  background:#fff;
+  color:var(--blockedrooms-ink-2);
+  cursor:pointer;
+  transition:.16s ease;
+}
+
+.blockedrooms-nav-btn[data-month="-1"]{ left:0; }
+.blockedrooms-nav-btn[data-month="1"]{ right:0; }
+.blockedrooms-nav-btn:hover{ background:var(--blockedrooms-line-2); border-color:#C7D2E1; }
+.blockedrooms-nav-btn svg{ width:14px; height:14px; }
+
+.blockedrooms-cals{ display:flex; gap:18px; }
+.blockedrooms-cal{ width:232px; }
+
+.blockedrooms-cal-grid{
+  display:grid;
+  grid-template-columns:repeat(7, 1fr);
+  gap:2px;
+}
+
+.blockedrooms-dow{
+  height:24px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:600;
+  color:var(--blockedrooms-muted);
+}
+
+.blockedrooms-day{
+  height:30px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  border:none;
+  border-radius:6px;
+  background:transparent;
+  font-family:inherit;
+  font-size:12.5px;
+  font-weight:400;
+  color:var(--blockedrooms-ink);
+  cursor:pointer;
+  transition:background .12s ease, color .12s ease;
+}
+
+.blockedrooms-day:disabled{ color:#C7D2E1; cursor:default; }
+.blockedrooms-day.is-muted{ color:#C7D2E1; }
+.blockedrooms-day.is-today{ box-shadow:inset 0 0 0 1px var(--blockedrooms-line); }
+.blockedrooms-day.is-in-range{ background:var(--blockedrooms-blue-soft); border-radius:0; }
+.blockedrooms-day.is-edge{ background:var(--blockedrooms-blue); color:#fff; }
+.blockedrooms-day.is-start{ border-top-right-radius:0; border-bottom-right-radius:0; }
+.blockedrooms-day.is-end{ border-top-left-radius:0; border-bottom-left-radius:0; }
+.blockedrooms-day.is-start.is-end{ border-radius:6px; }
+
+.blockedrooms-daterange-foot{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid var(--blockedrooms-line);
+}
+
+.blockedrooms-daterange-hint{
+  font-size:12.5px;
+  font-weight:600;
+  color:var(--blockedrooms-muted);
+  font-variant-numeric:tabular-nums;
+}
+
+.blockedrooms-daterange-hint.is-waiting{ color:var(--blockedrooms-blue); }
+.blockedrooms-daterange-actions{ display:flex; gap:8px; }
+
+/* ---------------------------------------------------------------- the buttons */
+.blockedrooms-btn{
+  height:40px;
+  padding:0 16px;
+  border-radius:10px;
+  border:1px solid transparent;
+  font-family:inherit;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+  transition:.16s ease;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  white-space:nowrap;
+}
+
+.blockedrooms-btn:disabled{ opacity:.6; cursor:not-allowed; }
+.blockedrooms-btn svg{ width:15px; height:15px; flex:0 0 auto; }
+
+.blockedrooms-btn.is-primary{
+  background:var(--blockedrooms-blue);
+  border-color:var(--blockedrooms-blue);
+  color:#fff;
+}
+
+.blockedrooms-btn.is-primary:hover:not(:disabled){ background:var(--blockedrooms-blue-2); border-color:var(--blockedrooms-blue-2); }
+
+.blockedrooms-btn.is-ghost{
+  background:#fff;
+  border-color:var(--blockedrooms-line);
+  color:var(--blockedrooms-ink);
+}
+
+.blockedrooms-btn.is-ghost:hover:not(:disabled){ background:var(--blockedrooms-line-2); }
+.blockedrooms-btn.is-small{ height:32px; padding:0 13px; font-size:12.5px; font-weight:600; }
+
+.blockedrooms-spinner{
+  width:13px;
+  height:13px;
+  border:2px solid rgba(255,255,255,.45);
+  border-top-color:#fff;
+  border-radius:50%;
+  animation:blockedrooms-spin .7s linear infinite;
+}
+
+@keyframes blockedrooms-spin{ to{ transform:rotate(360deg); } }
+
+/* -------------------------------------------------- the list card's own header */
+/* ------------------------------------------------------------------ the table */
+.blockedrooms-tablewrap{
+  border:1px solid var(--blockedrooms-line);
+  border-radius:12px;
+  overflow-x:auto;
+  overflow-y:visible;
+}
+
+.blockedrooms-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  min-width:920px;
+}
+
+.blockedrooms-table thead th{
+  background:var(--blockedrooms-blue-soft);
+  color:var(--blockedrooms-blue);
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.4px;
+  text-transform:uppercase;
+  white-space:nowrap;
+  text-align:left;
+  padding:8px 12px;
+  border-bottom:1.5px solid var(--blockedrooms-blue);
+}
+
+.blockedrooms-table thead th.is-mid{ text-align:center; }
+
+.blockedrooms-table tbody td{
+  padding:7px 12px;
+  font-size:13px;
+  color:var(--blockedrooms-ink);
+  vertical-align:middle;
+  border-bottom:1px solid var(--blockedrooms-line-2);
+}
+
+.blockedrooms-table tbody tr:last-child td{ border-bottom:none; }
+.blockedrooms-table tbody tr:nth-child(odd){ background:#fff; }
+.blockedrooms-table tbody tr:nth-child(even){ background:var(--blockedrooms-line-2); }
+.blockedrooms-table tbody tr:hover td{ background:var(--blockedrooms-blue-soft); }
+
+/* the row that has just been added, so nobody has to hunt for it */
+.blockedrooms-row.is-new td{ animation:blockedrooms-landed 2.2s ease; }
+
+@keyframes blockedrooms-landed{
+  0%, 45%{ background:var(--blockedrooms-green-soft); }
+  100%{ background:transparent; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .blockedrooms-row.is-new td{ animation:none; }
+}
+
+.blockedrooms-sr{ width:56px; text-align:center; color:var(--blockedrooms-muted); font-variant-numeric:tabular-nums; }
+
+.blockedrooms-room{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:48px;
+  padding:3px 11px;
+  border-radius:999px;
+  background:var(--blockedrooms-blue-soft);
+  border:1px solid #D7E2EF;
+  color:var(--blockedrooms-blue);
+  font-size:12.5px;
+  font-weight:700;
+}
+
+.blockedrooms-date{ white-space:nowrap; font-variant-numeric:tabular-nums; }
+
+.blockedrooms-reason{ max-width:300px; }
+
+.blockedrooms-reason-text{
+  display:block;
+  max-width:300px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.blockedrooms-action{ width:96px; text-align:center; }
+
+.blockedrooms-iconbtn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:30px;
+  height:30px;
+  padding:0;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:8px;
+  background:#fff;
+  color:var(--blockedrooms-ink-2);
+  cursor:pointer;
+  transition:.16s ease;
+}
+
+.blockedrooms-iconbtn svg{ width:14px; height:14px; }
+
+.blockedrooms-table tbody tr:hover .blockedrooms-iconbtn,
+.blockedrooms-iconbtn:hover,
+.blockedrooms-iconbtn:focus-visible{
+  background:var(--blockedrooms-blue);
+  border-color:var(--blockedrooms-blue);
+  color:#fff;
+}
+
+/* ------------------------------------------------- loading / empty / error rows */
+.blockedrooms-state td{
+  text-align:center;
+  padding:30px 20px;
+  background:#fff;
+  font-size:13px;
+  color:var(--blockedrooms-muted);
+}
+
+.blockedrooms-state-icon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:44px;
+  height:44px;
+  margin:0 auto 10px;
+  border-radius:50%;
+  background:var(--blockedrooms-line-2);
+  border:1px solid var(--blockedrooms-line);
+  color:var(--blockedrooms-soft);
+}
+
+.blockedrooms-state-icon svg{ width:19px; height:19px; }
+
+.blockedrooms-state-title{
+  display:block;
+  font-size:13px;
+  font-weight:700;
+  color:var(--blockedrooms-ink);
+  margin-bottom:3px;
+}
+
+.blockedrooms-state.is-err .blockedrooms-state-icon{
+  background:var(--blockedrooms-red-soft);
+  border-color:#F3D5D5;
+  color:var(--blockedrooms-red);
+}
+
+.blockedrooms-skeleton{
+  height:11px;
+  border-radius:5px;
+  background:linear-gradient(90deg,#EEF2F8 25%,#F7FAFD 37%,#EEF2F8 63%);
+  background-size:400% 100%;
+  animation:blockedrooms-shimmer 1.3s ease infinite;
+}
+
+@keyframes blockedrooms-shimmer{ from{ background-position:100% 50%; } to{ background-position:0 50%; } }
+
+/* ------------------------------------------------------------------- the modal */
+.blockedrooms-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:900;
+  background:rgba(22,35,58,.45);
+}
+
+.blockedrooms-backdrop[hidden],
+.blockedrooms-modal[hidden]{ display:none; }
+
+.blockedrooms-modal{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  z-index:901;
+  width:min(560px, calc(100vw - 28px));
+  max-height:calc(100vh - 40px);
+  /* A scroll container clips an absolutely positioned child, and the edit calendar is
+     one: with overflow:auto here its bottom half was cut off. The script adds
+     .is-picking while that calendar is open, and the box stops clipping for as long
+     as it is. */
+  overflow:auto;
+  background:#fff;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:14px;
+  box-shadow:var(--blockedrooms-shadow-lg);
+  color:var(--blockedrooms-ink);
+}
+
+.blockedrooms-modal.is-picking{
+  overflow:visible;
+  max-height:none;
+}
+
+.blockedrooms-modal-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:13px 16px;
+  border-bottom:1px solid var(--blockedrooms-line);
+}
+
+.blockedrooms-modal-title{
+  margin:0;
+  font-size:14px;
+  font-weight:700;
+  color:var(--blockedrooms-ink);
+}
+
+.blockedrooms-modal-close{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:30px;
+  height:30px;
+  padding:0;
+  border:1px solid var(--blockedrooms-line);
+  border-radius:8px;
+  background:#fff;
+  color:var(--blockedrooms-ink-2);
+  cursor:pointer;
+}
+
+.blockedrooms-modal-close:hover{ background:var(--blockedrooms-line-2); }
+.blockedrooms-modal-close svg{ width:14px; height:14px; }
+
+.blockedrooms-modal-body{
+  padding:14px 16px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+
+.blockedrooms-modal-body .blockedrooms-field.is-wide{ grid-column:1 / -1; }
+
+.blockedrooms-modal-foot{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  padding:12px 16px;
+  border-top:1px solid var(--blockedrooms-line);
+  background:var(--blockedrooms-line-2);
+  border-radius:0 0 13px 13px;
+}
+
+/* ------------------------------------------------------------------ the toasts */
+/* the old page put every message through alert() */
+.blockedrooms-toasts{
+  position:fixed;
+  right:16px;
+  bottom:16px;
+  z-index:950;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  width:330px;
+  max-width:calc(100vw - 24px);
+  /* an error toast stays until it is dismissed, so a run of them must not push the
+     earliest ones off the top of the screen where nothing can reach them */
+  max-height:calc(100vh - 32px);
+  overflow-y:auto;
+}
+
+.blockedrooms-toast{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  padding:11px 12px;
+  border-radius:12px;
+  border:1px solid var(--blockedrooms-line);
+  background:#fff;
+  box-shadow:var(--blockedrooms-shadow-lg);
+  font-size:12.5px;
+  font-weight:600;
+  color:var(--blockedrooms-ink);
+  animation:blockedrooms-in .22s ease;
+}
+
+@keyframes blockedrooms-in{ from{ opacity:0; transform:translateY(8px); } }
+
+.blockedrooms-toast-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:22px;
+  height:22px;
+  flex:0 0 auto;
+  border-radius:50%;
+}
+
+.blockedrooms-toast-icon svg{ width:13px; height:13px; }
+.blockedrooms-toast-text{ flex:1 1 auto; white-space:pre-line; line-height:1.45; }
+
+.blockedrooms-toast.is-ok{ background:var(--blockedrooms-blue-soft); border-color:#D7E2EF; }
+.blockedrooms-toast.is-ok .blockedrooms-toast-icon{ background:var(--blockedrooms-blue); color:#fff; }
+.blockedrooms-toast.is-warn{ background:var(--blockedrooms-amber-soft); border-color:#F0E2C2; color:var(--blockedrooms-amber); }
+.blockedrooms-toast.is-warn .blockedrooms-toast-icon{ background:var(--blockedrooms-amber); color:#fff; }
+.blockedrooms-toast.is-err{ background:var(--blockedrooms-red-soft); border-color:#F3D5D5; color:var(--blockedrooms-red); }
+.blockedrooms-toast.is-err .blockedrooms-toast-icon{ background:var(--blockedrooms-red); color:#fff; }
+
+.blockedrooms-toast-close{
+  border:none;
+  background:transparent;
+  color:inherit;
+  font-size:15px;
+  line-height:1;
+  cursor:pointer;
+  padding:0 2px;
+  opacity:.65;
+}
+
+.blockedrooms-toast-close:hover{ opacity:1; }
+
+/* ======================================================================
+   20261105b - same size and look as the Add Room page.
+   Scoped with .blockedrooms-page (or the modal / panel / toasts roots) so
+   the rules above and the legacy site sheet cannot win over them.
+   ====================================================================== */
+.blockedrooms-page,
+.blockedrooms-daterange-panel,
+.blockedrooms-modal,
+.blockedrooms-toasts{
+  font-family:'Segoe UI', Tahoma, Geneva, Verdana, system-ui, Arial, sans-serif;
+  font-size:12.5px;
+}
+
+.blockedrooms-page{ padding:14px 16px 24px; max-width:1240px; }
+
+/* header and search */
+.blockedrooms-page .blockedrooms-topbar{ gap:10px; margin-bottom:8px; flex-wrap:nowrap; }
+.blockedrooms-page .blockedrooms-icon{ width:30px; height:30px; border-radius:10px; }
+.blockedrooms-page .blockedrooms-icon svg{ width:18px; height:18px; }
+.blockedrooms-page .blockedrooms-title{ font-size:clamp(18px, 1.7vw, 22px); font-weight:800; letter-spacing:-.5px; }
+.blockedrooms-page .blockedrooms-subtitle{ margin:1px 0 0; font-size:12px; }
+
+/* local table search */
+.blockedrooms-page .blockedrooms-search{ position:relative; margin-left:auto; flex:0 1 260px; min-width:0; }
+.blockedrooms-page .blockedrooms-search-ico{
+  position:absolute; left:11px; top:50%; transform:translateY(-50%);
+  width:15px; height:15px; color:#9aa5b4; pointer-events:none;
+}
+.blockedrooms-page .blockedrooms-search-input{
+  width:100%; height:32px; padding:0 30px 0 34px;
+  border:1px solid var(--blockedrooms-line); border-radius:9px;
+  background:#f8fafc; font-family:inherit; font-size:12.5px; color:var(--blockedrooms-ink);
+  outline:none; transition:border-color .15s, box-shadow .15s, background-color .15s;
+}
+.blockedrooms-page .blockedrooms-search-input::placeholder{ color:#9aa5b4; }
+.blockedrooms-page .blockedrooms-search-input:hover{ border-color:#cfd7e2; }
+.blockedrooms-page .blockedrooms-search-input:focus{ background:#fff; border-color:#2f5c8f; box-shadow:0 0 0 3px rgba(47,92,143,.14); }
+.blockedrooms-page .blockedrooms-search-clear{
+  position:absolute; right:4px; top:4px; width:24px; height:24px; padding:0;
+  border:0; border-radius:6px; background:none; color:#9aa5b4; font-size:16px; line-height:1;
+  cursor:pointer; display:none;
+}
+.blockedrooms-page .blockedrooms-search.has-value .blockedrooms-search-clear{ display:block; }
+.blockedrooms-page .blockedrooms-search-clear:hover{ background:#f8fafc; color:var(--blockedrooms-ink); }
+
+/* the Block New Room panel: opens in place under the heading */
+.blockedrooms-page .blockedrooms-card.is-form[hidden]{ display:none; }
+.blockedrooms-page .blockedrooms-card.is-form{
+  padding:12px 18px; margin-bottom:10px; border-radius:10px;
+  box-shadow:0 2px 10px rgba(24,32,47,.05);
+}
+.blockedrooms-page .blockedrooms-form{ gap:10px 24px; }
+.blockedrooms-page .blockedrooms-field{ gap:4px; flex:1 1 170px; }
+.blockedrooms-page .blockedrooms-field.is-range{ flex:1 1 230px; }
+.blockedrooms-page .blockedrooms-field.is-action{ flex:0 0 auto; }
+.blockedrooms-page .blockedrooms-field > label{
+  font-size:9.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+  color:var(--blockedrooms-muted); white-space:nowrap;
+}
+.blockedrooms-page .blockedrooms-field-spacer{ font-size:9.5px; }
+.blockedrooms-page .blockedrooms-input,
+.blockedrooms-page .blockedrooms-select,
+.blockedrooms-page .blockedrooms-daterange-input,
+.blockedrooms-modal .blockedrooms-input,
+.blockedrooms-modal .blockedrooms-select,
+.blockedrooms-modal .blockedrooms-daterange-input{
+  height:34px; padding-left:11px; border-radius:7px; font-size:12.5px; font-weight:400;
+  font-family:inherit;
+}
+.blockedrooms-page .blockedrooms-select,
+.blockedrooms-modal .blockedrooms-select{ padding-right:28px; background-position:right 9px center; background-size:13px 13px; }
+.blockedrooms-page .blockedrooms-input:focus,
+.blockedrooms-page .blockedrooms-select:focus,
+.blockedrooms-modal .blockedrooms-input:focus,
+.blockedrooms-modal .blockedrooms-select:focus{ box-shadow:0 0 0 3px rgba(47,92,143,.14); outline:none; }
+.blockedrooms-modal .blockedrooms-textarea{ font-family:inherit; font-size:12.5px; font-weight:400; border-radius:7px; }
+.blockedrooms-modal .blockedrooms-field > label{
+  font-size:9.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--blockedrooms-muted);
+}
+
+.blockedrooms-page .blockedrooms-btn,
+.blockedrooms-modal .blockedrooms-btn{ height:34px; padding:0 18px; border-radius:7px; font-size:12.5px; font-weight:600; }
+.blockedrooms-page .blockedrooms-btn.is-primary,
+.blockedrooms-modal .blockedrooms-btn.is-primary{ background:#102f5c; border-color:#102f5c; }
+.blockedrooms-page .blockedrooms-btn.is-primary:hover:not(:disabled),
+.blockedrooms-modal .blockedrooms-btn.is-primary:hover:not(:disabled){ background:#0d2649; border-color:#0d2649; }
+.blockedrooms-daterange-panel .blockedrooms-btn.is-small{ height:30px; padding:0 13px; font-size:12px; }
+
+/* the grid: Add Room's card and table */
+.blockedrooms-page .blockedrooms-card.is-list{ border-radius:10px; box-shadow:0 2px 8px rgba(24,32,47,.045); }
+.blockedrooms-page .blockedrooms-card.is-list .blockedrooms-tablewrap{ border-radius:10px; }
+.blockedrooms-page .blockedrooms-table{ min-width:820px; }
+.blockedrooms-page .blockedrooms-table thead th{
+  background:#e8eef6; color:#1f3a5f;
+  font-size:10px; font-weight:700; letter-spacing:.4px;
+  padding:9px 10px; border:0; border-bottom:1px solid #d5dfeb;
+}
+.blockedrooms-page .blockedrooms-table thead th.is-mid{ text-align:left; }
+.blockedrooms-page .blockedrooms-table thead th:first-child,
+.blockedrooms-page .blockedrooms-table tbody td:first-child{ padding-left:14px; }
+.blockedrooms-page .blockedrooms-table thead th:last-child,
+.blockedrooms-page .blockedrooms-table tbody td:last-child{ padding-right:14px; }
+.blockedrooms-page .blockedrooms-table tbody td{
+  padding:8px 10px; font-size:12.5px; border:0; border-bottom:1px solid #eef1f5;
+}
+.blockedrooms-page .blockedrooms-table tbody tr:nth-child(odd),
+.blockedrooms-page .blockedrooms-table tbody tr:nth-child(even){ background:#fff; }
+.blockedrooms-page .blockedrooms-table tbody tr:hover td{ background:#fafbfd; }
+.blockedrooms-page .blockedrooms-sr{ width:50px; text-align:left; font-size:12px; color:var(--blockedrooms-muted); }
+.blockedrooms-page .blockedrooms-roomno{ font-weight:700; font-variant-numeric:tabular-nums; }
+.blockedrooms-page .blockedrooms-action{ width:78px; text-align:left; }
+.blockedrooms-page .blockedrooms-iconbtn{
+  width:26px; height:26px; border-radius:6px; color:#2f5c8f; background:#fff;
+}
+.blockedrooms-page .blockedrooms-iconbtn svg{ width:13px; height:13px; }
+.blockedrooms-page .blockedrooms-table tbody tr:hover .blockedrooms-iconbtn{ background:#fff; border-color:var(--blockedrooms-line); color:#2f5c8f; }
+.blockedrooms-page .blockedrooms-iconbtn:hover,
+.blockedrooms-page .blockedrooms-table tbody tr:hover .blockedrooms-iconbtn:hover{ background:#eaf2fb; border-color:#d8e6f5; color:#2f5c8f; }
+.blockedrooms-page .blockedrooms-state td{ padding:34px 16px; font-size:12.5px; }
+.blockedrooms-page .blockedrooms-state-title{ font-size:13px; }
+
+/* modal heading at the same scale */
+.blockedrooms-modal .blockedrooms-modal-title{ font-size:14px; font-weight:700; }
+
+/* --------------------------------------------------------------- responsive */
+/* The panel holds two 232px months plus padding - about 508px. The date field can start
+   more than half way across at any width up to roughly 1050px, so the months stack well
+   before the rest of the page does; below 1080 the panel is one month wide and fits. */
+@media screen and (max-width:1080px){
+  .blockedrooms-cals{ flex-direction:column; gap:12px; }
+  .blockedrooms-cal,
+  .blockedrooms-cal-month{ width:232px; }
+  .blockedrooms-cal-months{ gap:0; }
+  .blockedrooms-cal-months .blockedrooms-cal-month:last-child{ display:none; }
+}
+/* "screen and" matters: a bare max-width query also fires at A4's ~794px and
+   would print the mobile layout. */
+@media screen and (max-width:1024px){
+  .blockedrooms-field.is-action{ flex:1 1 100%; }
+  .blockedrooms-field.is-action .blockedrooms-btn{ width:100%; }
+}
+
+@media screen and (max-width:760px){
+  .blockedrooms-page{ padding:12px 10px; }
+  .blockedrooms-page .blockedrooms-field,
+  .blockedrooms-page .blockedrooms-field.is-range{ flex:1 1 100%; }
+  .blockedrooms-page .blockedrooms-topbar{ align-items:center; flex-wrap:wrap; }
+  .blockedrooms-page .blockedrooms-search{ margin-left:0; flex:1 1 auto; }
+  .blockedrooms-page .blockedrooms-table{ min-width:0; }
+  .blockedrooms-page .blockedrooms-table tbody tr:nth-child(odd),
+  .blockedrooms-page .blockedrooms-table tbody tr:nth-child(even){ background:#fff; }
+  .blockedrooms-page .blockedrooms-table tbody td{ display:flex; padding:8px 14px; }
+  .blockedrooms-page .blockedrooms-table tbody td:first-child{ padding-left:14px; }
+  .blockedrooms-page .blockedrooms-sr,
+  .blockedrooms-page .blockedrooms-action{ width:auto; text-align:right; }
+  .blockedrooms-field{ flex:1 1 100%; }
+  .blockedrooms-topbar-left{ width:100%; }
+
+  .blockedrooms-cal,
+  .blockedrooms-cal-month{ width:100%; }
+  .blockedrooms-daterange-panel{ left:0; right:0; }
+
+  .blockedrooms-modal-body{ grid-template-columns:1fr; }
+
+  /* the table becomes one card per block */
+  .blockedrooms-card.is-list{ border:none; background:transparent; box-shadow:none; overflow:visible; }
+  .blockedrooms-tablewrap{ border:none; border-radius:0; overflow:visible; }
+  .blockedrooms-table{ min-width:0; }
+  .blockedrooms-table thead{ display:none; }
+  .blockedrooms-table,
+  .blockedrooms-table tbody,
+  .blockedrooms-table tr,
+  .blockedrooms-table td{ display:block; width:100%; }
+
+  .blockedrooms-table tbody tr{
+    border:1px solid var(--blockedrooms-line);
+    border-radius:12px;
+    margin-bottom:10px;
+    background:#fff !important;
+    overflow:hidden;
+  }
+
+  .blockedrooms-table tbody td{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    text-align:right;
+    white-space:normal;
+    padding:8px 14px;
+  }
+
+  .blockedrooms-table tbody tr:hover td{ background:transparent; }
+  .blockedrooms-table tbody td:last-child{ border-bottom:none; }
+
+  .blockedrooms-table tbody td::before{
+    content:attr(data-label);
+    flex:0 0 auto;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.4px;
+    text-transform:uppercase;
+    color:var(--blockedrooms-muted);
+    text-align:left;
+  }
+
+  .blockedrooms-reason-text{ max-width:none; white-space:normal; }
+  .blockedrooms-action{ width:auto; }
+  .blockedrooms-state td{ display:block; text-align:center; }
+  .blockedrooms-state td::before{ content:none; }
+  .blockedrooms-skeleton{ display:none; }
+}
+
+/* ---------------------------------------------------------------------- print */
+@media print{
+  .blockedrooms-page{ max-width:none; padding:0; }
+  /* NOT .blockedrooms-card:first-of-type - the first div child of the page root is the
+     heading bar, so that selector matched nothing and the form printed on the paper. */
+  .blockedrooms-card.is-form,
+  .blockedrooms-search,
+  .blockedrooms-action,
+  /* the cells carry .blockedrooms-action, the header cell does not - without this the
+     printed table had seven headings over six columns */
+  .blockedrooms-table thead th:last-child,
+  .blockedrooms-toasts,
+  .blockedrooms-daterange-panel{ display:none !important; }
+
+  .blockedrooms-card{ border:none; box-shadow:none; padding:0; }
+  .blockedrooms-tablewrap{ overflow:visible; border:1px solid #C7D2E1; }
+  .blockedrooms-table{ min-width:0; }
+  .blockedrooms-table thead{ display:table-header-group; }
+  .blockedrooms-table tr{ break-inside:avoid; page-break-inside:avoid; }
+}
+
+/* --------------------------- Bulk Room (single interface, one or more rooms) */
+.blockedrooms-page .blockedrooms-field[hidden] { display:none !important; }
+
+/* A stronger hierarchy while retaining the PMS palette and spacing scale. */
+.blockedrooms-page .blockedrooms-topbar { margin-bottom:16px; gap:12px; }
+.blockedrooms-page .blockedrooms-title { font-size:20px; letter-spacing:-.4px; }
+.blockedrooms-page .blockedrooms-icon {
+  width:42px; height:42px; border-radius:12px;
+  background:#EAF1FA; border:1px solid #DCE7F4;
+}
+.blockedrooms-page .blockedrooms-search { margin-left:auto; }
+.blockedrooms-page .blockedrooms-open-bulk {
+  display:inline-flex; align-items:center; justify-content:center; gap:9px;
+  flex:0 0 auto; height:38px; padding:0 17px; border:1px solid #183B69;
+  border-radius:9px; background:#183B69; color:#fff;
+  box-shadow:0 3px 8px rgba(24,59,105,.13);
+  font-family:inherit; font-size:12px; font-weight:700; cursor:pointer;
+  transition:background .15s ease,transform .15s ease,box-shadow .15s ease;
+}
+.blockedrooms-page .blockedrooms-open-bulk:hover,
+.blockedrooms-page .blockedrooms-open-bulk.is-open {
+  background:#102D51; box-shadow:0 4px 10px rgba(24,59,105,.18);
+}
+.blockedrooms-page .blockedrooms-open-bulk:active { transform:translateY(1px); }
+.blockedrooms-page .blockedrooms-open-bulk:focus-visible { outline:3px solid #93B9EA; outline-offset:2px; }
+.blockedrooms-page .blockedrooms-open-bulk svg { width:16px; height:16px; }
+
+.blockedrooms-page .blockedrooms-card.is-form {
+  padding:0; border:1px solid #DEE7F3; border-radius:13px;
+  box-shadow:0 8px 24px rgba(22,35,58,.08);
+  margin-bottom:18px;
+}
+.blockedrooms-editor-header {
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:15px 19px; border-bottom:1px solid #E5ECF5;
+  background:linear-gradient(105deg,#F4F8FE,#fff 83%);
+  border-radius:13px 13px 0 0;
+}
+.blockedrooms-editor-heading { display:flex; align-items:center; gap:12px; min-width:0; }
+.blockedrooms-editor-icon {
+  display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
+  width:39px; height:39px; color:#204B81; background:#E4EEFB; border-radius:10px;
+}
+.blockedrooms-editor-icon svg { width:21px; height:21px; }
+.blockedrooms-editor-title { margin:0; color:#162C4E; font-size:15.5px; font-weight:750; letter-spacing:-.2px; }
+.blockedrooms-editor-description { margin:3px 0 0; font-size:12px; color:#697D97; line-height:1.4; }
+.blockedrooms-panel-close {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:32px; height:32px; flex:0 0 auto;
+  background:#fff; border:1px solid #DDE6F0; border-radius:8px;
+  cursor:pointer; color:#697D97;
+}
+.blockedrooms-panel-close:hover { background:#EDF3FA; color:#1F3C65; }
+.blockedrooms-panel-close:focus-visible { outline:2px solid #93B9EA; outline-offset:2px; }
+.blockedrooms-panel-close svg { width:15px; height:15px; }
+
+.blockedrooms-page .blockedrooms-form {
+  padding:17px 19px 18px; display:flex; align-items:flex-end; gap:15px 17px;
+}
+.blockedrooms-page .blockedrooms-field { gap:7px; flex:1 1 220px; }
+.blockedrooms-page .blockedrooms-field.is-range { flex:1.25 1 250px; }
+.blockedrooms-page .blockedrooms-field.is-bulk-picker { flex:1 1 100%; order:2; }
+.blockedrooms-page .blockedrooms-field > label,
+.blockedrooms-room-chooser-heading label {
+  color:#34465F; font-size:11px; font-weight:700; text-transform:none;
+  letter-spacing:0; white-space:normal;
+}
+.blockedrooms-page .blockedrooms-select,
+.blockedrooms-page .blockedrooms-form .blockedrooms-input,
+.blockedrooms-page .blockedrooms-form .blockedrooms-daterange-input {
+  height:39px; font-size:12.5px; border-color:#DCE5F0; border-radius:8px;
+}
+.blockedrooms-page .blockedrooms-select:hover,
+.blockedrooms-page .blockedrooms-form .blockedrooms-input:hover,
+.blockedrooms-page .blockedrooms-form .blockedrooms-daterange-input:hover { border-color:#ADC2DD; }
+
+.blockedrooms-room-chooser-heading {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  margin:1px 0 3px;
+}
+.blockedrooms-room-chooser-heading p { margin:4px 0 0; font-size:11.5px; color:#77879B; }
+.blockedrooms-bulk-count {
+  flex:0 0 auto; display:inline-flex; align-items:center;
+  font-size:11.5px; font-weight:750; color:#234E82;
+  padding:6px 11px; border-radius:99px;
+  background:#E7F0FC; border:1px solid #D3E4F8;
+  font-variant-numeric:tabular-nums;
+}
+.blockedrooms-bulk-toolbar {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 9px; background:#F7F9FC;
+  border:1px solid #E3EAF3; border-radius:10px 10px 0 0;
+}
+.blockedrooms-bulk-search-wrap { position:relative; flex:1 1 230px; min-width:120px; max-width:430px; }
+.blockedrooms-bulk-search-wrap svg {
+  position:absolute; width:15px; height:15px; left:11px; top:50%;
+  transform:translateY(-50%); pointer-events:none; color:#8797AA;
+}
+.blockedrooms-page .blockedrooms-bulk-search { width:100%; padding-left:35px; background:#fff; }
+.blockedrooms-bulk-toolbar button {
+  min-height:34px; border:1px solid #D8E2EF; border-radius:8px;
+  background:#fff; color:#264C78; font-size:11.5px; font-weight:700;
+  font-family:inherit; padding:5px 13px; cursor:pointer; white-space:nowrap;
+  transition:background .15s,border-color .15s;
+}
+.blockedrooms-bulk-toolbar button:hover:not(:disabled) { background:#EAF2FC; border-color:#B7CDE7; }
+.blockedrooms-bulk-toolbar button:focus-visible { outline:2px solid #8CB5EA; outline-offset:2px; }
+.blockedrooms-bulk-toolbar button:disabled { opacity:.46; cursor:default; }
+.blockedrooms-bulk-list {
+  padding:13px; background:#fff; border:1px solid #E3EAF3;
+  border-top:0; border-radius:0 0 10px 10px;
+  max-height:224px; min-height:92px; overflow:auto;
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(115px,1fr));
+  gap:9px; align-content:start;
+}
+.blockedrooms-field.is-bulk-picker.is-invalid .blockedrooms-bulk-list {
+  border-color:var(--blockedrooms-red); box-shadow:0 0 0 3px rgba(214,59,59,.09);
+}
+.blockedrooms-bulk-room {
+  display:flex; align-items:center; gap:9px; min-width:0;
+  min-height:39px; padding:8px 10px; border:1px solid #DFE6EF;
+  border-radius:8px; background:#fff; color:#32475F;
+  cursor:pointer; font-size:12.5px; transition:background .14s,border-color .14s,box-shadow .14s;
+}
+.blockedrooms-bulk-room:hover { border-color:#9ABDE9; background:#F4F8FD; }
+.blockedrooms-bulk-room.is-checked {
+  background:#EAF3FF; border-color:#77A4DE; color:#173E73; font-weight:750;
+  box-shadow:inset 0 0 0 1px rgba(79,135,200,.12);
+}
+.blockedrooms-bulk-room:focus-within { outline:2px solid #86AFE6; outline-offset:1px; }
+.blockedrooms-bulk-room input { flex:0 0 auto; width:16px; height:16px; accent-color:#295F9D; }
+.blockedrooms-bulk-room span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.blockedrooms-bulk-placeholder {
+  grid-column:1 / -1; align-self:center; justify-self:center;
+  color:#7D8DA1; font-size:12px; text-align:center; padding:9px;
+}
+.blockedrooms-bulk-list-footer {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  margin-top:9px; flex-wrap:wrap;
+}
+.blockedrooms-bulk-selection-summary { color:#365574; font-size:11.5px; font-weight:600; }
+.blockedrooms-bulk-footnote { font-size:11px; color:#7B8BA0; }
+
+.blockedrooms-form-footer {
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:12px 19px; border-top:1px solid #E5ECF5; border-radius:0 0 13px 13px;
+  background:#FAFCFF;
+}
+.blockedrooms-refresh-note { display:flex; align-items:center; gap:9px; font-size:11.5px; color:#61778D; line-height:1.4; }
+.blockedrooms-refresh-note svg { width:18px; height:18px; flex:0 0 auto; color:#2B7095; }
+.blockedrooms-page .blockedrooms-form-footer .blockedrooms-block {
+  flex:0 0 auto; min-width:168px; height:39px;
+  padding:0 19px; border-radius:8px; font-size:12.5px;
+  background:#183B69; border-color:#183B69;
+}
+
+.blockedrooms-page .blockedrooms-card.is-list { border-radius:12px; border-color:#E0E8F2; }
+.blockedrooms-page .blockedrooms-card.is-list .blockedrooms-tablewrap { border-radius:0 0 12px 12px; }
+.blockedrooms-list-heading {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:15px 18px; border-bottom:1px solid #E3EAF3; background:#fff;
+}
+.blockedrooms-list-heading h2 { margin:0; font-weight:750; font-size:14px; color:#1A3355; }
+.blockedrooms-list-heading p { margin:4px 0 0; font-size:11.5px; color:#76879C; }
+.blockedrooms-current-count {
+  padding:5px 11px; border-radius:99px; background:#F0F5FB;
+  border:1px solid #DEE8F4; color:#3A587B; font-size:11px;
+  font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+.blockedrooms-page .blockedrooms-table thead th {
+  background:#F3F7FC; color:#33577F; border-bottom:1px solid #E0E9F5;
+  padding-top:11px; padding-bottom:11px;
+}
+.blockedrooms-page .blockedrooms-table tbody td { padding-top:11px; padding-bottom:11px; }
+.blockedrooms-page .blockedrooms-table tbody tr:hover td { background:#F5F9FE; }
+
+@media screen and (max-width:900px) {
+  .blockedrooms-page .blockedrooms-topbar { flex-wrap:wrap; }
+  .blockedrooms-page .blockedrooms-search { margin-left:0; flex:1 1 180px; }
+  .blockedrooms-page .blockedrooms-field.is-bulk-picker { flex-basis:100%; }
+}
+@media screen and (max-width:650px) {
+  .blockedrooms-page .blockedrooms-card.is-form { margin-bottom:12px; }
+  .blockedrooms-editor-header,
+  .blockedrooms-page .blockedrooms-form,
+  .blockedrooms-form-footer { padding:13px; }
+  .blockedrooms-editor-heading { gap:9px; }
+  .blockedrooms-editor-icon { width:33px; height:33px; }
+  .blockedrooms-editor-description { font-size:11px; }
+  .blockedrooms-page .blockedrooms-field,
+  .blockedrooms-page .blockedrooms-field.is-range { flex:1 1 100%; }
+  .blockedrooms-bulk-toolbar { flex-wrap:wrap; }
+  .blockedrooms-bulk-search-wrap { max-width:none; flex:1 1 100%; }
+  .blockedrooms-bulk-list { grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); max-height:260px; }
+  .blockedrooms-form-footer { align-items:stretch; flex-direction:column; }
+  .blockedrooms-page .blockedrooms-form-footer .blockedrooms-block { width:100%; }
+  .blockedrooms-list-heading { padding:13px; }
+  .blockedrooms-current-count { font-size:10.5px; }
+}
+@media print {
+  .blockedrooms-page .blockedrooms-open-bulk { display:none !important; }
+  .blockedrooms-list-heading { padding:10px 0; }
+}

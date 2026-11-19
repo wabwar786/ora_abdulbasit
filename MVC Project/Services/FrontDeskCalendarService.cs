@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using System.Net;
 using System.Net.Mail;
@@ -1401,7 +1401,12 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND ID=@id AND LTRIM(RTRIM(ISNULL(descr,''
                     throw new InvalidOperationException("The reservation changed before the move was saved. Refresh and try again.");
             }
 
-            await UpdateMasterDatesWhenSingleRoomAsync(cn, tx, hotelId, request.RegId, newArrival, newDeparture, ct);
+            // The master records represent the entire reservation, not just the
+            // room being dragged. A multi-room booking may span different dates,
+            // so recalculate its min arrival / max departure from all active
+            // Room Rent segments after every move (including single-room moves).
+            // Keep this in the same transaction as the payments update.
+            await SyncMasterDatesFromPaymentsAsync(cn, tx, hotelId, request.RegId, ct);
             await InsertRoomChangeLogAsync(cn, tx, hotelId, request.RegId, current.CategoryId, targetCategoryId,
                 current.CategoryName, targetCategoryName, current.RoomNo, newRoom, userId, userName, ip,
                 $"Drag/drop PaymentId={request.PaymentId}; {current.Arrival:yyyy-MM-dd}-{current.Departure:yyyy-MM-dd} -> {newArrival:yyyy-MM-dd}-{newDeparture:yyyy-MM-dd}", ct);
@@ -3822,31 +3827,6 @@ FROM dbo.create_room WHERE hotel_id=@hotel AND ((@cid<>'' AND CONVERT(varchar(10
             var value = await fallback.ExecuteScalarAsync(ct);
             return value == null || value == DBNull.Value ? 0m : Convert.ToDecimal(value, CultureInfo.InvariantCulture);
         }
-    }
-
-    private async Task<int> CountActiveRoomRowsAsync(SqlConnection cn, SqlTransaction? tx, string hotelId, string regId, CancellationToken ct)
-    {
-        var hint = tx == null ? " WITH (READPAST)" : string.Empty;
-        await using var cmd = new SqlCommand($@"
-SELECT COUNT(1) FROM dbo.payments{hint}
-WHERE hotel_id=@hotel AND reg_id=@reg AND LTRIM(RTRIM(ISNULL(descr,'')))='Room Rent'
- AND LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('reservation','check in','provisional','tentative');", cn, tx);
-        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(regId);
-        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
-    }
-
-    private async Task UpdateMasterDatesWhenSingleRoomAsync(SqlConnection cn, SqlTransaction tx, string hotelId, string regId, DateTime arrival, DateTime departure, CancellationToken ct)
-    {
-        if (await CountActiveRoomRowsAsync(cn, tx, hotelId, regId, ct) != 1) return;
-        await using var cmd = new SqlCommand(@"
-UPDATE dbo.GuestInformationLogTB SET ArrivalDate=@a,DepartureDate=@d WHERE hotel_id=@hotel AND reg_id=@reg;
-UPDATE dbo.NewReservationsTB SET ArrivalDate=@a,dept_date=@d WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
-        cmd.Parameters.Add("@a", SqlDbType.VarChar, 20).Value = LegacyDate(arrival);
-        cmd.Parameters.Add("@d", SqlDbType.VarChar, 20).Value = LegacyDate(departure);
-        cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
-        cmd.Parameters.Add("@reg", SqlDbType.VarChar, 100).Value = NormalizeRegId(regId);
-        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private async Task<decimal> GetHistoricalTaxPerNightAsync(

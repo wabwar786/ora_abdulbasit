@@ -14,28 +14,22 @@ public sealed partial class DashboardService : IDashboardService
     // One in-flight room-type query per hotel, shared by the quick graph and
     // lower-page analytics, avoids duplicate SQL work on a cold load.
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> RoomTypeQueryLocks = new();
-
     // This applies ONLY to Dashboard SQL, not checkout, booking, posting or
     // other hotel operations. Prevents dashboard requests from monopolizing SQL
     // when multiple hotels/users open the page simultaneously.
     private static readonly SemaphoreSlim DashboardDatabaseSlots = new(3, 3);
-
     // Fixed-size striped locks prevent cache stampedes without retaining one
     // SemaphoreSlim forever for every hotel/date/year cache key.
     private static readonly SemaphoreSlim[] CacheMissLocks = Enumerable.Range(0, 64)
         .Select(_ => new SemaphoreSlim(1, 1)).ToArray();
-
     // Snapshot loaders call other CachedAsync methods. They MUST NOT use the
     // same striped locks or one colliding stripe could deadlock a dashboard.
     private static readonly SemaphoreSlim[] SnapshotCacheLocks = Enumerable.Range(0, 64)
         .Select(_ => new SemaphoreSlim(1, 1)).ToArray();
-
-
     private readonly string _connectionString;
     private readonly IHotelClock _hotelClock;
     private readonly IMemoryCache _cache;
     private readonly ILogger<DashboardService> _logger;
-
     public DashboardService(
         IConfiguration configuration,
         IHotelClock hotelClock,

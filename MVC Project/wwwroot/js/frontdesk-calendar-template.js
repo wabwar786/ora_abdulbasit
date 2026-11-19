@@ -870,6 +870,7 @@
     if(Number(d.balance||0)>0.005){
       actions.push(action('£','Record Payment','payment','payment-action'));
     }
+    actions.push(action('▣','Registration Card','registration-card'));
     actions.push(action('⧉','Copy reservation ID','copy-reg'));
     actions.push(action('✉','Send Email','sendpaylink','payment-action'));
 
@@ -881,6 +882,25 @@
       trailing.push(action('⇥','Check-Out','checkout','checkout-action'));
     }
     return `<button type="button" class="fdc-drawer-actions-toggle" data-drawer-actions-toggle aria-expanded="false"><span>Actions</span><span class="chevron">⌄</span></button><div class="fdc-drawer-actions" data-drawer-actions-list hidden>${actions.join('')}${trailing.length?`<div class="fdc-drawer-actions-terminal">${trailing.join('')}</div>`:''}</div>`;
+  }
+
+  // Open a reservation's Registration Card in a separate tab. Build the URL
+  // from the application root so this also works under a virtual directory.
+  function openRegistrationCard(regId){
+    const reference=String(regId??'').trim();
+    if(!reference){showToast('Reservation reference is missing.',true);return;}
+    const url=new URL(cfg.registrationCardUrl||legacyPageUrl('RegistrationCard').toString(),location.origin);
+    url.searchParams.set('regId',reference);
+    // Trigger a normal link navigation directly from the staff member's click.
+    // This preserves the calendar and prevents the target tab accessing window.opener.
+    const link=document.createElement('a');
+    link.href=url.toString();
+    link.target='_blank';
+    link.rel='noopener noreferrer';
+    link.style.display='none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   async function openRestaurantForGuest(d){
@@ -921,6 +941,7 @@
       openCheckInEditor(d,button);
       return;
     }
+    if(action==='registration-card'){openRegistrationCard(d.regId);return;}
     if(action==='copy-reg'){ navigator.clipboard.writeText(String(d.regId)).then(()=>showToast('Reservation ID copied: '+d.regId)).catch(()=>showToast('Cannot copy: '+d.regId,true));return;}
     if(action==='history'){openHistoryPage(d);return;}
     if(action==='payment'){openPayment(d,button);return;}
@@ -1431,6 +1452,7 @@ ${tag}`:tag;
         <div class="fdc-booking-menu-body"><div class="fdc-booking-menu-actions">
           ${item.canDrag?bookingMenuItem('⇥','Assign room / change category','assign','primary-action'):''}
           ${bookingMenuItem('✎','Edit Reservation','edit-unassigned')}
+          ${bookingMenuItem('▣','Registration Card','registration-card')}
           ${bookingMenuItem('⧉','Copy reservation ID','copy-reg')}
         </div></div>`;
       showContextAt(x,y);
@@ -1489,6 +1511,7 @@ ${tag}`:tag;
     if(Number(item.balance||0)>0.005){
       actions.push(bookingMenuItem('£','Record Payment','payment','payment-action'));
     }
+    actions.push(bookingMenuItem('▣','Registration Card','registration-card'));
     actions.push(bookingMenuItem('⧉','Copy reservation ID','copy-reg'));
     actions.push(bookingMenuItem('✉','Send Email','sendpaylink','payment-action'));
     const segments=(state.payload?.bookings||[]).filter(x=>
@@ -1529,6 +1552,12 @@ ${tag}`:tag;
       try { await navigator.clipboard.writeText(String(item.regId)); showToast('Reservation ID copied: ' + item.regId); }
       catch (_) { showToast('Could not copy automatically. Reservation ID: ' + item.regId,true); }
       closeContext(true); return;
+    }
+
+    if(action==='registration-card'){
+      openRegistrationCard(item.regId);
+      closeContext(true);
+      return;
     }
 
     if(action==='assign' && item.isMissingRoomRent){

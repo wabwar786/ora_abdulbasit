@@ -1040,9 +1040,14 @@ WHERE hotel_id=@hotel AND reg_id=@reg
                 g.DepartureDate = requestedDeparture;
             }
 
-            // WebForms parity: update guest/contact data separately. Stay-date
-            // changes above preserve Calendar Extend/Shrink payment segments.
-            const string updateGuest = @"
+            // Save guest/contact details in both reservation sources. A checked-in
+            // booking normally lives in GuestInformationLogTB, whereas a pending
+            // reservation may exist only in NewReservationsTB. Keep the VAT / NTN
+            // field in sync as well; older code omitted it for NewReservationsTB.
+            // Each command returns its own row count, so a missing registration
+            // cannot be reported as a successful update.
+            const string updateGuestLog = @"
+SET NOCOUNT ON;
 UPDATE dbo.GuestInformationLogTB
 SET ArrivalTime=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN ArrivalTime ELSE @arrivalTime END,
     DepartureTime=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN DepartureTime ELSE @departureTime END,
@@ -1062,7 +1067,10 @@ SET ArrivalTime=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(
     Status=@company,
     notes=@notes
 WHERE hotel_id=@hotel AND reg_id=@reg;
+SELECT @@ROWCOUNT;";
 
+            const string updateNewReservation = @"
+SET NOCOUNT ON;
 UPDATE dbo.NewReservationsTB
 SET GuestName=@first,
     LastName=@last,
@@ -1072,17 +1080,55 @@ SET GuestName=@first,
     number_of_adult=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN number_of_adult ELSE @adults END,
     number_of_minor=CASE WHEN @preserveCheckedOutStay=1 OR LOWER(LTRIM(RTRIM(ISNULL(res_status,'')))) IN ('check out','checkout','checked out') THEN number_of_minor ELSE @minors END,
     cnic=@cnic,
+    vatno=@vatno,
     visa=@passport,
     Email=@email,
     PhoneNo=@phone,
     Agency=@source,
     Status=@company,
     notes=@notes
-WHERE hotel_id=@hotel AND reg_id=@reg;";
-            await using (var cmd = new SqlCommand(updateGuest, cn, tx))
+WHERE hotel_id=@hotel AND reg_id=@reg;
+SELECT @@ROWCOUNT;";
+
+            var guestLogRows = 0;
+            var reservationRows = 0;
+            await using (var cmd = new SqlCommand(updateGuestLog, cn, tx))
             {
                 AddGuestParameters(cmd, hotelId, g);
                 cmd.Parameters.Add("@preserveCheckedOutStay", SqlDbType.Bit).Value = editingCheckedOut;
+                guestLogRows = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+            }
+            await using (var cmd = new SqlCommand(updateNewReservation, cn, tx))
+            {
+                AddGuestParameters(cmd, hotelId, g);
+                cmd.Parameters.Add("@preserveCheckedOutStay", SqlDbType.Bit).Value = editingCheckedOut;
+                reservationRows = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+            }
+            if (guestLogRows == 0 && reservationRows == 0)
+            {
+                await tx.RollbackAsync(ct);
+                return CheckInOperationResult.Fail("Reservation was not found in the guest or reservation records. Reload and try again.");
+            }
+
+            // Existing guests may also have a profile in GuestInformation.
+            // Update only profile rows belonging to this registration; do not
+            // modify other stays belonging to a repeat guest.
+            await using (var cmd = new SqlCommand(@"
+UPDATE dbo.GuestInformation
+SET GuestName=@first,
+    LastName=@last,
+    Address=@address,
+    Country=@country,
+    City=@city,
+    CNIC=CASE WHEN NULLIF(@cnic,'') IS NULL THEN @vatno ELSE @cnic END,
+    VisaPassportNo=@passport,
+    Email=@email,
+    PhoneNo=@phone,
+    Agency=@source,
+    Status=@company
+WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx))
+            {
+                AddGuestParameters(cmd, hotelId, g);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 

@@ -90,11 +90,12 @@ namespace Orapmshms.Models
         public string BillNo { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
+        /// <summary>Company saved in the reservation Status column; not the Agency/booking source.</summary>
         public string Company { get; set; } = string.Empty;
         public string VatNo { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
 
-        /// <summary>The old bookedvia (the Status column) - the booking source.</summary>
+        /// <summary>Booking source from Agency; Status is the company name.</summary>
         public string BookingSource { get; set; } = string.Empty;
 
         public string Adults { get; set; } = string.Empty;
