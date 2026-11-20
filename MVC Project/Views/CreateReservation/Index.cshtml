@@ -1,4 +1,4 @@
-@model CreateReservationPageViewModel
+﻿@model CreateReservationPageViewModel
 @{
     ViewData["Title"] = "New Reservation";
     var arrival = (Model.PrefillArrival ?? Model.HotelToday).Date;
@@ -135,6 +135,21 @@
                         </div>
                         <div><label class="lbl" for="IdNumber">ID number</label><input id="IdNumber" class="inp" maxlength="30" autocomplete="off" title="Enter the ID number only; ID type is not included in this field." /></div>
 
+                        <div>
+                            <label class="lbl" for="Company">Company</label>
+                            <div class="reservation-company-field">
+                                <select id="Company" class="inp" aria-label="Company">
+                                    <option value="">Select company (optional)</option>
+                                    @foreach (var item in Model.Companies)
+                                    {
+                                        <option value="@item.Value">@item.Text</option>
+                                    }
+                                    <option value="__add_new__">+ Add New Company</option>
+                                </select>
+                                <button id="btnAddCompany" class="btn btn-outline" type="button" title="Add company">+</button>
+                            </div>
+                        </div>
+                        <div><label class="lbl" for="VatNo">VAT # / NTN</label><input id="VatNo" class="inp" maxlength="30" autocomplete="off" placeholder="Optional VAT or NTN" /></div>
                         <div class="booking-address"><label class="lbl" for="Address">Address</label><input id="Address" class="inp" maxlength="200" /></div>
                         <div class="booking-upload" style="display:none;">
                             <span class="lbl">ID attachment</span>
@@ -361,6 +376,15 @@
             <div><label class="lbl" for="NewSourceName">Source name<span class="req">*</span></label><input id="NewSourceName" class="inp" maxlength="80" placeholder="e.g. Walk-in, Agoda, Corporate website" /></div>
             <p class="err hidden" id="sourceError"></p>
             <div class="modal-actions"><button type="button" class="btn btn-outline" id="cancelSource">Cancel</button><button type="button" class="btn btn-primary" id="saveSource">Add Source</button></div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="companyModal" role="dialog" aria-modal="true" aria-labelledby="companyModalTitle">
+        <div class="modal-card">
+            <div class="modal-head"><h3 id="companyModalTitle">Add New Company</h3><button type="button" class="icon-btn" id="closeCompanyModal" aria-label="Close">×</button></div>
+            <div><label class="lbl" for="NewCompanyName">Company name<span class="req">*</span></label><input id="NewCompanyName" class="inp" maxlength="180" placeholder="Company or corporate guest" /></div>
+            <p class="err hidden" id="companyError"></p>
+            <div class="modal-actions"><button type="button" class="btn btn-outline" id="cancelCompany">Cancel</button><button type="button" class="btn btn-primary" id="saveCompany">Add Company</button></div>
         </div>
     </div>
 

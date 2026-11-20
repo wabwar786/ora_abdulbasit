@@ -1,4 +1,4 @@
-using Orapmshms.Models;
+﻿using Orapmshms.Models;
 
 namespace Orapmshms.Services;
 
@@ -10,6 +10,7 @@ public interface ICreateReservationService
     Task<IReadOnlyList<LookupOption>> GetRoomsAsync(string hotelId, string userId, string categoryId, DateTime arrival, DateTime departure, CancellationToken ct = default);
     Task<RoomOccupancyLimitsResult> GetOccupancyLimitsAsync(string hotelId, string categoryId, CancellationToken ct = default);
     Task<IReadOnlyList<CreateReservationGuestResult>> SearchGuestsAsync(string hotelId, string term, CancellationToken ct = default);
+    Task<LookupOption> AddCompanyAsync(string hotelId, string userId, string name, CancellationToken ct = default);
     Task<LookupOption> AddSourceAsync(string hotelId, string userId, string userName, string clientIp, string value, CancellationToken ct = default);
     Task<CreateReservationQuoteResult> QuoteAsync(string hotelId, string userId, string role, CreateReservationQuoteRequest request, CancellationToken ct = default);
     Task<CreateReservationResult> CreateAsync(string hotelId, string hotelName, string userId, string userName, string role, string hotelRole, string clientIp, CreateReservationRequest request, CancellationToken ct = default);

@@ -219,8 +219,8 @@
                 </div>
             </div>
 
-            <div class="dashboard-hero-stat" data-info="Revenue payments recorded on today's hotel business date." tabindex="0">
-                <span>Revenue · today </span>
+            <div class="dashboard-hero-stat" data-info="Actual payments received today, net of refunds; refundable security excluded." tabindex="0">
+                <span>Payments received · today</span>
                 <strong>@Money0(Model.RevenueToday)</strong>
                 <small>Today only</small>
             </div>
@@ -287,20 +287,15 @@
     <div class="dashboard-kpi-workspace">
     <section class="dashboard-kpis dashboard-kpi-reference" aria-label="Key performance indicators">
     <div class="dashboard-financial-strip">
-        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-revenue" data-info="Payments received during the date range. Room rent (NET) is accommodation revenue and is not the same as payments received.">
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-revenue" data-info="Actual net receipts during the selected date range, less refunds; refundable security is excluded. Not room-night revenue.">
             <span class="dashboard-overview-icon dashboard-overview-icon-revenue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-6 4 4 8-9"/><path d="M15 5h6v6"/></svg></span>
             <span class="dashboard-financial-text">
-                <span class="dashboard-overview-title">Total Revenue</span>
+                <span class="dashboard-overview-title">Payments Received</span>
                 <strong class="dashboard-overview-number">@Money0(Model.RevenueLast30)</strong>
-                <span class="dashboard-overview-detail dashboard-revenue-breakdown">
-                    <span class="dashboard-revenue-part">
-                        <span class="dashboard-revenue-label">Room rent (NET)</span>
-                        <span class="dashboard-revenue-amount">@Money0(Model.SelectedAccommodationRevenue)</span>
-                    </span>
-                    <span class="dashboard-revenue-part">
-                        <span class="dashboard-revenue-label">Other (Extras)</span>
-                        <span class="dashboard-revenue-amount">@Money0(Model.SelectedExtrasRevenue)</span>
-                    </span>
+                <span class="dashboard-overview-detail" style="display:none;">Net receipts · refunds deducted</span>
+                <span class="dashboard-revenue-breakdown" title="Room rent and extras are charges booked in the selected period, not a split of cash receipts.">
+                    <span class="dashboard-revenue-part"><span class="dashboard-revenue-label">Room rent (net)</span><span class="dashboard-revenue-amount">@Money0(Model.SelectedAccommodationRevenue)</span></span>
+                    <span class="dashboard-revenue-part"><span class="dashboard-revenue-label">Extras</span><span class="dashboard-revenue-amount">@Money0(Model.SelectedExtrasRevenue)</span></span>
                 </span>
                 
             </span>
@@ -314,12 +309,12 @@
                 
             </span>
         </div>
-        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-profit @(Model.ProfitLast30 < 0m ? "is-negative" : "")" data-info="Payments less recorded expenses for the chosen dates, not audited net profit. Hover for an explanation.">
+        <div class="dashboard-kpi dashboard-kpi-button dashboard-financial-metric dashboard-metric-profit @(Model.ProfitLast30 < 0m ? "is-negative" : "")" data-info="Net receipts less recorded expenses for the chosen dates, not audited net profit. Hover for an explanation.">
             <span class="dashboard-overview-icon dashboard-overview-icon-profit" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.6-1-1.7-1.5-3-1.5-1.8 0-3 .9-3 2.3 0 3.6 6 1.2 6 4 0 1.5-1.5 2.7-3.4 2.7-1.3 0-2.6-.6-3.3-1.7M12 5v14"/></svg></span>
             <span class="dashboard-financial-text">
                 <span class="dashboard-overview-title">Profit / (Loss)</span>
                 <strong class="dashboard-overview-number">@Money0(Model.ProfitLast30)</strong>
-                <span class="dashboard-overview-detail">Revenue less expenses</span>
+                <span class="dashboard-overview-detail">Receipts less expenses</span>
                 @if (Model.RevenueLast30 > 0m) { <span class="dashboard-profit-chip">@(dashboardProfitMargin.ToString("0.#", CultureInfo.InvariantCulture))% margin</span> }
             </span>
         </div>
@@ -680,10 +675,10 @@
                        detail view uses the identical SQL definition as its KPI. *@
                     <div class="dashboard-operations dashboard-operations-six" aria-label="Today's room operations">
                         <button type="button" class="dashboard-operation" data-dashboard-statistic="checkin"
-                                data-info="Distinct reservations arriving today, whether still reserved, provisional, checked in or already checked out. Arrivals are counted by reservation number, not room count.">
+                                data-info="Number of arriving rooms today, including multiple rooms on the same reservation. Reserved, provisional, checked-in and same-day checked-out rooms are included.">
                             <span>Check-ins Today</span>
                             <strong>@Model.ArrivalsToday</strong>
-                            <small class="dashboard-operation-note">All reservations arriving today</small>
+                            <small class="dashboard-operation-note">Total rooms arriving today</small>
                         </button>
                         <button type="button" class="dashboard-operation dashboard-operation-dueout" data-dashboard-statistic="dueout"
                                 data-info="Rooms still checked in whose scheduled departure date is today. Rooms already checked out are excluded.">
@@ -713,7 +708,7 @@
                                 data-info="Rooms available to sell today. Blocked/out-of-order inventory and booked rooms are excluded.">
                             <span>Available Rooms</span>
                             <strong>@Model.AvailableRoomsToday</strong>
-                            <small class="dashboard-operation-note">@Model.BlockedRoomsToday blocked / OOS excluded</small>
+                            <small class="dashboard-operation-note">@Model.BlockedRoomsToday blocked/OOS · @Model.RoomsSoldToday booked</small>
                         </button>
                     </div>
                 </div>

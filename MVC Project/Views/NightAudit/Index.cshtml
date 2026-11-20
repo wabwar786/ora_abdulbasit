@@ -1,4 +1,4 @@
-@model Orapmshms.Models.NightAuditViewModel
+﻿@model Orapmshms.Models.NightAuditViewModel
 @using System.Linq
 @using System.Globalization
 @{
@@ -88,7 +88,9 @@
                     <table class="na-table na-compact"><thead><tr><th>Payment Method</th><th class="num">Amount</th></tr></thead><tbody>
                         @if (Model.Received.Count == 0) { <tr><td colspan="2" class="na-empty">No receipts for this date.</td></tr> }
                         @foreach (var x in Model.Received) { <tr><td>@x.Method</td><td class="num">@Model.Money(x.Amount)</td></tr> }
-                        <tr class="na-subtotal"><th>Total Received</th><th class="num">@Model.Money(Model.TotalReceived)</th></tr>
+                        <tr class="na-subtotal"><th>Gross Receipts</th><th class="num">@Model.Money(Model.TotalReceived)</th></tr>
+                        <tr><th>Less Refunds</th><th class="num">@Model.Money(Model.TotalRefunds)</th></tr>
+                        <tr class="na-subtotal"><th>Net Payments Received (Dashboard)</th><th class="num">@Model.Money(Model.NetPaymentsReceived)</th></tr>
                     </tbody></table>
                 </section>
                 <section class="na-section"><div class="na-section-head"><h2>Refunds &amp; Discount</h2></div>
@@ -103,8 +105,8 @@
                 <section class="na-section"><div class="na-section-head"><h2>Figures for @dayText</h2></div>
                     <dl class="na-facts">
                         <div><dt>Occupancy</dt><dd>@Model.OccupancyPct.ToString("N1")%</dd></div>
-                        <div><dt>Rooms Occupied</dt><dd>@Model.RoomsOccupied</dd></div>
-                        <div><dt>Rooms Available (excl. blocked)</dt><dd>@Model.TotalRoomsAvailable</dd></div>
+                        <div><dt>Rooms Sold (audit night)</dt><dd>@Model.RoomsOccupied</dd></div>
+                        <div><dt>Sellable Rooms (excl. blocked)</dt><dd>@Model.TotalRoomsAvailable</dd></div>
                         <div><dt>Blocked / Out of Service</dt><dd>@(Model.OutOfServiceRooms?.ToString() ?? "—")</dd></div>
                         <div><dt>ADR (room revenue)</dt><dd>@Model.Money(Model.Adr)</dd></div>
                         <div><dt>No Shows</dt><dd>@Model.NoShows</dd></div>
@@ -113,23 +115,15 @@
                 </section>
                 <section class="na-section"><div class="na-section-head"><h2>Figures for @Model.NextDate.ToString("dd MMM yyyy")</h2></div>
                     <dl class="na-facts">
-                        <div><dt>Arrivals</dt><dd>@Model.ArrivalsNextDay</dd></div>
-                        <div><dt>Departures</dt><dd>@Model.DeparturesNextDay</dd></div>
-                        <div><dt>In House (rooms)</dt><dd>@Model.InHouseNextDay</dd></div>
+                        <div><dt>Arriving Rooms</dt><dd>@Model.ArrivalsNextDay</dd></div>
+                        <div><dt>Due Outs (still checked in)</dt><dd>@Model.DeparturesNextDay</dd></div>
+                        <div><dt>Completed Check-outs</dt><dd>@Model.CompletedCheckoutsNextDay</dd></div>
+                        <div><dt>In House (checked-in rooms)</dt><dd>@Model.InHouseNextDay</dd></div>
+                        <div><dt>Expected Booked Rooms</dt><dd>@Model.ExpectedOccupiedNextDay</dd></div>
+                        <div><dt>Available Rooms</dt><dd>@Model.AvailableNextDay</dd></div>
+                        <div><dt>Blocked / OOS</dt><dd>@Model.BlockedNextDay</dd></div>
                         <div><dt>Expected Occupancy</dt><dd>@Model.ExpectedOccupancyPct.ToString("N1")%</dd></div>
                     </dl>
-                </section>
-                <section class="na-section na-ratings"><div class="na-section-head"><h2>Online Ratings</h2><span>@dayText</span></div>
-                    <form asp-controller="NightAudit" asp-action="SaveRatings" method="post">
-                        @Html.AntiForgeryToken()
-                        <input type="hidden" name="ReportDate" value="@Model.ReportDate.ToString("yyyy-MM-dd")" />
-                        <div class="na-rating-row"><label for="na-booking">Booking.com <small>/ 10</small></label><input id="na-booking" type="number" name="Booking" min="0" max="10" step="0.01" value="@Model.Ratings.Booking?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
-                        <div class="na-rating-row"><label for="na-google">Google <small>/ 5</small></label><input id="na-google" type="number" name="Google" min="0" max="5" step="0.01" value="@Model.Ratings.Google?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
-                        <div class="na-rating-row"><label for="na-trip">Trip <small>/ 10</small></label><input id="na-trip" type="number" name="Trip" min="0" max="10" step="0.01" value="@Model.Ratings.Trip?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
-                        <div class="na-rating-row"><label for="na-agoda">Agoda <small>/ 10</small></label><input id="na-agoda" type="number" name="Agoda" min="0" max="10" step="0.01" value="@Model.Ratings.Agoda?.ToString("0.##",CultureInfo.InvariantCulture)" /></div>
-                        <button type="submit" class="na-button na-primary" disabled="@(!Model.RatingsTableReady)">Save Ratings</button>
-                    </form>
-                    @if (Model.Ratings.LastSavedAtUtc.HasValue) { <p class="na-saved">Saved @Model.Ratings.LastSavedAtUtc.Value.ToString("dd MMM yyyy HH:mm") UTC by @Model.Ratings.LastSavedBy</p> }
                 </section>
             </aside>
         </div>

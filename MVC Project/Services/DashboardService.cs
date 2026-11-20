@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Data;
@@ -11,8 +11,8 @@ namespace Orapmshms.Services;
 
 public sealed partial class DashboardService : IDashboardService
 {
-    // One in-flight room-type query per hotel, shared by the quick graph and
-    // lower-page analytics, avoids duplicate SQL work on a cold load.
+    // Serialize room-type performance SQL by hotel to prevent the quick graph
+    // and lower-page analytics from overloading SQL during simultaneous reads.
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> RoomTypeQueryLocks = new();
     // This applies ONLY to Dashboard SQL, not checkout, booking, posting or
     // other hotel operations. Prevents dashboard requests from monopolizing SQL
@@ -49,9 +49,8 @@ public sealed partial class DashboardService : IDashboardService
         return GetAsync(hotelId, end.AddDays(-29), end, cancellationToken);
     }
 
-    // Keep snapshots short-lived: simultaneous users from the same hotel/date
-    // share one calculation instead of launching 13 SQL workloads per request.
-    // The cache key includes hotel AND date range; it never mixes hotel data.
+    // Live Dashboard and Night Audit must never serve different room/arrival/payment
+    // snapshots solely due to an unexpired dashboard memory cache.
     public async Task<DashboardViewModel> GetAsync(
         string hotelId,
         DateTime periodStart,
@@ -70,7 +69,7 @@ public sealed partial class DashboardService : IDashboardService
         // Deliberately let the one shared load complete if its first browser
         // disconnects. Otherwise the next 14 hotel sessions repeatedly restart it.
         // Only dashboard reporting data is affected; operational services are not.
-        var cacheKey = $"dashboard:page-snapshot:v2:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}:{_hotelClock.GetHotelToday(hotelId):yyyyMMdd}";
+        var cacheKey = $"dashboard:page-snapshot:v3:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}:{_hotelClock.GetHotelToday(hotelId):yyyyMMdd}";
         var model = await CachedAsync(cacheKey, TimeSpan.FromSeconds(20),
             () => BuildPageSnapshotAsync(hotelId, start, end, CancellationToken.None),
             SnapshotCacheLocks);
@@ -110,7 +109,7 @@ public sealed partial class DashboardService : IDashboardService
 
         var roomTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:rooms:{hotelId}:{businessToday:yyyyMMdd}",
+                $"dashboard:rooms:v3:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(10),
                 () => LoadRoomStatusInternalAsync(hotelId, businessToday, cancellationToken)),
             new List<DashboardRoomStatusItem>(),
@@ -122,7 +121,7 @@ public sealed partial class DashboardService : IDashboardService
         // incoming Room Rent reservations independently.
         var reservedStaysTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:reserved-stays:v1:{hotelId}:{businessToday:yyyyMMdd}",
+                $"dashboard:reserved-stays:v2:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(10),
                 () => LoadReservedRoomStaysInternalAsync(hotelId, businessToday, cancellationToken)),
             new List<DashboardRoomStatusItem>(),
@@ -130,7 +129,7 @@ public sealed partial class DashboardService : IDashboardService
 
         var operationsTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:operations:v29:{hotelId}:{businessToday:yyyyMMdd}",
+                $"dashboard:operations:v30:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(5),
                 () => LoadOperationsAsync(hotelId, businessToday, cancellationToken)),
             new DashboardOperationsData(),
@@ -162,7 +161,7 @@ public sealed partial class DashboardService : IDashboardService
         // cached independently for a very short period.
         var financialTask = SafeLoadAsync(
             () => CachedAsync(
-                $"dashboard:financial-snapshot-period:{hotelId}:{rangeKey}",
+                $"dashboard:financial-snapshot-period:v2:{hotelId}:{rangeKey}",
                 TimeSpan.FromSeconds(5),
                 () => LoadFinancialSnapshotAsync(hotelId, today, cancellationToken, rangeStart)),
             new DashboardFinancialSnapshot(),
@@ -208,7 +207,7 @@ public sealed partial class DashboardService : IDashboardService
                     () => LoadOccupancySeriesAsync(hotelId, businessToday, businessToday, cancellationToken)),
                 new List<DashboardDailyPoint>(), "today occupancy");
         var todayFinancialTask = SafeLoadAsync(
-            () => CachedAsync($"dashboard:today-financial:{hotelId}:{businessToday:yyyyMMdd}",
+            () => CachedAsync($"dashboard:today-financial:v2:{hotelId}:{businessToday:yyyyMMdd}",
                 TimeSpan.FromSeconds(15),
                 () => LoadFinancialSnapshotAsync(hotelId, businessToday, cancellationToken, businessToday)),
             new DashboardFinancialSnapshot(), "today revenue");
@@ -470,22 +469,16 @@ ORDER BY MonthNumber, Source;";
         if (start > end || end >= start.AddMonths(6))
             throw new ArgumentOutOfRangeException(nameof(periodStart), "Select up to six calendar months.");
 
-        var key = $"dashboard:room-types-period:v2:{hotelId}:{start:yyyyMMdd}:{end:yyyyMMdd}";
-        if (_cache.TryGetValue(key, out List<DashboardRoomTypeItem>? hit) && hit is not null)
-            return hit;
-
+        // This fast graph and lower-page room-type analytics must not retain a
+        // five-minute direct IMemoryCache entry while rooms/payments change.
+        // Keep the per-hotel gate to prevent simultaneous expensive SQL reads,
+        // but recompute the list for each independent request.
         var gate = RoomTypeQueryLocks.GetOrAdd(hotelId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
         try
         {
-            if (_cache.TryGetValue(key, out hit) && hit is not null)
-                return hit;
             var rows = await LoadRoomTypesAsync(hotelId, end, cancellationToken, start);
             ApplyRoomTypeContribution(rows);
-            _cache.Set(key, rows, new MemoryCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
-            });
             return rows;
         }
         finally
@@ -884,20 +877,17 @@ ORDER BY m.month_start OPTION (MAXRECURSION 0);";
     {
         // Aggregate directly by month, without manufacturing a 365-row date
         // calendar and joining each payment/expense to that calendar.
-        const string sql = @"
-DECLARE @isClosing bit=0;
-SELECT TOP 1 @isClosing=CASE WHEN TRY_CONVERT(int,ISNULL(isClosing,0))=1 THEN 1 ELSE 0 END
- FROM dbo.HotelsSignUpTB WHERE hotel_id=@hotel;
-;WITH events AS (
- SELECT COALESCE(TRY_CONVERT(date,pl.currentdate,100),TRY_CONVERT(date,pl.currentdate,101),
-           TRY_CONVERT(date,pl.currentdate,103),TRY_CONVERT(date,pl.currentdate)) AS d,
-        COALESCE(TRY_CONVERT(decimal(18,2),NULLIF(REPLACE(REPLACE(REPLACE(CONVERT(varchar(100),pl.paid_amount),',',''),'£',''),'$',''),'')),0) AS revenue,
-        CONVERT(decimal(18,2),0) AS expense
- FROM dbo.PaymentsLogTB pl WHERE pl.hotel_id=@hotel AND (@isClosing=0 OR LTRIM(RTRIM(CONVERT(varchar(20),pl.cb_status)))='2')
- UNION ALL
- SELECT COALESCE(TRY_CONVERT(date,e.currentdate,101),TRY_CONVERT(date,e.currentdate,103),TRY_CONVERT(date,e.currentdate)),
-        CONVERT(decimal(18,2),0),COALESCE(TRY_CONVERT(decimal(18,2),e.amount),0)
- FROM dbo.ExpenseDetailTB e WHERE e.hotel_id=@hotel AND LTRIM(RTRIM(ISNULL(e.transaction_type,'')))='Credit'
+        var sql = HotelPaymentLedgerSql.Prefix + @"
+, events AS
+(
+    SELECT tx_date AS d, amount AS revenue, CONVERT(decimal(18,2),0) AS expense
+    FROM PaymentLedger
+    UNION ALL
+    SELECT COALESCE(TRY_CONVERT(date,e.currentdate,101),
+                    TRY_CONVERT(date,e.currentdate,103),TRY_CONVERT(date,e.currentdate)),
+           CONVERT(decimal(18,2),0), COALESCE(TRY_CONVERT(decimal(18,2),e.amount),0)
+    FROM dbo.ExpenseDetailTB e
+    WHERE e.hotel_id=@hotel AND LTRIM(RTRIM(ISNULL(e.transaction_type,'')) )='Credit'
 )
 SELECT YEAR(d) AS yr, MONTH(d) AS mo, SUM(revenue) AS revenue, SUM(expense) AS expense
 FROM events WHERE d>=@first AND d<@last GROUP BY YEAR(d),MONTH(d);";
@@ -1119,7 +1109,7 @@ GROUP BY ExceptionType, MONTH(EventDate);";
             return Array.Empty<DashboardRoomStatusItem>();
 
         return await CachedAsync(
-            $"dashboard:rooms:{hotelId}:{date:yyyyMMdd}",
+            $"dashboard:rooms:v3:{hotelId}:{date:yyyyMMdd}",
             TimeSpan.FromSeconds(10),
             () => LoadRoomStatusInternalAsync(hotelId, date.Date, cancellationToken));
     }
@@ -1178,48 +1168,11 @@ GROUP BY ExceptionType, MONTH(EventDate);";
         CancellationToken cancellationToken,
         DateTime? periodStart = null)
     {
-        const string sql = @"
-DECLARE @isClosing bit = 0;
-
-SELECT TOP (1)
-    @isClosing =
-        CASE
-            WHEN TRY_CONVERT(int, ISNULL(isClosing,0)) = 1 THEN 1
-            ELSE 0
-        END
-FROM dbo.HotelsSignUpTB
-WHERE hotel_id = @hotel;
-
-WITH RevenueRows AS
-(
-    SELECT
-        TRY_CONVERT(
-            date,
-            REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),pl.currentdate))), ''), '  ', ' '),
-            100
-        ) AS tx_date,
-        CONVERT(varchar(100),pl.currentdate) AS transaction_date,
-        ISNULL(CONVERT(varchar(100),pl.status),'') AS [status],
-        TRY_CONVERT(
-            decimal(18,2),
-            NULLIF(
-                REPLACE(
-                    REPLACE(LTRIM(RTRIM(CONVERT(varchar(100),pl.paid_amount))), ',', ''),
-                    '£',
-                    ''
-                ),
-                ''
-            )
-        ) AS paid_amount,
-        pl.ID
-    FROM dbo.PaymentsLogTB AS pl
-    WHERE pl.hotel_id = @hotel
-      AND (@isClosing = 0 OR LTRIM(RTRIM(CONVERT(varchar(20),pl.cb_status))) = '2')
-)
-SELECT transaction_date, [status], COALESCE(paid_amount,0) AS paid_amount
-FROM RevenueRows
+        var sql = HotelPaymentLedgerSql.Prefix + @"
+SELECT transaction_date, [status], amount AS paid_amount
+FROM PaymentLedger
 WHERE tx_date BETWEEN @startdate AND @date
-ORDER BY ID DESC;";
+ORDER BY id DESC;";
 
         var result = NewDetail(
             "Revenue · selected period",
@@ -1758,7 +1711,9 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
     {
         var rooms = await GetRoomStatusAsync(hotelId, date, cancellationToken);
         var selected = rooms.Where(x =>
-            state == "dirty" ? x.State == "dirty" || x.IsDirty : x.State == state).ToList();
+            state == "dirty" ? x.State == "dirty" || x.IsDirty :
+            state == "vacant" ? x.State is "vacant" or "dirty" or "checkout" :
+            x.State == state).ToList();
         return BuildRoomDetail(state, date, selected);
     }
 
@@ -1768,7 +1723,7 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
         CancellationToken cancellationToken)
     {
         var reserved = await CachedAsync(
-            $"dashboard:reserved-stays:v1:{hotelId}:{date:yyyyMMdd}",
+            $"dashboard:reserved-stays:v2:{hotelId}:{date:yyyyMMdd}",
             TimeSpan.FromSeconds(10),
             () => LoadReservedRoomStaysInternalAsync(hotelId, date.Date, cancellationToken));
 
@@ -1835,6 +1790,18 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
       )
       AND NULLIF(LTRIM(RTRIM(p.room_no)), '') IS NOT NULL
       AND UPPER(LTRIM(RTRIM(p.room_no))) <> 'UNASSIGNED'
+      AND NOT EXISTS (SELECT 1 FROM dbo.CancelledReservationsTB c
+                      WHERE c.hotel_id=@hotel AND LTRIM(RTRIM(c.reg_id))=LTRIM(RTRIM(p.reg_id)))
+      AND NOT EXISTS (SELECT 1 FROM dbo.NoShowTB ns
+                      WHERE ns.hotel_id=@hotel AND LTRIM(RTRIM(ns.reg_id))=LTRIM(RTRIM(p.reg_id)))
+      AND NOT EXISTS (SELECT 1 FROM dbo.NewReservationsTB nr
+                      WHERE nr.hotel_id=@hotel AND LTRIM(RTRIM(nr.reg_id))=LTRIM(RTRIM(p.reg_id))
+                        AND LOWER(LTRIM(RTRIM(ISNULL(nr.res_status,'')))) IN
+                        ('cancel','cancelled','canceled','no show','noshow','no-show'))
+      AND NOT EXISTS (SELECT 1 FROM dbo.GuestInformationLogTB gi
+                      WHERE gi.hotel_id=@hotel AND LTRIM(RTRIM(gi.reg_id))=LTRIM(RTRIM(p.reg_id))
+                        AND LOWER(LTRIM(RTRIM(ISNULL(gi.res_status,'')))) IN
+                        ('cancel','cancelled','canceled','no show','noshow','no-show'))
       AND d.arrival_date <= @day
       AND d.departure_date > @day
       -- Restrict to actual physical room names in the selected hotel.
@@ -1937,7 +1904,7 @@ ORDER BY TRY_CONVERT(int,c.room_no),c.room_no;";
         {
             "checkin" => "Checked-in rooms",
             "checkout" => "Check-outs",
-            "vacant" => "Available rooms",
+            "vacant" => "Unbooked / sellable rooms (housekeeping may be needed)",
             "reservation" => "Reserved rooms (not checked in)",
             "dueout" => "Due out rooms (still checked in)",
             "ooo" => "Blocked / out of order rooms",
@@ -2054,6 +2021,19 @@ PaymentClean AS
       AND LTRIM(RTRIM(ISNULL(p.descr, ''))) = 'Room Rent'
       AND NULLIF(LTRIM(RTRIM(p.room_no)), '') IS NOT NULL
       AND UPPER(LTRIM(RTRIM(p.room_no))) <> 'UNASSIGNED'
+      -- Never block inventory using orphaned payment rows for cancelled/no-show stays.
+      AND NOT EXISTS (SELECT 1 FROM dbo.CancelledReservationsTB c
+                      WHERE c.hotel_id=@hotel AND LTRIM(RTRIM(c.reg_id))=LTRIM(RTRIM(p.reg_id)))
+      AND NOT EXISTS (SELECT 1 FROM dbo.NoShowTB ns
+                      WHERE ns.hotel_id=@hotel AND LTRIM(RTRIM(ns.reg_id))=LTRIM(RTRIM(p.reg_id)))
+      AND NOT EXISTS (SELECT 1 FROM dbo.NewReservationsTB nr
+                      WHERE nr.hotel_id=@hotel AND LTRIM(RTRIM(nr.reg_id))=LTRIM(RTRIM(p.reg_id))
+                        AND LOWER(LTRIM(RTRIM(ISNULL(nr.res_status,'')))) IN
+                        ('cancel','cancelled','canceled','no show','noshow','no-show'))
+      AND NOT EXISTS (SELECT 1 FROM dbo.GuestInformationLogTB gi
+                      WHERE gi.hotel_id=@hotel AND LTRIM(RTRIM(gi.reg_id))=LTRIM(RTRIM(p.reg_id))
+                        AND LOWER(LTRIM(RTRIM(ISNULL(gi.res_status,'')))) IN
+                        ('cancel','cancelled','canceled','no show','noshow','no-show'))
 ),
 PaymentRanked AS
 (
@@ -2202,8 +2182,11 @@ BlockRanked AS
     FROM dbo.RoomBlocksTB
     WHERE HotelID = @hotel
       AND IsActive = 1
-      AND TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(BlockStartDate)), '')) <= @day
-      AND (BlockEndDate IS NULL OR TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(BlockEndDate)), '')) >= @day)
+      AND COALESCE(TRY_CONVERT(date, BlockStartDate, 103),
+                   TRY_CONVERT(date, BlockStartDate, 110), TRY_CONVERT(date, BlockStartDate)) <= @day
+      AND (NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),BlockEndDate))), '') IS NULL
+           OR COALESCE(TRY_CONVERT(date, BlockEndDate, 103),
+                       TRY_CONVERT(date, BlockEndDate, 110), TRY_CONVERT(date, BlockEndDate)) >= @day)
 )
 SELECT
     r.room_no,
@@ -2243,7 +2226,8 @@ ORDER BY r.room_category, TRY_CONVERT(int, r.room_no), r.room_no;";
             var isDirty = rawRoomStatus is "notclean" or "notcleaned" or "check out" or "checkout";
 
             string state;
-            if (isBlocked)
+            if (isBlocked || (date.Date == _hotelClock.GetHotelToday(hotelId).Date &&
+                (rawRoomStatus is "blocked" or "oos" or "out of service" or "out of order" or "maintenance")))
                 state = "ooo";
             else if (resStatus is "check in" or "check-in" or "checked in" or "checked-in")
                 state = "checkin";
@@ -2288,8 +2272,8 @@ ORDER BY r.room_category, TRY_CONVERT(int, r.room_no), r.room_no;";
     {
         // Each metric is independent. Its popup uses the *same* cached query
         // as the headline, so counting rules cannot drift apart:
-        // 1. Today's arrivals: distinct reservations with ArrivalDate=today,
-        //    whether reserved, provisional, in house or checked out.
+        // 1. Today's arrivals: room stays with ArrivalDate=today,
+        //    including multiple arriving rooms within one reservation.
         // 2. Today's completed checkouts: checked-out room rows, using the
         //    actual checkout date where recorded, with a legacy fallback.
         // 3. Today's new reservations: distinct booking IDs with earliest
@@ -3348,54 +3332,17 @@ SELECT
         var monthStart = new DateTime(today.Year, today.Month, 1);
         var lastYearMonthStart = new DateTime(lastYearToday.Year, lastYearToday.Month, 1);
 
-        // Same active WebForms GetRevenue rule:
-        // SUM(PaymentsLogTB.paid_amount)
-        // + hotel filter
-        // + currentdate converted with style 100
-        // + cb_status = 2 only when hotel closing is enabled.
-        const string sql = @"
-DECLARE @isClosing bit = 0;
-
-SELECT TOP (1)
-    @isClosing =
-        CASE
-            WHEN TRY_CONVERT(int, ISNULL(isClosing,0)) = 1 THEN 1
-            ELSE 0
-        END
-FROM dbo.HotelsSignUpTB
-WHERE hotel_id = @hotel;
-
-WITH RevenueRows AS
-(
-    SELECT
-        TRY_CONVERT(
-            date,
-            REPLACE(NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),pl.currentdate))), ''), '  ', ' '),
-            100
-        ) AS tx_date,
-        TRY_CONVERT(
-            decimal(18,2),
-            NULLIF(
-                REPLACE(
-                    REPLACE(LTRIM(RTRIM(CONVERT(varchar(100),pl.paid_amount))), ',', ''),
-                    '£',
-                    ''
-                ),
-                ''
-            )
-        ) AS amount
-    FROM dbo.PaymentsLogTB AS pl
-    WHERE pl.hotel_id = @hotel
-      AND (@isClosing = 0 OR LTRIM(RTRIM(CONVERT(varchar(20),pl.cb_status))) = '2')
-)
+        // This is NET PAYMENTS RECEIVED, not room-night revenue or invoiced sales.
+        // Same ledger, dates, security handling and posting filter as Night Audit.
+        var sql = HotelPaymentLedgerSql.Prefix + @"
 SELECT
-    COALESCE(SUM(CASE WHEN tx_date = @today THEN amount ELSE 0 END),0) AS RevenueToday,
-    COALESCE(SUM(CASE WHEN tx_date = @lastYearToday THEN amount ELSE 0 END),0) AS RevenueTodayLastYear,
+    COALESCE(SUM(CASE WHEN tx_date=@today THEN amount ELSE 0 END),0) AS RevenueToday,
+    COALESCE(SUM(CASE WHEN tx_date=@lastYearToday THEN amount ELSE 0 END),0) AS RevenueTodayLastYear,
     COALESCE(SUM(CASE WHEN tx_date BETWEEN @monthStart AND @today THEN amount ELSE 0 END),0) AS MonthRevenue,
     COALESCE(SUM(CASE WHEN tx_date BETWEEN @lastYearMonthStart AND @lastYearToday THEN amount ELSE 0 END),0) AS LastYearMonthRevenue,
     COALESCE(SUM(CASE WHEN tx_date BETWEEN @startDate AND @today THEN amount ELSE 0 END),0) AS RevenueLast30,
     COALESCE(SUM(CASE WHEN tx_date BETWEEN @lastYearStartDate AND @lastYearToday THEN amount ELSE 0 END),0) AS RevenueLast30LastYear
-FROM RevenueRows;";
+FROM PaymentLedger;";
 
         var result = new DashboardFinancialSnapshot();
 
@@ -3511,41 +3458,19 @@ FROM ExpenseRows;";
         var lyStart = start.AddYears(-1);
         var lyEnd = today.AddYears(-1);
 
-        const string sql = @"
-;WITH d AS
+        var sql = HotelPaymentLedgerSql.Prefix + @"
+, d AS
 (
     SELECT @start AS d
-    UNION ALL
-    SELECT DATEADD(day, 1, d) FROM d WHERE d < @end
+    UNION ALL SELECT DATEADD(day,1,d) FROM d WHERE d < @end
 ),
 rev AS
 (
-    SELECT x.tx_date, SUM(x.amount) AS amount
-    FROM
-    (
-        SELECT
-            COALESCE(
-                TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),pl.currentdate))), ''), 100),
-                TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),pl.currentdate))), ''), 101),
-                TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),pl.currentdate))), ''), 103),
-                TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),pl.currentdate))), ''))
-            ) AS tx_date,
-            COALESCE(
-                TRY_CONVERT(decimal(18,2), NULLIF(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(CONVERT(varchar(100),pl.paid_amount))), ',', ''), '£', ''), '$', ''), '')),
-                0
-            ) AS amount
-        FROM dbo.PaymentsLogTB AS pl
-        WHERE pl.hotel_id = @hotel
-          AND (
-                ISNULL((SELECT TOP (1) ISNULL(h.isClosing,0)
-                        FROM dbo.HotelsSignUpTB h
-                        WHERE h.hotel_id = @hotel),0) = 0
-                OR LTRIM(RTRIM(CONVERT(varchar(20),pl.cb_status))) = '2'
-              )
-    ) x
-    WHERE (x.tx_date BETWEEN @start AND @end)
-       OR (x.tx_date BETWEEN @ly_start AND @ly_end)
-    GROUP BY x.tx_date
+    SELECT tx_date, SUM(amount) AS amount
+    FROM PaymentLedger
+    WHERE (tx_date BETWEEN @start AND @end)
+       OR (tx_date BETWEEN @ly_start AND @ly_end)
+    GROUP BY tx_date
 ),
 exp AS
 (
@@ -4294,12 +4219,28 @@ ORDER BY CategoryName;";
         return result.Take(5).ToList();
     }
 
+    // Do not memory-cache any hotel operational/financial reporting values.
+    // Historically these had independent 5 s - 5 min TTLs, so Dashboard,
+    // charts and Night Audit could each show a different point-in-time value.
+    // Only hotel NAME / CURRENCY settings remain cached; all numeric reports
+    // are read from the database for each requested hotel/date.
+    private static bool IsLiveDashboardValue(string key) =>
+        key.StartsWith("dashboard:", StringComparison.Ordinal) &&
+        !key.StartsWith("dashboard:hotel:", StringComparison.Ordinal);
+
     private async Task<T> CachedAsync<T>(
         string key,
         TimeSpan lifetime,
         Func<Task<T>> factory,
         SemaphoreSlim[]? lockPool = null)
     {
+        // Operational and financial values are LIVE.  Avoid independent TTLs
+        // (5 s arrivals, 10 s inventory, 20 s page snapshot, 2 min extras) which
+        // caused the same business day to disagree between Dashboard and Audit.
+        // Hotel metadata and historical trend charts retain their caches.
+        if (IsLiveDashboardValue(key))
+            return await factory();
+
         if (_cache.TryGetValue(key, out object? cachedValue) && cachedValue is T cached)
             return cached;
 

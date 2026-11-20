@@ -7146,13 +7146,16 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     background: #f2f3fe;
     border-color: #d8daf5;
 }
+
 .dashboard-page .dashboard-operations-card .dashboard-operation-dueout {
     background: #fff5e7;
     border-color: #eed8ae;
 }
+
 .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="reserved"] {
     --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2036%2036'%3E%3Crect%20x='1'%20y='1'%20width='34'%20height='34'%20rx='10'%20fill='%23efefff'/%3E%3Crect%20x='8'%20y='9'%20width='20'%20height='19'%20rx='3'%20fill='none'%20stroke='%235c609a'%20stroke-width='2'/%3E%3Cpath%20d='M8%2015h20M13%206v6M23%206v6M13%2020h10'%20stroke='%235c609a'%20stroke-width='2'%20stroke-linecap='round'/%3E%3C/svg%3E");
 }
+
 .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="dueout"] {
     --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2036%2036'%3E%3Crect%20x='1'%20y='1'%20width='34'%20height='34'%20rx='10'%20fill='%23fff4df'/%3E%3Cpath%20d='M8%2012h11v14H8zM16%2019h12m-5-5%205%205-5%205'%20fill='none'%20stroke='%23a47632'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
 }
@@ -7165,46 +7168,52 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
 }
-.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation {
-    min-width: 0;
-    /* Content-driven cards: avoid empty bands between the value and note. */
-    min-height: 0;
-    padding: 9px 10px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-start;
-    gap: 3px;
-    text-align: left;
-}
-.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > span {
-    max-width: calc(100% - 26px);
-    font-size: 11px;
-    line-height: 1.2;
-    font-weight: 600;
-    color: #354c64;
-}
-.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > strong {
-    font-size: 22px;
-    line-height: 1.1;
-    font-weight: 700;
-    margin: 1px 0 0;
-}
-.dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > small.dashboard-operation-note {
-    display: block;
-    max-width: 100%;
-    margin-top: 1px;
-    font-size: 9.5px;
-    line-height: 1.25;
-    font-weight: 400;
-    color: #65778b;
-    text-wrap: pretty;
-}
+
+    .dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation {
+        min-width: 0;
+        /* Content-driven cards: avoid empty bands between the value and note. */
+        min-height: 0;
+        padding: 9px 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 3px;
+        text-align: left;
+    }
+
+        .dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > span {
+            max-width: calc(100% - 26px);
+            font-size: 11px;
+            line-height: 1.2;
+            font-weight: 600;
+            color: #354c64;
+        }
+
+        .dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > strong {
+            font-size: 22px;
+            line-height: 1.1;
+            font-weight: 700;
+            margin: 1px 0 0;
+        }
+
+        .dashboard-page .dashboard-operations-card .dashboard-operations-six > .dashboard-operation > small.dashboard-operation-note {
+            display: block;
+            max-width: 100%;
+            margin-top: 1px;
+            font-size: 9.5px;
+            line-height: 1.25;
+            font-weight: 400;
+            color: #65778b;
+            text-wrap: pretty;
+        }
+
 @media (max-width: 600px) {
     .dashboard-page .dashboard-operations-card .dashboard-operations-six {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
 @media (max-width: 370px) {
     .dashboard-page .dashboard-operations-card .dashboard-operations-six {
         grid-template-columns: minmax(0, 1fr);
@@ -7214,4 +7223,333 @@ body.dashboard-calendar-open .dashboard-chart-tooltip {
 /* Reservation creation is a distinct daily KPI, not current reserved inventory. */
 .dashboard-page .dashboard-operations .dashboard-operation[data-dashboard-statistic="createdtoday"] {
     --dashboard-metric-icon: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2036%2036'%3E%3Crect%20x='1'%20y='1'%20width='34'%20height='34'%20rx='10'%20fill='%23efefff'/%3E%3Crect%20x='8'%20y='9'%20width='20'%20height='19'%20rx='3'%20fill='none'%20stroke='%235c609a'%20stroke-width='2'/%3E%3Cpath%20d='M8%2015h20M13%206v6M23%206v6M13%2020h10M18%2018v7M14.5%2021.5h7'%20stroke='%235c609a'%20stroke-width='2'%20stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* 20 Nov 2026: compact readable financial tiles at narrow laptop widths. */
+.dashboard-page .dashboard-financial-strip {
+    align-items: stretch;
+}
+
+    .dashboard-page .dashboard-financial-strip .dashboard-financial-metric {
+        min-width: 0;
+        min-height: 142px !important;
+        height: auto !important;
+        align-items: flex-start !important;
+        padding: 14px 11px !important;
+        overflow: hidden;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-financial-text {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 3px;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-overview-number {
+        font-size: clamp(16px, 1.35vw, 24px);
+        line-height: 1.18;
+        overflow-wrap: anywhere;
+        max-width: 100%;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-overview-detail {
+        display: block;
+        font-size: 9px;
+        line-height: 1.3;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        margin-top: 1px;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-revenue-breakdown {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: 8px;
+        row-gap: 4px;
+        width: 100%;
+        white-space: normal;
+        min-width: 0;
+        margin-top: 3px;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-revenue-part {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+        font-weight: 400;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-revenue-label {
+        font-size: 8.4px;
+        line-height: 1.15;
+        color: #748397;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-revenue-amount {
+        font-size: 10.5px;
+        line-height: 1.24;
+        letter-spacing: -.01em;
+        color: #263e59;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-profit-chip {
+        display: inline-flex;
+        align-items: center;
+        align-self: flex-start;
+        font-size: 8px;
+        font-weight: 650;
+        line-height: 1.3;
+        padding: 3px 7px;
+        margin-top: 2px;
+        white-space: nowrap;
+    }
+
+@media (min-width: 1051px) and (max-width: 1680px) {
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(3),
+    .dashboard-page .dashboard-financial-metric:nth-child(4) {
+        border-top: 0 !important;
+        border-left: 1px solid #e6edf2 !important;
+    }
+}
+
+@media (max-width: 1050px) {
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(3) {
+        border-left: 0 !important;
+        border-top: 1px solid #e6edf2 !important;
+    }
+
+    .dashboard-page .dashboard-financial-metric:nth-child(4) {
+        border-top: 1px solid #e6edf2 !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .dashboard-page .dashboard-financial-strip {
+        grid-template-columns: 1fr;
+    }
+
+        .dashboard-page .dashboard-financial-strip .dashboard-financial-metric {
+            min-height: 104px !important;
+            border-left: 0 !important;
+            border-top: 1px solid #e6edf2 !important;
+        }
+
+            .dashboard-page .dashboard-financial-strip .dashboard-financial-metric:first-child {
+                border-top: 0 !important;
+            }
+}
+
+/* On wide desktop the dashboard's two-column workspace can leave just 150-220px
+   per financial tile. Show charge breakdown as two short rows, never sliced digits. */
+@media (min-width: 1051px) and (max-width: 1680px) {
+    .dashboard-page .dashboard-financial-strip .dashboard-revenue-breakdown {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-revenue-part {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 1px 5px;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-revenue-amount {
+        font-size: 9px;
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
+}
+
+
+/* ================================================================
+   ORA PMS | Dashboard - Payments Received breakdown readability
+   CSS-only. No Razor, JavaScript, or calculation changes.
+   Append this at the END of wwwroot/css/dashboard.css.
+   ================================================================ */
+
+/* Give the revenue tile enough height for a legible two-column breakdown. */
+.dashboard-page .dashboard-financial-strip .dashboard-metric-revenue {
+    min-height: 162px !important;
+}
+
+    /* The headline is kept alongside its icon; only the breakdown below it
+   spans the full inner width of the tile rather than the narrow text column. */
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-breakdown {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+        align-items: start;
+        column-gap: 9px;
+        row-gap: 4px;
+        width: calc(100% + 42px);
+        max-width: calc(100% + 42px);
+        min-width: 0;
+        margin: 7px 0 0 -42px;
+        padding: 8px 0 0;
+        border-top: 1px solid #e1e9f0;
+        background: transparent;
+        white-space: normal;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-part {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        min-width: 0;
+        gap: 3px;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-label {
+        display: block;
+        font-size: 11px;
+        line-height: 1.3;
+        font-weight: 600 !important;
+        letter-spacing: 0;
+        color: #52657a;
+        white-space: normal;
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-amount {
+        display: block;
+        font-size: 13.5px;
+        line-height: 1.25;
+        font-weight: 700 !important;
+        letter-spacing: 0;
+        color: #193b59;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+
+    /* Improve contrast of the small line above the breakdown. */
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-overview-detail {
+        font-size: 10px;
+        line-height: 1.35;
+        color: #60758a;
+    }
+
+@media (max-width: 1050px) {
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-breakdown {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 400px) {
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-label {
+        font-size: 10px;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-amount {
+        font-size: 12px;
+    }
+}
+
+/* ================================================================
+   ORA PMS | Compact, subtle Rent / Others badges (CSS only)
+   Designed to match the small "100% margin" pill, not bright boxes.
+   ================================================================ */
+.dashboard-page .dashboard-financial-strip .dashboard-metric-revenue {
+    min-height: 116px !important;
+}
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-breakdown {
+        display: flex !important;
+        flex-flow: row wrap !important;
+        align-items: center;
+        gap: 5px !important;
+        width: calc(100% + 42px) !important;
+        max-width: calc(100% + 42px) !important;
+        margin: 5px 0 0 -42px !important;
+        padding: 5px 0 0 !important;
+        border-top: 1px solid #ecf1f5;
+        background: transparent;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-part {
+        display: inline-flex !important;
+        flex: 0 1 auto !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: baseline !important;
+        justify-content: center;
+        gap: 4px !important;
+        min-width: 0 !important;
+        width: auto !important;
+        padding: 3px 6px !important;
+        border: 0 !important;
+        border-radius: 999px !important;
+        background: #eaf7ef !important;
+        box-shadow: none !important;
+    }
+
+    /* Replace legacy labels visually; existing markup and values remain unchanged. */
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-label {
+        display: inline-flex;
+        flex: none;
+        margin: 0 !important;
+        font-size: 0 !important;
+        line-height: 1 !important;
+        color: transparent !important;
+    }
+
+        .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-label::before {
+            display: inline;
+            font-size: 9px !important;
+            line-height: 1.2;
+            font-weight: 600;
+            letter-spacing: 0;
+            color: #437a60;
+        }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-part:nth-child(1) .dashboard-revenue-label::before {
+        content: "Rent";
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-part:nth-child(2) .dashboard-revenue-label::before {
+        content: "Others";
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-amount {
+        display: inline;
+        margin: 0 !important;
+        font-size: 10px !important;
+        line-height: 1.2;
+        font-weight: 700 !important;
+        letter-spacing: 0;
+        color: #21694a !important;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+
+@media (max-width: 520px) {
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-breakdown {
+        gap: 4px !important;
+    }
+
+    .dashboard-page .dashboard-financial-strip .dashboard-metric-revenue .dashboard-revenue-part {
+        padding: 3px 5px !important;
+    }
 }

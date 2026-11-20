@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using System.Net;
 using System.Net.Mail;
@@ -77,7 +77,8 @@ public sealed class CreateReservationService :  ICreateReservationService
             BedTaxPercent = common.BedTaxPercent,
             TaxSelectionEnabled = common.TaxIncludedInRate,
             Countries = common.Countries,
-            Sources = common.Sources
+            Sources = common.Sources,
+            Companies = common.Companies
         };
 
         await using var cn = new SqlConnection(_connectionString);
@@ -233,10 +234,27 @@ WHERE CONVERT(varchar(50),hotel_id)=@hotel
                 Address = detail?.Address ?? string.Empty,
                 Country = detail?.Country ?? string.Empty,
                 City = detail?.City ?? string.Empty,
-                Identification = detail?.VatNo ?? detail?.PassportNo ?? string.Empty
+                Identification = detail?.PassportNo ?? detail?.IdNumber ?? string.Empty,
+                VatNo = detail?.VatNo ?? string.Empty,
+                Company = detail?.Company ?? string.Empty
             });
         }
         return output;
+    }
+
+    // Use the same hotel-specific CompaniesTB writer as Check-In, so the same
+    // dropdown options are available from both reservation workflows.
+    public async Task<LookupOption> AddCompanyAsync(
+        string hotelId, string userId, string name, CancellationToken ct = default)
+    {
+        EnsureSession(hotelId, userId);
+        name = (name ?? string.Empty).Trim();
+        if (name.Length is < 2 or > 180 || name.Any(char.IsControl) || name.Contains('<') || name.Contains('>'))
+            throw new ArgumentException("Company name must be 2 to 180 valid characters.");
+        var saved = await _checkIn.AddCompanyAsync(hotelId, new CompanySourceRequest { Value = name }, ct);
+        if (!saved.Success)
+            throw new InvalidOperationException(saved.Message);
+        return new LookupOption { Value = name, Text = name };
     }
 
     public async Task<LookupOption> AddSourceAsync(
@@ -403,13 +421,15 @@ VALUES(@source,@hotel,@user,@system,@ip);", cn))
             ? Math.Round(request.RateOverride.Value, 2, MidpointRounding.AwayFromZero)
             : configuredRate;
         var discount = settings.HasDiscount ? Math.Clamp(request.Discount, 0m, rate) : 0m;
-        // Reservation.aspx calculates room taxes from the room rate/charge first,
-        // then subtracts the fixed discount from the final line total.
+        // Discount reduces the taxable base BEFORE GST/VAT and bed tax.
+        // Shared by the live Quote endpoint and the Create transaction, so UI
+        // totals and stored payments rows cannot diverge.
+        var taxableRate = Math.Max(0m, rate - discount);
         var gst = settings.HasPrimaryTaxConfigured && settings.HasGst && request.ApplyGst
-            ? Math.Round(rate * settings.GstPercent / 100m, 2, MidpointRounding.AwayFromZero)
+            ? Math.Round(taxableRate * settings.GstPercent / 100m, 2, MidpointRounding.AwayFromZero)
             : 0m;
         var bed = settings.HasBedTaxConfigured && settings.HasBedTax && request.ApplyBedTax
-            ? Math.Round(rate * settings.BedTaxPercent / 100m, 2, MidpointRounding.AwayFromZero)
+            ? Math.Round(taxableRate * settings.BedTaxPercent / 100m, 2, MidpointRounding.AwayFromZero)
             : 0m;
 
         return new CreateReservationQuoteResult
@@ -764,12 +784,12 @@ WHEN NOT MATCHED THEN
     {
         const string sql = @"
 INSERT INTO dbo.NewReservationsTB
-(cb_status, ArrivalDate, dept_date, res_status, reg_id, GuestName, LastName, visa, Address, Country, City,
+(cb_status, ArrivalDate, dept_date, res_status, reg_id, GuestName, LastName, visa, vatno, Address, Country, City,
  number_of_adult, number_of_minor, Email, PhoneNo, Agency, Status, hotel_id, user_id,
  advance_paid, payment_method, ipAddress, systemUser, systemName, isupdateavailibilty, noofrooms,
  shuffle_type, expirydate, createdRole, CreatedAt, CreatedDate, reservtype)
 VALUES
-('1', @arrival, @departure, @status, @reg, @first, @last, @identification, @address, @country, @city,
+('1', @arrival, @departure, @status, @reg, @first, @last, @identification, @vatno, @address, @country, @city,
  @adults, @minors, @email, @phone, @source, @company, @hotel, @userId,
  @advance, @method, @ip, @systemUser, @systemName, '1', @roomCounts,
  @shuffle, @expiry, @role, @createdAt, @createdDate, @reservationType);";
@@ -782,6 +802,7 @@ VALUES
         cmd.Parameters.Add("@first", SqlDbType.VarChar, 180).Value = Clean(request.FirstName, 180);
         cmd.Parameters.Add("@last", SqlDbType.VarChar, 180).Value = Clean(request.LastName, 180);
         cmd.Parameters.Add("@identification", SqlDbType.VarChar, 30).Value = Clean(request.Identification, 30);
+        cmd.Parameters.Add("@vatno", SqlDbType.VarChar, 30).Value = Clean(request.VatNo, 30);
         cmd.Parameters.Add("@address", SqlDbType.VarChar, 500).Value = Clean(request.Address, 500);
         cmd.Parameters.Add("@country", SqlDbType.VarChar, 150).Value = Clean(request.Country, 150);
         cmd.Parameters.Add("@city", SqlDbType.VarChar, 150).Value = Clean(request.City, 150);
@@ -790,7 +811,7 @@ VALUES
         cmd.Parameters.Add("@email", SqlDbType.VarChar, 180).Value = Clean(request.Email, 180);
         cmd.Parameters.Add("@phone", SqlDbType.VarChar, 80).Value = Clean(request.Phone, 80);
         cmd.Parameters.Add("@source", SqlDbType.VarChar, 180).Value = Clean(request.Source, 180);
-        cmd.Parameters.Add("@company", SqlDbType.VarChar, 180).Value = string.Empty;
+        cmd.Parameters.Add("@company", SqlDbType.VarChar, 180).Value = Clean(request.Company, 180);
         cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         cmd.Parameters.Add("@userId", SqlDbType.VarChar, 50).Value = userId;
         cmd.Parameters.Add("@advance", SqlDbType.Decimal).Value = advance;

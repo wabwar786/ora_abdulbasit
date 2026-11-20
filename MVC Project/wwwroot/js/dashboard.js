@@ -14,7 +14,7 @@
                 continue;
             }
             reportRequestsInFlight++;
-            fetch(pending.url, pending.options).then(pending.resolve, pending.reject).finally(function () {
+            fetch(pending.url, { ...(pending.options || {}), cache: 'no-store' }).then(pending.resolve, pending.reject).finally(function () {
                 reportRequestsInFlight--;
                 pumpReportRequests();
             });
@@ -991,7 +991,7 @@
         rack.setAttribute('aria-busy', 'true');
         rack.classList.add('is-loading');
         try {
-            var response = await fetch(url + '?date=' + encodeURIComponent(date), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
+            var response = await fetch(url + '?date=' + encodeURIComponent(date), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin', cache: 'no-store' });
             var payload = await response.json();
             if (!response.ok || !payload.ok) throw new Error(payload.message || 'Unable to load room status.');
             renderRoomRack(payload.rows || []);
@@ -1194,7 +1194,8 @@
                 + '&startDate=' + encodeURIComponent(period.start)
                 + '&endDate=' + encodeURIComponent(period.end), {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                cache: 'no-store'
             });
             var payload = await response.json();
             if (!response.ok || !payload.ok) throw new Error(payload.message || 'Unable to load dashboard details.');

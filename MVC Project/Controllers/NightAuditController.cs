@@ -18,10 +18,16 @@ public sealed class NightAuditController : Controller
     private readonly IHotelClock _clock;
     private readonly ILogger<NightAuditController> _logger;
 
-    public NightAuditController(IConfiguration configuration, IHotelClock clock,
-        ILogger<NightAuditController> logger)
+    public NightAuditController(
+      IConfiguration configuration,
+      IHotelClock clock,
+      IServiceProvider services,
+      ILogger<NightAuditController> logger)
     {
-        _service = new NightAuditService(configuration);
+        _service = new NightAuditService(
+            configuration,
+            ActivatorUtilities.CreateInstance<DashboardService>(services));
+
         _clock = clock;
         _logger = logger;
     }

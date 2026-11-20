@@ -18,12 +18,14 @@ public sealed class NightAuditService
 {
     private readonly string _connectionString;
     private readonly RoomWiseRevenueService _revenue;
+    private readonly DashboardService _dashboard;
 
-    public NightAuditService(IConfiguration config)
+    public NightAuditService(IConfiguration config, DashboardService dashboard)
     {
         _connectionString = config.GetConnectionString("con")
             ?? throw new InvalidOperationException("Missing connection string 'con'.");
         _revenue = new RoomWiseRevenueService(config);
+        _dashboard = dashboard;
     }
 
     private static SqlParameter Hotel(string hotel) => new("@hotel", SqlDbType.VarChar, 50) { Value = hotel };
@@ -79,7 +81,7 @@ public sealed class NightAuditService
         await cn.OpenAsync(ct);
         await ReadReservationMethodsAndBalances(cn, hotelId, model, ct);
         await ReadRefundableSecurity(cn, hotelId, reportDay.Date, model, ct);
-        await ReadInventoryAndExpected(cn, hotelId, reportDay.Date, hotelToday.Date, model, ct);
+        await ReadInventoryAndExpected(hotelId, reportDay.Date, hotelToday.Date, model, ct);
         // F&B comes from the same date-filtered RoomWiseRevenue rows shown above.
         // Do not independently add ReadFoodOrders() amounts to nightly totals.
         await ReadPaymentsAndRefunds(cn, hotelId, reportDay.Date, model, ct);
@@ -198,87 +200,36 @@ GROUP BY RegId;", cn) { CommandTimeout = 45 })
         }
     }
 
-    private static async Task ReadInventoryAndExpected(SqlConnection cn, string hotel,
-        DateTime reportDay, DateTime today, NightAuditViewModel model, CancellationToken ct)
+    private async Task ReadInventoryAndExpected(string hotel, DateTime reportDay,
+        DateTime hotelToday, NightAuditViewModel model, CancellationToken ct)
     {
-        // Match the existing DashboardService blocked-room rules. A dated,
-        // active RoomBlocksTB record makes a physical room unavailable for
-        // that date. Today's room_status=Blocked/OOS is also honoured. Room
-        // occupancy itself is NOT removed from sellable inventory, and historic
-        // room_status is NOT assumed to be a historic OOS snapshot.
-        await using (var roomCmd = new SqlCommand(@"
-;WITH PhysicalRooms AS
-(
- SELECT DISTINCT LTRIM(RTRIM(CONVERT(varchar(100),r.room_no))) RoomNo,
-        LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(80),r.room_status),'')))) AS RoomStatus
- FROM dbo.RoomsTB r
- WHERE r.Hotel_id=@hotel
-   AND NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),r.room_no))),'') IS NOT NULL
-), BlockedRooms AS
-(
- SELECT pr.RoomNo FROM PhysicalRooms pr
- WHERE EXISTS
- (
-    SELECT 1 FROM dbo.RoomBlocksTB rb
-    WHERE rb.HotelID=@hotel AND rb.IsActive=1
-      AND LTRIM(RTRIM(CONVERT(varchar(100),rb.RoomNo)))=pr.RoomNo
-      AND COALESCE(TRY_CONVERT(date,rb.BlockStartDate,103),
-                   TRY_CONVERT(date,rb.BlockStartDate,110),
-                   TRY_CONVERT(date,rb.BlockStartDate))<=@day
-      AND (NULLIF(LTRIM(RTRIM(CONVERT(varchar(50),rb.BlockEndDate))),'') IS NULL
-         OR COALESCE(TRY_CONVERT(date,rb.BlockEndDate,103),
-                     TRY_CONVERT(date,rb.BlockEndDate,110),
-                     TRY_CONVERT(date,rb.BlockEndDate))>=@day)
- )
- UNION
- SELECT pr.RoomNo FROM PhysicalRooms pr
- WHERE @day=@today
-   AND pr.RoomStatus IN ('blocked','oos','out of service','out of order','maintenance')
-)
-SELECT (SELECT COUNT(DISTINCT RoomNo) FROM PhysicalRooms) AS Physical,
-       (SELECT COUNT(DISTINCT RoomNo) FROM BlockedRooms) AS Blocked;", cn))
-        {
-            roomCmd.Parameters.Add(Hotel(hotel));
-            roomCmd.Parameters.Add(Day(reportDay));
-            roomCmd.Parameters.Add(new SqlParameter("@today", SqlDbType.Date) { Value = today.Date });
-            await using var rd = await roomCmd.ExecuteReaderAsync(ct);
-            if (await rd.ReadAsync(ct))
-            {
-                var physical = I(rd, "Physical");
-                var blocked = I(rd, "Blocked");
-                model.TotalRoomsAvailable = Math.Max(0, physical - blocked);
-                model.OutOfServiceRooms = blocked;
-            }
-        }
-
-        // Tomorrow relative to the audited business date: arrivals, departures and
-        // predicted in-house rooms. Room Rent can span midnight and checkout day
-        // is not an occupied night. Count bookings only once for arrivals/departures.
-        await using var cmd = new SqlCommand(@"
-;WITH Stays AS
-(
- SELECT DISTINCT CONVERT(varchar(60),reg_id) RegId,
-        LTRIM(RTRIM(CONVERT(varchar(100),room_no))) RoomNo,
-        COALESCE(TRY_CONVERT(date,ArrivalDate,110),TRY_CONVERT(date,ArrivalDate,103),TRY_CONVERT(date,ArrivalDate)) Arr,
-        COALESCE(TRY_CONVERT(date,DepartureDate,110),TRY_CONVERT(date,DepartureDate,103),TRY_CONVERT(date,DepartureDate)) Dep
- FROM dbo.payments
- WHERE hotel_id=@hotel AND LOWER(LTRIM(RTRIM(CONVERT(varchar(100),descr))))='room rent'
-   AND LOWER(ISNULL(CONVERT(varchar(80),res_status),'')) NOT IN
-        ('cancel','cancelled','canceled','no show','noshow','no-show')
-)
-SELECT COUNT(DISTINCT CASE WHEN Arr=DATEADD(day,1,@day) THEN RegId END) Arrivals,
-       COUNT(DISTINCT CASE WHEN Dep=DATEADD(day,1,@day) THEN RegId END) Departures,
-       COUNT(DISTINCT CASE WHEN Arr<=DATEADD(day,1,@day) AND Dep>DATEADD(day,1,@day)
-                     THEN NULLIF(RoomNo,'') END) InHouse
-FROM Stays WHERE Arr IS NOT NULL AND Dep>Arr;", cn) { CommandTimeout = 60 };
-        cmd.Parameters.Add(Hotel(hotel)); cmd.Parameters.Add(Day(reportDay));
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        if (await r.ReadAsync(ct))
-        {
-            model.ArrivalsNextDay = I(r, "Arrivals");
-            model.DeparturesNextDay = I(r, "Departures");
-            model.InHouseNextDay = I(r, "InHouse");
-        }
+        // Physical rooms, active blocks, arrivals and in-house occupancy are now
+        // calculated by DashboardService's EXACT SAME queries for each hotel-day.
+        // Audit-night SOLD room-nights are still from RoomWiseRevenueService; do
+        // not confuse them with currently checked-in guests or future bookings.
+        var auditRoomsTask = _dashboard.GetRoomStatusAsync(hotel, reportDay, ct);
+        var nextDay = reportDay.AddDays(1);
+        var nextRoomsTask = _dashboard.GetRoomStatusAsync(hotel, nextDay, ct);
+        var arrivalsTask = _dashboard.GetStatisticDetailsAsync(hotel, "checkin", nextDay, ct);
+        var checkoutsTask = _dashboard.GetStatisticDetailsAsync(hotel, "checkout", nextDay, ct);
+        await Task.WhenAll(auditRoomsTask, nextRoomsTask, arrivalsTask, checkoutsTask);
+        var auditRooms = await auditRoomsTask;
+        var nextRooms = await nextRoomsTask;
+        model.OutOfServiceRooms = auditRooms.Count(r => r.State == "ooo");
+        model.TotalRoomsAvailable = auditRooms.Count - model.OutOfServiceRooms.Value;
+        model.AvailableRoomsReportDay = auditRooms.Count(r => r.State is "vacant" or "dirty" or "checkout");
+        model.ActualInHouseReportDay = auditRooms.Count(r => r.State == "checkin");
+        model.ArrivalsNextDay = (await arrivalsTask).Rows.Count;
+        model.CompletedCheckoutsNextDay = (await checkoutsTask).Rows.Count;
+        model.DeparturesNextDay = nextRooms.Count(r => r.State == "checkin" && r.DepartureDate?.Date == nextDay);
+        model.InHouseNextDay = nextRooms.Count(r => r.State == "checkin");
+        model.ExpectedOccupiedNextDay = nextRooms.Count(r => r.State is "checkin" or "reservation");
+        model.SellableNextDay = nextRooms.Count(r => r.State != "ooo");
+        model.BlockedNextDay = nextRooms.Count(r => r.State == "ooo");
+        model.AvailableNextDay = nextRooms.Count(r => r.State is "vacant" or "dirty" or "checkout");
+        // A checked-out room can be immediately sold again; room status is
+        // already prioritized across overlapping stays by DashboardService.
+        // Expected occupancy = reserved + actually in-house, NOT arrivals count.
     }
 
     private static async Task ReadFoodOrders(SqlConnection cn, string hotel, DateTime day,
@@ -340,21 +291,16 @@ ORDER BY RoomOrBill,f.ID;", cn) { CommandTimeout = 60 };
     private static async Task ReadPaymentsAndRefunds(SqlConnection cn, string hotel, DateTime day,
         NightAuditViewModel model, CancellationToken ct)
     {
-        await using var cmd = new SqlCommand(@"
-;WITH P AS
-(
- SELECT COALESCE(TRY_CONVERT(date,currentdate,103),TRY_CONVERT(date,currentdate,110),
-                 TRY_CONVERT(date,currentdate)) PaidOn,
-        ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(100),payment_method))),''),'Unknown') Method,
-        COALESCE(TRY_CONVERT(decimal(18,2),paid_amount),0) Amount,
-        LOWER(ISNULL(CONVERT(nvarchar(120),name),'')) [Name]
- FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel
-)
-SELECT Method,CAST(SUM(CASE WHEN Amount>0 AND [Name] NOT LIKE '%security%'
-                   THEN Amount ELSE 0 END) AS decimal(18,2)) Received,
-       CAST(SUM(CASE WHEN Amount<0 AND [Name] NOT LIKE '%security%' THEN ABS(Amount) ELSE 0 END) AS decimal(18,2)) Refunded,
-       SUM(CASE WHEN Amount<0 AND [Name] NOT LIKE '%security%' THEN 1 ELSE 0 END) RefundCount
-FROM P WHERE PaidOn=@day GROUP BY Method ORDER BY Method;", cn) { CommandTimeout = 60 };
+        // Shared ledger SQL is also used by Dashboard top cards and drill-downs.
+        // The receipts list is gross-positive; refunds are separately disclosed.
+        // NET RECEIVED = gross receipts - refunds, exactly Dashboard RevenueToday.
+        var sql = HotelPaymentLedgerSql.Prefix + @"
+SELECT method AS Method,
+       CAST(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END) AS decimal(18,2)) AS Received,
+       CAST(SUM(CASE WHEN amount<0 THEN ABS(amount) ELSE 0 END) AS decimal(18,2)) AS Refunded,
+       SUM(CASE WHEN amount<0 THEN 1 ELSE 0 END) AS RefundCount
+FROM PaymentLedger WHERE tx_date=@day GROUP BY method ORDER BY method;";
+        await using var cmd = new SqlCommand(sql, cn) { CommandTimeout = 60 };
         cmd.Parameters.Add(Hotel(hotel)); cmd.Parameters.Add(Day(day));
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Orapmshms.Models;
 using Orapmshms.Services;
@@ -59,6 +59,24 @@ public sealed class CreateReservationController : Controller
 
     [HttpGet("GuestSearch")]
     public async Task<IActionResult> GuestSearch(string term, CancellationToken ct) => HasSession() ? Json(await _service.SearchGuestsAsync(HotelId, term, ct)) : UnauthorizedJson();
+
+    [HttpPost("AddCompany")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddCompany([FromBody] CreateReservationCompanyRequest request, CancellationToken ct)
+    {
+        if (!HasSession()) return UnauthorizedJson();
+        if (!ModelState.IsValid) return BadRequest(new { success=false, message="Enter a company name (2-180 characters)." });
+        try
+        {
+            var item = await _service.AddCompanyAsync(HotelId, UserId, request.Value, ct);
+            return Json(new { success=true, value=item.Value, text=item.Text });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to add reservation company.");
+            return BadRequest(new { success=false, message=ex.Message });
+        }
+    }
 
     [HttpPost("AddSource")]
     [ValidateAntiForgeryToken]

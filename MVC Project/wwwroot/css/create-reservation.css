@@ -1,4 +1,4 @@
-#createReservationPage{
+﻿#createReservationPage{
   --navy:#0B2A5B;--blue:#0B3B8C;--blue-soft:#E3ECFA;--bg:#EEF3FA;--card:#FFFFFF;
   --line:#D6DFEC;--field:#C9D4E5;--muted:#3F4E66;--muted-2:#56657D;--text:#0F1E3A;
   --tint:#F5F8FD;--tint-2:#F1F5FB;--orange:#F59E0B;--warn-bg:#FFF4E5;--warn:#9A3412;
@@ -477,3 +477,8 @@
 @media(max-width:520px){
   #createReservationPage .room-fields-grid{grid-template-columns:1fr}
 }
+
+/* Company selector: same lookup as Check-in, compact on desktop and mobile. */
+.reservation-company-field { display:flex; align-items:stretch; gap:6px; min-width:0; }
+.reservation-company-field select { flex:1; min-width:0; }
+.reservation-company-field .btn { flex:0 0 38px; padding:0; font-size:19px; }

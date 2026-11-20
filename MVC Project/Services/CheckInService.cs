@@ -1363,10 +1363,14 @@ WHERE hotel_id=@hotel AND reg_id=@reg;", cn, tx);
         if (type.Equals("Discount Offers", StringComparison.OrdinalIgnoreCase) && charge > 0)
             charge = -charge;
 
-        var gst = request.ApplyGst ? Math.Round(charge * settings.GstPercent / 100m, 2) : 0m;
-        var bed = request.ApplyBedTax ? Math.Round(charge * settings.BedTaxPercent / 100m, 2) : 0m;
-        var discount = Math.Max(0m, request.Discount);
-        var total = Math.Round(charge + gst + bed - discount, 2);
+        // Tax must be assessed on the discounted charge, not the original rate.
+        var discount = Math.Clamp(request.Discount, 0m, Math.Max(0m, charge));
+        // Retain negative correction/Discount Offer lines as negative amounts;
+        // only positive taxable charges are discounted before tax.
+        var taxableRate = charge > 0m ? Math.Max(0m, charge - discount) : charge;
+        var gst = request.ApplyGst && taxableRate > 0m ? Math.Round(taxableRate * settings.GstPercent / 100m, 2, MidpointRounding.AwayFromZero) : 0m;
+        var bed = request.ApplyBedTax && taxableRate > 0m ? Math.Round(taxableRate * settings.BedTaxPercent / 100m, 2, MidpointRounding.AwayFromZero) : 0m;
+        var total = Math.Round(taxableRate + gst + bed, 2, MidpointRounding.AwayFromZero);
         // Exact WebForms storage contract: txt_rate is the full base amount for this
         // payment segment and both payments.Rate and payments.Charge store that amount.
         // The MVC grid derives Rate / Night for display by dividing by Nights.
@@ -1680,11 +1684,14 @@ WHERE Hotel_id=@hotel AND room_no=@room
                 ? Math.Round(request.Rate * stayCount, 2, MidpointRounding.AwayFromZero)
                 : Math.Round(request.Rate, 2, MidpointRounding.AwayFromZero);
 
-            var gstPct = oldBase > 0m && row.Gst > 0m ? row.Gst / oldBase * 100m : taxSettings.GstPercent;
-            var bedPct = oldBase > 0m && row.BedTax > 0m ? row.BedTax / oldBase * 100m : taxSettings.BedTaxPercent;
-            var gst = row.Gst > 0m ? Math.Round(newBase * gstPct / 100m, 2) : 0m;
-            var bed = row.BedTax > 0m ? Math.Round(newBase * bedPct / 100m, 2) : 0m;
-            var total = Math.Round(newBase + gst + bed - row.Discount, 2);
+            var gstPct = taxSettings.GstPercent > 0m ? taxSettings.GstPercent
+                : (oldBase > 0m && row.Gst > 0m ? row.Gst / oldBase * 100m : 0m);
+            var bedPct = taxSettings.BedTaxPercent > 0m ? taxSettings.BedTaxPercent
+                : (oldBase > 0m && row.BedTax > 0m ? row.BedTax / oldBase * 100m : 0m);
+            var taxableRate = Math.Max(0m, newBase - row.Discount);
+            var gst = row.Gst > 0m ? Math.Round(taxableRate * gstPct / 100m, 2, MidpointRounding.AwayFromZero) : 0m;
+            var bed = row.BedTax > 0m ? Math.Round(taxableRate * bedPct / 100m, 2, MidpointRounding.AwayFromZero) : 0m;
+            var total = Math.Round(taxableRate + gst + bed, 2, MidpointRounding.AwayFromZero);
 
             await using (var cmd = new SqlCommand(@"
 UPDATE dbo.payments
@@ -2855,11 +2862,17 @@ WHERE reg_id=@reg AND hotel_id=@hotel;", cn, tx))
             var arrivalTime = hotelNow.ToString("hh:mm tt", CultureInfo.InvariantCulture);
             const string updateGuest = @"
 UPDATE dbo.GuestInformationLogTB
-SET res_status='check in', Complementary=@complementary, ArrivalTime=@arrivalTime, DepartureTime='12:00 PM'
+SET res_status='check in', Complementary=@complementary, ArrivalTime=@arrivalTime, DepartureTime='12:00 PM',
+    -- Direct check-in must persist the supplied VAT/NTN and company even
+    -- when the guest log was created earlier (not only in the INSERT path).
+    vatno=COALESCE(NULLIF(LTRIM(RTRIM(@vatno)),''),vatno),
+    Status=COALESCE(NULLIF(LTRIM(RTRIM(@company)),''),Status)
 WHERE hotel_id=@hotel AND reg_id=@reg;";
             await using (var cmd = new SqlCommand(updateGuest, cn, tx))
             {
                 cmd.Parameters.Add("@complementary", SqlDbType.VarChar, 10).Value = complementary ? "Yes" : "No";
+                cmd.Parameters.Add("@vatno", SqlDbType.VarChar, 30).Value = (g.VatNo ?? string.Empty).Trim();
+                cmd.Parameters.Add("@company", SqlDbType.VarChar, 180).Value = (g.Company ?? string.Empty).Trim();
                 cmd.Parameters.Add("@arrivalTime", SqlDbType.VarChar, 20).Value = arrivalTime;
                 cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
                 cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = g.RegId;
@@ -4831,12 +4844,23 @@ SELECT CASE WHEN EXISTS
 Calc AS
 (
     SELECT ID,
-           NewGst = CAST(ROUND(CASE WHEN CurrentGst>0 THEN BaseAmount*@taxRate/100 ELSE 0 END,2) AS decimal(18,2)),
-           NewTotal = CAST(ROUND(BaseAmount + CASE WHEN CurrentGst>0 THEN BaseAmount*@taxRate/100 ELSE 0 END + CurrentBed - CurrentDiscount,2) AS decimal(18,2))
+           NewGst = CAST(ROUND(CASE WHEN CurrentGst>0 THEN
+                             (CASE WHEN BaseAmount>CurrentDiscount THEN BaseAmount-CurrentDiscount ELSE 0 END)*@taxRate/100
+                             ELSE 0 END,2) AS decimal(18,2)),
+           NewBed = CAST(ROUND(CASE WHEN CurrentBed>0 AND @bedRate>0
+                              THEN (CASE WHEN BaseAmount>CurrentDiscount THEN BaseAmount-CurrentDiscount ELSE 0 END)*@bedRate/100
+                              ELSE CurrentBed END,2) AS decimal(18,2)),
+           NewTotal = CAST(ROUND(
+               (CASE WHEN BaseAmount>CurrentDiscount THEN BaseAmount-CurrentDiscount ELSE 0 END) +
+               (CASE WHEN CurrentGst>0 THEN (CASE WHEN BaseAmount>CurrentDiscount THEN BaseAmount-CurrentDiscount ELSE 0 END)*@taxRate/100 ELSE 0 END) +
+               (CASE WHEN CurrentBed>0 AND @bedRate>0
+                    THEN (CASE WHEN BaseAmount>CurrentDiscount THEN BaseAmount-CurrentDiscount ELSE 0 END)*@bedRate/100
+                    ELSE CurrentBed END),2) AS decimal(18,2))
     FROM PaymentRows
 )
 UPDATE p
 SET p.GST=CAST(c.NewGst AS varchar(50)),
+    p.Bed=CAST(c.NewBed AS varchar(50)),
     p.totalamount=CAST(c.NewTotal AS varchar(50))
 FROM dbo.payments p
 INNER JOIN Calc c ON c.ID=p.ID;", cn, tx))
@@ -4847,6 +4871,10 @@ INNER JOIN Calc c ON c.ID=p.ID;", cn, tx))
                 taxRate.Precision = 18;
                 taxRate.Scale = 2;
                 taxRate.Value = selectedTaxRate;
+                var bedRate = cmd.Parameters.Add("@bedRate", SqlDbType.Decimal);
+                bedRate.Precision = 18;
+                bedRate.Scale = 2;
+                bedRate.Value = taxes.BedTaxPercent;
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
@@ -7376,9 +7404,10 @@ WHERE hotel_id=@hotel AND reg_id=@reg AND rate_date>=@departure;", cn, tx);
 
             var gstRatio = oldBase > 0m ? row.Gst / oldBase : 0m;
             var bedRatio = oldBase > 0m ? row.BedTax / oldBase : 0m;
-            var newGst = Math.Round(newBase * gstRatio, 2, MidpointRounding.AwayFromZero);
-            var newBed = Math.Round(newBase * bedRatio, 2, MidpointRounding.AwayFromZero);
-            var newTotal = Math.Round(Math.Max(0m, newBase + newGst + newBed - row.Discount), 2, MidpointRounding.AwayFromZero);
+            var newTaxable = Math.Max(0m, newBase - row.Discount);
+            var newGst = Math.Round(newTaxable * gstRatio, 2, MidpointRounding.AwayFromZero);
+            var newBed = Math.Round(newTaxable * bedRatio, 2, MidpointRounding.AwayFromZero);
+            var newTotal = Math.Round(newTaxable + newGst + newBed, 2, MidpointRounding.AwayFromZero);
 
             await using var upd = new SqlCommand(@"
 UPDATE dbo.payments

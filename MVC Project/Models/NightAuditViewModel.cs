@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -82,10 +82,19 @@ public sealed class NightAuditViewModel
     public List<NightAuditPaymentLine> Received { get; } = new();
     // Physical sellable rooms: excludes dated blocks (and today's status blocks).
     public int TotalRoomsAvailable { get; set; }
+    // Operational in-house rooms: same checked-in physical room count as Dashboard.
+    // Unlike RoomsOccupied (sold room-nights), this excludes reserved-only rooms.
+    public int ActualInHouseReportDay { get; set; }
     public int RoomsOccupied { get; set; }
     public int ArrivalsNextDay { get; set; }
     public int DeparturesNextDay { get; set; }
     public int InHouseNextDay { get; set; }
+    public int CompletedCheckoutsNextDay { get; set; }
+    public int ExpectedOccupiedNextDay { get; set; }
+    public int SellableNextDay { get; set; }
+    public int BlockedNextDay { get; set; }
+    public int AvailableNextDay { get; set; }
+    public int AvailableRoomsReportDay { get; set; }
     public int NoShows { get; set; }
     public int Complimentary { get; set; }
     public int? OutOfServiceRooms { get; set; }
@@ -108,8 +117,10 @@ public sealed class NightAuditViewModel
     public decimal HotelRevenue => RoomRevenue + ExtrasRevenue + TotalFoodRevenue;
     public decimal Adr => RoomsOccupied == 0 ? 0 : RoomRevenue / RoomsOccupied;
     public decimal OccupancyPct => TotalRoomsAvailable == 0 ? 0 : (decimal)RoomsOccupied * 100 / TotalRoomsAvailable;
-    public decimal ExpectedOccupancyPct => TotalRoomsAvailable == 0 ? 0 : (decimal)InHouseNextDay * 100 / TotalRoomsAvailable;
+    public decimal ExpectedOccupancyPct => SellableNextDay == 0 ? 0 : (decimal)ExpectedOccupiedNextDay * 100 / SellableNextDay;
     public decimal TotalReceived => Received.Sum(x => x.Amount);
+    public decimal TotalRefunds => RefundCash + RefundCard;
+    public decimal NetPaymentsReceived => TotalReceived - TotalRefunds;
     public string Money(decimal value) => (string.IsNullOrWhiteSpace(CurrencySign) ? "" : CurrencySign.Trim() + " ")
         + value.ToString("N2", CultureInfo.InvariantCulture);
 }

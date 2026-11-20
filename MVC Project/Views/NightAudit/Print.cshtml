@@ -1,10 +1,9 @@
-@model Orapmshms.Models.NightAuditViewModel
+﻿@model Orapmshms.Models.NightAuditViewModel
 @using System.Linq
 @using System.Globalization
 @{
     Layout = null;
     var day = Model.ReportDate.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
-    string Rating(decimal? value) => value?.ToString("0.##", CultureInfo.InvariantCulture) ?? "—";
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -39,7 +38,7 @@ td { font-size:9.4pt; }
 .summary span { color:#5b7087; font-size:9pt; }
 .summary strong { font-size:11pt; }
 .summary .final { background:#17385f; color:white; } .summary .final span { color:#deebf6; }
-.lower { display:grid; grid-template-columns:1fr 1.05fr 1fr; gap:8px; align-items:start; }
+.lower { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:start; }
 .fact { display:flex; justify-content:space-between; gap:7px; padding:5px 7px; border-bottom:1px solid #e3e9f1; }
 .fact b { white-space:nowrap; }
 .money-line { display:flex; justify-content:space-between; padding:5px 7px; border-bottom:1px solid #e3e9f1; }
@@ -93,7 +92,9 @@ else
         <div>
             <section><h2>Payments Received</h2>
                 @foreach (var x in Model.Received) { <div class="money-line"><span>@x.Method</span><b>@Model.Money(x.Amount)</b></div> }
-                <div class="money-line"><strong>Total Received</strong><strong>@Model.Money(Model.TotalReceived)</strong></div>
+                <div class="money-line"><strong>Gross Receipts</strong><strong>@Model.Money(Model.TotalReceived)</strong></div>
+                <div class="money-line"><span>Less Refunds</span><b>@Model.Money(Model.TotalRefunds)</b></div>
+                <div class="money-line"><strong>Net Payments Received (Dashboard)</strong><strong>@Model.Money(Model.NetPaymentsReceived)</strong></div>
             </section>
             <section><h2>Refunds &amp; Discount</h2>
                 <div class="money-line"><span>Cash Refund (@Model.RefundCashCount)</span><b>@Model.Money(Model.RefundCash)</b></div>
@@ -104,26 +105,22 @@ else
         <div>
             <section><h2>Figures for @day</h2>
                 <div class="fact"><span>Occupancy</span><b>@Model.OccupancyPct.ToString("N1")%</b></div>
-                <div class="fact"><span>Rooms Occupied</span><b>@Model.RoomsOccupied</b></div>
-                <div class="fact"><span>Available (excl. blocked)</span><b>@Model.TotalRoomsAvailable</b></div>
+                <div class="fact"><span>Rooms Sold (audit night)</span><b>@Model.RoomsOccupied</b></div>
+                <div class="fact"><span>Sellable Rooms (excl. blocked)</span><b>@Model.TotalRoomsAvailable</b></div>
                 <div class="fact"><span>Blocked / Out of Service</span><b>@(Model.OutOfServiceRooms?.ToString() ?? "—")</b></div>
                 <div class="fact"><span>ADR</span><b>@Model.Money(Model.Adr)</b></div>
                 <div class="fact"><span>No Shows</span><b>@Model.NoShows</b></div>
                 <div class="fact"><span>Complimentary / House Use</span><b>@Model.Complimentary</b></div>
             </section>
             <section><h2>Figures for @Model.NextDate.ToString("dd MMM yyyy")</h2>
-                <div class="fact"><span>Arrivals</span><b>@Model.ArrivalsNextDay</b></div>
-                <div class="fact"><span>Departures</span><b>@Model.DeparturesNextDay</b></div>
-                <div class="fact"><span>In House</span><b>@Model.InHouseNextDay</b></div>
+                <div class="fact"><span>Arriving Rooms</span><b>@Model.ArrivalsNextDay</b></div>
+                <div class="fact"><span>Due Outs (still checked in)</span><b>@Model.DeparturesNextDay</b></div>
+                <div class="fact"><span>Completed Check-outs</span><b>@Model.CompletedCheckoutsNextDay</b></div>
+                <div class="fact"><span>In House (checked-in rooms)</span><b>@Model.InHouseNextDay</b></div>
+                <div class="fact"><span>Expected Booked Rooms</span><b>@Model.ExpectedOccupiedNextDay</b></div>
+                <div class="fact"><span>Available Rooms</span><b>@Model.AvailableNextDay</b></div>
+                <div class="fact"><span>Blocked / OOS</span><b>@Model.BlockedNextDay</b></div>
                 <div class="fact"><span>Expected Occupancy</span><b>@Model.ExpectedOccupancyPct.ToString("N1")%</b></div>
-            </section>
-        </div>
-        <div>
-            <section><h2>Online Ratings — @day</h2>
-                <div class="fact"><span>Booking.com</span><b>@Rating(Model.Ratings.Booking)</b></div>
-                <div class="fact"><span>Google</span><b>@Rating(Model.Ratings.Google)</b></div>
-                <div class="fact"><span>Trip</span><b>@Rating(Model.Ratings.Trip)</b></div>
-                <div class="fact"><span>Agoda</span><b>@Rating(Model.Ratings.Agoda)</b></div>
             </section>
         </div>
     </div>

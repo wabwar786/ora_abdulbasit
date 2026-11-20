@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Orapmshms.Models;
@@ -16,7 +16,7 @@ public sealed partial class DashboardService
 
     private Task<DashboardStatisticDetailResult> GetArrivalsTodayDetailsAsync(
         string hotelId, DateTime date, CancellationToken ct) =>
-        CachedAsync($"dashboard:today-arrivals:v1:{hotelId}:{date:yyyyMMdd}", TimeSpan.FromSeconds(6),
+        CachedAsync($"dashboard:today-arrivals:v4:{hotelId}:{date:yyyyMMdd}", TimeSpan.FromSeconds(6),
             () => LoadArrivalsTodayDetailsCoreAsync(hotelId, date.Date, ct), OperationDetailCacheLocks);
 
     private Task<DashboardStatisticDetailResult> GetCheckoutsTodayDetailsAsync(
@@ -29,121 +29,153 @@ public sealed partial class DashboardService
         CachedAsync($"dashboard:today-created:v1:{hotelId}:{date:yyyyMMdd}", TimeSpan.FromSeconds(6),
             () => LoadCreatedTodayDetailsCoreAsync(hotelId, date.Date, ct), OperationDetailCacheLocks);
 
-    // An arrival is a RESERVATION (reg_id), even if that reservation has
-    // multiple rooms. Include reservation-only, provisional, in-house and
-    // same-day checked-out bookings; do not require a physical room assignment.
-    // NR is moved to GuestInformationLogTB during check-in, so both sources
-    // and room-rent payment rows must be considered, without double counting.
+    // Arrivals count ROOM STAYS, not distinct registration numbers.  One reservation
+    // containing three rooms arriving today contributes three arrivals.  Each room
+    // gets its own effective arrival date; a second room arriving tomorrow must not
+    // be pulled into today's count merely because the first room arrives today.
+    // The same details query feeds the Dashboard KPI, popup and Night Audit.
     private async Task<DashboardStatisticDetailResult> LoadArrivalsTodayDetailsCoreAsync(
         string hotelId, DateTime date, CancellationToken ct)
     {
         const string sql = @"
-;WITH Candidates AS
+;WITH PaymentRoomRows AS
 (
     SELECT
-        CONVERT(varchar(100), g.reg_id) AS reg_id,
-        CONVERT(varchar(100), g.ArrivalDate) AS arrival_text,
-        CONVERT(varchar(60), g.res_status) AS stay_status,
-        LTRIM(RTRIM(CONCAT(ISNULL(CONVERT(varchar(150),g.GuestName),''), ' ',
-                           ISNULL(CONVERT(varchar(150),g.LastName),'')))) AS guest_name,
-        ISNULL(CONVERT(varchar(150),g.room_no),'') AS room_no,
-        ISNULL(CONVERT(varchar(150),g.room_category),'') AS category,
-        0 AS priority,
-        g.ID AS source_id
-    FROM dbo.GuestInformationLogTB g
-    WHERE g.hotel_id = @hotel
-    UNION ALL
-    SELECT
-        CONVERT(varchar(100), n.reg_id),
-        CONVERT(varchar(100), n.ArrivalDate),
-        CONVERT(varchar(60), n.res_status),
-        LTRIM(RTRIM(CONCAT(ISNULL(CONVERT(varchar(150),n.GuestName),''), ' ',
-                           ISNULL(CONVERT(varchar(150),n.LastName),'')))),
-        ISNULL(CONVERT(varchar(150),n.room_no),''),
-        ISNULL(CONVERT(varchar(150),n.room_category),''),
-        1,
-        n.ID
-    FROM dbo.NewReservationsTB n
-    WHERE n.hotel_id = @hotel
-    UNION ALL
-    SELECT
-        CONVERT(varchar(100), p.reg_id),
-        CONVERT(varchar(100), p.ArrivalDate),
-        CONVERT(varchar(60), p.res_status),
-        ISNULL(CONVERT(varchar(300),p.guestname),''),
-        ISNULL(CONVERT(varchar(150),p.room_no),''),
-        ISNULL(CONVERT(varchar(150),p.[Type]),''),
-        2,
-        p.ID
+        LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.reg_id),''))) AS reg_id,
+        LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))) AS room_no,
+        ISNULL(CONVERT(varchar(300),p.guestname),'') AS guest_name,
+        ISNULL(CONVERT(varchar(150),p.[Type]),'') AS category,
+        LOWER(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(CONVERT(varchar(60),p.res_status),''))),'-',' '),'  ',' ')) AS state,
+        COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,103),
+                 TRY_CONVERT(date,p.ArrivalDate,101),TRY_CONVERT(date,p.ArrivalDate,23),
+                 TRY_CONVERT(date,p.ArrivalDate,100),TRY_CONVERT(date,p.ArrivalDate)) AS arrival_day,
+        CASE WHEN TRY_CONVERT(int,p.NumberOfRoom) BETWEEN 1 AND 100
+             THEN TRY_CONVERT(int,p.NumberOfRoom) ELSE 1 END AS number_of_rooms,
+        MIN(CASE WHEN LOWER(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(CONVERT(varchar(60),p.res_status),''))),'-',' '),'  ',' '))
+                     IN ('reservation','reserved','provisional','tentative','check in','checked in','checkin','check out','checked out','checkout')
+                 THEN COALESCE(TRY_CONVERT(date,p.ArrivalDate,110),TRY_CONVERT(date,p.ArrivalDate,103),
+                               TRY_CONVERT(date,p.ArrivalDate,101),TRY_CONVERT(date,p.ArrivalDate,23),
+                               TRY_CONVERT(date,p.ArrivalDate)) END)
+           OVER (PARTITION BY LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.reg_id),''))),
+                        slot.room_key) AS first_active_arrival,
+        'payment' AS source_type,
+        ROW_NUMBER() OVER
+        (
+            PARTITION BY LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.reg_id),''))),
+                         slot.room_key
+            ORDER BY p.ID DESC
+        ) AS rn
     FROM dbo.payments p
-    WHERE p.hotel_id = @hotel
-      AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.descr),'')))) = 'room rent'
+    CROSS APPLY (VALUES
+    (
+        CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))),'') IS NULL
+                       OR UPPER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))))='UNASSIGNED'
+             -- One pending room-category/plan/date group may hold several rooms;
+             -- do not collapse distinct categories into a single empty room number.
+             THEN CONCAT('#PENDING:',ISNULL(CONVERT(varchar(150),p.[Type]),''),':',
+                         ISNULL(CONVERT(varchar(100),p.rateplan),''),':',
+                         ISNULL(CONVERT(varchar(100),p.ArrivalDate),''))
+             ELSE LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.room_no),''))) END
+    )) slot(room_key)
+    WHERE p.hotel_id=@hotel
+      AND LOWER(LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),p.descr),''))))='room rent'
 ),
-Normalized AS
+ReservationHeaders AS
 (
     SELECT
-        LTRIM(RTRIM(ISNULL(reg_id,''))) AS reg_id,
-        guest_name,
-        room_no,
-        category,
-        priority,
-        source_id,
-        LOWER(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(stay_status,''))),'-',' '),'  ',' ')) AS state,
-        COALESCE(
-            TRY_CONVERT(date,arrival_text,110),
-            TRY_CONVERT(date,arrival_text,103),
-            TRY_CONVERT(date,arrival_text,101),
-            TRY_CONVERT(date,arrival_text,23),
-            TRY_CONVERT(date,arrival_text,100),
-            TRY_CONVERT(date,arrival_text)) AS arrival_date
-    FROM Candidates
+        LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),n.reg_id),''))) AS reg_id,
+        LTRIM(RTRIM(ISNULL(CONVERT(varchar(150),n.room_no),''))) AS room_no,
+        LTRIM(RTRIM(CONCAT(ISNULL(n.GuestName,''),' ',ISNULL(n.LastName,'')))) AS guest_name,
+        ISNULL(CONVERT(varchar(150),n.room_category),'') AS category,
+        LOWER(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(CONVERT(varchar(60),n.res_status),''))),'-',' '),'  ',' ')) AS state,
+        COALESCE(TRY_CONVERT(date,n.ArrivalDate,110),TRY_CONVERT(date,n.ArrivalDate,103),
+                 TRY_CONVERT(date,n.ArrivalDate,101),TRY_CONVERT(date,n.ArrivalDate,23),
+                 TRY_CONVERT(date,n.ArrivalDate)) AS arrival_day,
+        CASE WHEN TRY_CONVERT(int,n.noofrooms) BETWEEN 1 AND 100
+             THEN TRY_CONVERT(int,n.noofrooms) ELSE 1 END AS number_of_rooms,
+        'header' AS source_type,
+        ROW_NUMBER() OVER (PARTITION BY n.reg_id ORDER BY n.ID DESC) AS rn
+    FROM dbo.NewReservationsTB n
+    WHERE n.hotel_id=@hotel
+      AND NOT EXISTS (SELECT 1 FROM PaymentRoomRows p WHERE p.reg_id=LTRIM(RTRIM(CONVERT(varchar(100),n.reg_id))))
 ),
-LatestReservation AS
+GuestHeaders AS
 (
-    SELECT *, ROW_NUMBER() OVER
-    (
-        PARTITION BY reg_id
-        ORDER BY priority, source_id DESC
-    ) AS rn
-    FROM Normalized
-    WHERE reg_id <> ''
+    SELECT
+        LTRIM(RTRIM(ISNULL(CONVERT(varchar(100),g.reg_id),''))) AS reg_id,
+        LTRIM(RTRIM(ISNULL(CONVERT(varchar(150),g.room_no),''))) AS room_no,
+        LTRIM(RTRIM(CONCAT(ISNULL(g.GuestName,''),' ',ISNULL(g.LastName,'')))) AS guest_name,
+        ISNULL(CONVERT(varchar(150),g.room_category),'') AS category,
+        LOWER(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(CONVERT(varchar(60),g.res_status),''))),'-',' '),'  ',' ')) AS state,
+        COALESCE(TRY_CONVERT(date,g.ArrivalDate,110),TRY_CONVERT(date,g.ArrivalDate,103),
+                 TRY_CONVERT(date,g.ArrivalDate,101),TRY_CONVERT(date,g.ArrivalDate,23),
+                 TRY_CONVERT(date,g.ArrivalDate)) AS arrival_day,
+        1 AS number_of_rooms,
+        'guest' AS source_type,
+        ROW_NUMBER() OVER (PARTITION BY g.reg_id ORDER BY g.ID DESC) AS rn
+    FROM dbo.GuestInformationLogTB g
+    WHERE g.hotel_id=@hotel
+      AND NOT EXISTS (SELECT 1 FROM PaymentRoomRows p WHERE p.reg_id=LTRIM(RTRIM(CONVERT(varchar(100),g.reg_id))))
+      AND NOT EXISTS (SELECT 1 FROM ReservationHeaders n WHERE n.reg_id=LTRIM(RTRIM(CONVERT(varchar(100),g.reg_id))))
+),
+RoomArrivals AS
+(
+    SELECT reg_id,room_no,guest_name,category,state,number_of_rooms,source_type
+    FROM PaymentRoomRows WHERE rn=1 AND COALESCE(first_active_arrival,arrival_day)=@date
+      AND state IN ('reservation','reserved','provisional','tentative','check in','checked in','checkin','check out','checked out','checkout')
+    UNION ALL
+    SELECT reg_id,room_no,guest_name,category,state,number_of_rooms,source_type
+    FROM ReservationHeaders WHERE rn=1 AND arrival_day=@date
+      AND state IN ('reservation','reserved','provisional','tentative','check in','checked in','checkin','check out','checked out','checkout')
+    UNION ALL
+    SELECT reg_id,room_no,guest_name,category,state,number_of_rooms,source_type
+    FROM GuestHeaders WHERE rn=1 AND arrival_day=@date
+      AND state IN ('reservation','reserved','provisional','tentative','check in','checked in','checkin','check out','checked out','checkout')
 )
-SELECT reg_id, guest_name, room_no, category, state
-FROM LatestReservation
-WHERE rn = 1
-  AND arrival_date = @date
-  AND state IN ('reservation','provisional','tentative',
-                'check in','checked in','checkin',
-                'check out','checked out','checkout')
-ORDER BY reg_id;";
+SELECT a.reg_id,a.guest_name,a.room_no,a.category,a.state,
+       CASE WHEN a.source_type='header' OR NULLIF(a.room_no,'') IS NULL OR UPPER(a.room_no)='UNASSIGNED'
+            THEN a.number_of_rooms ELSE 1 END AS room_count
+FROM RoomArrivals a
+WHERE a.reg_id<>''
+  AND NOT EXISTS (SELECT 1 FROM dbo.CancelledReservationsTB c
+                  WHERE c.hotel_id=@hotel AND LTRIM(RTRIM(CONVERT(varchar(100),c.reg_id)))=a.reg_id)
+  AND NOT EXISTS (SELECT 1 FROM dbo.NoShowTB ns
+                  WHERE ns.hotel_id=@hotel AND LTRIM(RTRIM(CONVERT(varchar(100),ns.reg_id)))=a.reg_id)
+ORDER BY a.reg_id,a.room_no;";
 
-        var result = NewDetail("Check-ins Today · arriving reservations", date,
-            "Reservations", "0", "Reservation", "Guest", "Room", "Category", "Status");
+        var result = NewDetail("Check-ins Today · rooms arriving", date,
+            "Rooms", "0", "Reservation", "Guest", "Room", "Category", "Status");
         using var slot = await EnterDashboardSqlAsync(ct);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(ct);
-        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 25 };
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = 30 };
         command.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
         command.Parameters.Add("@date", SqlDbType.Date).Value = date.Date;
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
             var state = Convert.ToString(reader["state"]) ?? string.Empty;
-            result.Rows.Add(new List<string>
+            var room = Convert.ToString(reader["room_no"])?.Trim() ?? string.Empty;
+            var count = Math.Clamp(ToInt(reader["room_count"]), 1, 100);
+            for (var i = 0; i < count; ++i)
             {
-                Convert.ToString(reader["reg_id"])?.Trim() ?? string.Empty,
-                Convert.ToString(reader["guest_name"])?.Trim() ?? string.Empty,
-                string.IsNullOrWhiteSpace(Convert.ToString(reader["room_no"]))
-                    ? "Unassigned" : Convert.ToString(reader["room_no"])!.Trim(),
-                Convert.ToString(reader["category"])?.Trim() ?? string.Empty,
-                state is "check in" or "checked in" or "checkin" ? "In house"
-                    : state is "check out" or "checked out" or "checkout" ? "Checked out"
-                    : state is "provisional" or "tentative" ? "Provisional" : "Reserved"
-            });
+                result.Rows.Add(new List<string>
+                {
+                    Convert.ToString(reader["reg_id"])?.Trim() ?? string.Empty,
+                    Convert.ToString(reader["guest_name"])?.Trim() ?? string.Empty,
+                    room.Length == 0 || room.Equals("Unassigned", StringComparison.OrdinalIgnoreCase)
+                        ? (count == 1 ? "Unassigned" : $"Unassigned #{i + 1}")
+                        : (count == 1 ? room : $"{room} · room {i + 1}"),
+                    Convert.ToString(reader["category"])?.Trim() ?? string.Empty,
+                    state is "check in" or "checked in" or "checkin" ? "In house"
+                        : state is "check out" or "checked out" or "checkout" ? "Checked out"
+                        : state is "provisional" or "tentative" ? "Provisional" : "Reserved"
+                });
+            }
         }
         result.SummaryValue = result.Rows.Count.ToString(CultureInfo.InvariantCulture);
         result.Subtitle = date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
-            + " · Includes reserved and checked-in arrivals, one per reservation";
+            + " · Each arriving room is counted; multi-room reservations can contribute several arrivals";
         return result;
     }
 

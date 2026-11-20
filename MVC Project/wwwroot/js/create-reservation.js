@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   'use strict';
 
   const page = document.getElementById('createReservationPage' );
@@ -46,7 +46,7 @@
   }
   function clearValidationState(){
     $$('.invalid').forEach(x=>x.classList.remove('invalid'));
-    ['dateError','guestError','roomError','linkError','deadlineError','sourceError'].forEach(id=>error($(id),''));
+    ['dateError','guestError','roomError','linkError','deadlineError','sourceError','companyError'].forEach(id=>error($(id),''));
   }
   function resetReservationForm(paymentContext=null){
     const form=$('reservationForm');
@@ -219,7 +219,7 @@
     }catch(e){box.style.display='none';toast(e.message||'Unable to search guests');}
     finally{setButtonBusy(button,false);}
   }
-  function fillGuest(g){$('FirstName').value=g.guestName||'';$('LastName').value=g.lastName||'';$('Phone').value=g.phone||'';$('Email').value=g.email||'';$('PaymentLinkEmail').value=g.email||'';$('Address').value=g.address||'';$('IdNumber').value=String(g.identification||'').slice(0,30);if(g.country&&chooseOption($('Country'),g.country))loadCities(g.city||'');updateSummary();$('findGuestSuggestions').style.display='none';}
+  function fillGuest(g){$('FirstName').value=g.guestName||'';$('LastName').value=g.lastName||'';$('Phone').value=g.phone||'';$('Email').value=g.email||'';$('PaymentLinkEmail').value=g.email||'';$('Address').value=g.address||'';$('IdNumber').value=String(g.identification||'').slice(0,30);$('VatNo').value=String(g.vatNo||'').slice(0,30);if(g.company)chooseOption($('Company'),g.company);if(g.country&&chooseOption($('Country'),g.country))loadCities(g.city||'');updateSummary();$('findGuestSuggestions').style.display='none';}
 
   async function loadRatePlans(){ if(isMonthWise)return; const cat=$('rCategory').value,s=$('rPlan');s.innerHTML='<option value="">Loading...</option>'; if(!cat){s.innerHTML='<option value="">Select rate plan</option>';return;} try{const list=await getJson(`/CreateReservation/RatePlans?categoryId=${encodeURIComponent(cat)}`);s.innerHTML='<option value="">Select rate plan</option>'+((Array.isArray(list)?list:[]).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join(''));const p=page.dataset.prefillPlan;if(p&&chooseOption(s,p))page.dataset.prefillPlan='';}catch(e){s.innerHTML='<option value="">Unable to load rate plans</option>';error($('roomError'),e.message);}}
 
@@ -361,7 +361,7 @@
     error($('deadlineError'),'');return true;
   }
 
-  function request(){const idType=$('IdType').value,idNo=$('IdNumber').value.trim();return{arrivalDate:$('ArrivalDate').value,departureDate:$('DepartureDate').value,firstName:$('FirstName').value.trim(),lastName:$('LastName').value.trim(),phone:$('Phone').value.trim(),email:$('Email').value.trim(),country:$('Country').value,city:$('City').value,address:$('Address').value.trim(),identification:idNo,source:$('BookingSource').value,isProvisional:isProvisional(),paymentDeadline:isProvisional()?($('PaymentDeadline').value||null):null,sendPaymentLink:false,paymentLinkEmail:$('PaymentLinkEmail').value.trim(),shuffleType:getShuffle(),reservationMode:getMode(),groupSameDates:sameDates(),rooms:rooms.map(r=>({categoryId:r.categoryId,planId:r.planId,count:r.count,roomNo:r.roomNo,guestName:r.guestName,arrivalDate:r.arrivalDate,departureDate:r.departureDate,monthlyRate:r.monthlyRate,rateOverride:r.rateOverride,discount:r.discount,applyGst:r.applyGst,applyBedTax:r.applyBedTax,adults:r.adults,children:r.children,infants:r.infants}))};}
+  function request(){const idType=$('IdType').value,idNo=$('IdNumber').value.trim();return{arrivalDate:$('ArrivalDate').value,departureDate:$('DepartureDate').value,firstName:$('FirstName').value.trim(),lastName:$('LastName').value.trim(),phone:$('Phone').value.trim(),email:$('Email').value.trim(),country:$('Country').value,city:$('City').value,address:$('Address').value.trim(),identification:idNo,vatNo:$('VatNo').value.trim(),company:($('Company').value==='__add_new__'?'':$('Company').value),source:$('BookingSource').value,isProvisional:isProvisional(),paymentDeadline:isProvisional()?($('PaymentDeadline').value||null):null,sendPaymentLink:false,paymentLinkEmail:$('PaymentLinkEmail').value.trim(),shuffleType:getShuffle(),reservationMode:getMode(),groupSameDates:sameDates(),rooms:rooms.map(r=>({categoryId:r.categoryId,planId:r.planId,count:r.count,roomNo:r.roomNo,guestName:r.guestName,arrivalDate:r.arrivalDate,departureDate:r.departureDate,monthlyRate:r.monthlyRate,rateOverride:r.rateOverride,discount:r.discount,applyGst:r.applyGst,applyBedTax:r.applyBedTax,adults:r.adults,children:r.children,infants:r.infants}))};}
 
   async function submit(){
     error($('linkError'),'');
@@ -468,6 +468,30 @@
     finally{setButtonBusy(button,false);}
   }
 
+  function openCompanyModal(){
+    $('Company').value='';
+    $('NewCompanyName').value='';
+    error($('companyError'),'');
+    show($('companyModal'),true);
+    $('NewCompanyName').focus();
+  }
+  function closeCompanyModal(){show($('companyModal'),false);}
+  async function addCompany(){
+    const name=$('NewCompanyName').value.trim();
+    if(name.length<2||name.length>180||/[<>]/.test(name))
+      return error($('companyError'),'Company name must be 2 to 180 valid characters.');
+    const btn=$('saveCompany');setButtonBusy(btn,true,'Adding…');
+    try{
+      const result=await postJson('/CreateReservation/AddCompany',{value:name});
+      if(!result?.success)throw new Error(result?.message||'Unable to add company');
+      const select=$('Company'),existing=[...select.options].find(o=>o.value.toLowerCase()===name.toLowerCase());
+      if(!existing){const add=select.querySelector('option[value="__add_new__"]');select.insertBefore(new Option(result.text||name,result.value||name),add);}
+      select.value=existing?.value||result.value||name;
+      closeCompanyModal();toast('Company added');
+    }catch(e){error($('companyError'),e.message||'Unable to add company');}
+    finally{setButtonBusy(btn,false);}
+  }
+
   function defaultDeadline(){
     if(isHistoricalArrival()){$('PaymentDeadline').value='';return;}
     const now=new Date();now.setHours(now.getHours()+24);
@@ -501,6 +525,13 @@
   ['FirstName','LastName'].forEach(id=>$(id).addEventListener('input',updateSummary));
   $('Email').addEventListener('input',()=>{if(!$('PaymentLinkEmail').dataset.edited)$('PaymentLinkEmail').value=$('Email').value;});$('PaymentLinkEmail').addEventListener('input',()=>{$('PaymentLinkEmail').dataset.edited='1';});
   $('BookingSource').addEventListener('change',()=>{if($('BookingSource').value==='__add_new__')openSourceModal();else updateSummary();});
+  $('Company').addEventListener('change',()=>{if($('Company').value==='__add_new__')openCompanyModal();});
+  $('btnAddCompany').addEventListener('click',openCompanyModal);
+  $('closeCompanyModal').addEventListener('click',closeCompanyModal);
+  $('cancelCompany').addEventListener('click',closeCompanyModal);
+  $('saveCompany').addEventListener('click',addCompany);
+  $('NewCompanyName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addCompany();}});
+  $('companyModal').addEventListener('click',e=>{if(e.target===$('companyModal'))closeCompanyModal();});
   $('IsProvisional')?.addEventListener('change',()=>{if(isProvisional()&&!$('PaymentDeadline').value)defaultDeadline();updateDeadlineUi();updateSummary();});
   $('btnSearch').addEventListener('click',searchGuests);$('findGuest').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchGuests();}});$('findGuestSuggestions').addEventListener('click',e=>{const item=e.target.closest('.suggestion');if(item)fillGuest(guestResults[Number(item.dataset.i)]);});
   $('rCategory').addEventListener('change',async()=>{resetRateOverride();await Promise.all([loadRatePlans(),loadLimits()]);await loadRooms();await quote();});

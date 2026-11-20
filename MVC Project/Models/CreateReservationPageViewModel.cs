@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace Orapmshms.Models;
 
@@ -29,6 +29,7 @@ public sealed class CreateReservationPageViewModel
     public bool HasBedTaxConfigured { get; set; }
     public List<LookupOption> Countries { get; set; } = new();
     public List<LookupOption> Sources { get; set; } = new();
+    public List<LookupOption> Companies { get; set; } = new();
     public List<LookupOption> Categories { get; set; } = new();
     public string PrefillCategory { get; set; } = string.Empty;
     public string PrefillRoom { get; set; } = string.Empty;
@@ -78,6 +79,9 @@ public sealed class CreateReservationRequest
     [StringLength(150)] public string City { get; set; } = string.Empty;
     [StringLength(200)] public string Address { get; set; } = string.Empty;
     [StringLength(30)] public string Identification { get; set; } = string.Empty;
+    // NewReservationsTB.vatno is VAT/NTN; Status is company, Agency is booking source.
+    [StringLength(30)] public string VatNo { get; set; } = string.Empty;
+    [StringLength(180)] public string Company { get; set; } = string.Empty;
     [Required, StringLength(80, MinimumLength=2)] public string Source { get; set; } = string.Empty;
     public bool IsProvisional { get; set; }
     public DateTime? PaymentDeadline { get; set; }
@@ -113,6 +117,12 @@ public sealed class CreateReservationSourceRequest
     [Required, StringLength(80, MinimumLength=2)] public string Value { get; set; } = string.Empty;
 }
 
+public sealed class CreateReservationCompanyRequest
+{
+    [Required, StringLength(180, MinimumLength = 2)]
+    public string Value { get; set; } = string.Empty;
+}
+
 public sealed class PaymentLinkSendRequest
 {
     [Required, StringLength(50)] public string RegistrationId { get; set; } = string.Empty;
@@ -133,6 +143,7 @@ public sealed class CreateReservationGuestResult
     public string GuestName { get; set; } = string.Empty; public string LastName { get; set; } = string.Empty; public string Phone { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty; public string Address { get; set; } = string.Empty; public string Country { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty; public string Identification { get; set; } = string.Empty;
+    public string Company { get; set; } = string.Empty; public string VatNo { get; set; } = string.Empty;
 }
 public sealed class CreateReservationResult
 {
