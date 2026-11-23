@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
 using System.Net;
@@ -4204,6 +4204,15 @@ ORDER BY id DESC;", cn);
             await tx.CommitAsync(ct);
             return CheckInOperationResult.Ok("Room security updated.", request.RegId);
         }
+        catch (SqlException ex) when ((ex.Number == 2601 || ex.Number == 2627) &&
+                                      ex.Message.Contains("UX_RoomSecurityTB_Deposit_PaymentIntent", StringComparison.OrdinalIgnoreCase))
+        {
+            await tx.RollbackAsync(ct);
+            _logger.LogError(ex, "RoomSecurityTB has an outdated unique index blocking deposit for hotel {HotelId}, reservation {RegId}", hotelId, request.RegId);
+            return CheckInOperationResult.Fail(
+                "Room security could not be saved because the database has an outdated security-deposit index. " +
+                "Apply the RoomSecurityTB unique-index migration, then retry.");
+        }
         catch (Exception ex)
         {
             await tx.RollbackAsync(ct);
@@ -5977,12 +5986,8 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
             if (!string.IsNullOrWhiteSpace(terminalStatus))
                 continue;
 
-            var isCardDeposit =
-                !string.IsNullOrWhiteSpace(deposit.PaymentIntentId) ||
-                !string.IsNullOrWhiteSpace(deposit.ChargeId) ||
-                deposit.Method.Contains("card", StringComparison.OrdinalIgnoreCase) ||
-                deposit.Method.Contains("pdq", StringComparison.OrdinalIgnoreCase) ||
-                deposit.Method.Contains("stripe", StringComparison.OrdinalIgnoreCase);
+            // Manual card entries are offline deposits, not provider holds.
+            var isCardDeposit = IsProviderSecurityRow(deposit);
 
             if (!isCardDeposit) continue;
 
@@ -6051,12 +6056,20 @@ SELECT * FROM dbo.PaymentsLogTB WHERE hotel_id=@hotel AND reg_id=@reg ORDER BY i
     }
 
     private static bool IsProviderSecurityRow(CheckInSecurityRow row)
-        => row != null &&
-           (!string.IsNullOrWhiteSpace(row.PaymentIntentId) ||
-            !string.IsNullOrWhiteSpace(row.ChargeId) ||
-            (row.Method ?? string.Empty).Contains("card", StringComparison.OrdinalIgnoreCase) ||
-            (row.Method ?? string.Empty).Contains("pdq", StringComparison.OrdinalIgnoreCase) ||
-            (row.Method ?? string.Empty).Contains("stripe", StringComparison.OrdinalIgnoreCase));
+    {
+        if (row == null) return false;
+        if (!string.IsNullOrWhiteSpace(row.PaymentIntentId) || !string.IsNullOrWhiteSpace(row.ChargeId))
+            return true;
+
+        // A configured manual method (including "Card" or "PDQ") does not
+        // represent an authorization unless provider references were stored.
+        // Retain compatibility with historic security hold labels.
+        var method = (row.Method ?? string.Empty).Trim();
+        return method.Equals("PDQ Hold", StringComparison.OrdinalIgnoreCase) ||
+               method.Equals("Card Hold", StringComparison.OrdinalIgnoreCase) ||
+               method.Equals("Card Pre-Authorization", StringComparison.OrdinalIgnoreCase) ||
+               method.Equals("Card Preauthorization", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsClosedRoomSecurityStatus(string? status)
     {
@@ -8119,26 +8132,58 @@ VALUES
         var status=movement switch{"refund"=>"refund","deduct"=>"Deduct","deduction"=>"Deduct",_=>"Deposit"};
         var signed=status.Equals("Deposit",StringComparison.OrdinalIgnoreCase)?Math.Abs(request.Amount):-Math.Abs(request.Amount);
         var visit=string.IsNullOrWhiteSpace(request.VisitId)?await GetVisitIdAsync(cn,tx,hotelId,request.RegId,ct):request.VisitId;
-        // New card metadata columns are used when present; fall back to the original 9-column insert.
-        try
+        // Manual security must retain its *actual* configured payment method.
+        // Do not fall back to the legacy 9-column insert: that silently drops
+        // payment_method/note, and the history UI incorrectly displays Cash.
+        // Deploy the accompanying idempotent RoomSecurityTB schema migration once.
+        var recordedMethod = (request.Method ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(recordedMethod))
+            throw new InvalidOperationException("Select a payment method for the room security deposit.");
+
+        await using (var schema = new SqlCommand(@"
+SELECT CASE WHEN COL_LENGTH('dbo.RoomSecurityTB', 'payment_method') IS NOT NULL
+              AND COL_LENGTH('dbo.RoomSecurityTB', 'payment_intent_id') IS NOT NULL
+              AND COL_LENGTH('dbo.RoomSecurityTB', 'charge_id') IS NOT NULL
+              AND COL_LENGTH('dbo.RoomSecurityTB', 'note') IS NOT NULL
+            THEN 1 ELSE 0 END;", cn, tx))
         {
-            await using var cmd=new SqlCommand(@"
-INSERT INTO dbo.RoomSecurityTB(currentdate,security,status,reg_id,visit_id,hotel_id,systemUser,systemName,ipAddress,payment_method,payment_intent_id,charge_id,note)
-VALUES(@date,@security,@status,@reg,@visit,@hotel,@user,@system,@ip,@method,@pi,@charge,@note);",cn,tx);
-            cmd.Parameters.Add("@date",SqlDbType.VarChar,50).Value=_hotelClock.GetHotelNow(hotelId).ToString("MM-dd-yyyy",CultureInfo.InvariantCulture);
-            cmd.Parameters.Add("@security",SqlDbType.Decimal).Value=signed;cmd.Parameters.Add("@status",SqlDbType.VarChar,50).Value=status;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=request.RegId;
-            cmd.Parameters.Add("@visit",SqlDbType.VarChar,50).Value=visit;cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@user",SqlDbType.VarChar,150).Value=userName;
-            cmd.Parameters.Add("@system",SqlDbType.VarChar,150).Value=Environment.MachineName;cmd.Parameters.Add("@ip",SqlDbType.VarChar,64).Value=ip;cmd.Parameters.Add("@method",SqlDbType.VarChar,100).Value=request.Method??string.Empty;
-            cmd.Parameters.Add("@pi",SqlDbType.VarChar,200).Value=request.PaymentIntentId??string.Empty;cmd.Parameters.Add("@charge",SqlDbType.VarChar,200).Value=request.ChargeId??string.Empty;cmd.Parameters.Add("@note",SqlDbType.VarChar,500).Value=request.Note??string.Empty;await cmd.ExecuteNonQueryAsync(ct);
+            var isReady = Convert.ToInt32(await schema.ExecuteScalarAsync(ct) ?? 0, CultureInfo.InvariantCulture) == 1;
+            if (!isReady)
+                throw new InvalidOperationException(
+                    "Room Security payment details cannot be stored because database columns are missing. " +
+                    "Apply the RoomSecurityTB payment-method schema update before recording security.");
         }
-        catch(SqlException)
+
+        await using (var cmd = new SqlCommand(@"
+INSERT INTO dbo.RoomSecurityTB
+(currentdate,security,status,reg_id,visit_id,hotel_id,systemUser,systemName,ipAddress,
+ payment_method,payment_intent_id,charge_id,note)
+VALUES
+(@date,@security,@status,@reg,@visit,@hotel,@user,@system,@ip,
+ @method,@pi,@charge,@note);", cn, tx))
         {
-            await using var cmd=new SqlCommand(@"
-INSERT INTO dbo.RoomSecurityTB(currentdate,security,status,reg_id,visit_id,hotel_id,systemUser,systemName,ipAddress)
-VALUES(@date,@security,@status,@reg,@visit,@hotel,@user,@system,@ip);",cn,tx);
-            cmd.Parameters.Add("@date",SqlDbType.VarChar,50).Value=_hotelClock.GetHotelNow(hotelId).ToString("MM-dd-yyyy",CultureInfo.InvariantCulture);cmd.Parameters.Add("@security",SqlDbType.Decimal).Value=signed;
-            cmd.Parameters.Add("@status",SqlDbType.VarChar,50).Value=status;cmd.Parameters.Add("@reg",SqlDbType.VarChar,50).Value=request.RegId;cmd.Parameters.Add("@visit",SqlDbType.VarChar,50).Value=visit;
-            cmd.Parameters.Add("@hotel",SqlDbType.VarChar,50).Value=hotelId;cmd.Parameters.Add("@user",SqlDbType.VarChar,150).Value=userName;cmd.Parameters.Add("@system",SqlDbType.VarChar,150).Value=Environment.MachineName;cmd.Parameters.Add("@ip",SqlDbType.VarChar,64).Value=ip;await cmd.ExecuteNonQueryAsync(ct);
+            cmd.Parameters.Add("@date", SqlDbType.VarChar, 50).Value =
+                _hotelClock.GetHotelNow(hotelId).ToString("MM-dd-yyyy", CultureInfo.InvariantCulture);
+            cmd.Parameters.Add("@security", SqlDbType.Decimal).Value = signed;
+            cmd.Parameters.Add("@status", SqlDbType.VarChar, 50).Value = status;
+            cmd.Parameters.Add("@reg", SqlDbType.VarChar, 50).Value = request.RegId;
+            cmd.Parameters.Add("@visit", SqlDbType.VarChar, 50).Value = visit;
+            cmd.Parameters.Add("@hotel", SqlDbType.VarChar, 50).Value = hotelId;
+            cmd.Parameters.Add("@user", SqlDbType.VarChar, 150).Value = userName;
+            cmd.Parameters.Add("@system", SqlDbType.VarChar, 150).Value = Environment.MachineName;
+            cmd.Parameters.Add("@ip", SqlDbType.VarChar, 64).Value = ip;
+            cmd.Parameters.Add("@method", SqlDbType.VarChar, 100).Value = recordedMethod;
+            // A manual deposit has no Stripe PaymentIntent/Charge. Store SQL NULL,
+            // not empty text: filtered Stripe-identity indexes must ignore manual payments.
+            // A real PaymentIntent remains stored for webhook idempotency.
+            cmd.Parameters.Add("@pi", SqlDbType.VarChar, 200).Value =
+                string.IsNullOrWhiteSpace(request.PaymentIntentId)
+                    ? (object)DBNull.Value : request.PaymentIntentId.Trim();
+            cmd.Parameters.Add("@charge", SqlDbType.VarChar, 200).Value =
+                string.IsNullOrWhiteSpace(request.ChargeId)
+                    ? (object)DBNull.Value : request.ChargeId.Trim();
+            cmd.Parameters.Add("@note", SqlDbType.VarChar, 500).Value = request.Note ?? string.Empty;
+            await cmd.ExecuteNonQueryAsync(ct);
         }
         try
         {

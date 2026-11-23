@@ -21,7 +21,7 @@ public sealed partial class DashboardService
 
     private Task<DashboardStatisticDetailResult> GetCheckoutsTodayDetailsAsync(
         string hotelId, DateTime date, CancellationToken ct) =>
-        CachedAsync($"dashboard:today-checkouts:v1:{hotelId}:{date:yyyyMMdd}", TimeSpan.FromSeconds(6),
+        CachedAsync($"dashboard:today-checkouts:v2:{hotelId}:{date:yyyyMMdd}", TimeSpan.FromSeconds(6),
             () => LoadCheckoutsTodayDetailsCoreAsync(hotelId, date.Date, ct), OperationDetailCacheLocks);
 
     private Task<DashboardStatisticDetailResult> GetCreatedTodayDetailsAsync(
@@ -179,9 +179,10 @@ ORDER BY a.reg_id,a.room_no;";
         return result;
     }
 
-    // Use the actual checkout event date written by CheckInService. For old
-    // records where actual_checkout_date was not recorded, fall back to the
-    // scheduled departure date. Count each checked-out room only once.
+    // Count checked-out room records by the scheduled DepartureDate, as in the
+    // existing payments report filter (res_status='check out', DepartureDate=@date).
+    // Do NOT use actual_checkout_date here: an early or late checkout must not
+    // inflate the scheduled-date figure. Count each registration/room once.
     private async Task<DashboardStatisticDetailResult> LoadCheckoutsTodayDetailsCoreAsync(
         string hotelId, DateTime date, CancellationToken ct)
     {
@@ -195,9 +196,6 @@ ORDER BY a.reg_id,a.room_no;";
         ISNULL(CONVERT(varchar(150),p.[Type]),'') AS category,
         ISNULL(CONVERT(varchar(300),p.guestname),'') AS payment_guest,
         LOWER(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(CONVERT(varchar(60),p.res_status),''))),'-',' '),'  ',' ')) AS state,
-        COALESCE(TRY_CONVERT(date,p.actual_checkout_date,110),
-                 TRY_CONVERT(date,p.actual_checkout_date,103),
-                 TRY_CONVERT(date,p.actual_checkout_date)) AS actual_day,
         COALESCE(TRY_CONVERT(date,p.DepartureDate,110),
                  TRY_CONVERT(date,p.DepartureDate,103),
                  TRY_CONVERT(date,p.DepartureDate,101),
@@ -219,12 +217,12 @@ Finished AS
 (
     SELECT * FROM RoomRows
     WHERE rn = 1
-      AND state IN ('check out','checked out','checkout')
-      AND COALESCE(actual_day, departure_day) = @date
+      AND state = 'check out'
+      AND departure_day = @date
 )
 SELECT f.room_no, f.category, f.reg_id,
        COALESCE(NULLIF(g.guest_name,''),NULLIF(n.guest_name,''),f.payment_guest,'') AS guest_name,
-       CONVERT(varchar(10),COALESCE(f.actual_day,f.departure_day),23) AS checkout_date
+       CONVERT(varchar(10),f.departure_day,23) AS checkout_date
 FROM Finished f
 OUTER APPLY
 (
@@ -242,7 +240,7 @@ OUTER APPLY
 ) n
 ORDER BY TRY_CONVERT(int,f.room_no), f.room_no, f.reg_id;";
 
-        var result = NewDetail("Check-outs Today · completed rooms", date,
+        var result = NewDetail("Check-outs Today · checked-out rooms by departure date", date,
             "Rooms", "0", "Room", "Guest", "Category", "Reservation", "Check-out date");
         using var slot = await EnterDashboardSqlAsync(ct);
         await using var connection = new SqlConnection(_connectionString);
@@ -264,7 +262,7 @@ ORDER BY TRY_CONVERT(int,f.room_no), f.room_no, f.reg_id;";
         }
         result.SummaryValue = result.Rows.Count.ToString(CultureInfo.InvariantCulture);
         result.Subtitle = date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
-            + " · Actual checkout date, with scheduled-date fallback for legacy rows";
+            + " · Checked-out room records with scheduled departure on this date";
         return result;
     }
 

@@ -45,3 +45,10 @@
 #orsSettlePanel .ors-action-heading{margin:-10px -10px 10px;padding:10px;border-bottom:1px solid #c8d8e7;border-radius:7px 7px 0 0;background:#e8f1fa}
 .ors-root label,.ors-root label>span,.ors-root .ors-summary span,.ors-root .ors-selected-hold span,.ors-root .ors-section-head small,.ors-root .ors-method small{font-weight:600}
 .ors-root b,.ors-root strong,.ors-root label,.ors-root span{font-weight:600}
+
+/* Keep the three deposit methods balanced and the hotel payment selector legible. */
+.ors-root .ors-method {min-width:0}
+.ors-root .ors-method b {font-size:13px}
+.ors-root #orsManualPaymentMethod:disabled {background:#f1f5f9;color:#718399;cursor:not-allowed}
+@media(max-width:620px){.ors-methods{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.ors-methods{grid-template-columns:1fr}}

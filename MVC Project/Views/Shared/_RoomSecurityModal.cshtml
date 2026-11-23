@@ -3,6 +3,7 @@
      class="ors-root"
      data-state-url="@Url.Action("RoomSecurityState", "CheckIn")"
      data-movement-url="@Url.Action("SecurityMovement", "CheckIn")"
+     data-methods-url="@Url.Action("PaymentMethods", "CheckIn")"
      data-stripe-create-url="@Url.Action("StripeCreate", "CheckIn")"
      data-stripe-process-url="@Url.Action("StripeProcess", "CheckIn")"
      data-stripe-status-url="@Url.Action("StripeStatus", "CheckIn")"
@@ -46,7 +47,7 @@
                     <div class="ors-section-head">
                         <div>
                             <strong>Security Activity</strong>
-                            <small>Cash deposits and card holds stay separate from the room bill.</small>
+                            <small>Manual deposits and card holds stay separate from the room bill.</small>
                         </div>
                         <button id="orsNewDeposit" type="button" class="ors-primary-small">+ New Security</button>
                     </div>
@@ -66,14 +67,14 @@
                     <div class="ors-section-head ors-action-heading">
                         <div>
                             <strong>Add Room Security</strong>
-                            <small>Select a method, enter the amount and save the security.</small>
+                            <small>Select a hotel payment method or create a card hold.</small>
                         </div>
                     </div>
 
                     <div class="ors-methods" role="group" aria-label="Security method">
-                        <button type="button" class="ors-method ors-is-selected" data-ors-method="cash">
-                            <span class="ors-method-icon">£</span>
-                            <span><b>Cash</b><small>Refundable deposit</small></span>
+                        <button type="button" class="ors-method ors-is-selected" data-ors-method="manual">
+                            <span class="ors-method-icon">✎</span>
+                            <span><b>Manual</b><small>Cash, bank &amp; other methods</small></span>
                         </button>
                         <button type="button" class="ors-method" data-ors-method="pdq">
                             <span class="ors-method-icon">▣</span>
@@ -89,6 +90,12 @@
                         <label class="ors-field">
                             <span>Amount</span>
                             <div class="ors-money"><span class="ors-money-prefix" id="orsCurrency">£</span><input id="orsAmount" type="number" min="0.01" step="0.01" inputmode="decimal" autocomplete="off" /></div>
+                        </label>
+                        <label id="orsManualMethodField" class="ors-field ors-hidden">
+                            <span>Payment Method <em>*</em></span>
+                            <select id="orsManualPaymentMethod" disabled required>
+                                <option value="">Select a payment method…</option>
+                            </select>
                         </label>
                         <label id="orsReaderField" class="ors-field ors-hidden">
                             <span>Reader</span>

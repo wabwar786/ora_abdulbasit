@@ -90,7 +90,7 @@ public sealed class NightAuditViewModel
     public int DeparturesNextDay { get; set; }
     public int InHouseNextDay { get; set; }
     public int CompletedCheckoutsNextDay { get; set; }
-    public int ExpectedOccupiedNextDay { get; set; }
+    public int ActualOccupiedNextDay { get; set; }
     public int SellableNextDay { get; set; }
     public int BlockedNextDay { get; set; }
     public int AvailableNextDay { get; set; }
@@ -117,7 +117,7 @@ public sealed class NightAuditViewModel
     public decimal HotelRevenue => RoomRevenue + ExtrasRevenue + TotalFoodRevenue;
     public decimal Adr => RoomsOccupied == 0 ? 0 : RoomRevenue / RoomsOccupied;
     public decimal OccupancyPct => TotalRoomsAvailable == 0 ? 0 : (decimal)RoomsOccupied * 100 / TotalRoomsAvailable;
-    public decimal ExpectedOccupancyPct => SellableNextDay == 0 ? 0 : (decimal)ExpectedOccupiedNextDay * 100 / SellableNextDay;
+    public decimal ActualOccupancyNextDayPct => SellableNextDay == 0 ? 0 : (decimal)ActualOccupiedNextDay * 100 / SellableNextDay;
     public decimal TotalReceived => Received.Sum(x => x.Amount);
     public decimal TotalRefunds => RefundCash + RefundCard;
     public decimal NetPaymentsReceived => TotalReceived - TotalRefunds;

@@ -120,11 +120,8 @@ public sealed partial class DashboardService : IDashboardService
         // shows only one physical state; the Reserved Rooms KPI must count the
         // incoming Room Rent reservations independently.
         var reservedStaysTask = SafeLoadAsync(
-            () => CachedAsync(
-                $"dashboard:reserved-stays:v2:{hotelId}:{businessToday:yyyyMMdd}",
-                TimeSpan.FromSeconds(10),
-                () => LoadReservedRoomStaysInternalAsync(hotelId, businessToday, cancellationToken)),
-            new List<DashboardRoomStatusItem>(),
+            () => GetReservedRoomStaysAsync(hotelId, businessToday, cancellationToken),
+            (IReadOnlyList<DashboardRoomStatusItem>)Array.Empty<DashboardRoomStatusItem>(),
             "reserved room stays");
 
         var operationsTask = SafeLoadAsync(
@@ -297,12 +294,17 @@ public sealed partial class DashboardService : IDashboardService
         model.DueOutRoomsToday = rooms.Count(x =>
             x.State == "checkin" && x.DepartureDate?.Date == businessToday);
 
-        // Keep the existing booked-room / sellable-inventory calculation separate.
-        // Each physical room is counted once (even on a same-day turnover).
-        model.RoomsSoldToday = rooms.Count(x => x.State is "checkin" or "reservation");
-        model.AvailableRoomsToday = Math.Max(0, model.TotalRooms - model.BlockedRoomsToday - model.RoomsSoldToday);
-
+        // The room rack is a LIVE operational status: a departing guest can
+        // still be checked in on departure day. Nightly availability must not
+        // count that departing stay as a sold room-night. Equally, a newly
+        // arriving reservation on the same room must not be hidden by the
+        // departing guest's higher-priority rack status.
+        // Combine the rack with current reserved stays, require Arrival <= night
+        // AND Departure > night, dedupe by physical room, and exclude blocks.
+        var nightRooms = CollectOvernightRoomNumbers(rooms, reservedStays, businessToday);
+        model.RoomsSoldToday = nightRooms.Booked.Count;
         model.SellableRoomsToday = Math.Max(0, model.TotalRooms - model.BlockedRoomsToday);
+        model.AvailableRoomsToday = Math.Max(0, model.SellableRoomsToday - model.RoomsSoldToday);
         model.OccupancyToday = Percent(model.RoomsSoldToday, model.SellableRoomsToday);
         model.AccommodationRevenueToday = todayOcc?.AccommodationRevenue ?? 0m;
         model.AdrToday = model.RoomsSoldToday <= 0
@@ -1114,6 +1116,53 @@ GROUP BY ExceptionType, MONTH(EventDate);";
             () => LoadRoomStatusInternalAsync(hotelId, date.Date, cancellationToken));
     }
 
+    // Same room-night inventory logic used by the Dashboard and Night Audit.
+    // A due-out is still "checkin" on the operational room rack, but it must
+    // NOT consume the night of its scheduled departure. On a same-day turnover,
+    // the incoming reservation remains counted despite the outgoing rack state.
+    internal static (HashSet<string> Booked, HashSet<string> CheckedIn) CollectOvernightRoomNumbers(
+        IReadOnlyList<DashboardRoomStatusItem> physicalRooms,
+        IReadOnlyList<DashboardRoomStatusItem> reservedStays,
+        DateTime night)
+    {
+        var day = night.Date;
+        var sellableRoomNos = physicalRooms
+            .Where(r => r.State != "ooo" && !string.IsNullOrWhiteSpace(r.RoomNo))
+            .Select(r => r.RoomNo.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var booked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var checkedIn = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var stay in physicalRooms.Concat(reservedStays))
+        {
+            if (stay.State is not ("reservation" or "checkin")
+                || string.IsNullOrWhiteSpace(stay.RoomNo)
+                || stay.ArrivalDate is null || stay.DepartureDate is null
+                || stay.ArrivalDate.Value.Date > day
+                || stay.DepartureDate.Value.Date <= day)
+                continue;
+
+            var roomNo = stay.RoomNo.Trim();
+            if (!sellableRoomNos.Contains(roomNo)) continue;
+            booked.Add(roomNo);
+            if (stay.State == "checkin") checkedIn.Add(roomNo);
+        }
+        return (booked, checkedIn);
+    }
+
+    public async Task<IReadOnlyList<DashboardRoomStatusItem>> GetReservedRoomStaysAsync(
+        string hotelId, DateTime date, CancellationToken cancellationToken = default)
+    {
+        hotelId = Clean(hotelId, 50);
+        if (string.IsNullOrWhiteSpace(hotelId))
+            return Array.Empty<DashboardRoomStatusItem>();
+
+        return await CachedAsync(
+            $"dashboard:reserved-stays:v2:{hotelId}:{date:yyyyMMdd}",
+            TimeSpan.FromSeconds(10),
+            () => LoadReservedRoomStaysInternalAsync(hotelId, date.Date, cancellationToken));
+    }
+
     public async Task<DashboardStatisticDetailResult> GetStatisticDetailsAsync(
         string hotelId,
         string statistic,
@@ -1710,10 +1759,21 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
         CancellationToken cancellationToken)
     {
         var rooms = await GetRoomStatusAsync(hotelId, date, cancellationToken);
-        var selected = rooms.Where(x =>
-            state == "dirty" ? x.State == "dirty" || x.IsDirty :
-            state == "vacant" ? x.State is "vacant" or "dirty" or "checkout" :
-            x.State == state).ToList();
+        if (state == "vacant")
+        {
+            // Match the Available Rooms KPI exactly, including due-outs that
+            // free up a room for tonight, and excluding all same-day arrivals.
+            var stays = await GetReservedRoomStaysAsync(hotelId, date, cancellationToken);
+            var night = CollectOvernightRoomNumbers(rooms, stays, date);
+            var available = rooms.Where(r => r.State != "ooo"
+                && !night.Booked.Contains(r.RoomNo.Trim())).ToList();
+            var detail = BuildRoomDetail(state, date, available);
+            detail.Title = "Rooms available for the night";
+            detail.Subtitle = date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+                + " · Due-outs are available for the night after checkout and housekeeping.";
+            return detail;
+        }
+        var selected = rooms.Where(x => state == "dirty" ? x.State == "dirty" || x.IsDirty : x.State == state).ToList();
         return BuildRoomDetail(state, date, selected);
     }
 
@@ -1722,10 +1782,7 @@ ORDER BY TRY_CONVERT(int,mr.room_no), mr.room_no, mr.ID;";
         DateTime date,
         CancellationToken cancellationToken)
     {
-        var reserved = await CachedAsync(
-            $"dashboard:reserved-stays:v2:{hotelId}:{date:yyyyMMdd}",
-            TimeSpan.FromSeconds(10),
-            () => LoadReservedRoomStaysInternalAsync(hotelId, date.Date, cancellationToken));
+        var reserved = await GetReservedRoomStaysAsync(hotelId, date, cancellationToken);
 
         var result = BuildRoomDetail("reservation", date, reserved);
         result.Title = "Reserved rooms / today's arrivals";
@@ -2274,8 +2331,8 @@ ORDER BY r.room_category, TRY_CONVERT(int, r.room_no), r.room_no;";
         // as the headline, so counting rules cannot drift apart:
         // 1. Today's arrivals: room stays with ArrivalDate=today,
         //    including multiple arriving rooms within one reservation.
-        // 2. Today's completed checkouts: checked-out room rows, using the
-        //    actual checkout date where recorded, with a legacy fallback.
+        // 2. Today's checked-out rooms: completed room rows whose scheduled
+        //    DepartureDate is today (not the actual checkout event date).
         // 3. Today's new reservations: distinct booking IDs with earliest
         //    original booking creation timestamp=today (not arrival date).
         var arrivalTask = SafeLoadAsync(

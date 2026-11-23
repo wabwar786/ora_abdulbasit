@@ -1,4 +1,4 @@
-@model DashboardViewModel
+﻿@model DashboardViewModel
 @using System.Text.Json
 @using System.Globalization
 @{
@@ -355,7 +355,7 @@
     </div>
     <div class="dashboard-activity-strip">
         <div class="dashboard-kpi dashboard-kpi-button dashboard-activity-metric dashboard-metric-guests" role="group" tabindex="0" data-info="Guest-nights across the chosen date range, rather than the number of unique guests.">
-            <span class="dashboard-overview-icon dashboard-overview-icon-guests" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6m1 3a5 5 0 0 1 3 5v1"/></svg></span><span class="dashboard-activity-label">In-house Guests</span><strong class="dashboard-activity-number">@Model.SelectedGuestNights.ToString("N0")</strong>
+            <span class="dashboard-overview-icon dashboard-overview-icon-guests" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6m1 3a5 5 0 0 1 3 5v1"/></svg></span><span class="dashboard-activity-label">Guests</span><strong class="dashboard-activity-number">@Model.SelectedGuestNights.ToString("N0")</strong>
         </div>
         <div class="dashboard-kpi dashboard-kpi-button dashboard-activity-metric dashboard-metric-cancel" data-info="Cancelled reservations in the chosen dates. Hover for a summary.">
             <span class="dashboard-overview-icon dashboard-overview-icon-cancel" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg></span><span class="dashboard-activity-label">Cancellations</span><strong class="dashboard-activity-number">@Model.CancellationsLast30</strong>
@@ -705,10 +705,10 @@
                             <small class="dashboard-operation-note">@Model.InHouseGuests guest@(Model.InHouseGuests == 1 ? "" : "s") in-house</small>
                         </button>
                         <button type="button" class="dashboard-operation dashboard-operation-available" data-dashboard-statistic="available"
-                                data-info="Rooms available to sell today. Blocked/out-of-order inventory and booked rooms are excluded.">
+                                data-info="Rooms available for tonight. Excludes blocked rooms and occupied/reserved overnight stays; a room due out today is sellable for tonight if there is no incoming reservation.">
                             <span>Available Rooms</span>
                             <strong>@Model.AvailableRoomsToday</strong>
-                            <small class="dashboard-operation-note">@Model.BlockedRoomsToday blocked/OOS · @Model.RoomsSoldToday booked</small>
+                            <small class="dashboard-operation-note">@Model.BlockedRoomsToday blocked/OOS · @Model.RoomsSoldToday booked tonight</small>
                         </button>
                     </div>
                 </div>

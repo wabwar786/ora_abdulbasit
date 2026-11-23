@@ -11,6 +11,7 @@
   const urls = {
     state: root.dataset.stateUrl || '/CheckIn/RoomSecurityState',
     movement: root.dataset.movementUrl || '/CheckIn/SecurityMovement',
+    methods: root.dataset.methodsUrl || '/CheckIn/PaymentMethods',
     stripeCreate: root.dataset.stripeCreateUrl || '/CheckIn/Stripe/Create',
     stripeProcess: root.dataset.stripeProcessUrl || '/CheckIn/Stripe/Process',
     stripeStatus: root.dataset.stripeStatusUrl || '/CheckIn/Stripe/Status',
@@ -22,7 +23,7 @@
   const state = {
     ctx: null,
     data: null,
-    method: 'cash',
+    method: 'manual',
     selected: null,
     paymentIntentId: '',
     readerId: '',
@@ -32,6 +33,9 @@
     checkoutSessionId: '',
     checkoutPoll: 0,
     busy: false,
+    manualMethodsLoaded: false,
+    manualMethodsLoading: false,
+    manualMethodsRequest: 0,
     cache: new Map()
   };
 
@@ -158,13 +162,15 @@
 
   function isCardRow(row) {
     const method = String(row?.method || '').toLowerCase();
-    return !!row?.paymentIntentId || !!row?.chargeId || /card|pdq|stripe|pre-auth|preauth/.test(method);
+    // A manually recorded 'Card' method is not a Stripe authorization.
+    return !!row?.paymentIntentId || !!row?.chargeId || /^(?:pdq hold|card hold|card pre-authorization|card preauthorization)$/.test(method);
   }
 
   function rowMode(row) {
     const m = String(row?.method || '').trim();
     if (m) return m;
-    return isCardRow(row) ? 'Card Hold' : 'Cash';
+    // Legacy records can lack payment_method; never guess they were Cash.
+    return isCardRow(row) ? 'Card Hold' : 'Not recorded';
   }
 
   function rowMovementAmount(row) {
@@ -284,13 +290,53 @@
     }
   }
 
+  // Match Record Payment: populate the manual select exclusively from this
+  // hotel's PaymentMethodTB, through the existing CheckIn/PaymentMethods endpoint.
+  async function loadManualPaymentMethods() {
+    const select = $('orsManualPaymentMethod');
+    if (!select || state.manualMethodsLoaded || state.manualMethodsLoading) return;
+    const request = ++state.manualMethodsRequest;
+    state.manualMethodsLoading = true;
+    select.disabled = true;
+    select.replaceChildren(new Option('Loading hotel payment methods…', ''));
+    try {
+      const rows = await api(urls.methods);
+      if (!Array.isArray(rows) || !rows.length) throw new Error('No manual payment methods are configured for this hotel.');
+      const seen = new Set();
+      const options = [];
+      for (const item of rows) {
+        const value = String(item.value ?? item.Value ?? '').trim();
+        const label = String(item.text ?? item.Text ?? value).trim() || value;
+        if (!value || seen.has(value.toLowerCase())) continue;
+        seen.add(value.toLowerCase());
+        options.push(new Option(label, value));
+      }
+      if (!options.length) throw new Error('No valid hotel payment methods are available.');
+      if (request !== state.manualMethodsRequest) return;
+      select.replaceChildren(...options);
+      const cashOption = options.find(x => x.value.toLowerCase() === 'cash');
+      select.value = cashOption ? cashOption.value : options[0].value;
+      select.disabled = false;
+      state.manualMethodsLoaded = true;
+    } catch (e) {
+      if (request !== state.manualMethodsRequest) return;
+      select.replaceChildren(new Option('Payment methods unavailable', ''));
+      select.disabled = true;
+      showMessage(e.message || 'Could not load hotel payment methods.', true);
+    } finally {
+      if (request === state.manualMethodsRequest) state.manualMethodsLoading = false;
+    }
+  }
+
   function setMethod(method) {
-    if (!['cash','pdq','card'].includes(method)) method = 'cash';
+    if (!['manual','pdq','card'].includes(method)) method = 'manual';
     const btn = root.querySelector(`[data-ors-method="${method}"]`);
-    if (btn?.disabled) method = 'cash';
+    if (btn?.disabled) method = 'manual';
     state.method = method;
     root.querySelectorAll('[data-ors-method]').forEach(x => x.classList.toggle('ors-is-selected', x.dataset.orsMethod === method));
     $('orsReaderField')?.classList.toggle('ors-hidden', method !== 'pdq');
+    $('orsManualMethodField')?.classList.toggle('ors-hidden', method !== 'manual');
+    if (method === 'manual') void loadManualPaymentMethods();
     if (method === 'pdq') {
       const reader = $('orsReader');
       if (reader && !reader.value && reader.options.length > 1) reader.selectedIndex = 1;
@@ -302,7 +348,7 @@
     state.paymentIntentId = '';
     if ($('orsSimulate')) $('orsSimulate').disabled = true;
 
-    if (method === 'cash') setStatus('Cash deposit', 'Save a refundable cash security deposit.');
+    if (method === 'manual') setStatus('Manual deposit', 'Choose a configured hotel payment method (including Cash). No online card charge is made.');
     else if (method === 'pdq') setStatus('PDQ hold', 'Authorize the card on the Stripe Terminal without capturing it.');
     else setStatus('Card hold', 'Open secure Stripe Checkout and authorize the card without capturing it.');
   }
@@ -313,16 +359,16 @@
     $('orsSettlePanel')?.classList.toggle('ors-hidden', !settle);
     state.selected = settle ? row : null;
     if (!settle) {
-      setMethod(state.method || 'cash');
+      setMethod(state.method || 'manual');
       return;
     }
 
     const current = Math.max(0, num(row?.amount));
     const card = isCardRow(row);
-    $('orsSettleHeading').textContent = card ? 'Settle Card Security Hold' : 'Settle Cash Security';
+    $('orsSettleHeading').textContent = card ? 'Settle Card Security Hold' : 'Settle Manual Security';
     $('orsSettleHelp').textContent = card
       ? 'Release/refund part of the security and capture the remainder. Full release captures nothing.'
-      : 'Refund part of the cash deposit and deduct the remainder.';
+      : 'Record the amount refunded to the guest and deduct any remainder.';
     $('orsRefundLabel').textContent = card ? 'Release / Refund Amount' : 'Refund Amount';
     $('orsCaptureLabel').textContent = card ? 'Capture Amount' : 'Deduct Amount';
     $('orsSelectedMode').textContent = rowMode(row);
@@ -355,7 +401,11 @@
     } catch (_) { }
   }
 
-  async function saveCash(button) {
+  async function saveManualDeposit(button) {
+    const method = ($('orsManualPaymentMethod')?.value || '').trim();
+    if (!state.manualMethodsLoaded || $('orsManualPaymentMethod')?.disabled || !method) {
+      return showMessage('Select a configured manual payment method first.', true);
+    }
     const amount = num($('orsAmount')?.value);
     const note = ($('orsNote')?.value || '').trim();
     if (amount <= 0) return showMessage('Enter a security amount greater than 0.', true);
@@ -371,7 +421,7 @@
           visitId:state.data?.visitId || state.ctx.visitId || '',
           amount,
           note,
-          method:'Cash',
+          method,
           movement:'deposit',
           securityId:0,
           paymentIntentId:'',
@@ -379,7 +429,7 @@
         }
       });
       if (r?.ok === false) throw new Error(r.message || 'Unable to save room security.');
-      showMessage(r.message || 'Cash room security saved.');
+      showMessage(`${method} room security saved.`);
       $('orsAmount').value = '';
       $('orsNote').value = '';
       await loadState();
@@ -676,7 +726,7 @@
     const btn = $('orsDepositSubmit');
     if (state.method === 'pdq') return startPdqHold(btn);
     if (state.method === 'card') return startCardHold(btn);
-    return saveCash(btn);
+    return saveManualDeposit(btn);
   }
 
   async function settleSelected(button) {
@@ -693,7 +743,7 @@
     const capture = Math.max(0, current - refund);
     const question = card
       ? `Release/refund ${money(refund)} and capture ${money(capture)} from this security hold?`
-      : `Refund ${money(refund)} and deduct ${money(capture)} from this cash security?`;
+      : `Record refund of ${money(refund)} and deduct ${money(capture)} from this ${rowMode(row)} security?`;
     if (!window.confirm(question)) return;
 
     setBusy(button, true, card ? 'Settling hold…' : 'Settling security…');
@@ -739,7 +789,15 @@
       securityBalance:Number(options.securityBalance || 0),
       onChanged:options.onChanged
     };
-    state.method = 'cash';
+    state.method = 'manual';
+    state.manualMethodsRequest++; // Ignore a method response from a previous opening.
+    state.manualMethodsLoading = false;
+    state.manualMethodsLoaded = false;
+    const manualSelect = $('orsManualPaymentMethod');
+    if (manualSelect) {
+      manualSelect.disabled = true;
+      manualSelect.replaceChildren(new Option('Select a payment method…', ''));
+    }
     state.selected = null;
     state.readerId = '';
     showMessage('');
@@ -797,7 +855,7 @@
     }
   });
 
-  root.querySelectorAll('[data-ors-method]').forEach(btn => btn.addEventListener('click', () => setMethod(btn.dataset.orsMethod || 'cash')));
+  root.querySelectorAll('[data-ors-method]').forEach(btn => btn.addEventListener('click', () => setMethod(btn.dataset.orsMethod || 'manual')));
   $('orsReader')?.addEventListener('change', e => { state.readerId = e.target.value || ''; });
   rowsHost?.addEventListener('click', e => {
     const btn = e.target.closest('[data-ors-settle]');

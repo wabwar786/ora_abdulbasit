@@ -210,11 +210,13 @@ GROUP BY RegId;", cn) { CommandTimeout = 45 })
         var auditRoomsTask = _dashboard.GetRoomStatusAsync(hotel, reportDay, ct);
         var nextDay = reportDay.AddDays(1);
         var nextRoomsTask = _dashboard.GetRoomStatusAsync(hotel, nextDay, ct);
+        var nextStaysTask = _dashboard.GetReservedRoomStaysAsync(hotel, nextDay, ct);
         var arrivalsTask = _dashboard.GetStatisticDetailsAsync(hotel, "checkin", nextDay, ct);
         var checkoutsTask = _dashboard.GetStatisticDetailsAsync(hotel, "checkout", nextDay, ct);
-        await Task.WhenAll(auditRoomsTask, nextRoomsTask, arrivalsTask, checkoutsTask);
+        await Task.WhenAll(auditRoomsTask, nextRoomsTask, nextStaysTask, arrivalsTask, checkoutsTask);
         var auditRooms = await auditRoomsTask;
         var nextRooms = await nextRoomsTask;
+        var nextNightRooms = DashboardService.CollectOvernightRoomNumbers(nextRooms, await nextStaysTask, nextDay);
         model.OutOfServiceRooms = auditRooms.Count(r => r.State == "ooo");
         model.TotalRoomsAvailable = auditRooms.Count - model.OutOfServiceRooms.Value;
         model.AvailableRoomsReportDay = auditRooms.Count(r => r.State is "vacant" or "dirty" or "checkout");
@@ -223,13 +225,15 @@ GROUP BY RegId;", cn) { CommandTimeout = 45 })
         model.CompletedCheckoutsNextDay = (await checkoutsTask).Rows.Count;
         model.DeparturesNextDay = nextRooms.Count(r => r.State == "checkin" && r.DepartureDate?.Date == nextDay);
         model.InHouseNextDay = nextRooms.Count(r => r.State == "checkin");
-        model.ExpectedOccupiedNextDay = nextRooms.Count(r => r.State is "checkin" or "reservation");
+        // ACTUAL occupancy is checked-in room-nights ONLY. Do not forecast
+        // occupancy using outstanding reservations, or retain guests whose
+        // scheduled departure is on the next day itself.
+        model.ActualOccupiedNextDay = nextNightRooms.CheckedIn.Count;
         model.SellableNextDay = nextRooms.Count(r => r.State != "ooo");
         model.BlockedNextDay = nextRooms.Count(r => r.State == "ooo");
-        model.AvailableNextDay = nextRooms.Count(r => r.State is "vacant" or "dirty" or "checkout");
-        // A checked-out room can be immediately sold again; room status is
-        // already prioritized across overlapping stays by DashboardService.
-        // Expected occupancy = reserved + actually in-house, NOT arrivals count.
+        model.AvailableNextDay = Math.Max(0, model.SellableNextDay - nextNightRooms.Booked.Count);
+        // Available next night still excludes future reserved rooms; actual
+        // occupancy excludes them because they have not checked in.
     }
 
     private static async Task ReadFoodOrders(SqlConnection cn, string hotel, DateTime day,
