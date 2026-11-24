@@ -1,0 +1,328 @@
+/* =============================================================
+   clover-devices.css   -   CloverDevices module
+
+   Rebuilt from scratch - replace, do not merge.
+
+   - every class is prefixed clvdev-
+   - the custom properties live on .clvdev-root, never :root
+   - no pms- class, no font request, no library
+   ============================================================= */
+
+.clvdev-root {
+    --clvdev-ink: #16233A;
+    --clvdev-ink-2: #33425C;
+    --clvdev-muted: #6B7A93;
+    --clvdev-soft: #93A1B5;
+    --clvdev-line: #E7ECF4;
+    --clvdev-line-2: #F1F5FA;
+    --clvdev-navy: #102F5C;
+    --clvdev-navy-hover: #0B2347;
+    --clvdev-blue-soft: #EBF1F8;
+    --clvdev-band: #F8FAFC;
+    --clvdev-red: #D63B3B;
+    --clvdev-red-hover: #BE2F2F;
+    --clvdev-red-soft: #FCE9E9;
+    --clvdev-green: #15803D;
+    --clvdev-green-soft: #E4F5EA;
+
+    font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+
+    color: var(--clvdev-ink);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.clvdev-root *, .clvdev-root *::before, .clvdev-root *::after { box-sizing: border-box; }
+
+.clvdev-label {
+    display: block;
+    font-size: 10px; font-weight: 700; letter-spacing: .4px;
+    text-transform: uppercase; color: var(--clvdev-muted);
+}
+
+/* ---------- page header ---------- */
+.clvdev-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+    margin-bottom: 14px;
+}
+.clvdev-head-left {
+    min-width: 0; position: relative;
+    display: flex; align-items: center; gap: 10px;
+}
+
+/* the page-title icon */
+.clvdev-title-icon {
+    width: 32px; height: 32px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px; background: var(--clvdev-blue-soft); color: var(--clvdev-navy);
+}
+.clvdev-title-icon svg { width: 17px; height: 17px; }
+
+.clvdev-title {
+    margin: 0;
+    font-size: 18px; font-weight: 700; letter-spacing: -.2px; color: var(--clvdev-ink);
+    display: inline-block; cursor: default;
+}
+
+/* the page's own hover tooltip, same text, themed */
+.clvdev-tip {
+    visibility: hidden; opacity: 0;
+    position: absolute; top: 100%; left: 42px; z-index: 30;
+    width: 280px; margin-top: 6px; padding: 8px 11px;
+    border-radius: 8px; background: var(--clvdev-ink); color: #fff;
+    font-size: 11.5px; font-weight: 400; line-height: 1.45; text-transform: none;
+    box-shadow: 0 6px 18px rgba(22,35,58,.22);
+    transition: opacity .18s, visibility .18s;
+}
+.clvdev-head-left:hover .clvdev-tip { visibility: visible; opacity: 1; }
+
+.clvdev-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- buttons ---------- */
+.clvdev-btn {
+    height: 34px; padding: 0 15px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 8px;
+    font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    cursor: pointer; text-decoration: none;
+    transition: background-color .15s, border-color .15s, color .15s;
+}
+
+.clvdev-btn-primary { background: var(--clvdev-navy); color: #fff; }
+.clvdev-btn-primary:hover { background: var(--clvdev-navy-hover); color: #fff; }
+
+.clvdev-btn-ghost { background: #fff; border-color: var(--clvdev-line); color: var(--clvdev-ink-2); }
+.clvdev-btn-ghost:hover { background: var(--clvdev-line-2); border-color: #C9D6E6; color: var(--clvdev-navy); }
+
+.clvdev-btn-danger {
+    background: var(--clvdev-red-soft); border-color: #F3C9C9; color: var(--clvdev-red);
+}
+.clvdev-btn-danger:hover {
+    background: var(--clvdev-red); border-color: var(--clvdev-red); color: #fff;
+}
+
+.clvdev-btn:disabled,
+.clvdev-btn[disabled] {
+    background: var(--clvdev-line-2); border-color: var(--clvdev-line);
+    color: var(--clvdev-soft); cursor: not-allowed;
+}
+
+.clvdev-btn:focus-visible { outline: 2px solid var(--clvdev-navy); outline-offset: 2px; }
+
+.clvdev-btn-sm { height: 26px; padding: 0 14px; font-size: 12px; border-radius: 6px; }
+
+/* ---------- message toast ----------
+   A short toast in the corner, not a full-width band: the message is usually
+   six words and a strip that wide reads as an error page. It sits bottom
+   right, clear of the header buttons and of the layout's own top bar.
+   Auto-hides; the close button and Escape also dismiss it. */
+.clvdev-msg {
+    position: fixed; bottom: 18px; right: 18px; z-index: 1060;
+    display: flex; align-items: flex-start; gap: 10px;
+    min-width: 240px; max-width: 380px;
+    padding: 11px 13px;
+    border: 1px solid var(--clvdev-line);
+    border-left: 3px solid var(--clvdev-navy);
+    border-radius: 10px; background: #fff;
+    box-shadow: 0 10px 26px rgba(22, 35, 58, .16);
+    font-size: 12.5px; line-height: 1.5; color: var(--clvdev-ink-2);
+    animation: clvdev-toast-in .22s ease-out;
+}
+
+@keyframes clvdev-toast-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.clvdev-msg.clvdev-msg-out {
+    opacity: 0; transform: translateY(10px);
+    transition: opacity .2s ease-in, transform .2s ease-in;
+}
+
+.clvdev-msg-icon {
+    width: 17px; height: 17px; flex: none; margin-top: 1px;
+}
+.clvdev-msg-text { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+
+.clvdev-msg-close {
+    width: 20px; height: 20px; flex: none; margin-top: -1px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 5px; background: transparent;
+    color: var(--clvdev-soft);
+    font: inherit; font-size: 16px; line-height: 1; cursor: pointer;
+}
+.clvdev-msg-close:hover { background: var(--clvdev-line-2); color: var(--clvdev-ink-2); }
+
+.clvdev-msg-success { border-left-color: var(--clvdev-green); }
+.clvdev-msg-success .clvdev-msg-icon { color: var(--clvdev-green); }
+
+.clvdev-msg-error { border-left-color: var(--clvdev-red); }
+.clvdev-msg-error .clvdev-msg-icon { color: var(--clvdev-red); }
+
+/* ---------- confirm dialog ---------- */
+.clvdev-confirm { max-width: 420px; }
+.clvdev-confirm-text {
+    padding: 4px 0 6px;
+    font-size: 12.5px; line-height: 1.55; color: var(--clvdev-ink-2);
+}
+
+/* ---------- card + table ---------- */
+.clvdev-card {
+    border: 1px solid var(--clvdev-line); border-radius: 12px; background: #fff;
+    box-shadow: 0 1px 2px rgba(22,35,58,.04);
+    overflow: hidden;
+}
+
+.clvdev-table-wrap { overflow-x: auto; }
+.clvdev-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+
+.clvdev-table thead th {
+    height: 34px; padding: 0 18px;
+    background: var(--clvdev-blue-soft); border-bottom: 1px solid #D8E3F0;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    color: var(--clvdev-navy); text-align: left; white-space: nowrap;
+}
+.clvdev-table tbody td {
+    height: 34px; padding: 0 18px; border-bottom: 1px solid var(--clvdev-line-2);
+    color: var(--clvdev-ink-2); vertical-align: middle; white-space: nowrap;
+}
+.clvdev-table tbody tr:last-child td { border-bottom: 0; }
+.clvdev-table tbody tr { transition: background-color .12s; }
+.clvdev-table tbody tr:hover td { background: #F3F7FC; }
+
+.clvdev-sr { color: var(--clvdev-muted); }
+.clvdev-id {
+    font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+    font-size: 12px; color: var(--clvdev-ink);
+}
+.clvdev-name { font-weight: 600; color: var(--clvdev-ink); }
+
+.clvdev-right { text-align: right; }
+.clvdev-table thead th.clvdev-right { text-align: right; }
+
+/* OPTIONS was centred on the Web Forms page - header and buttons both */
+.clvdev-center { text-align: center; }
+.clvdev-table thead th.clvdev-center { text-align: center; }
+
+.clvdev-rowbtns { display: inline-flex; align-items: center; gap: 6px; }
+
+.clvdev-empty {
+    padding: 34px 18px; text-align: center;
+    font-size: 13px; color: var(--clvdev-muted);
+}
+
+/* ---------- modals ---------- */
+.clvdev-overlay {
+    position: fixed; inset: 0; z-index: 1040;
+    background: rgba(16, 47, 92, .45);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+
+.clvdev-modal {
+    position: fixed; inset: 0; z-index: 1050;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+}
+.clvdev-modal-box {
+    width: 100%; max-width: 520px;
+    border-radius: 12px; background: #fff;
+    box-shadow: 0 18px 44px rgba(2, 6, 23, .28);
+    overflow: hidden;
+}
+.clvdev-modal-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 13px 18px;
+    background: var(--clvdev-navy); color: #fff;
+    font-size: 13.5px; font-weight: 700; letter-spacing: .2px;
+}
+.clvdev-modal-close {
+    width: 26px; height: 26px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 6px; background: rgba(255,255,255,.14); color: #fff;
+    font: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+}
+.clvdev-modal-close:hover { background: rgba(255,255,255,.26); }
+
+.clvdev-modal-body { padding: 16px 18px 4px; }
+.clvdev-modal-foot {
+    display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+    padding: 14px 18px 18px;
+}
+.clvdev-modal-foot.clvdev-split { justify-content: space-between; }
+
+/* ---------- fields ---------- */
+.clvdev-field { margin-bottom: 12px; }
+.clvdev-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.clvdev-input {
+    width: 100%; height: 34px; margin-top: 5px; padding: 0 11px;
+    border: 1px solid var(--clvdev-line); border-radius: 8px; background: var(--clvdev-band);
+    font: inherit; font-size: 12.5px; color: var(--clvdev-ink);
+}
+.clvdev-input:focus {
+    outline: none; background: #fff;
+    border-color: #3E6592; box-shadow: 0 0 0 3px rgba(16,47,92,.10);
+}
+.clvdev-input::placeholder { color: var(--clvdev-soft); }
+.clvdev-input[readonly] { background: var(--clvdev-line-2); color: var(--clvdev-muted); cursor: default; }
+
+/* ---------- responsive ---------- */
+@media screen and (max-width: 640px) {
+    .clvdev-msg { bottom: 12px; left: 12px; right: 12px; max-width: none; min-width: 0; }
+    .clvdev-head { flex-direction: column; align-items: stretch; }
+    .clvdev-actions .clvdev-btn { flex: 1 1 auto; }
+    .clvdev-tip { left: 0; right: 0; width: auto; }
+    .clvdev-grid2 { grid-template-columns: 1fr; }
+    .clvdev-table thead th, .clvdev-table tbody td { padding-left: 14px; padding-right: 14px; }
+
+    /* the table stacks: no horizontal scrolling on a phone */
+    .clvdev-table, .clvdev-table tbody, .clvdev-table tr, .clvdev-table td { display: block; width: 100%; }
+    .clvdev-table thead { display: none; }
+    .clvdev-table tbody tr { padding: 11px 14px; border-bottom: 1px solid var(--clvdev-line-2); }
+    .clvdev-table tbody tr:last-child { border-bottom: 0; }
+    .clvdev-table tbody td { height: auto; padding: 3px 0; border: 0; white-space: normal; }
+    .clvdev-table tbody td::before {
+        content: attr(data-label);
+        display: block; margin-bottom: 2px;
+        font-size: 10px; font-weight: 700; letter-spacing: .4px;
+        text-transform: uppercase; color: var(--clvdev-muted);
+    }
+    .clvdev-table tbody td.clvdev-right,
+    .clvdev-table tbody td.clvdev-center { text-align: left; padding-top: 8px; }
+}
+
+/* the form wrappers the MVC view uses for each post must not add layout */
+.clvdev-inline { display: inline-block; margin: 0; }
+.clvdev-rowbtns .clvdev-inline { vertical-align: middle; }
+
+/* the modal close is an anchor in the view (a plain link back to the page) */
+a.clvdev-modal-close { text-decoration: none; }
+
+
+/* Read-only integration status */
+.clvdev-integrations { margin: 0 0 16px; }
+.clvdev-integrations-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:9px; }
+.clvdev-integrations-head h2 { font-size:14px; font-weight:700; margin:0; }
+.clvdev-integrations-head span { color:var(--clvdev-muted); font-size:11px; }
+.clvdev-status-tools { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.clvdev-status-tools svg { width:14px; height:14px; margin-right:5px; }
+.clvdev-integration-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.clvdev-integration-card { display:flex; align-items:flex-start; gap:12px; padding:15px; background:#fff; border:1px solid var(--clvdev-line); border-radius:10px; }
+.clvdev-integration-icon { width:38px; height:38px; border-radius:9px; display:grid; place-items:center; flex:none; }
+.clvdev-stripe-icon { background:#eeebff; color:#635bff; font-size:24px; font-weight:800; }
+.clvdev-channex-icon { background:#e8f1ff; color:#2357a4; }
+.clvdev-channex-icon svg { width:23px; height:23px; }
+.clvdev-integration-content { min-width:0; }
+.clvdev-integration-title { font-weight:700; font-size:13px; margin-bottom:6px; }
+.clvdev-status { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; border-radius:20px; padding:3px 9px; }
+.clvdev-status::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; flex:none; }
+.clvdev-status-positive { color:#166534; background:#e8f6ec; }
+.clvdev-status-negative { color:#b42318; background:#fef0ef; }
+.clvdev-status-warning { color:#92400e; background:#fff4da; }
+.clvdev-status-unknown { color:#52627a; background:#edf1f6; }
+.clvdev-integration-content p { color:var(--clvdev-muted); margin:6px 0 0; font-size:11.5px; overflow-wrap:anywhere; }
+@media (max-width:640px) { .clvdev-integration-grid { grid-template-columns:1fr; } }

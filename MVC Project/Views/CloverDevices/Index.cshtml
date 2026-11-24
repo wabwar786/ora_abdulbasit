@@ -1,0 +1,291 @@
+@using System
+@model Orapmshms.Models.CloverDevicesViewModel
+@{
+    ViewData["Title"] = "Stripe Devices";
+
+    // The page's own query string, kept on every post so the redirect back
+    // carries the context the page was opened with.
+    var clvQuery = Context.Request.QueryString.Value ?? string.Empty;
+
+    string Post(string action) =>
+        (Url.Action(action, "CloverDevices") ?? "/CloverDevices/" + action) + clvQuery;
+
+    // The page's messages start with a tick, a cross or an info glyph. The
+    // toast draws its own icon, so the glyph is dropped for display; the
+    // wording itself is untouched.
+    var clvMessage = Model.Message ?? string.Empty;
+
+    foreach (var glyph in new[] { "\u2705", "\u274C", "\u2139\uFE0F", "\u2139" })
+    {
+        if (clvMessage.StartsWith(glyph, StringComparison.Ordinal))
+        {
+            clvMessage = clvMessage.Substring(glyph.Length).Trim();
+            break;
+        }
+    }
+}
+@*
+    CloverDevices - Stripe Devices.
+
+    Every button posts with an anti-forgery token; the server decides which
+    modal is open, exactly as pnlReaderModal.Visible / pnlLocationModal.Visible
+    decided it on the Web Forms page.
+*@
+@* Url.Content, not a tag helper - _ViewImports is off limits, so the page must
+   not depend on the tag helper being registered there. The ?v= is what
+   asp-append-version would have given us: bump it whenever the css or js
+   changes, so a browser cannot serve a stale copy. *@
+<link rel="stylesheet" href="@Url.Content("~/css/clover-devices.css")?v=4" />
+
+<div class="clvdev-root" data-clvdev-stripe-url="@Model.StripeConnectUrl">
+
+    @* ============ PAGE HEADER ============ *@
+    <div class="clvdev-head">
+        <div class="clvdev-head-left">
+            <span class="clvdev-title-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M8.5 6.5h7M8.5 10h7"/><path d="M12 17.5h.01"/></svg>
+            </span>
+            <h1 class="clvdev-title">Stripe Devices</h1>
+            <span class="clvdev-tip">This page allows users to view and update, connected Stripe device with the property.</span>
+        </div>
+
+        <div class="clvdev-actions">
+            <button type="button" class="clvdev-btn clvdev-btn-primary"
+                    id="clvdevConnectStripe" disabled="@(!Model.CanConnectStripe)"
+                    title="@Model.StripeConnection.Detail">Connect To Stripe</button>
+
+            <form method="post" action="@Post("ConnectDevice")" class="clvdev-inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="clvdev-btn clvdev-btn-primary"
+                        disabled="@(!Model.CanRegisterDevice)"
+                        title="@(Model.HasRegisteredDevice ? "A reader is already registered for this hotel." : !Model.CanConnectDevice ? "A Stripe location is required first." : Model.StripeConnection.Detail)">Connect Device</button>
+            </form>
+
+            <form method="post" action="@Post("InstallTokenization")" class="clvdev-inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="clvdev-btn clvdev-btn-primary"
+                        disabled="@(!Model.CanInstallTokenization)"
+                        title="@Model.Tokenization.Detail">Install Tokenization App</button>
+            </form>
+        </div>
+    </div>
+
+    <section class="clvdev-integrations" aria-label="Payment integration status">
+        <div class="clvdev-integrations-head">
+            <div>
+                <h2>Integration status</h2>
+                <span>Account and property verification</span>
+            </div>
+            <div class="clvdev-status-tools">
+                @if (Model.StatusCheckedAt.HasValue)
+                {
+                    <span>Last checked: @Model.StatusCheckedAt.Value.ToString("dd MMM yyyy, HH:mm:ss") UTC</span>
+                }
+                <a class="clvdev-btn clvdev-btn-ghost clvdev-btn-sm" href="@((Url.Action("Index", "CloverDevices") ?? "/CloverDevices") + clvQuery)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 8a7 7 0 0 1 12-2l2 6M4 12l2 6a7 7 0 0 0 12-2"/></svg>
+                    Refresh status
+                </a>
+            </div>
+        </div>
+        <div class="clvdev-integration-grid">
+            <article class="clvdev-integration-card">
+                <span class="clvdev-integration-icon clvdev-stripe-icon" aria-hidden="true">S</span>
+                <div class="clvdev-integration-content">
+                    <div class="clvdev-integration-title">Stripe Account</div>
+                    <div class="clvdev-status clvdev-status-@(Model.StripeConnection.State)">@Model.StripeConnection.Label</div>
+                    <p>@Model.StripeConnection.Detail</p>
+                </div>
+            </article>
+            <article class="clvdev-integration-card">
+                <span class="clvdev-integration-icon clvdev-channex-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4m5-1 2 2 3-3"/></svg>
+                </span>
+                <div class="clvdev-integration-content">
+                    <div class="clvdev-integration-title">Channex Tokenization App</div>
+                    <div class="clvdev-status clvdev-status-@(Model.Tokenization.State)">@Model.Tokenization.Label</div>
+                    <p>@Model.Tokenization.Detail</p>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    @* lblResult, and every message the page used to alert() *@
+    @if (Model.HasMessage)
+    {
+        <div class="clvdev-msg @(Model.IsError ? "clvdev-msg-error" : "clvdev-msg-success")"
+             role="status" data-clvdev-autohide="5000">
+            @if (Model.IsError)
+            {
+                <svg class="clvdev-msg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></svg>
+            }
+            else
+            {
+                <svg class="clvdev-msg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>
+            }
+            <span class="clvdev-msg-text">@clvMessage</span>
+            <button type="button" class="clvdev-msg-close" data-clvdev-dismiss aria-label="Dismiss">&times;</button>
+        </div>
+    }
+
+    @* ============ DEVICES (menurepeater) ============ *@
+    <div class="clvdev-card">
+        @if (Model.Devices.Count == 0)
+        {
+            <div class="clvdev-empty">@Model.EmptyText</div>
+        }
+        else
+        {
+            <div class="clvdev-table-wrap">
+                <table class="clvdev-table">
+                    <thead>
+                        <tr>
+                            <th style="width:64px">Sr #:</th>
+                            <th style="width:30%">Device ID.</th>
+                            <th>Device Type</th>
+                            <th>Custom Name</th>
+                            <th class="clvdev-center" style="width:180px">Options</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < Model.Devices.Count; i++)
+                        {
+                            var device = Model.Devices[i];
+                            <tr>
+                                <td data-label="Sr #:" class="clvdev-sr">@(i + 1)</td>
+                                <td data-label="Device ID." class="clvdev-id">@device.ReaderId</td>
+                                <td data-label="Device Type">@device.DeviceType</td>
+                                <td data-label="Custom Name"><span class="clvdev-name">@device.DisplayName</span></td>
+                                <td data-label="Options" class="clvdev-center">
+                                    <span class="clvdev-rowbtns">
+                                        @* openpopupandgetdata *@
+                                        <form method="post" action="@Post("OpenUpdate")" class="clvdev-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="readerId" value="@device.ReaderId" />
+                                            <button type="submit" class="clvdev-btn clvdev-btn-ghost clvdev-btn-sm">Update</button>
+                                        </form>
+
+                                        @* DeleteStripeReader - confirmed first *@
+                                        <form method="post" action="@Post("Delete")" class="clvdev-inline"
+                                              data-clvdev-confirm="Delete this Stripe device? This will remove it from Stripe and from the software."
+                                              data-clvdev-confirm-title="Delete device"
+                                              data-clvdev-confirm-ok="Delete">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="readerId" value="@device.ReaderId" />
+                                            <button type="submit" class="clvdev-btn clvdev-btn-danger clvdev-btn-sm">Delete</button>
+                                        </form>
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    @* ============ READER MODAL (pnlReaderModal) ============ *@
+    @if (Model.Modal == Orapmshms.Models.CloverDevicesModal.Reader)
+    {
+        <div class="clvdev-overlay"></div>
+        <div class="clvdev-modal" role="dialog" aria-modal="true" aria-labelledby="clvdevReaderTitle">
+            <form method="post" class="clvdev-modal-box"
+                  action="@Post(Model.ReaderIsUpdate ? "SaveDevice" : "ConnectReader")">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="readerId" value="@Model.ReaderId" />
+
+                <div class="clvdev-modal-head">
+                    <span id="clvdevReaderTitle">Register Stripe Reader</span>
+                    <a class="clvdev-modal-close" href="@(Url.Action("Index", "CloverDevices") ?? "/CloverDevices")@clvQuery"
+                       aria-label="Close">&times;</a>
+                </div>
+
+                <div class="clvdev-modal-body">
+                    @if (Model.ShowRegistrationCode)
+                    {
+                        <div class="clvdev-field">
+                            <label class="clvdev-label" for="clvdevRegCode">Registration Code</label>
+                            <input type="text" id="clvdevRegCode" name="registrationCode"
+                                   class="clvdev-input" value="@Model.RegistrationCode" maxlength="100" />
+                        </div>
+                    }
+
+                    <div class="clvdev-field">
+                        <label class="clvdev-label" for="clvdevReaderName">Reader Name (Display Name)</label>
+                        <input type="text" id="clvdevReaderName" name="readerName"
+                               class="clvdev-input" value="@Model.ReaderName" maxlength="200" />
+                    </div>
+                </div>
+
+                <div class="clvdev-modal-foot">
+                    <button type="submit" class="clvdev-btn clvdev-btn-primary">
+                        @(Model.ReaderIsUpdate ? "Save Changes" : "Connect Reader")
+                    </button>
+                </div>
+            </form>
+        </div>
+    }
+
+    @* ============ LOCATION MODAL (pnlLocationModal) ============ *@
+    @if (Model.Modal == Orapmshms.Models.CloverDevicesModal.Location)
+    {
+        <div class="clvdev-overlay"></div>
+        <div class="clvdev-modal" role="dialog" aria-modal="true" aria-labelledby="clvdevLocationTitle">
+            <form method="post" class="clvdev-modal-box" action="@Post("CreateLocation")">
+                @Html.AntiForgeryToken()
+
+                <div class="clvdev-modal-head">
+                    <span id="clvdevLocationTitle">Create Stripe Location</span>
+                    <a class="clvdev-modal-close" href="@(Url.Action("Index", "CloverDevices") ?? "/CloverDevices")@clvQuery"
+                       aria-label="Close">&times;</a>
+                </div>
+
+                <div class="clvdev-modal-body">
+                    <div class="clvdev-field">
+                        <label class="clvdev-label" for="clvdevLocName">Display Name</label>
+                        <input type="text" id="clvdevLocName" name="locationName"
+                               class="clvdev-input" value="@Model.LocationName" maxlength="200" />
+                    </div>
+
+                    <div class="clvdev-field">
+                        <label class="clvdev-label" for="clvdevAddress1">Address Line 1</label>
+                        <input type="text" id="clvdevAddress1" name="address1"
+                               class="clvdev-input" value="@Model.Address1" maxlength="200" />
+                    </div>
+
+                    <div class="clvdev-grid2">
+                        <div class="clvdev-field">
+                            <label class="clvdev-label" for="clvdevCity">City</label>
+                            <input type="text" id="clvdevCity" name="city"
+                                   class="clvdev-input" value="@Model.City" maxlength="100" />
+                        </div>
+                        <div class="clvdev-field">
+                            <label class="clvdev-label" for="clvdevState">State</label>
+                            <input type="text" id="clvdevState" name="state"
+                                   class="clvdev-input" value="@Model.State" maxlength="100" />
+                        </div>
+                    </div>
+
+                    <div class="clvdev-grid2">
+                        <div class="clvdev-field">
+                            <label class="clvdev-label" for="clvdevPostCode">Postal Code</label>
+                            <input type="text" id="clvdevPostCode" name="postCode"
+                                   class="clvdev-input" value="@Model.PostCode" maxlength="40" />
+                        </div>
+                        <div class="clvdev-field">
+                            <label class="clvdev-label" for="clvdevCountry">Country</label>
+                            <input type="text" id="clvdevCountry" name="country"
+                                   class="clvdev-input" value="@Model.Country" maxlength="4" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="clvdev-modal-foot">
+                    <button type="submit" class="clvdev-btn clvdev-btn-primary">Create Location</button>
+                </div>
+            </form>
+        </div>
+    }
+
+</div>
+
+<script src="@Url.Content("~/js/clover-devices.js")?v=3" defer></script>
