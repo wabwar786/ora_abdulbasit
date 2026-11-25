@@ -9,12 +9,18 @@ namespace Orapmshms.Controllers;
 public sealed class FbrFailedInvoiceReportController : Controller
 {
     private readonly FbrFailedInvoiceReportService _report;
+    private readonly IConfiguration _config;
+    private readonly IAvailabilityAutoUpdateQueue _availabilityQueue;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly IHotelClock _hotelClock;
     private readonly ILogger<FbrFailedInvoiceReportController> _logger;
 
     public FbrFailedInvoiceReportController(IConfiguration config, IHttpClientFactory clients,
         IHotelClock hotelClock, IAvailabilityAutoUpdateQueue availabilityQueue, ILoggerFactory loggerFactory)
     {
+        _config = config;
+        _availabilityQueue = availabilityQueue;
+        _loggerFactory = loggerFactory;
         var checkIn = new CheckInService(config, hotelClock, clients, availabilityQueue,
             loggerFactory.CreateLogger<CheckInService>());
         _report = new FbrFailedInvoiceReportService(config, checkIn,
@@ -174,5 +180,67 @@ public sealed class FbrFailedInvoiceReportController : Controller
             return StatusCode(500, new { ok = false,
                 message = "Unable to complete fiscal retry. The outcome may be uncertain; verify the fiscal portal and contact support (request " + HttpContext.TraceIdentifier + ")." });
         }
+    }
+
+    // Browser-local retry is opt-in and independent of the original online retry.
+    private bool BrowserLocalAllowed => _config.GetValue<bool>("FbrBrowserLocal:Enabled")
+        && Request.IsHttps && SignedIn && User.Identity?.IsAuthenticated == true;
+    private string LocalOwner => HttpContext.Session.Id + "|" + HotelId + "|" + UserId;
+
+    public sealed record BrowserRetryRequest(string AttemptId, string RegId, string Authority, bool ConfirmedNoInvoice);
+    public sealed record BrowserPollRequest(string AttemptId);
+    public sealed record BrowserReplyRequest(string AttemptId, string Id, bool Connected, int Status, string? Body, string? Error);
+
+    [HttpPost("BrowserRetry"), ValidateAntiForgeryToken]
+    public async Task<IActionResult> BrowserRetry([FromBody] BrowserRetryRequest request, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (!BrowserLocalAllowed) return StatusCode(403, new { ok = false, message = "Browser-local posting is unavailable. Use HTTPS and an authorised PMS session." });
+        if (request == null || !Guid.TryParseExact(request.AttemptId, "D", out _)) return BadRequest(new { ok = false, message = "Invalid local attempt." });
+        FbrBrowserBridge.Attempt? attempt = null;
+        try
+        {
+            await _report.VerifyHotelMembershipAsync(HotelId, UserId, ct);
+            var info = await _report.GetRetryContextAsync(HotelId, request.RegId, ct);
+            attempt = FbrBrowserBridge.Begin(request.AttemptId, LocalOwner);
+            if (attempt == null) return Conflict(new { ok = false, message = "Local retry already exists or local capacity reached." });
+            var checkIn = new CheckInService(_config, _hotelClock, new FbrBrowserBridge.LocalClientFactory(attempt),
+                _availabilityQueue, _loggerFactory.CreateLogger<CheckInService>());
+            var localReport = new FbrFailedInvoiceReportService(_config, checkIn, _loggerFactory.CreateLogger<FbrFailedInvoiceReportService>());
+            var message = await localReport.RetryAsync(HotelId, UserId, HttpContext.Session.GetString("UserName") ?? "",
+                HttpContext.Connection.RemoteIpAddress?.ToString() ?? "", info.RegId, request.Authority,
+                request.ConfirmedNoInvoice, ct, (url, cancel) => FbrBrowserBridge.Probe(attempt, url, cancel));
+            return Json(new { ok = true, message });
+        }
+        catch (UnauthorizedAccessException) { return StatusCode(403, new { ok = false, message = "Hotel access denied." }); }
+        catch (ArgumentException ex) { return BadRequest(new { ok = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { ok = false, message = ex.Message }); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Browser local fiscal retry failed for hotel {HotelId}", HotelId);
+            return StatusCode(500, new { ok = false, message = "Local retry failed. Check the fiscal portal before trying again." });
+        }
+        finally { if (attempt != null) FbrBrowserBridge.End(request.AttemptId, attempt); }
+    }
+
+    [HttpPost("BrowserJob"), ValidateAntiForgeryToken]
+    public IActionResult BrowserJob([FromBody] BrowserPollRequest request)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (!BrowserLocalAllowed) return StatusCode(403);
+        var attempt = request == null ? null : FbrBrowserBridge.Find(request.AttemptId, LocalOwner);
+        var job = attempt == null ? null : FbrBrowserBridge.Claim(attempt);
+        return job == null ? NoContent() : Json(job);
+    }
+
+    [HttpPost("BrowserReply"), ValidateAntiForgeryToken, RequestSizeLimit(2100000)]
+    public IActionResult BrowserReply([FromBody] BrowserReplyRequest request)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (!BrowserLocalAllowed) return StatusCode(403);
+        var attempt = request == null ? null : FbrBrowserBridge.Find(request.AttemptId, LocalOwner);
+        if (attempt == null || request == null || string.IsNullOrEmpty(request.Id) || (request.Body?.Length ?? 0) > 1000000)
+            return Conflict();
+        return FbrBrowserBridge.Complete(attempt, new(request.Id, request.Connected, request.Status, request.Body, request.Error)) ? Ok() : Conflict();
     }
 }

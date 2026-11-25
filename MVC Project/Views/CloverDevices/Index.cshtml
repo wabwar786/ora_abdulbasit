@@ -35,7 +35,7 @@
    not depend on the tag helper being registered there. The ?v= is what
    asp-append-version would have given us: bump it whenever the css or js
    changes, so a browser cannot serve a stale copy. *@
-<link rel="stylesheet" href="@Url.Content("~/css/clover-devices.css")?v=4" />
+<link rel="stylesheet" href="@Url.Content("~/css/clover-devices.css")?v=5" />
 
 <div class="clvdev-root" data-clvdev-stripe-url="@Model.StripeConnectUrl">
 
@@ -49,25 +49,37 @@
             <span class="clvdev-tip">This page allows users to view and update, connected Stripe device with the property.</span>
         </div>
 
-        <div class="clvdev-actions">
-            <button type="button" class="clvdev-btn clvdev-btn-primary"
-                    id="clvdevConnectStripe" disabled="@(!Model.CanConnectStripe)"
-                    title="@Model.StripeConnection.Detail">Connect To Stripe</button>
+        @* Render only available setup actions, in the intended setup order.
+           Keep the existing model eligibility checks and server-side guards. *@
+        @if (Model.CanConnectStripe || Model.CanInstallTokenization || Model.CanRegisterDevice)
+        {
+            <div class="clvdev-actions">
+                @if (Model.CanConnectStripe)
+                {
+                    <button type="button" class="clvdev-btn clvdev-btn-primary"
+                            id="clvdevConnectStripe"
+                            title="@Model.StripeConnection.Detail">Connect To Stripe</button>
+                }
 
-            <form method="post" action="@Post("ConnectDevice")" class="clvdev-inline">
-                @Html.AntiForgeryToken()
-                <button type="submit" class="clvdev-btn clvdev-btn-primary"
-                        disabled="@(!Model.CanRegisterDevice)"
-                        title="@(Model.HasRegisteredDevice ? "A reader is already registered for this hotel." : !Model.CanConnectDevice ? "A Stripe location is required first." : Model.StripeConnection.Detail)">Connect Device</button>
-            </form>
+                @if (Model.CanInstallTokenization)
+                {
+                    <form method="post" action="@Post("InstallTokenization")" class="clvdev-inline">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="clvdev-btn clvdev-btn-primary"
+                                title="@Model.Tokenization.Detail">Install Tokenization App</button>
+                    </form>
+                }
 
-            <form method="post" action="@Post("InstallTokenization")" class="clvdev-inline">
-                @Html.AntiForgeryToken()
-                <button type="submit" class="clvdev-btn clvdev-btn-primary"
-                        disabled="@(!Model.CanInstallTokenization)"
-                        title="@Model.Tokenization.Detail">Install Tokenization App</button>
-            </form>
-        </div>
+                @if (Model.CanRegisterDevice)
+                {
+                    <form method="post" action="@Post("ConnectDevice")" class="clvdev-inline">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="clvdev-btn clvdev-btn-primary"
+                                title="@Model.StripeConnection.Detail">Connect Device</button>
+                    </form>
+                }
+            </div>
+        }
     </div>
 
     <section class="clvdev-integrations" aria-label="Payment integration status">

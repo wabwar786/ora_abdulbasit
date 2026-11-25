@@ -1,5 +1,8 @@
 @model Orapmshms.Models.FbrFailedInvoiceReportViewModel
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @{
+    var browserLocalEnabled = string.Equals(Configuration["FbrBrowserLocal:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
+    var browserLocal = browserLocalEnabled && Context.Request.Query["local"].ToString() == "1";
     ViewData["Title"] = "FBR Invoice Report";
     string D(DateTime? date) => date?.ToString("yyyy-MM-dd") ?? "";
 }
@@ -9,6 +12,10 @@
       data-results-url="@Url.Action("Results", "FbrFailedInvoiceReport")"
       data-export-url="@Url.Action("Export", "FbrFailedInvoiceReport")"
       data-details-url="@Url.Action("RetryDetails", "FbrFailedInvoiceReport")"
+      data-browser-local="@(browserLocal ? "1" : "0")"
+      data-browser-retry-url="@Url.Action("BrowserRetry", "FbrFailedInvoiceReport")"
+      data-browser-job-url="@Url.Action("BrowserJob", "FbrFailedInvoiceReport")"
+      data-browser-reply-url="@Url.Action("BrowserReply", "FbrFailedInvoiceReport")"
       data-retry-url="@Url.Action("Retry", "FbrFailedInvoiceReport")">
     <div class="rpt-wrap">
         <header class="rpt-top">
@@ -17,12 +24,19 @@
                 <h1>FBR Invoice Report</h1>
             </div>
             <div class="rpt-top-actions">
+                @if (browserLocalEnabled && !browserLocal) {
+                    <a class="rpt-btn primary" asp-controller="FbrFailedInvoiceReport" asp-action="Index"
+                       asp-route-local="1" asp-route-search="@Model.Search" asp-route-status="@Model.Status"
+                       asp-route-from="@D(Model.From)" asp-route-to="@D(Model.To)" target="_blank" rel="noopener">Local Invoice Posting</a>
+                }
+                @if (browserLocal) { <span class="rpt-btn">Local fiscal posting (browser)</span> }
                 <a id="fbrExport" class="rpt-btn" asp-controller="FbrFailedInvoiceReport" asp-action="Export"
                    asp-route-search="@Model.Search" asp-route-status="@Model.Status"
                    asp-route-from="@D(Model.From)" asp-route-to="@D(Model.To)">Export CSV</a>
                 <button class="rpt-btn" type="button" id="fbrRefresh">Refresh</button>
             </div>
         </header>
+        @if (browserLocal) { <div class="fbr-flash">Local posting uses the fiscal component on this computer. Allow local network access if prompted. Keep this tab open until the result appears.</div> }
         <div id="fbrFlash" class="fbr-flash" role="status" aria-live="polite" hidden></div>
         @if (ViewBag.Error != null) { <div class="fbr-flash is-error" role="alert">@ViewBag.Error</div> }
         <section class="panel fbr-filter-panel">
@@ -61,4 +75,5 @@
         <div class="fbr-modal-footer"><button type="button" class="rpt-btn" data-close-retry>Close</button><button type="button" class="rpt-btn primary" id="fbrSendRetry" disabled>Confirm &amp; Retry</button></div>
     </div>
 </div>
+<script src="~/js/fbr-local.js" asp-append-version="true" defer></script>
 <script src="~/js/fbr-report-mvc.js" asp-append-version="true" defer></script>

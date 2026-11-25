@@ -398,7 +398,8 @@ ORDER BY recorded_at DESC, source_order, id DESC;", cn);
     /// as normal checkout, so there are not two competing fiscal payloads.
     /// </summary>
     public async Task<string> RetryAsync(string hotelId, string userId, string userName,
-        string ip, string regId, string authority, bool confirmedNoInvoice, CancellationToken ct)
+        string ip, string regId, string authority, bool confirmedNoInvoice, CancellationToken ct,
+        Func<string, CancellationToken, Task<(bool Connected, string Failure)>>? localProbe = null)
     {
         await using var cn=new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
@@ -483,11 +484,11 @@ VALUES(@h,@r,@u,@a,@m,GETDATE(),'Preparing');",cn))
             }
             // A TCP test before the real HTTP request lets us prove a failed
             // connection was NOT sent. This probe never posts an invoice.
-            var (reachable, connectionError) = await ProbeFiscalEndpointAsync(route.InvoiceUrl,ct);
+            var (reachable, connectionError) = await (localProbe == null ? ProbeFiscalEndpointAsync(route.InvoiceUrl,ct) : localProbe(route.InvoiceUrl,ct));
             if(!reachable)
             {
                 await FinishAuditAsync(cn,auditId,"Not Sent","",
-                    "TCP connection check failed before any HTTP invoice POST. "+connectionError,CancellationToken.None);
+                    (localProbe == null ? "TCP connection check failed before any HTTP invoice POST. " : "Browser connectivity check failed before any HTTP invoice POST. ")+connectionError,CancellationToken.None);
                 auditId=0;
                 throw new InvalidOperationException("Fiscal server is unreachable. No invoice was submitted by this retry. " + connectionError);
             }

@@ -3,6 +3,7 @@
   'use strict';
   const app = document.getElementById('fbrReportApp');
   if (!app) return;
+  const browserLocal = app.dataset.browserLocal === '1';
   const resultRegion = document.getElementById('fbrReportResults');
   const form = document.getElementById('fbrFilters');
   const exportLink = document.getElementById('fbrExport');
@@ -65,6 +66,7 @@
     const url = new URL(app.dataset.indexUrl, window.location.origin);
     const query = new URLSearchParams(new FormData(form));
     query.set('page', String(page));
+    if (browserLocal) query.set('local', '1');
     url.search = query.toString();
     return url;
   }
@@ -230,13 +232,13 @@
     retry.textContent = 'Sending…';
     try {
       const token = document.querySelector('#fbrRetryAntiforgery input[name="__RequestVerificationToken"]')?.value || '';
-      const response = await fetch(app.dataset.retryUrl, {
+      const response = await (browserLocal ? window.oraFbrLocal.retry(app, token, { regId: currentRegId, authority: authority.value, confirmedNoInvoice: requiresReconciliation && reconcileCheck.checked }) : fetch(app.dataset.retryUrl, {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json',
           'X-Requested-With': 'XMLHttpRequest', RequestVerificationToken: token },
         body: JSON.stringify({ regId: currentRegId, authority: authority.value,
           confirmedNoInvoice: requiresReconciliation && reconcileCheck.checked })
-      });
+      }));
       const json = await readResult(response, 'Fiscal retry', true);
       isSending = false;
       closeModal();
