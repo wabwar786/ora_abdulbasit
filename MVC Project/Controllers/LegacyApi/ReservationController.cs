@@ -1087,32 +1087,37 @@ WHERE hotel_id = @hotel_id AND reg_id = @reg_id;", conn, tx))
                                     }
                                     try
                                     {
-                                        var svc = new AvailabilityBackgroundService(connectionString);
-                                        svc.AutoUpdateAvailability(
-                                            Convert.ToDateTime(checkInDate),
-                                            Convert.ToDateTime(checkOutDate),
-                                            hotelid,
-                                            "Channex",
-                                            "",
-                                            "0",
-                                            "0",
-                                            "",
-                                            Log_helper.Log
-                                        );
+                                        if (DateTime.TryParseExact(checkInDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var availabilityArrival)
+                                            && DateTime.TryParseExact(checkOutDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var availabilityDeparture)
+                                            && availabilityArrival.Year >= 1753 && availabilityDeparture.Year >= 1753 && availabilityDeparture >= availabilityArrival)
+                                        {
+                                            var svc = new AvailabilityBackgroundService(connectionString);
+                                            svc.AutoUpdateAvailability(
+                                                availabilityArrival,
+                                                availabilityDeparture,
+                                                hotelid,
+                                                "Channex",
+                                                "",
+                                                "0",
+                                                "0",
+                                                "",
+                                                Log_helper.Log
+                                            );
 
-                                        var cmSvc = new ChannelManagerBackgroundService(connectionString, LegacyApiRuntime.Services.GetRequiredService<Orapmshms.Services.IHotelClock>());
-                                        cmSvc.UploadToChannelManager(
-                                            hotelid,
-                                            Convert.ToDateTime(checkInDate),
-                                            Convert.ToDateTime(checkOutDate),
-                                            0,
-                                            "0",
-                                            property_id,
-                                            "https://app.channex.io/api/v1/availability",
-                                            apiKey,
-                                            "",
-                                            ""
-                                        );
+                                            var cmSvc = new ChannelManagerBackgroundService(connectionString, LegacyApiRuntime.Services.GetRequiredService<Orapmshms.Services.IHotelClock>());
+                                            cmSvc.UploadToChannelManager(
+                                                hotelid,
+                                                availabilityArrival,
+                                                availabilityDeparture,
+                                                0,
+                                                "0",
+                                                property_id,
+                                                "https://app.channex.io/api/v1/availability",
+                                                apiKey,
+                                                "",
+                                                ""
+                                            );
+                                        }
                                     }
                                     catch { }
                                 }
@@ -1144,32 +1149,37 @@ WHERE hotel_id = @hotel_id AND reg_id = @reg_id;", conn, tx))
                                 //}
                                 try
                                 {
-                                    var svc = new AvailabilityBackgroundService(connectionString);
-                                    svc.AutoUpdateAvailability(
-                                        Convert.ToDateTime(checkInDate),
-                                        Convert.ToDateTime(checkOutDate),
-                                        hotelid,
-                                        "Channex",
-                                        "",
-                                        "0",
-                                        "0",
-                                        "",
-                                        Log_helper.Log
-                                    );
+                                    if (DateTime.TryParseExact(checkInDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var availabilityArrival)
+                                        && DateTime.TryParseExact(checkOutDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var availabilityDeparture)
+                                        && availabilityArrival.Year >= 1753 && availabilityDeparture.Year >= 1753 && availabilityDeparture >= availabilityArrival)
+                                    {
+                                        var svc = new AvailabilityBackgroundService(connectionString);
+                                        svc.AutoUpdateAvailability(
+                                            availabilityArrival,
+                                            availabilityDeparture,
+                                            hotelid,
+                                            "Channex",
+                                            "",
+                                            "0",
+                                            "0",
+                                            "",
+                                            Log_helper.Log
+                                        );
 
-                                    var cmSvc = new ChannelManagerBackgroundService(connectionString, LegacyApiRuntime.Services.GetRequiredService<Orapmshms.Services.IHotelClock>());
-                                    cmSvc.UploadToChannelManager(
-                                        hotelid,
-                                        Convert.ToDateTime(checkInDate),
-                                        Convert.ToDateTime(checkOutDate),
-                                        0,
-                                        "0",
-                                        property_id,
-                                        "https://app.channex.io/api/v1/availability",
-                                        apiKey,
-                                        "",
-                                        ""
-                                    );
+                                        var cmSvc = new ChannelManagerBackgroundService(connectionString, LegacyApiRuntime.Services.GetRequiredService<Orapmshms.Services.IHotelClock>());
+                                        cmSvc.UploadToChannelManager(
+                                            hotelid,
+                                            availabilityArrival,
+                                            availabilityDeparture,
+                                            0,
+                                            "0",
+                                            property_id,
+                                            "https://app.channex.io/api/v1/availability",
+                                            apiKey,
+                                            "",
+                                            ""
+                                        );
+                                    }
                                 }
                                 catch { }
                                 Log_helper.Log("Channex Reservation Api", "Cancel Booking", hotelid, "channex",
@@ -1252,32 +1262,37 @@ WHERE hotel_id = @hotel_id AND reg_id = @reg_id;", conn, tx))
 
                                     try
                                     {
-                                        var svc = new AvailabilityBackgroundService(connectionString);
-                                        svc.AutoUpdateAvailability(
-                                            Convert.ToDateTime(checkInDate),
-                                            Convert.ToDateTime(checkOutDate),
-                                            hotelid,
-                                            "Channex",
-                                            "",
-                                            "0",
-                                            "0",
-                                            "",
-                                            Log_helper.Log
-                                        );
+                                        if (DateTime.TryParseExact(checkInDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var availabilityArrival)
+                                            && DateTime.TryParseExact(checkOutDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var availabilityDeparture)
+                                            && availabilityArrival.Year >= 1753 && availabilityDeparture.Year >= 1753 && availabilityDeparture >= availabilityArrival)
+                                        {
+                                            var svc = new AvailabilityBackgroundService(connectionString);
+                                            svc.AutoUpdateAvailability(
+                                                availabilityArrival,
+                                                availabilityDeparture,
+                                                hotelid,
+                                                "Channex",
+                                                "",
+                                                "0",
+                                                "0",
+                                                "",
+                                                Log_helper.Log
+                                            );
 
-                                        var cmSvc = new ChannelManagerBackgroundService(connectionString, LegacyApiRuntime.Services.GetRequiredService<Orapmshms.Services.IHotelClock>());
-                                        cmSvc.UploadToChannelManager(
-                                            hotelid,
-                                            Convert.ToDateTime(checkInDate),
-                                            Convert.ToDateTime(checkOutDate),
-                                            0,
-                                            "0",
-                                            property_id,
-                                            "https://app.channex.io/api/v1/availability",
-                                            apiKey,
-                                            "",
-                                            ""
-                                        );
+                                            var cmSvc = new ChannelManagerBackgroundService(connectionString, LegacyApiRuntime.Services.GetRequiredService<Orapmshms.Services.IHotelClock>());
+                                            cmSvc.UploadToChannelManager(
+                                                hotelid,
+                                                availabilityArrival,
+                                                availabilityDeparture,
+                                                0,
+                                                "0",
+                                                property_id,
+                                                "https://app.channex.io/api/v1/availability",
+                                                apiKey,
+                                                "",
+                                                ""
+                                            );
+                                        }
                                     }
                                     catch { }
 

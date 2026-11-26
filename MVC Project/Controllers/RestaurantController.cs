@@ -1,5 +1,9 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using System.Globalization;
+using Microsoft.Extensions.DependencyInjection;
+using Orapmshms.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
@@ -17,6 +21,7 @@ namespace Orapmshms.Controllers;
 [Route("Restaurant")]
 public sealed class RestaurantController : Controller
 {
+    private readonly IConfiguration _configuration;
     private readonly RestaurantRepository _db;
     private readonly RestaurantPosOperations _pos;
     private readonly IWebHostEnvironment _hosting;
@@ -24,6 +29,7 @@ public sealed class RestaurantController : Controller
     private readonly RestaurantGuestLinkTokens _restaurantGuestLinks;
     public RestaurantController(IConfiguration config,IWebHostEnvironment hosting,ILogger<RestaurantController> logger,IDataProtectionProvider dataProtectionProvider)
     {
+        _configuration=config;
         _db=new RestaurantRepository(config, logger);
         _pos=new RestaurantPosOperations(config);
         _hosting=hosting;
@@ -95,7 +101,7 @@ public sealed class RestaurantController : Controller
          HttpContext.Session.GetString(RoomKey(id,"Visit")) ?? "");
     private void ClearGuestRoom(RestaurantIdentity id)
     {
-        foreach (var key in new[]{"Reg","Number","Bill","Visit"}) HttpContext.Session.Remove(RoomKey(id,key));
+        foreach (var key in new[]{"Reg","Number","Bill","Visit","Guest"}) HttpContext.Session.Remove(RoomKey(id,key));
     }
 
     private static void ApplyRate(RestaurantTaxInfo tax, decimal subtotal, decimal? overrideRate)
@@ -141,6 +147,9 @@ public sealed class RestaurantController : Controller
             PaymentMethods = await paymentTask
         };
         model.BillNumber = model.Cart.FirstOrDefault()?.BillNumber ?? "";
+        model.HasPendingDineCard = !id.IsRoomOrder && ReadDineCard(id) is { } activeCard &&
+            activeCard.BillNumber == model.BillNumber &&
+            DateTime.UtcNow - activeCard.CreatedUtc < TimeSpan.FromMinutes(45);
         if (id.IsRoomOrder)
             HttpContext.Session.SetString(RoomKey(id,"Bill"),model.BillNumber);
         var room = GuestRoom(id);
@@ -149,6 +158,16 @@ public sealed class RestaurantController : Controller
             model.BillType = "Room";
             model.RoomRegId = room.regId;
             model.RoomNo = room.roomNo;
+            model.RoomVisitId = room.visitId;
+            model.GuestName = HttpContext.Session.GetString(RoomKey(id, "Guest")) ?? "In-house guest";
+        }
+        if (!string.Equals(HttpContext.Session.GetString("Role"), "Council", StringComparison.OrdinalIgnoreCase))
+        {
+            var capabilities = await _pos.PaymentCapabilitiesAsync(id.HotelId, ct);
+            var rights = await _pos.CalendarCardPermissionsAsync(id.HotelId,id.UserId,
+                HttpContext.Session.GetString("Role") ?? "",ct);
+            model.CanOnlineCardPayment = capabilities.online && rights.online;
+            model.CanPdqPayment = capabilities.pdq && rights.pdq;
         }
         if (model.Cart.Count > 0)
         {
@@ -235,6 +254,13 @@ public sealed class RestaurantController : Controller
                 var guestVisitId = await _pos.ValidateGuestRoomAsync(id.HotelId, guestRegId, guestRoomNo, ct);
                 // Guest orders are stored and retrieved by reservation + room.
                 // Never check or reassign another guest's or a Dine In cashier cart.
+                // Guest display name is always resolved from the hotel's current
+                // checked-in room records, never from an untrusted URL parameter.
+                var activeRooms = await _pos.InHouseRoomsAsync(id.HotelId, ct);
+                var currentGuest = activeRooms.FirstOrDefault(x =>
+                    string.Equals(x.RegId, guestRegId, StringComparison.Ordinal) &&
+                    string.Equals(x.RoomNo, guestRoomNo, StringComparison.OrdinalIgnoreCase));
+                HttpContext.Session.SetString(RoomKey(id,"Guest"),currentGuest?.GuestName ?? "In-house guest");
                 HttpContext.Session.SetString(RoomKey(id,"Reg"),guestRegId);
                 HttpContext.Session.SetString(RoomKey(id,"Number"),guestRoomNo);
                 HttpContext.Session.SetString(RoomKey(id,"Visit"),guestVisitId);
@@ -274,6 +300,161 @@ public sealed class RestaurantController : Controller
                     : "Restaurant POS failed while loading its data. See the server log entry for the exact SQL error and step: " + loadStep + ".";
             return View(new RestaurantHomeViewModel());
         }
+    }
+
+    // Use the very same live room rack as the Dashboard instead of a second
+    // Restaurant-only occupancy query.  The old lookup silently filtered out
+    // all rooms when HotelsSignUpTB.isResturant was not 1, even when Front Desk
+    // showed guests as checked in.  Room charging is STILL separately validated
+    // by ValidateGuestRoomAsync / ValidateGuestRoomCoreAsync on selection/post.
+    private async Task<List<RestaurantInHouseRoom>> SelectableInHouseRoomsAsync(
+        string hotelId, CancellationToken ct)
+    {
+        var clock = HttpContext.RequestServices.GetRequiredService<IHotelClock>();
+        var dashboard = ActivatorUtilities.CreateInstance<DashboardService>(HttpContext.RequestServices);
+        var today = clock.GetHotelToday(hotelId).Date;
+        var roomRack = await dashboard.GetRoomStatusAsync(hotelId, today, ct);
+        return roomRack
+            .Where(r => string.Equals(r.State, "checkin", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(r.RoomNo)
+                && !string.IsNullOrWhiteSpace(r.ReservationId))
+            .Select(r => new RestaurantInHouseRoom
+            {
+                RoomNo = r.RoomNo.Trim(),
+                RegId = r.ReservationId.Trim(),
+                GuestName = string.IsNullOrWhiteSpace(r.GuestName) ? "In-house guest" : r.GuestName.Trim()
+            })
+            .GroupBy(r => r.RoomNo, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderBy(r => r.RoomNo, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    // The POS room picker is an additional entry point only. Calendar links, the
+    // protected guest token route and room service posting remain unchanged.
+    [HttpGet("InHouseRooms")]
+    public async Task<IActionResult> InHouseRooms(CancellationToken ct)
+    {
+        try
+        {
+            var id = CurrentIdentity();
+            if (string.Equals(HttpContext.Session.GetString("Role"), "Council", StringComparison.OrdinalIgnoreCase))
+                return Forbid();
+            Response.Headers["Cache-Control"] = "no-store, private";
+            var rooms = await SelectableInHouseRoomsAsync(id.HotelId, ct);
+            _logger.LogInformation("Restaurant room picker: {RoomCount} checked-in rooms for hotel {HotelId}",
+                rooms.Count, id.HotelId);
+            return Json(new { rooms });
+        }
+        catch (RestaurantGuestAccessException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Restaurant in-house room selector failed");
+            return StatusCode(500, new { message = "Cannot load in-house rooms. Please try again." });
+        }
+    }
+
+    [HttpPost("SelectRoom")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SelectRoom(string? regId, string? roomNo, CancellationToken ct, string? transferBill = null, bool continueCheckout = false)
+    {
+        try
+        {
+            var id = CurrentIdentity();
+            if (string.Equals(HttpContext.Session.GetString("Role"), "Council", StringComparison.OrdinalIgnoreCase))
+                return Forbid();
+            var reg = regId?.Trim() ?? "";
+            var room = roomNo?.Trim() ?? "";
+            if (reg.Length is < 1 or > 100 || room.Length is < 1 or > 60)
+                return BadRequest("Select a valid in-house room.");
+
+            // Re-check the CURRENT room occupancy rather than trusting the
+            // browser's dropdown (it may have been left open during a checkout).
+            var available = await SelectableInHouseRoomsAsync(id.HotelId, ct);
+            if (!available.Any(x => string.Equals(x.RegId, reg, StringComparison.Ordinal) &&
+                                    string.Equals(x.RoomNo, room, StringComparison.OrdinalIgnoreCase)))
+                return BadRequest("Room is no longer occupied by this guest. Refresh the list and try again.");
+            await _pos.ValidateGuestRoomAsync(id.HotelId, reg, room, ct);
+
+            // Opt-in only: the ordinary Calendar-compatible room picker still
+            // leaves other draft carts untouched. Charge / Actions can assign
+            // the exact current counter draft to an empty guest cart.
+            if (!string.IsNullOrWhiteSpace(transferBill))
+            {
+                id = await ShiftIdentityAsync(ct);
+                // Account number 0 is a supported counter context when no shift is open.
+                // The transaction below still checks the exact hotel, cashier, account and bill.
+                if (id.IsRoomOrder || transferBill.Length > 80)
+                    throw new InvalidOperationException("The counter bill context changed. Reopen the POS.");
+                if (ReadDineCard(id) is { } card &&
+                    (card.BillNumber == transferBill || DateTime.UtcNow - card.CreatedUtc < TimeSpan.FromMinutes(45)))
+                    throw new InvalidOperationException("Check the pending card payment before assigning this bill to a room.");
+                await _pos.AssignCounterDraftToRoomAsync(id, transferBill.Trim(), reg, room, ct);
+            }
+
+            // Reuse the SAME authenticated token+Home flow as Front Desk Calendar.
+            // Home validates the guest again before placing the room in session.
+            var token = _restaurantGuestLinks.Create(id.HotelId, id.UserId, reg, room);
+            return continueCheckout
+                ? RedirectToAction(nameof(Home), new { guestToken = token, checkout = 1 })
+                : RedirectToAction(nameof(Home), new { guestToken = token });
+        }
+        catch (InvalidOperationException ex) when (!string.IsNullOrWhiteSpace(transferBill))
+        {
+            TempData["RestaurantError"] = ex.Message;
+            return BackToHome();
+        }
+        catch (RestaurantGuestAccessException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Restaurant POS room selection failed");
+            if (!string.IsNullOrWhiteSpace(transferBill))
+            {
+                TempData["RestaurantError"] = "Unable to confirm the bill assignment. Check the counter and selected room bill before retrying.";
+                return BackToHome();
+            }
+            return StatusCode(500, "Unable to select the room. Please refresh the POS.");
+        }
+    }
+
+    // Payment modal may collect only against an existing, validated guest folio.
+    // A POS cart by itself is not a posted charge; the user must Post first.
+    [HttpGet("RoomPaymentContext")]
+    public async Task<IActionResult> RoomPaymentContext(CancellationToken ct)
+    {
+        try
+        {
+            var id = await ShiftIdentityAsync(ct);
+            if (!id.IsRoomOrder || string.Equals(HttpContext.Session.GetString("Role"),"Council",StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "Choose an in-house guest room before collecting a folio payment." });
+            var visitId = await _pos.ValidateGuestRoomAsync(id.HotelId,id.RoomRegId,id.RoomNo,ct);
+            if (!string.Equals(visitId,id.RoomVisitId,StringComparison.Ordinal))
+                return BadRequest(new { message = "The selected guest stay changed. Select the room again." });
+            var balance = await _pos.GuestBalanceAsync(id.HotelId,id.RoomRegId,ct);
+            var currency = await _db.CurrencyAsync(id.HotelId,ct);
+            var capabilities = await _pos.PaymentCapabilitiesAsync(id.HotelId,ct);
+            var rights = await _pos.CalendarCardPermissionsAsync(id.HotelId,id.UserId,
+                HttpContext.Session.GetString("Role") ?? "",ct);
+            Response.Headers["Cache-Control"]="no-store, private";
+            return Json(new {
+                regId=id.RoomRegId,visitId=id.RoomVisitId,roomNo=id.RoomNo,
+                guestName=HttpContext.Session.GetString(RoomKey(id,"Guest")) ?? "In-house guest",
+                hotelId=id.HotelId,userId=id.UserId,balance,currencySymbol=currency,
+                currencyCode=currency == "£" ? "GBP" : currency == "€" ? "EUR" : currency == "$" ? "USD" : "GBP",
+                showOnlineCard=capabilities.online && rights.online,
+                showPdqPayment=capabilities.pdq && rights.pdq,
+                source="GI"
+            });
+        }
+        catch (RestaurantGuestAccessException ex) {return BadRequest(new {message=ex.Message});}
+        catch (Exception ex) { _logger.LogError(ex,"Restaurant folio payment context failed");
+            return StatusCode(500,new {message="Guest folio balance is unavailable. Retry from the room selection."}); }
     }
 
     [HttpGet("BillPanel")]
@@ -595,6 +776,15 @@ public sealed class RestaurantController : Controller
             if(string.IsNullOrWhiteSpace(bill))return BadRequest("No active bill to print.");
             var ticket=await _pos.PreviewAsync(id,bill,paymentMethod,discount,complimentary, CurrentTaxOverride(id,bill),ct);
             ticket.Hotel=await _pos.HotelAsync(id.HotelId,ct);
+            // Preview displays the validated, selected guest context, never a user-entered name.
+            if (id.IsRoomOrder)
+            {
+                var room=GuestRoom(id);
+                ticket.BillType="Room";
+                ticket.RoomNo=room.roomNo;
+                ticket.RoomRegId=room.regId;
+                ticket.GuestName=HttpContext.Session.GetString(RoomKey(id,"Guest")) ?? "";
+            }
             return View(ticket);
         }
         catch(Exception ex) { _logger.LogError(ex,"Restaurant bill preview failed");return PrintFailure(ex); }
@@ -670,16 +860,302 @@ public sealed class RestaurantController : Controller
         catch(Exception ex){_logger.LogError(ex,"Kitchen item cancellation failed");return PrintFailure(ex);}
     }
 
+    // An account-scoped pending payment prevents duplicate card collection. The
+    // Stripe webhook writes the receipt. The till finalizes the bill separately.
+    private sealed class DineCardState
+    {
+        public string HotelId { get; set; } = "";
+        public string UserId { get; set; } = "";
+        public string AccountNumber { get; set; } = "";
+        public string BillNumber { get; set; } = "";
+        public string Mode { get; set; } = "";
+        public string StripeSessionId { get; set; } = "";
+        public decimal Amount { get; set; }
+        public decimal Discount { get; set; }
+        public decimal? TaxOverride { get; set; }
+        public DateTime CreatedUtc { get; set; }
+        public DateTime StartedAtDatabase { get; set; }
+    }
+    private static string DineCardKey(RestaurantIdentity id) =>
+        $"Restaurant:DineCard:{id.HotelId}:{id.UserId}:{id.AccountNumber}";
+    private DineCardState? ReadDineCard(RestaurantIdentity id)
+    {
+        var raw = HttpContext.Session.GetString(DineCardKey(id));
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        try
+        {
+            var state = JsonSerializer.Deserialize<DineCardState>(raw);
+            return state != null && state.HotelId == id.HotelId &&
+                state.UserId == id.UserId && state.AccountNumber == id.AccountNumber ? state : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    [HttpPost("StartDineCard")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartDineCard(RestaurantDineCardStartInput input, string paymentMode, CancellationToken ct)
+    {
+        try
+        {
+            var id = await ShiftIdentityAsync(ct);
+            if (id.IsRoomOrder) return BadRequest(new { message = "Room charges must use the guest folio payment workflow." });
+            // PDQ/Online Card must not validate the unrelated, manually chosen
+            // RestaurantCheckoutInput.PaymentMethod field. A bill's payable
+            // status is verified below from the current, hotel-scoped POS cart.
+            if (!ModelState.IsValid)
+            {
+                var invalid = string.Join(", ", ModelState
+                    .Where(entry => entry.Value?.Errors.Count > 0)
+                    .Select(entry => entry.Key)
+                    .Where(key => !string.IsNullOrWhiteSpace(key)));
+                _logger.LogWarning("Restaurant card start invalid request fields: {Fields}", invalid);
+                return BadRequest(new { message = "Invalid bill details (" +
+                    (string.IsNullOrEmpty(invalid) ? "bill number or discount" : invalid) +
+                    "). Refresh the Restaurant POS and try again; no payment has started." });
+            }
+            if (string.IsNullOrWhiteSpace(input.BillNumber))
+                return BadRequest(new { message = "No active Dine In bill was selected. Refresh the Restaurant POS." });
+            input.BillNumber = input.BillNumber.Trim();
+            if (input.Complimentary)
+                return BadRequest(new { message = "Complimentary bills do not require PDQ or online card payment." });
+            if (input.Discount < 0)
+                return BadRequest(new { message = "The discount cannot be negative." });
+            var mode = (paymentMode ?? "").Trim().ToLowerInvariant();
+            if (mode != "pdq" && mode != "online") return BadRequest(new { message = "Invalid card payment type." });
+            var rights = await _pos.CalendarCardPermissionsAsync(id.HotelId,id.UserId,
+                HttpContext.Session.GetString("Role") ?? "",ct);
+            var capabilities = await _pos.PaymentCapabilitiesAsync(id.HotelId,ct);
+            if (string.Equals(HttpContext.Session.GetString("Role"), "Council", StringComparison.OrdinalIgnoreCase) ||
+                (mode == "pdq" && !(rights.pdq && capabilities.pdq)) ||
+                (mode == "online" && !(rights.online && capabilities.online)))
+                return StatusCode(403, new { message = "Card payment is not enabled for this cashier or property." });
+            var previous = ReadDineCard(id);
+            if (previous != null && DateTime.UtcNow - previous.CreatedUtc < TimeSpan.FromMinutes(45))
+                return Conflict(new { message = "A card payment is already in progress. Check its status before charging again." });
+            // Compare the requested bill against the ACTIVE draft for this
+            // exact cashier/shift. The display amount alone is not proof that
+            // the submitted bill is still payable. Never trust an arbitrary
+            // client bill number when starting a terminal charge.
+            var activeLines = await _db.CartAsync(id, ct);
+            if (activeLines.Count == 0)
+                return BadRequest(new { message = "This Dine In bill is no longer open. Refresh the POS before taking payment." });
+            if (activeLines.Any(line => !string.Equals(line.BillNumber, input.BillNumber, StringComparison.Ordinal)))
+                return BadRequest(new { message = "The active bill number has changed. Refresh the POS and check the bill before charging." });
+            var gatewayBill = new RestaurantCheckoutInput {
+                BillNumber = input.BillNumber, Discount = input.Discount,
+                Complimentary = false, PaymentMethod = mode == "pdq" ? "PDQ Payment" : "Online Card"
+            };
+            var taxOverride = CurrentTaxOverride(id, input.BillNumber);
+            var amount = await _pos.QuoteDineCardAsync(id, gatewayBill, taxOverride, ct);
+            // The browser amount is a consistency assertion, not an input to
+            // Stripe. Never charge if the displayed bill has gone stale or the
+            // cashier is looking at a different VAT/discount calculation.
+            if (input.ExpectedAmount is decimal shown && Math.Abs(amount - shown) > 0.01m)
+                return BadRequest(new { message =
+                    $"Payment amount mismatch: checkout shows £{shown:0.00} but the verified bill is £{amount:0.00}. Refresh the POS bill before charging. No payment has started." });
+            var terminal = HttpContext.RequestServices.GetService<ITerminalCardPaymentService>()
+                ?? new TerminalCardPaymentService(_configuration,
+                    HttpContext.RequestServices.GetRequiredService<ILogger<TerminalCardPaymentService>>());
+            var account = await terminal.GetAccountAsync(id.HotelId, ct);
+            if (!account.IsConnected) return BadRequest(new { message = "This hotel has no connected Stripe card account." });
+            var currency = (await terminal.GetCurrencyAsync(id.HotelId,ct)).Trim().ToUpperInvariant();
+            if (currency.Length == 0) currency = "GBP";
+            // Existing Restaurant POS is used by UK hotels. Zero-decimal currencies
+            // need separate handling before enabling a non-GBP payment currency.
+            if (currency != "GBP") return BadRequest(new { message = "Restaurant card charging currently requires GBP." });
+            var state = new DineCardState { HotelId=id.HotelId, UserId=id.UserId,
+                AccountNumber=id.AccountNumber, BillNumber=input.BillNumber,
+                Mode=mode, Amount=amount, Discount=input.Discount,
+                TaxOverride=taxOverride, CreatedUtc=DateTime.UtcNow,
+                StartedAtDatabase=await _pos.DatabaseNowAsync(ct) };
+            var reg = "Resturent Bill_" + input.BillNumber;
+            var minor = checked((long)decimal.Round(amount * 100m,0,MidpointRounding.AwayFromZero));
+            if (mode == "pdq")
+            {
+                HttpContext.Session.SetString(TerminalCardPaymentController.TicketKey,
+                    JsonSerializer.Serialize(new Dictionary<string,string> {
+                        ["regId"]=reg, ["visitId"]="1", ["fullName"]="Restaurant Dine In",
+                        ["amount"]=minor.ToString(CultureInfo.InvariantCulture), ["currency"]="GBP",
+                        ["grandTotal"]=amount.ToString("0.00",CultureInfo.InvariantCulture),
+                        ["payable"]=amount.ToString("0.00",CultureInfo.InvariantCulture),
+                        ["advancePaid"]="0", ["status"]="Paid", ["mode"]="charge",
+                        ["description"]="Restaurant Dine In Bill " + input.BillNumber
+                    }));
+                HttpContext.Session.SetString(DineCardKey(id),JsonSerializer.Serialize(state));
+                return Json(new { ok=true, mode, amount, url=Url.Action("Index","TerminalCardPayment") ?? "/terminalcardpayment" });
+            }
+            // Dedicated card checkout: never use the reservation-only PayNow form.
+            var returnUrl = $"{Request.Scheme}://{Request.Host}{Url.Action(nameof(DineCardReturn),"Restaurant")}";
+            var form = new List<KeyValuePair<string,string>> {
+                new("mode","payment"), new("payment_method_types[]","card"),
+                new("client_reference_id",reg),
+                new("line_items[0][price_data][currency]","gbp"),
+                new("line_items[0][price_data][unit_amount]",minor.ToString(CultureInfo.InvariantCulture)),
+                new("line_items[0][price_data][product_data][name]","Restaurant bill " + input.BillNumber),
+                new("line_items[0][quantity]","1"),
+                new("success_url", returnUrl + "?session_id={CHECKOUT_SESSION_ID}"),
+                new("cancel_url", returnUrl + "?cancelled=1"),
+                new("metadata[hotel_id]",id.HotelId), new("metadata[reg_id]",reg),
+                new("metadata[userid]",id.UserId), new("metadata[src]","NR"),
+                new("metadata[payment_for]","restaurant_dine"),
+                new("metadata[payment_method]","Online Card")
+            };
+            var stripe = new TerminalCardPaymentStripeClient();
+            var response = await stripe.PostAsync("checkout/sessions",
+                new TerminalCardPaymentStripeClient.TerminalCardPaymentStripeAccount(account.AccessToken,string.Empty),
+                form,"ora-restaurant-checkout-"+Guid.NewGuid().ToString("N"),ct);
+            var url = TerminalCardPaymentStripeClient.Str(response,"url");
+            var checkoutId = TerminalCardPaymentStripeClient.Str(response,"id");
+            if (url.Length == 0 || !url.StartsWith("https://",StringComparison.OrdinalIgnoreCase) ||
+                checkoutId.Length == 0) throw new InvalidOperationException("The card checkout link is unavailable.");
+            state.StripeSessionId=checkoutId;
+            HttpContext.Session.SetString(DineCardKey(id),JsonSerializer.Serialize(state));
+            return Json(new { ok=true, mode, amount, url });
+        }
+        catch(Exception ex)
+        {
+            _logger.LogError(ex,"Restaurant dine card start failed");
+            return BadRequest(new { message = ex is InvalidOperationException ? ex.Message : "Unable to prepare the card payment." });
+        }
+    }
+
+    [HttpGet("DineCardReturn")]
+    public IActionResult DineCardReturn(string? session_id, string? cancelled)
+    {
+        // This page only notifies the cashier; the server still verifies the
+        // actual payment in PaymentsLogTB before a bill can be marked closed.
+        var reference = session_id?.StartsWith("cs_",StringComparison.Ordinal)==true &&
+            session_id.Length < 180 ? session_id : "";
+        var jsRef = JsonSerializer.Serialize(reference);
+        var canceled = cancelled == "1";
+        var label = canceled ? "Card checkout was cancelled." : "Card checkout returned. Verifying payment…";
+        return Content("<!doctype html><html><head><meta charset='utf-8'><title>Restaurant Card</title>" +
+            "<style>body{font:15px system-ui;padding:34px;background:#f3f7fa;color:#183550}" +
+            "main{background:white;padding:26px;border-radius:12px;max-width:420px;margin:40px auto}</style>" +
+            "</head><body><main><h2>ORA PMS Restaurant</h2><p>" + label + "</p>" +
+            "<p>You may return to the Restaurant POS.</p></main><script>" +
+            "window.opener?.postMessage({type:'ORA_DINE_CARD_RETURN',sessionId:" + jsRef +
+            ",cancelled:" + (canceled ? "true":"false") + "},location.origin);" +
+            "</script></body></html>","text/html");
+    }
+
+    // Do not use the browser's success event or the local DB/webhook clock as
+    // payment proof. A bill number can repeat in different shifts, so also
+    // require the Stripe intent to have been created during this attempt.
+    private async Task<string?> VerifyDinePdqReceiptAsync(RestaurantIdentity id, DineCardState state, CancellationToken ct)
+    {
+        var candidates = await _pos.FindDinePdqReceiptCandidatesAsync(id,state.BillNumber,state.Amount,ct);
+        if (candidates.Count == 0) return null;
+        var terminal = HttpContext.RequestServices.GetService<ITerminalCardPaymentService>()
+            ?? new TerminalCardPaymentService(_configuration,
+                HttpContext.RequestServices.GetRequiredService<ILogger<TerminalCardPaymentService>>());
+        var account = await terminal.GetAccountAsync(id.HotelId,ct);
+        if (!account.IsConnected)
+            throw new InvalidOperationException("Stripe account unavailable. Do not charge again; reconcile the saved PDQ payment.");
+        var stripe = new TerminalCardPaymentStripeClient();
+        var stripeAccount = new TerminalCardPaymentStripeClient.TerminalCardPaymentStripeAccount(account.AccessToken,account.AccountId);
+        var started = new DateTimeOffset(state.CreatedUtc.ToUniversalTime()).ToUnixTimeSeconds();
+        var expectedMinor = checked((long)decimal.Round(state.Amount*100m,0,MidpointRounding.AwayFromZero));
+        string? verified = null;
+        foreach (var reference in candidates)
+        {
+            if (!reference.StartsWith("pi_",StringComparison.Ordinal) || reference.Length > 180) continue;
+            var response = await stripe.TryGetAsync("payment_intents/"+Uri.EscapeDataString(reference),stripeAccount,ct);
+            if (!response.HasValue) continue;
+            var pi = response.Value;
+            var md = TerminalCardPaymentStripeClient.Obj(pi,"metadata");
+            if (TerminalCardPaymentStripeClient.Str(pi,"id") != reference ||
+                TerminalCardPaymentStripeClient.Str(pi,"status") != "succeeded" ||
+                !string.Equals(TerminalCardPaymentStripeClient.Str(pi,"currency"),"gbp",StringComparison.OrdinalIgnoreCase) ||
+                !long.TryParse(TerminalCardPaymentStripeClient.Str(pi,"amount_received"),NumberStyles.Integer,CultureInfo.InvariantCulture,out var received) || received != expectedMinor ||
+                !long.TryParse(TerminalCardPaymentStripeClient.Str(pi,"created"),NumberStyles.Integer,CultureInfo.InvariantCulture,out var created) || created < started ||
+                TerminalCardPaymentStripeClient.Str(md,"hotel_id") != id.HotelId ||
+                TerminalCardPaymentStripeClient.Str(md,"userid") != id.UserId ||
+                TerminalCardPaymentStripeClient.Str(md,"reg_id") != "Resturent Bill_"+state.BillNumber ||
+                TerminalCardPaymentStripeClient.Str(md,"source") != "pdq_terminal" ||
+                TerminalCardPaymentStripeClient.Str(md,"payment_method") != "PDQ Payment") continue;
+            if (verified != null)
+                throw new InvalidOperationException("More than one successful PDQ transaction matches this attempt. Reconcile before closing the bill; do not charge again.");
+            verified = reference;
+        }
+        if (verified == null)
+            _logger.LogWarning("Restaurant PDQ ledger has {Count} candidate(s), but no Stripe intent matches the current attempt for hotel {HotelId}, bill {BillNumber}",
+                candidates.Count,id.HotelId,state.BillNumber);
+        return verified;
+    }
+
+    [HttpPost("FinalizeDineCard")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> FinalizeDineCard(CancellationToken ct)
+    {
+        try
+        {
+            var id=await ShiftIdentityAsync(ct);
+            var state=ReadDineCard(id);
+            if (id.IsRoomOrder || state == null || DateTime.UtcNow-state.CreatedUtc>TimeSpan.FromMinutes(45))
+                return Conflict(new { message="No current Dine In card payment is awaiting verification." });
+            var input=new RestaurantCheckoutInput {
+                BillNumber=state.BillNumber,Discount=state.Discount,
+                PaymentMethod=state.Mode=="pdq"?"PDQ Payment":"Online Card" };
+            // PDQ must match a saved ledger row AND a successful Stripe intent.
+            // Online Card retains its existing checkout-session reconciliation.
+            var payment = state.Mode == "pdq"
+                ? await VerifyDinePdqReceiptAsync(id,state,ct)
+                : await _pos.FindDineCardReceiptAsync(id,state.BillNumber,
+                    state.StripeSessionId,state.Amount,state.StartedAtDatabase,ct);
+            if (string.IsNullOrWhiteSpace(payment))
+            {
+                _logger.LogInformation("Restaurant card reconciliation pending for hotel {HotelId}, user {UserId}, bill {BillNumber}, mode {Mode}, amount {Amount}",
+                    id.HotelId,id.UserId,state.BillNumber,state.Mode,state.Amount);
+                return Conflict(new { pending=true, message="Waiting for Stripe to confirm and record the payment. Do not charge again." });
+            }
+            var receiptLink=Url.Action(nameof(Receipt),"Restaurant",
+                new { billNumber=state.BillNumber,account=id.AccountNumber },Request.Scheme)
+                ?? throw new InvalidOperationException("Cannot create receipt link.");
+            // If the earlier close committed but its response was lost, do not
+            // quote an empty cart or try to close (or charge) it a second time.
+            if (!await _pos.IsDineBillClosedAsync(id,state.BillNumber,ct))
+            {
+                var quote=await _pos.QuoteDineCardAsync(id,input,state.TaxOverride,ct);
+                if (Math.Abs(quote-state.Amount)>0.01m)
+                    return Conflict(new { message="The bill changed after card charging began. Do not charge again; reconcile with the cashier." });
+                await _pos.CloseDineInAsync(id,input,
+                    HttpContext.Connection.RemoteIpAddress?.ToString()??"",receiptLink,state.TaxOverride,ct,payment);
+            }
+            HttpContext.Session.Remove(DineCardKey(id));
+            HttpContext.Session.Remove(PosTaxKey(id,state.BillNumber));
+            return Json(new { ok=true, receiptUrl=receiptLink, bill=state.BillNumber });
+        }
+        catch(Exception ex)
+        {
+            _logger.LogError(ex,"Restaurant card settlement verification failed");
+            return Conflict(new { pending=true,
+                message=ex is InvalidOperationException ? ex.Message : "Payment could not be reconciled. Do not charge again." });
+        }
+    }
+
     [HttpPost("CloseBill")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CloseBill(RestaurantCheckoutInput input,CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(GuestRoom(CurrentIdentity()).regId))
             return BadRequest("This is a Room bill. Use Post and Print rather than Dine In checkout.");
-        if(!ModelState.IsValid)return BadRequest("Bill number, configured payment method and valid discount are required.");
+        if (!ModelState.IsValid)
+        {
+            var fields = string.Join(", ", ModelState
+                .Where(x => x.Value?.Errors.Count > 0)
+                .Select(x => x.Key)
+                .Where(x => !string.IsNullOrWhiteSpace(x)));
+            _logger.LogWarning("Restaurant manual checkout validation rejected fields: {Fields}", fields);
+            return BadRequest("Please check the following checkout fields: " +
+                (string.IsNullOrWhiteSpace(fields) ? "Bill number, payment method or discount." : fields + "."));
+        }
         try
         {
             var id=await ShiftIdentityAsync(ct);
+            var pending=ReadDineCard(id);
+            if (pending != null && DateTime.UtcNow - pending.CreatedUtc < TimeSpan.FromMinutes(45))
+                return BadRequest("A card transaction is pending for this cashier. Check the card payment status before closing another bill.");
             var hotel=await _pos.HotelAsync(id.HotelId,ct);
             var receiptLink=Url.Action(nameof(Receipt),"Restaurant",
                 new {billNumber=input.BillNumber,account=id.AccountNumber},Request.Scheme)
@@ -712,12 +1188,47 @@ public sealed class RestaurantController : Controller
         catch(Exception ex){_logger.LogWarning(ex,"Restaurant receipt not available");return PrintFailure(ex);}
     }
 
+    // Safe read-only recovery check for the selected guest's exact Restaurant bill.
+    // No client-provided hotel/guest identity: both come from this cashier's session.
+    [HttpGet("RoomPostStatus")]
+    public async Task<IActionResult> RoomPostStatus(string? billNumber,CancellationToken ct)
+    {
+        Response.Headers["Cache-Control"]="no-store";
+        if(string.IsNullOrWhiteSpace(billNumber) || billNumber.Length>80)
+            return BadRequest(new {ok=false,message="A valid Restaurant bill number is required."});
+        try
+        {
+            var id=CurrentIdentity();
+            var room=GuestRoom(id);
+            if(string.IsNullOrWhiteSpace(room.regId) || string.IsNullOrWhiteSpace(room.roomNo))
+                return Conflict(new {ok=false,message="The selected guest session is no longer active. Reopen this guest from Calendar."});
+            // The current open bill or the just-completed bill may be checked.
+            // Once posted the room-linked open-bill slot is intentionally cleared.
+            if(!string.IsNullOrWhiteSpace(room.linkedBill) && room.linkedBill!=billNumber)
+                return Conflict(new {ok=false,message="Another Restaurant bill is now selected. Refresh the POS before continuing."});
+            var charge=await _pos.PostedRoomChargeAsync(id.HotelId,room.regId,room.roomNo,billNumber,ct);
+            return Json(new {ok=true,posted=charge.HasValue,billNumber,
+                amount=charge.GetValueOrDefault(),
+                receiptUrl=charge.HasValue ? Url.Action(nameof(GuestBill),"Restaurant",
+                    new {regId=room.regId,billNumber}) : null});
+        }
+        catch(Exception ex)
+        {
+            _logger.LogError(ex,"Restaurant room post reconciliation failed for bill {BillNumber}",billNumber);
+            return StatusCode(503,new {ok=false,message="Unable to verify Guest Services posting. Check the folio before retrying."});
+        }
+    }
+
     // Room bills are posted to the checked-in guest's Services, never to PaymentsLogTB as a cash sale.
     [HttpPost("PostToRoom")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> PostToRoom(RestaurantCheckoutInput input,CancellationToken ct)
     {
-        if(!ModelState.IsValid) return BadRequest("The bill details are incomplete.");
+        if(!ModelState.IsValid)
+        {
+            var fields=ModelState.Where(x=>x.Value?.Errors.Count>0).Select(x=>x.Key).Take(5);
+            return BadRequest("Invalid Restaurant bill fields: "+string.Join(", ",fields)+". Refresh the bill and try again.");
+        }
         try
         {
             var id=await ShiftIdentityAsync(ct);
@@ -729,6 +1240,10 @@ public sealed class RestaurantController : Controller
             var receipt=await _pos.PostToRoomAsync(id,input,room.regId,room.roomNo,
                 CurrentTaxOverride(id,input.BillNumber), HttpContext.Connection.RemoteIpAddress?.ToString() ?? "",ct);
             receipt.Hotel=hotel;
+            receipt.RoomNo=room.roomNo;
+            receipt.RoomRegId=room.regId;
+            if (string.IsNullOrWhiteSpace(receipt.GuestName))
+                receipt.GuestName=HttpContext.Session.GetString(RoomKey(id,"Guest")) ?? "";
             // Keep the guest context selected. After printing, the guest's bill panel
             // is empty rather than unexpectedly showing this cashier's Dine In cart.
             HttpContext.Session.Remove(RoomKey(id,"Bill"));

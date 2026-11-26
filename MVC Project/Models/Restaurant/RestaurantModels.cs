@@ -59,12 +59,25 @@ public sealed class RestaurantHeldBill
     public int Lines { get; set; }
     public decimal Total { get; set; }
 }
+/// <summary>Checked-in room returned by the current hotel's POS room selector.</summary>
+public sealed class RestaurantInHouseRoom
+{
+    public string RoomNo { get; set; } = "";
+    public string RegId { get; set; } = "";
+    public string GuestName { get; set; } = "";
+}
+
 public sealed class RestaurantHomeViewModel
 {
     public string Currency { get; set; } = "";
     public string BillType { get; set; } = "Dine In";
     public string RoomRegId { get; set; } = "";
     public string RoomNo { get; set; } = "";
+    public string RoomVisitId { get; set; } = "";
+    public string GuestName { get; set; } = "";
+    public bool HasPendingDineCard { get; set; }
+    public bool CanPdqPayment { get; set; }
+    public bool CanOnlineCardPayment { get; set; }
     public string BillNumber { get; set; } = "";
     public string Category { get; set; } = "";
     public string Search { get; set; } = "";

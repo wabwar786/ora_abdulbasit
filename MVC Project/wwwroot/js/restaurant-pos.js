@@ -54,8 +54,13 @@
 
   function setBusy() {
     root.classList.toggle('r-pos-loading', busyCount > 0);
+    // The server-rendered cart may have been replaced by an AJAX response.
+    // Held bills must never enable Charge / Actions on an empty active cart.
+    const charge = $('r-touch-pay-open');
+    if (charge) charge.disabled = busyCount > 0 || !root.querySelector('.r-classic-cart-card');
+    if (busyCount === 0) root.dispatchEvent(new Event('restaurant:pos-idle'));
     // Do not allow a checkout while an earlier Add/remove is awaiting confirmation.
-    root.querySelectorAll('#r-close-form [type="submit"], #r-kitchen-btn, #r-hold-btn, #r-save-adjustment')
+    root.querySelectorAll('#r-close-form [type="submit"], #r-kitchen-btn, #r-hold-btn, #r-save-adjustment, #r-held-toggle, #r-new-bill, #r-edit-discount, #r-edit-tax, #r-complimentary')
       .forEach(button => {
         if (busyCount > 0) {
           if (!button.disabled) { button.dataset.busyDisabled = '1'; button.disabled = true; }
@@ -103,28 +108,35 @@
   async function taxQuote() {
     const payment = $('r-payment');
     const request = ++taxRequest;
-    const base = money('r-subtotal');
-    const baseRate = money('r-tax-default');
-    root.dataset.currentTaxRate = String(baseRate);
-    root.dataset.currentTaxAmount = String(Number((base * baseRate / 100).toFixed(2)));
-    root.dataset.currentTaxName = 'Tax';
-    totals();
-    if (!payment?.value || !root.dataset.taxUrl) return;
+    const method = payment?.value || '';
+    // Keep the last verified totals while fetching; the checkout blocks payment
+    // until the newest quote has returned. Never show a guessed tax rate.
+    let quoteSucceeded = false;
     try {
       const url = new URL(root.dataset.taxUrl, location.origin);
-      url.searchParams.set('paymentMethod', payment.value);
-      const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!method || !root.dataset.taxUrl) throw new Error('Tax quote unavailable');
+      url.searchParams.set('paymentMethod', method);
+      const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error('Tax quote unavailable');
       const json = await response.json();
       if (request !== taxRequest) return;
-      root.dataset.currentTaxRate = String(Number(json.rate || 0));
+      if (json.rate == null || json.amount == null || !Number.isFinite(Number(json.rate)) || !Number.isFinite(Number(json.amount))) throw new Error('Invalid tax quote');
+      quoteSucceeded = true;
+      root.dataset.currentTaxRate = String(Number(json.rate));
       root.dataset.currentTaxAmount = String(Number(json.amount || 0));
       root.dataset.currentTaxName = json.name || 'Tax';
       totals();
     } catch (error) {
       if (request !== taxRequest) return;
+      quoteSucceeded = false;
       if ($('r-tax-label')) $('r-tax-label').textContent = 'Tax estimate unavailable';
       console.warn('Restaurant tax quote:', error);
+    } finally {
+      // The touch payment sheet must not permit closing while the selected
+      // payment method's tax quote is still being retrieved.
+      if (request === taxRequest) root.dispatchEvent(new CustomEvent('restaurant:tax-quote-ready', {
+        detail: { paymentMethod: method, ok: quoteSucceeded }
+      }));
     }
   }
 
@@ -174,6 +186,8 @@
     setFooterPosition();
     setBusy();
     syncPanelTax();
+    if (action === 'adjustment' || action === 'tax') delete root.dataset.adjustmentUncertain;
+    root.dispatchEvent(new CustomEvent('restaurant:pos-mutation-complete', { detail: { kind: action } }));
   }
 
   async function expandInlineVariants(form) {
@@ -290,15 +304,48 @@
 
   // Cart POSTs now return only the bill panel; no Home redirect and no menu reload.
   // Kitchen and close actions return dedicated printable documents.
+  async function responseError(response, body, doc) {
+    // ASP.NET Core can respond with text/plain for model-binding failures,
+    // with PrintError HTML for transaction errors, or with JSON.
+    // Display the actionable server message instead of a generic error.
+    const kind = (response.headers.get('content-type') || '').toLowerCase();
+    let detail = '';
+    if (kind.includes('application/json')) {
+      try { const payload = JSON.parse(body); detail = payload.message || payload.title || ''; } catch { /* not JSON */ }
+    }
+    if (!detail) detail = doc?.querySelector('.print-error p, .restaurant-alert.error')?.textContent?.trim() || '';
+    if (!detail && !kind.includes('text/html')) detail = String(body || '').trim();
+    if (!detail && response.redirected) detail = 'Your session may have expired. Sign in and reopen the Restaurant bill.';
+    // HTML error pages may contain framework markup: do not show raw HTML or secrets.
+    return detail.slice(0, 450) || `The Restaurant server rejected this request (HTTP ${response.status}). Check server logs.`;
+  }
+
   async function submitMutation(form, kind) {
     if (form.dataset.posSubmitting === '1') return;
     if (kind !== 'update') flushQuantitySaves();
     if (!form.reportValidity()) return;
     const payload = new FormData(form); // capture the requested qty/discount at click time
     const button = form.querySelector('[type="submit"]');
+    // Only a Room bill can use the shared Guest Folio payment component.
+    // Capture the intent BEFORE replacing the bill panel on successful posting.
+    // Room checkout is a two-stage operation: post once, THEN collect. Never open
+    // a print popup before a PDQ / online card transaction has been verified.
+    const deferRoomReceipt = kind === 'close' && root.dataset.currentBillMode === 'room'
+      && root.dataset.deferRoomReceipt === '1';
+    const deferDineReceipt = kind === 'close' && root.dataset.currentBillMode !== 'room'
+      && root.dataset.deferDineReceipt === '1';
+    delete root.dataset.deferRoomReceipt;
+    delete root.dataset.deferDineReceipt;
+    const collectAfterPost = deferRoomReceipt && root.dataset.postAndCollect === '1';
+    delete root.dataset.postAndCollect;
+    const postCollectMethod = root.dataset.postCollectMethod || 'manual';
+    delete root.dataset.postCollectMethod;
+    const postedAmount = deferRoomReceipt
+      ? Number(($('r-total')?.textContent || '').replace(/[^0-9.]/g, '')) : 0;
+    const postedBill = deferRoomReceipt ? (form.querySelector('[name="BillNumber"]')?.value || '') : '';
     const printKind = ['kitchen', 'close', 'cancel'].includes(kind);
-    const printWindow = printKind ? openPrintWindow(kind === 'close' ? 'receipt' : 'kitchen ticket') : null;
-    if (printKind && !printWindow) return;
+    const printWindow = printKind && !deferRoomReceipt && !deferDineReceipt ? openPrintWindow(kind === 'close' ? 'receipt' : 'kitchen ticket') : null;
+    if (printKind && !deferRoomReceipt && !deferDineReceipt && !printWindow) return;
     form.dataset.posSubmitting = '1';
     const subtleAction = kind === 'add' || kind === 'remove' || kind === 'update';
     if (button) markActionLoading(button, true);
@@ -322,16 +369,45 @@
             void refreshBillAfterPrint(kind);
             return;
           }
-          throw new Error(result.message || 'The operation could not be completed.');
+          const error = new Error(result.message || `The Restaurant request did not complete (HTTP ${response.status}).`);
+          error.httpStatus = response.status;
+          error.explicitRejection = response.status >= 400 && response.status < 500;
+          throw error;
         }
         const html = await response.text();
         const doc = htmlDocument(html);
         if (printKind) {
-          if (!response.ok || !doc.querySelector('.print-screen')) {
+          // PrintError itself contains .print-screen. Treat it as an ERROR,
+          // not as proof that the Restaurant bill was posted/paid.
+          if (!response.ok || !doc.querySelector('.print-screen') || doc.querySelector('.print-error')) {
             printWindow?.close();
-            throw new Error(doc.querySelector('.print-error, .restaurant-alert.error, main')?.textContent?.trim().slice(0, 240) || 'The operation was not completed.');
+            const message = await responseError(response,html,doc);
+            const error = new Error(message);
+            error.httpStatus = response.status;
+            error.explicitRejection = response.status >= 400 && response.status < 500;
+            throw error;
           }
-          writePrintWindow(printWindow, html);
+          if (deferDineReceipt) {
+            window.RestaurantDineReceipt = {
+              print: () => {
+                const win = openPrintWindow('Restaurant paid receipt');
+                if (win) writePrintWindow(win,html);
+              }
+            };
+          }
+          if (deferRoomReceipt) {
+            // Retain the server-rendered receipt; the cashier can print it from
+            // the checkout success screen without leaving the payment workflow.
+            window.RestaurantRoomReceipt = {
+              bill: postedBill,
+              print: () => {
+                const win = openPrintWindow('Restaurant receipt');
+                if (win) writePrintWindow(win, html);
+              }
+            };
+          } else {
+            writePrintWindow(printWindow, html);
+          }
           printCompleted = true;
           if (kind === 'cancel') $('r-cancel-dialog').hidden = true;
           // Payment/kitchen mutation is committed at this point. Never say it failed
@@ -343,10 +419,24 @@
             });
             if (!refresh.ok) throw new Error('Unable to refresh POS');
             renderBill(htmlDocument(await refresh.text()), kind);
-            notify(kind === 'close' ? 'Bill completed. Receipt is ready to print.' : 'Kitchen ticket is ready to print.');
+            notify(deferRoomReceipt ? 'Restaurant charge posted to the guest folio.'
+              : kind === 'close' ? 'Bill completed. Receipt is ready to print.' : 'Kitchen ticket is ready to print.');
           } catch (refreshError) {
             notify('Operation completed and printout is ready. Refresh the POS to update the bill.', true, false);
             console.warn('POS post-print refresh:', refreshError);
+          }
+          if (deferDineReceipt) {
+            root.dispatchEvent(new CustomEvent('restaurant:dine-bill-closed', {
+              detail: { billNumber: form.querySelector('[name="BillNumber"]')?.value || '' }
+            }));
+          }
+          if (deferRoomReceipt) {
+            // Never repost on a payment retry. The receipt has already been
+            // committed even if the POS panel refresh failed.
+            root.dispatchEvent(new CustomEvent('restaurant:room-posted', {
+              detail: { amount: postedAmount, billNumber: postedBill,
+                collect: collectAfterPost, method: postCollectMethod }
+            }));
           }
           return;
         }
@@ -367,7 +457,17 @@
       } catch (error) {
         if (!printCompleted && printWindow && !printWindow.closed) printWindow.close();
         const message = error?.message || 'Request failed. Check your connection and retry.';
+        if (kind === 'adjustment' || kind === 'tax') {
+          root.dataset.adjustmentUncertain = '1';
+          if (kind === 'adjustment' && $('r-complimentary')) { $('r-complimentary').checked = $('r-complimentary').defaultChecked; totals(); }
+        }
         notify(message, true, false);
+        root.dispatchEvent(new CustomEvent('restaurant:pos-mutation-failed', {
+          detail: {kind, message, billNumber: form.querySelector('[name="BillNumber"]')?.value || '',
+            httpStatus: error?.httpStatus || 0,
+            explicitRejection: !!error?.explicitRejection,
+            networkError: error instanceof TypeError || /network|failed to fetch|connection/i.test(message)}
+        }));
         if (kind === 'add' && /select a variation/i.test(message)) void expandInlineVariants(form);
         // Never retry a POST automatically: it might already have reached the server.
       }
@@ -457,8 +557,39 @@
       return;
     }
     if (control.id === 'r-held-toggle') {
+      if (control.disabled || root.classList.contains('r-pos-loading')) return;
       const list = $('r-held-list');
       if (list) { list.hidden = !list.hidden; control.setAttribute('aria-expanded', String(!list.hidden)); setFooterPosition(); }
+      return;
+    }
+    if (control.id === 'r-new-bill') {
+      if (control.disabled || root.classList.contains('r-pos-loading')) return;
+      const hasItems = !!root.querySelector('.r-classic-cart-card');
+      if (root.dataset.currentBillMode === 'room') {
+        // Room bills cannot be held. Leave the guest draft intact and use the
+        // existing counter-bill entry path (which may already have a draft).
+        if (hasItems && !confirm('Keep this guest bill saved and open the counter bill?')) return;
+        location.assign(root.dataset.restaurantHomeUrl || '/Restaurant/Home');
+        return;
+      }
+      const pendingCard = $('r-dine-card-pending');
+      if (pendingCard && !pendingCard.hidden) {
+        notify('Check the existing card payment or refresh the verified bill status before starting a new bill.', true);
+        return;
+      }
+      if (root.dataset.adjustmentUncertain === '1') {
+        notify('Refresh the POS to confirm the bill adjustment before starting a new bill.', true);
+        return;
+      }
+      if (!hasItems) { notify('The current bill is already empty.'); return; }
+      // Reuse the existing Hold action; never delete items or create a second
+      // active bill. A fresh bill number is allocated when the next item is added.
+      const form = $('r-hold-form');
+      if (form && confirm('Put the current bill on hold and start a new bill?')) {
+        populateAdjustment(form);
+        form.requestSubmit();
+      }
+      return;
     }
     if (control.id === 'r-hold-btn' && confirm('Place this bill on hold?')) {
       const form = $('r-hold-form'); populateAdjustment(form); form.requestSubmit();
@@ -499,7 +630,11 @@
   root.addEventListener('change', event => {
     if (!(event.target instanceof Element)) return;
     if (event.target.matches('#r-payment')) void taxQuote();
-    if (event.target.matches('#r-complimentary')) { totals(); setFooterPosition(); }
+    if (event.target.matches('#r-complimentary')) {
+      totals(); setFooterPosition();
+      const save = $('r-save-form');
+      if (save && !root.classList.contains('r-pos-loading')) { populateAdjustment(save); save.requestSubmit(); }
+    }
     if (event.target.matches('.r-product-qty')) event.target.value = clamp(event.target.value);
     if (event.target.matches('.r-cart-qty-stepper input[name="Quantity"]')) {
       const form = event.target.closest('form[data-pos-async="update"]');
@@ -579,10 +714,12 @@
     const amount = activeDiscountMode === 'percent' ? money('r-subtotal') * raw / 100 : raw;
     const max = money('r-subtotal') + Number(root.dataset.currentTaxAmount || 0);
     if (amount > max) { notify('Discount cannot exceed the bill including tax.', true); return; }
-    $('r-discount').value = amount.toFixed(2);
-    totals();
     const save = $('r-save-form');
-    if (save) { populateAdjustment(save); save.requestSubmit(); }
+    if (save) {
+      populateAdjustment(save);
+      save.querySelector('[name="discount"]').value = amount.toFixed(2);
+      save.requestSubmit();
+    }
   });
 
   function openTaxEditor() {
@@ -617,10 +754,21 @@
   cancelDialog?.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => { cancelDialog.hidden = true; }));
 
   window.restaurantConfirmClose = () => {
+    if (root.dataset.checkoutApproved === '1') {
+      delete root.dataset.checkoutApproved;
+      return true; // Explicit final confirmation already clicked in checkout modal.
+    }
     const roomMode = new URL($('r-close-form')?.action || '', location.origin).pathname.toLowerCase().endsWith('/posttoroom');
     if (!roomMode && !$('r-complimentary')?.checked && !$('r-payment')?.value) { notify('Select a payment method.', true); return false; }
     if (!Number.isFinite(+$('r-discount')?.value) || +$('r-discount')?.value < 0) { notify('Enter a valid discount.', true); return false; }
-    return confirm(roomMode ? `Post ${$('r-total')?.textContent} to this guest's Services as an unpaid room charge?` : `Confirm payment of ${$('r-total')?.textContent} and close this bill? This cannot be undone.`);
+    const wantsPayment = roomMode && root.dataset.postAndCollect === '1';
+    const confirmed = confirm(roomMode
+      ? (wantsPayment
+        ? `Post ${$('r-total')?.textContent} to this guest's folio, then open payment collection? The folio charge will remain even if card payment is cancelled.`
+        : `Post ${$('r-total')?.textContent} to this guest's Services as an unpaid room charge?`)
+      : `Confirm payment of ${$('r-total')?.textContent} and close this bill? This cannot be undone.`);
+    if (!confirmed) delete root.dataset.postAndCollect;
+    return confirmed;
   };
 
   // Menu cards are already loaded on the first page. Filter locally instead

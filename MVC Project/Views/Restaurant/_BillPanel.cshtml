@@ -5,36 +5,36 @@
                data-quoted-payment="@(Model.PaymentMethods.FirstOrDefault() ?? "Cash")"
                data-quoted-tax-rate="@Model.Tax.Rate.ToString(CultureInfo.InvariantCulture)"
                data-quoted-tax-amount="@Model.Tax.Amount.ToString(CultureInfo.InvariantCulture)"
-               data-quoted-tax-name="@Model.Tax.Name" data-bill-number="@Model.BillNumber">
+               data-quoted-tax-name="@Model.Tax.Name" data-bill-number="@Model.BillNumber" data-held-count="@Model.HeldBills.Count">
+            <div class="r-bill-toolbar" role="group" aria-label="Bill management">
+                <button type="button" id="r-held-toggle" class="r-bill-tool" aria-controls="r-held-list" aria-expanded="false" @(Model.BillType == "Room" ? "disabled" : null)>Held Bills <span class="r-held-count">@Model.HeldBills.Count</span></button>
+                <button type="button" id="r-new-bill" class="r-bill-tool r-bill-tool-new">+ New Bill</button>
+            </div>
             <header class="r-classic-bill-heading">
-                <div><h2>Current Bill</h2><p>Add items, review totals, then print and close.</p></div>
-                <div class="r-classic-bill-badges"><span>Bill #@Model.BillNumber</span><span>@Model.BillType</span></div>
+                <div><h2>Current Bill</h2></div>
+                <div class="r-classic-bill-badges"><span>Bill #@Model.BillNumber</span></div>
             </header>
-            <div class="r-classic-sale-info">
-                <div class="r-classic-selects">
-                    <label for="r-bill-type"><span>Bill Type</span>
-                        <select id="r-bill-type" class="restaurant-input" disabled title="Bill type follows the selected guest context"><option>@Model.BillType</option></select>
-                    </label>
+            <div class="r-classic-sale-info" hidden>
                     @if (Model.BillType == "Room")
                     {
-                        <label><span>Payment</span><span class="r-room-payment">To Guest Services (Unpaid)</span></label>
                         <input type="hidden" name="PaymentMethod" value="Extras" form="r-close-form" />
                     }
                     else
                     {
-                        <label for="r-payment"><span>Payment Method</span>
-                            <select id="r-payment" class="restaurant-input" name="PaymentMethod" form="r-close-form" @(hasBill ? null : "disabled")>
-                                @foreach (var method in Model.PaymentMethods)
-                                {
-                                    <option value="@method">@method</option>
-                                }
-                            </select>
-                        </label>
+                        <select id="r-payment" class="restaurant-input" name="PaymentMethod" form="r-close-form" @(hasBill ? null : "disabled")>
+                            @foreach (var method in Model.PaymentMethods)
+                            { <option value="@method">@method</option> }
+                        </select>
                     }
-                </div>
-                <div class="r-classic-direct">@(Model.BillType == "Room" ? "Room service · Post to guest folio" : "Direct sale")</div>
             </div>
 
+            @if (Model.BillType == "Room")
+            {
+                <section class="r-guest-summary r-guest-summary-top" aria-label="Selected in-house guest">
+                    <div class="r-guest-summary-line"><strong class="r-guest-name">@Model.GuestName</strong></div>
+                    <div class="r-guest-summary-line r-guest-summary-meta"><span>Room <b>@Model.RoomNo</b></span><span>Reg ID <b>@Model.RoomRegId</b></span></div>
+                </section>
+            }
             <div class="r-cart-scroll" aria-label="Bill items">
                 @if (!hasBill)
                 {
@@ -82,32 +82,36 @@
                 }
             </div>
 
-            @if (Model.BillType == "Room")
-            {
-                <div class="r-room-info"><strong>Room @Model.RoomNo</strong><small>Guest Reg ID @Model.RoomRegId · Unpaid room charge</small></div>
-            }
             <div class="r-bill-bottom">
                 <form asp-controller="Restaurant" asp-action="@(Model.BillType == "Room" ? "PostToRoom" : "CloseBill")" method="post" id="r-close-form" target="_blank" data-pos-async="close">
                     <input type="hidden" name="BillNumber" value="@Model.BillNumber" />
+                    <input type="hidden" name="CardType" id="r-dine-card-type" value="" />
+                    <input type="hidden" name="ExternalReference" id="r-dine-card-reference" value="" />
                     <div class="r-modern-adjustment-options">
                         <input id="r-discount" name="Discount" type="hidden" value="@Model.Discount.ToString(CultureInfo.InvariantCulture)" />
                         <label class="r-complimentary" for="r-complimentary"><input type="checkbox" name="Complimentary" value="true" id="r-complimentary" @(Model.Complimentary ? "checked" : null) @(hasBill ? null : "disabled") /> Complimentary Bill</label>
                     </div>
                     <div class="r-amounts">
                         <div><span>Sub Total</span><strong>@Model.Currency @Model.SubTotal.ToString("0.00")</strong></div>
-                        <div><span>Discount <button type="button" class="r-modern-edit" id="r-edit-discount" aria-label="Edit discount" @(hasBill ? null : "disabled")>✎ Edit</button></span><strong id="r-discount-display">− @Model.Currency @Model.Discount.ToString("0.00")</strong></div>
-                        <div><span><span id="r-tax-label">@Model.Tax.Name (@Model.Tax.Rate.ToString("0.##")%)</span> <button type="button" class="r-modern-edit" id="r-edit-tax" aria-label="Edit GST or VAT" @(hasBill ? null : "disabled")>✎ Edit</button></span><strong id="r-tax-amount">@Model.Currency @Model.Tax.Amount.ToString("0.00")</strong></div>
+                        <div><span class="r-adjustment-label">Discount <button type="button" class="r-summary-edit" id="r-edit-discount" @(hasBill ? null : "disabled")>Edit</button></span><strong id="r-discount-display">− @Model.Currency @Model.Discount.ToString("0.00")</strong></div>
+                        <div><span class="r-adjustment-label"><span id="r-tax-label">@Model.Tax.Name (@Model.Tax.Rate.ToString("0.##")%)</span> <button type="button" class="r-summary-edit" id="r-edit-tax" @(hasBill ? null : "disabled")>Edit</button></span><strong id="r-tax-amount">@Model.Currency @Model.Tax.Amount.ToString("0.00")</strong></div>
                         <div class="r-grand-total"><span>Payable amount</span><strong id="r-total">@Model.Currency @((Model.SubTotal + Model.Tax.Amount).ToString("0.00"))</strong></div>
                     </div>
                     <input type="hidden" id="r-subtotal" value="@Model.SubTotal.ToString(CultureInfo.InvariantCulture)" />
                     <input type="hidden" id="r-currency" value="@Model.Currency" />
                     <input type="hidden" id="r-tax-default" value="@Model.Tax.Rate.ToString(CultureInfo.InvariantCulture)" />
-                    <div class="r-action-grid">
-                        <button type="button" class="restaurant-btn r-action" id="r-hold-btn" @(hasBill && Model.BillType != "Room" ? null : "disabled")>Hold Bill</button>
-                        <button type="button" class="restaurant-btn r-action r-held-toggle" id="r-held-toggle" @(Model.BillType == "Room" ? "disabled" : null) aria-controls="r-held-list" aria-expanded="false">Held Bills (@Model.HeldBills.Count)</button>
-                        <button type="button" class="restaurant-btn r-action" id="r-kitchen-btn" @(hasBill ? null : "disabled")>Kitchen Print</button>
-                        <button type="button" class="restaurant-btn r-action" id="r-print-btn" @(hasBill ? null : "disabled")>Print Bill</button>
-                        <button type="submit" class="restaurant-btn r-action r-action-close" @(hasBill ? null : "disabled")>@(Model.BillType == "Room" ? "Post to Guest Services & Print" : "Confirm, Print & Close")</button>
+                    <div class="r-action-grid @(Model.BillType == "Room" ? "r-actions-room" : "r-actions-dine")">
+                        <div class="r-action-row r-action-row-primary r-unified-action-row r-two-actions">
+                            <button type="button" class="restaurant-btn r-action" id="r-kitchen-btn" @(hasBill ? null : "disabled")>Send to Kitchen</button>
+                            <button type="button" class="restaurant-btn r-action r-action-close" id="r-touch-pay-open" @(hasBill ? null : "disabled")>Charge / Actions</button>
+                        </div>
+                        @if (Model.BillType != "Room")
+                        {
+                            <div class="r-dine-card-pending" id="r-dine-card-pending" hidden="@(Model.HasPendingDineCard ? null : "hidden")" role="status">
+                                <span id="r-dine-card-message">@(Model.HasPendingDineCard ? "Card transaction pending — check payment before another charge." : "Waiting for card payment.")</span>
+                                <button type="button" id="r-dine-card-check" class="r-pending-check-proxy" tabindex="-1" aria-hidden="true">Check payment</button>
+                            </div>
+                        }
                     </div>
                 </form>
                 <form asp-controller="Restaurant" asp-action="Hold" method="post" id="r-hold-form" data-pos-async="hold" hidden>

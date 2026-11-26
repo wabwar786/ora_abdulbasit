@@ -22,6 +22,21 @@
     <div class="rp-metadata">
         <div><span>Bill no.</span><strong>#@Model.BillNumber</strong></div>
         <div><span>Date / time</span><strong>@Model.PrintedAt.ToString("dd MMM yyyy, hh:mm tt")</strong></div>
+        @if (Model.BillType.Equals("Room", StringComparison.OrdinalIgnoreCase))
+        {
+            @if (!string.IsNullOrWhiteSpace(Model.GuestName))
+            {
+                <div><span>Guest name</span><strong>@Model.GuestName</strong></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.RoomRegId))
+            {
+                <div><span>Registration ID</span><strong>@Model.RoomRegId</strong></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.RoomNo))
+            {
+                <div><span>Room no.</span><strong>@Model.RoomNo</strong></div>
+            }
+        }
         <div><span>Order type</span><strong>@Model.BillType</strong></div>
         <div><span>Cashier</span><strong>@Model.Cashier</strong></div>
         <div><span>Payment</span><strong>@Model.PaymentMethod</strong></div>

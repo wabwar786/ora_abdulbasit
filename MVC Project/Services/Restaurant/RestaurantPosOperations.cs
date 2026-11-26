@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
@@ -86,6 +86,9 @@ FROM dbo.taxes WHERE CONVERT(nvarchar(100),hotel_id)=@hotel ORDER BY id DESC", c
             tax.Name=vat>0?"VAT":gst>0?"GST":"Tax";
             if(Yes(rd["isincludeinrate"]))
             {
+                // Preserve the existing hotel's VAT/GST and bank-transfer tax rules.
+                // Gateway checkout chooses the standard POS tax explicitly when
+                // quoting and settling a verified PDQ / Online Card transaction.
                 var rate = string.Equals(payment,"Cash",StringComparison.OrdinalIgnoreCase)
                     ? (vat>0?vat:gst) : D(rd["banktransfertax"]);
                 tax.Rate=Math.Max(0m,rate);
@@ -312,13 +315,124 @@ AND ISNULL(subitemname,'')=@variant AND ISNULL(subsubitemname,'')=@side",con,tx)
         catch{await tx.RollbackAsync(ct);throw;}
     }
 
+    // Use the same line, discount and bank/card tax rules as final checkout. A card
+    // amount is ALWAYS calculated on the server; the till never supplies it directly.
+    public async Task<decimal> QuoteDineCardAsync(RestaurantIdentity id, RestaurantCheckoutInput input,
+        decimal? taxRateOverride, CancellationToken ct)
+    {
+        if (id.IsRoomOrder || string.IsNullOrWhiteSpace(input.BillNumber) || input.Complimentary || input.Discount < 0)
+            throw new InvalidOperationException("A valid non-complimentary Dine In bill is required for card charging.");
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        var lines = await LinesAsync(con, null, id, input.BillNumber, false, ct);
+        if (lines.Count == 0) throw new InvalidOperationException("There are no items in this bill.");
+        var subtotal = lines.Sum(x => x.Total);
+        var tax = await TaxAsync(con, null, id.HotelId, subtotal, "Cash", ct);
+        if (taxRateOverride.HasValue)
+        {
+            tax.Rate = taxRateOverride.Value;
+            tax.Amount = Math.Round(subtotal * tax.Rate / 100m, 2, MidpointRounding.AwayFromZero);
+        }
+        var discount = Math.Min(input.Discount, subtotal + tax.Amount);
+        var total = Math.Max(0m, subtotal + tax.Amount - discount);
+        if (total <= 0m) throw new InvalidOperationException("The bill has no payable amount.");
+        return total;
+    }
+
+    public async Task<DateTime> DatabaseNowAsync(CancellationToken ct)
+    {
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand("SELECT GETDATE()", con);
+        return Convert.ToDateTime(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    /// <summary>
+    /// Read-only reconciliation with the existing verified Stripe webhook ledger.
+    /// Never assume a terminal popup response is itself a saved payment.
+    /// </summary>
+    public async Task<string?> FindDineCardReceiptAsync(RestaurantIdentity id, string billNumber,
+        string checkoutSessionId, decimal expectedAmount, DateTime startedUtc, CancellationToken ct)
+    {
+        if (id.IsRoomOrder || string.IsNullOrWhiteSpace(billNumber)) return null;
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    CASE WHEN @checkoutSession<>'' THEN externalrefundid ELSE PaymentId END
+FROM dbo.PaymentsLogTB
+WHERE hotel_id=@hotel AND user_id=@user AND reg_id=@reg
+  AND ABS(COALESCE(TRY_CONVERT(decimal(18,2),paid_amount),0)-@amount) <= 0.01
+  AND COALESCE(CreatedAt,currentdate)>=@createdAfter
+  AND ((@checkoutSession<>'' AND externalrefundid=@checkoutSession)
+    OR (@checkoutSession='' AND PaymentId LIKE 'pi[_]%' AND payment_method='PDQ Payment'))
+ORDER BY CreatedAt DESC",con);
+        cmd.Parameters.AddRange(new[] {
+            P("@hotel",id.HotelId),P("@user",id.UserId),
+            P("@reg","Resturent Bill_"+billNumber),P("@checkoutSession",checkoutSessionId),
+            P("@amount",expectedAmount),P("@createdAfter",startedUtc)
+        });
+        var row=await cmd.ExecuteScalarAsync(ct);
+        return row is null or DBNull ? null : S(row);
+    }
+
+    // PDQ webhook CreatedAt uses the application server clock, whereas the
+    // original payment-start timestamp is read from SQL Server. Do not compare
+    // those local clocks. Candidates are NOT proof of payment; the controller
+    // verifies each candidate against Stripe's UTC creation time and metadata.
+    public async Task<List<string>> FindDinePdqReceiptCandidatesAsync(RestaurantIdentity id,
+        string billNumber, decimal expectedAmount, CancellationToken ct)
+    {
+        var candidates = new List<string>();
+        if (id.IsRoomOrder || string.IsNullOrWhiteSpace(billNumber)) return candidates;
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand(@"
+SELECT DISTINCT TOP (21) LTRIM(RTRIM(PaymentId))
+FROM dbo.PaymentsLogTB
+WHERE hotel_id=@hotel AND user_id=@user AND reg_id=@reg
+  AND ABS(COALESCE(TRY_CONVERT(decimal(18,2),paid_amount),0)-@amount) <= 0.01
+  AND PaymentId LIKE 'pi[_]%' AND payment_method='PDQ Payment'", con);
+        cmd.Parameters.AddRange(new[] { P("@hotel",id.HotelId), P("@user",id.UserId),
+            P("@reg","Resturent Bill_"+billNumber), P("@amount",expectedAmount) });
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) candidates.Add(S(reader.GetValue(0)));
+        if (candidates.Count > 20)
+            throw new InvalidOperationException("Multiple historical PDQ payments match this bill. Reconcile with the cashier; do not charge again.");
+        return candidates;
+    }
+
+    // A previous finalization may have committed even if its HTTP response was
+    // lost. Only consider this exact cashier/shift/bill, never a different cart.
+    public async Task<bool> IsDineBillClosedAsync(RestaurantIdentity id, string billNumber, CancellationToken ct)
+    {
+        if (id.IsRoomOrder || string.IsNullOrWhiteSpace(billNumber)) return false;
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand($@"
+SELECT CASE WHEN EXISTS (SELECT 1 FROM POSstockout WHERE {ScopeFor(id)} AND bill_status='2')
+ AND NOT EXISTS (SELECT 1 FROM POSstockout WHERE {ScopeFor(id)} AND bill_status='1')
+ AND NOT EXISTS (SELECT 1 FROM POStempstockout WHERE {ScopeFor(id)} AND bill_status='1')
+ THEN 1 ELSE 0 END", con);
+        Key(cmd,id,billNumber);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) == 1;
+    }
+
     public async Task<RestaurantPrintViewModel> CloseDineInAsync(RestaurantIdentity id, RestaurantCheckoutInput input,
-        string ip, string receiptUrl, decimal? taxRateOverride, CancellationToken ct)
+        string ip, string receiptUrl, decimal? taxRateOverride, CancellationToken ct, string? verifiedCardReference = null)
     {
         if(string.IsNullOrWhiteSpace(input.BillNumber)) throw new InvalidOperationException("No bill selected.");
         if(input.Discount<0)throw new InvalidOperationException("Discount cannot be negative.");
-        if(!input.Complimentary)
+        if (verifiedCardReference != null && (input.Complimentary ||
+            (input.PaymentMethod != "PDQ Payment" && input.PaymentMethod != "Online Card")))
+            throw new InvalidOperationException("Invalid verified card settlement.");
+        if(!input.Complimentary && verifiedCardReference == null)
         {
+            if (new[] { "PDQ Payment", "PDQ Terminal", "Online Card" }.Contains(
+                    input.PaymentMethod ?? "", StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Gateway card payments must be verified before the bill closes.");
+            if (System.Text.RegularExpressions.Regex.IsMatch(input.ExternalReference ?? "", @"(?<!\d)\d{13,19}(?!\d)"))
+                throw new InvalidOperationException("Do not enter a full payment card number as a reference.");
             var methods=await PaymentMethodsAsync(id.HotelId,ct);
             if(!methods.Contains(input.PaymentMethod??"",StringComparer.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Select a valid payment method configured for this hotel.");
@@ -332,15 +446,23 @@ AND ISNULL(subitemname,'')=@variant AND ISNULL(subsubitemname,'')=@side",con,tx)
 WHERE {ScopeFor(id)} AND bill_status='1'",con,tx))
             {Key(cmd,id,input.BillNumber);
              if(Convert.ToInt32(await cmd.ExecuteScalarAsync(ct))==0)throw new InvalidOperationException("Bill is empty or already closed.");}
+            if (verifiedCardReference == null)
+            {
             await using(var cmd=new SqlCommand(@"SELECT COUNT(*) FROM PaymentsLogTB WITH(UPDLOCK,HOLDLOCK)
 WHERE hotel_id=@hotel AND user_id=@user AND reg_id=@reg",con,tx))
             {cmd.Parameters.AddRange(new[]{P("@hotel",id.HotelId),P("@user",id.UserId),P("@reg","Resturent Bill_"+input.BillNumber)});
              if(Convert.ToInt32(await cmd.ExecuteScalarAsync(ct))>0)throw new InvalidOperationException("Payment for this bill is already recorded.");}
+            }
             var lines=await LinesAsync(con,tx,id,input.BillNumber,false,ct);
             if(lines.Count==0)throw new InvalidOperationException("No items found in the bill.");
             var subtotal=lines.Sum(x=>x.Total);
             var method=input.Complimentary?"Complimentary":input.PaymentMethod.Trim();
-            var tax=await TaxAsync(con,tx,id.HotelId,subtotal,input.Complimentary?"Cash":method,ct);
+            // Only a VERIFIED gateway card bill uses the normal POS tax basis;
+            // manual and bank-transfer payments preserve their legacy tax rules.
+            // QuoteDineCardAsync also uses the POS basis, so the PDQ amount and
+            // its final receipt are consistent without changing other tenders.
+            var tax=await TaxAsync(con,tx,id.HotelId,subtotal,
+                verifiedCardReference != null ? "Cash" : input.Complimentary ? "Cash" : method,ct);
             if (taxRateOverride is decimal chosen)
             {
                 if (chosen < 0m || chosen > 100m) throw new InvalidOperationException("Invalid tax rate.");
@@ -359,6 +481,29 @@ WHERE {ScopeFor(id)}",con,tx);
                 cmd.Parameters.AddRange(new[]{P("@discount",appliedDiscount),P("@complimentary",input.Complimentary)});
                 await cmd.ExecuteNonQueryAsync(ct);
             }
+            if (verifiedCardReference != null)
+            {
+                // Existing Stripe webhook must have written a successful, *unique*
+                // payment for THIS hotel, POS cashier and bill. Never write it twice.
+                // A settled card amount must match the current locked bill exactly.
+                await using var verified = new SqlCommand(@"
+SELECT TOP (1)
+  TRY_CONVERT(decimal(18,2), paid_amount)
+FROM dbo.PaymentsLogTB WITH(UPDLOCK,HOLDLOCK)
+WHERE hotel_id=@hotel AND user_id=@user AND reg_id=@reg
+  AND (PaymentId=@reference OR externalrefundid=@reference)
+  AND TRY_CONVERT(decimal(18,2), paid_amount)>0
+ORDER BY CreatedAt DESC", con, tx);
+                verified.Parameters.AddRange(new[] { P("@hotel",id.HotelId),P("@user",id.UserId),
+                    P("@reg","Resturent Bill_"+input.BillNumber), P("@reference",verifiedCardReference) });
+                var received = await verified.ExecuteScalarAsync(ct);
+                if (received == null || received == DBNull.Value)
+                    throw new InvalidOperationException("Card payment is still awaiting the verified Stripe webhook. Do not charge again; check payment status.");
+                if (Math.Abs(D(received) - total) > 0.01m)
+                    throw new InvalidOperationException("Card amount differs from the bill. Do not charge again; reconcile with the cashier.");
+            }
+            else
+            {
             await using(var cmd=new SqlCommand(@"INSERT INTO PaymentsLogTB
 (reg_id,currentdate,postdate,hotel_id,paid_amount,payment_method,notes,status,user_id,
 shift,systemUser,systemName,ipAddress,chargeid,paymentid,receipturl,CreatedAt)
@@ -368,11 +513,14 @@ VALUES (@reg,@now,@now,@hotel,@amount,@method,@notes,'Paid',@user,@shift,
                 cmd.Parameters.AddRange(new[]{P("@reg","Resturent Bill_"+input.BillNumber),P("@now",now),
                     P("@hotel",id.HotelId),P("@amount",total),P("@method",method),
                     P("@notes","Restaurant Dine In Bill "+input.BillNumber+(input.Complimentary?" | Complimentary":appliedDiscount>0?" | Discount: "+appliedDiscount.ToString("0.00",CultureInfo.InvariantCulture):"")
-                        +(taxRateOverride.HasValue?" | Manual "+tax.Name+" rate: "+tax.Rate.ToString("0.##",CultureInfo.InvariantCulture)+"%":"")),
+                        +(taxRateOverride.HasValue?" | Manual "+tax.Name+" rate: "+tax.Rate.ToString("0.##",CultureInfo.InvariantCulture)+"%":"")
+                        +(string.IsNullOrWhiteSpace(input.CardType)?"":" | Card: "+input.CardType.Trim())
+                        +(string.IsNullOrWhiteSpace(input.ExternalReference)?"":" | External ref: "+input.ExternalReference.Trim())),
                     P("@user",id.UserId),P("@shift",id.Shift),P("@username",id.UserName),
                     P("@machine",Environment.MachineName),P("@ip",ip),
                     P("@receipt",receiptUrl)});
                 await cmd.ExecuteNonQueryAsync(ct);
+            }
             }
             await using(var cmd=new SqlCommand($@"UPDATE POSstockout SET bill_status='2',status='Closed'
 WHERE {ScopeFor(id)} AND bill_status='1'",con,tx))
@@ -389,6 +537,158 @@ WHERE {ScopeFor(id)} AND bill_status='1'",con,tx))
                 Complimentary=input.Complimentary,Discount=appliedDiscount,Tax=tax,Lines=lines};
         }
         catch {await tx.RollbackAsync(ct);throw;}
+    }
+
+    /// <summary>
+    /// Lists the most recent Room Rent occupancy record per physical room for the
+    /// authenticated hotel. This does not change guest context; selecting a room
+    /// still requires ValidateGuestRoomAsync and the existing protected guest link.
+    /// </summary>
+    public async Task<List<RestaurantInHouseRoom>> InHouseRoomsAsync(string hotel, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(hotel)) throw new RestaurantGuestAccessException("Select a hotel first.");
+        var rooms = new List<RestaurantInHouseRoom>();
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        const string sql = @"
+;WITH LatestRoom AS
+(
+    SELECT
+        LTRIM(RTRIM(CONVERT(varchar(80),p.room_no))) AS room_no,
+        LTRIM(RTRIM(CONVERT(varchar(100),p.reg_id))) AS reg_id,
+        NULLIF(LTRIM(RTRIM(ISNULL(p.guestname,''))), '') AS payment_guest,
+        LOWER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(p.res_status,''))),' ',''),'-',''),'_','')) AS room_status,
+        ROW_NUMBER() OVER
+        (
+            PARTITION BY LTRIM(RTRIM(CONVERT(varchar(80),p.room_no)))
+            ORDER BY p.ID DESC
+        ) AS row_rank
+    FROM dbo.payments AS p
+    WHERE p.hotel_id=@hotel
+      AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent'
+      AND NULLIF(LTRIM(RTRIM(CONVERT(varchar(80),p.room_no))), '') IS NOT NULL
+      AND NULLIF(LTRIM(RTRIM(CONVERT(varchar(100),p.reg_id))), '') IS NOT NULL
+      -- A room may have future reservations written after the checked-in
+      -- guest. Rank current check-ins, not every future reservation row.
+      AND LOWER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(p.res_status,''))),' ',''),'-',''),'_',''))
+          IN ('checkin','checkedin','inhouse')
+)
+SELECT TOP (500)
+       l.room_no, l.reg_id,
+       COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(ISNULL(g.GuestName,''), ' ', ISNULL(g.LastName,'')))),''),
+                l.payment_guest, 'Guest') AS guest_name
+FROM LatestRoom AS l
+OUTER APPLY
+(
+    SELECT TOP (1) gi.GuestName, gi.LastName
+    FROM dbo.GuestInformationLogTB AS gi
+    WHERE gi.hotel_id=@hotel AND gi.reg_id=l.reg_id
+    ORDER BY gi.id DESC
+) AS g
+WHERE l.row_rank=1
+  AND l.room_status IN ('checkin','checkedin','inhouse')
+  AND EXISTS
+  (
+      SELECT 1 FROM dbo.HotelsSignUpTB AS h
+      WHERE h.hotel_id=@hotel AND ISNULL(h.isResturant,0)=1
+  )
+ORDER BY l.room_no, l.reg_id;";
+        await using var cmd = new SqlCommand(sql,con);
+        cmd.Parameters.Add(P("@hotel", hotel));
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            rooms.Add(new RestaurantInHouseRoom
+            {
+                RoomNo = S(rd["room_no"]),
+                RegId = S(rd["reg_id"]),
+                GuestName = S(rd["guest_name"])
+            });
+        }
+        return rooms;
+    }
+
+    // Reuse Calendar's provider configuration requirements. These are UI capabilities;
+    // CheckIn/TerminalCardPayment/PayNow still authorize and validate every request.
+    public async Task<(bool online, bool pdq)> PaymentCapabilitiesAsync(string hotel, CancellationToken ct)
+    {
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        async Task<bool> ExistsAsync(string sql)
+        {
+            try
+            {
+                await using var cmd = new SqlCommand(sql, con);
+                cmd.Parameters.Add(P("@hotel", hotel));
+                return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) > 0;
+            }
+            catch (SqlException) { return false; } // optional older provider tables
+        }
+        var stripe = await ExistsAsync("SELECT COUNT(*) FROM dbo.HotelStripeAccounts WHERE HotelId=@hotel AND ISNULL(AccessToken,'')<>''");
+        var clover = await ExistsAsync("SELECT COUNT(*) FROM dbo.clovertb WHERE hotel_id=@hotel AND ISNULL(access_token,'')<>''");
+        return (stripe, stripe || clover);
+    }
+
+    // Apply the Calendar's legacy card action rules to the Restaurant UI too.
+    // Server endpoints retain their own authorization and anti-forgery checks.
+    public async Task<(bool online, bool pdq)> CalendarCardPermissionsAsync(
+        string hotel, string user, string role, CancellationToken ct)
+    {
+        if (role.Equals("Council",StringComparison.OrdinalIgnoreCase)) return (false,false);
+        if (role.Equals("hotel",StringComparison.OrdinalIgnoreCase) ||
+            role.Equals("manager",StringComparison.OrdinalIgnoreCase)) return (true,true);
+        try
+        {
+            await using var con = new SqlConnection(_con);
+            await con.OpenAsync(ct);
+            await using var cmd = new SqlCommand(@"
+DECLARE @menuid int=(SELECT TOP (1) menuid FROM dbo.AddMenuTB WITH (READPAST)
+ WHERE REPLACE(REPLACE(LOWER(ISNULL(pagename,'')),'.aspx',''),' ','')
+ IN ('frontdeskcalender','frontdeskcalendar','calendar') ORDER BY menuid);
+SELECT pa.action_name,
+       CASE WHEN NOT EXISTS(SELECT 1 FROM dbo.UserActionPermissionsTB x WITH (READPAST)
+            WHERE x.menuid=@menuid AND x.action_id=pa.action_id AND ISNULL(x.is_active,0)=1)
+            THEN 1
+            ELSE ISNULL(MAX(CASE WHEN ISNULL(u.is_allowed,0)=1 THEN 1 ELSE 0 END),0) END AS allowed
+FROM dbo.PageActionsTB pa WITH (READPAST)
+LEFT JOIN dbo.UserActionPermissionsTB u WITH (READPAST)
+  ON u.menuid=pa.menuid AND u.action_id=pa.action_id AND ISNULL(u.is_active,0)=1
+ AND (CONVERT(varchar(100),u.user_id)=@user OR (CONVERT(varchar(100),u.hotel_id)=@hotel
+ AND LOWER(LTRIM(RTRIM(ISNULL(u.permission_for,''))))='hotel'))
+WHERE pa.menuid=@menuid AND ISNULL(pa.is_active,1)=1
+GROUP BY pa.action_id,pa.action_name;",con);
+            cmd.Parameters.Add(P("@hotel",hotel));cmd.Parameters.Add(P("@user",user));
+            var map = new Dictionary<string,bool>(StringComparer.OrdinalIgnoreCase);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct)) map[S(rd["action_name"])]=S(rd["allowed"])=="1";
+            bool Any(params string[] aliases)
+            {
+                var known = aliases.Where(map.ContainsKey).ToArray();
+                return known.Length==0 || known.Any(x=>map[x]);
+            }
+            return (
+                Any("vcPayment","ChargeVC","VirtualCard","VC_PAYMENT","CardPayment","card_payment"),
+                Any("pdqPayment","PDQ_PAYMENT","PDQPayment","pdq_payment"));
+        }
+        catch (SqlException) { return (true,true); } // Same legacy Calendar default
+    }
+
+    // Read a fresh reservation-level folio balance, not the editable POS draft.
+    // Amounts are scoped to the selected hotel and the validated in-house guest.
+    public async Task<decimal> GuestBalanceAsync(string hotel, string reg, CancellationToken ct)
+    {
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand(@"
+SELECT
+   (SELECT ISNULL(SUM(ISNULL(TRY_CONVERT(decimal(18,2),p.totalamount),0)),0)
+    FROM dbo.payments p WHERE p.hotel_id=@hotel AND p.reg_id=@reg)
+ - (SELECT ISNULL(SUM(ISNULL(TRY_CONVERT(decimal(18,2),l.paid_amount),0)),0)
+    FROM dbo.PaymentsLogTB l WHERE l.hotel_id=@hotel AND l.reg_id=@reg)", con);
+        cmd.Parameters.Add(P("@hotel", hotel));
+        cmd.Parameters.Add(P("@reg", reg));
+        var value = await cmd.ExecuteScalarAsync(ct);
+        return Math.Max(0m, D(value));
     }
 
     // The same check-in + restaurant property conditions used by FrontDeskCalender.aspx.
@@ -438,6 +738,61 @@ ORDER BY p.ID DESC;", con, tx);
         return visit;
     }
 
+    // Only the new checkout assignment path calls this operation. Never merge
+    // carts, copy quantities, alter taxes, re-send kitchen tickets or post money.
+    public async Task AssignCounterDraftToRoomAsync(RestaurantIdentity id, string bill,
+        string reg, string room, CancellationToken ct)
+    {
+        if (id.IsRoomOrder || string.IsNullOrWhiteSpace(bill) || bill.Length > 80)
+            throw new InvalidOperationException("Select a valid open counter bill.");
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await con.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        try
+        {
+            var visit = await ValidateGuestRoomCoreAsync(con, tx, id.HotelId, reg, room, ct);
+            // Each statement is scoped to the same hotel and exact source/target.
+            const string source = "hotel_id=@hotel AND userid=@user AND acc_no=@acc AND b_branch='Dine In' AND table_number='-1'";
+            const string target = "hotel_id=@hotel AND b_branch='Room' AND regid=@targetReg AND roomno=@targetRoom AND ISNULL(CONVERT(varchar(100),visitno),'')=@targetVisit";
+            void Bind(SqlCommand cmd)
+            {
+                Key(cmd, id, bill);
+                cmd.Parameters.AddRange(new[] { P("@targetReg",reg), P("@targetRoom",room), P("@targetVisit",visit), P("@saleReg","Resturent Bill_"+bill) });
+            }
+            async Task<int> CountAsync(string sql)
+            {
+                await using var cmd = new SqlCommand(sql, con, tx);
+                Bind(cmd);
+                return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+            }
+            var count = await CountAsync($"SELECT COUNT(*) FROM dbo.POStempstockout WITH(UPDLOCK,HOLDLOCK) WHERE {source} AND bill_number=@bill AND bill_status='1'");
+            if (count == 0 || count != await CountAsync($"SELECT COUNT(*) FROM dbo.POStempstockout WITH(UPDLOCK,HOLDLOCK) WHERE {source} AND bill_status='1'"))
+                throw new InvalidOperationException("The open counter bill changed. Refresh the POS before assigning it.");
+            if (await CountAsync($"SELECT COUNT(*) FROM dbo.POStempstockout WITH(UPDLOCK,HOLDLOCK) WHERE {target} AND bill_status='1'") != 0)
+                throw new InvalidOperationException("This room already has an open Restaurant bill. Finish that bill first; your counter bill was not changed.");
+            if (await CountAsync($"SELECT COUNT(*) FROM dbo.POSstockout WITH(UPDLOCK,HOLDLOCK) WHERE {target} AND bill_number=@bill") != 0 ||
+                await CountAsync("SELECT COUNT(*) FROM dbo.payments WITH(UPDLOCK,HOLDLOCK) WHERE hotel_id=@hotel AND reg_id=@targetReg AND CONVERT(varchar(80),VoucherNumber)=@bill AND descr='Extras'") != 0)
+                throw new InvalidOperationException("The selected room already has a record with this bill number. Your counter bill was not changed.");
+            if (await CountAsync("SELECT COUNT(*) FROM dbo.PaymentsLogTB WITH(UPDLOCK,HOLDLOCK) WHERE hotel_id=@hotel AND user_id=@user AND reg_id=@saleReg") != 0)
+                throw new InvalidOperationException("A payment exists for this bill. Reconcile it before assigning it to a room.");
+            // Preserve row IDs, quantities, prices, adjustments, bill number,
+            // stock and kitchen status. POSquotation contains only unsent items.
+            foreach (var table in new[] { "POStempstockout", "POSstockout", "POSquotation" })
+            {
+                var status = table == "POSquotation" ? "" : " AND bill_status='1'";
+                await using var cmd = new SqlCommand($@"UPDATE dbo.{table}
+SET b_branch='Room', regid=@targetReg, roomno=@targetRoom, visitno=@targetVisit
+WHERE {source} AND bill_number=@bill{status}", con, tx);
+                Bind(cmd);
+                var affected = await cmd.ExecuteNonQueryAsync(ct);
+                if (table != "POSquotation" && affected != count)
+                    throw new InvalidOperationException("The POS bill changed during assignment. No assignment was committed.");
+            }
+            await tx.CommitAsync(ct);
+        }
+        catch { await tx.RollbackAsync(ct); throw; }
+    }
+
     // Unpaid guest service posting. One transaction covers POS closure, guest charge and totals.
     public async Task<RestaurantPrintViewModel> PostToRoomAsync(RestaurantIdentity id,
         RestaurantCheckoutInput input,string reg,string room,decimal? taxRateOverride,string ip,CancellationToken ct)
@@ -453,6 +808,7 @@ ORDER BY p.ID DESC;", con, tx);
             var visit=await ValidateGuestRoomCoreAsync(con,tx,id.HotelId,reg,room,ct);
             if(!string.Equals(visit,id.RoomVisitId,StringComparison.Ordinal))
                 throw new InvalidOperationException("The guest stay changed. Reopen the reservation from Calendar.");
+            var guestName=await RoomGuestNameAsync(con,tx,id.HotelId,reg,ct);
             await using(var check=new SqlCommand($@"SELECT COUNT(1) FROM POStempstockout WITH(UPDLOCK,HOLDLOCK)
 WHERE {ScopeFor(id)} AND bill_status='1'",con,tx))
             {Key(check,id,input.BillNumber);if(Convert.ToInt32(await check.ExecuteScalarAsync(ct))==0)
@@ -481,7 +837,7 @@ INSERT INTO dbo.payments
 reg_id,GrandTotalPay,RoomSecurity,TotalPaidAmount,PayableBal,PaymentMethod,payment_status,
 deductioninfo,visit_id,hotel_id,currentdate,systemUser,systemName,ipAddress,discount,guestname)
 VALUES (@bill,'Extras',@room,1,@subtotal,@subtotal,@tax,0,1,@amount,'Extras',
-@reg,@amount,0,0,@amount,@method,@payStatus,@notes,@visit,@hotel,@now,@cashier,@machine,@ip,@discount,NULL)",con,tx))
+@reg,@amount,0,0,@amount,@method,@payStatus,@notes,@visit,@hotel,@now,@cashier,@machine,@ip,@discount,@guestName)",con,tx))
             {
                 cmd.Parameters.AddRange(new[]{P("@bill",input.BillNumber),P("@room",room),P("@subtotal",subtotal),
                     P("@tax",tax.Amount),P("@amount",amount),P("@reg",reg),
@@ -491,7 +847,8 @@ VALUES (@bill,'Extras',@room,1,@subtotal,@subtotal,@tax,0,1,@amount,'Extras',
                     P("@visit",string.IsNullOrWhiteSpace(visit)?(object)DBNull.Value:visit),
                     P("@hotel",id.HotelId),P("@now",now),P("@cashier",id.UserName),
                     P("@machine",Environment.MachineName),P("@ip",ip),
-                    P("@discount",input.Complimentary?subtotal+tax.Amount:appliedDiscount)});
+                    P("@discount",input.Complimentary?subtotal+tax.Amount:appliedDiscount),
+                    P("@guestName",string.IsNullOrWhiteSpace(guestName)?(object)DBNull.Value:guestName)});
                 if(await cmd.ExecuteNonQueryAsync(ct)!=1)throw new InvalidOperationException("Guest Services posting failed.");
             }
             // Save the same financial adjustments and room identifiers on sold POS lines.
@@ -529,11 +886,50 @@ CROSS APPLY (
 WHERE pu.hotel_id=@hotel AND pu.reg_id=@reg",con,tx))
             {cmd.Parameters.AddRange(new[]{P("@hotel",id.HotelId),P("@reg",reg)});await cmd.ExecuteNonQueryAsync(ct);}
             await tx.CommitAsync(ct);
+            // The posting succeeded; include the room identity on the printable receipt.
             return new RestaurantPrintViewModel {DocumentKind="Restaurant Bill",BillType="Room",
+                RoomNo=room,RoomRegId=reg,GuestName=guestName,
                 BillNumber=input.BillNumber,Cashier=id.UserName,PrintedAt=now,PaymentMethod="Charged to Guest Services",
                 Complimentary=input.Complimentary,Discount=appliedDiscount,Tax=tax,Lines=lines};
         }
         catch{await tx.RollbackAsync(ct);throw;}
+    }
+
+    // Read the registered guest name for historical bill reprints. Only the hotel's
+    // guest/reservation records are trusted; receipts never accept a supplied name.
+    private static async Task<string> RoomGuestNameAsync(SqlConnection con, SqlTransaction? tx,
+        string hotel, string reg, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(@"SELECT COALESCE(
+          (SELECT TOP (1) NULLIF(LTRIM(RTRIM(CONCAT(ISNULL(gi.GuestName,''),' ',ISNULL(gi.LastName,'')))), '')
+           FROM dbo.GuestInformationLogTB gi WHERE gi.hotel_id=@hotel AND gi.reg_id=@reg ORDER BY gi.id DESC),
+          (SELECT TOP (1) NULLIF(LTRIM(RTRIM(ISNULL(p.guestname,''))), '')
+           FROM dbo.payments p WHERE p.hotel_id=@hotel AND p.reg_id=@reg
+             AND LTRIM(RTRIM(ISNULL(p.descr,'')))='Room Rent' ORDER BY p.ID DESC),
+          '')", con, tx);
+        cmd.Parameters.AddRange(new[]{P("@hotel",hotel),P("@reg",reg)});
+        return S(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    // Authoritative, read-only status of one Restaurant Extras charge.
+    // Used after a failed/unclear HTTP response: NEVER infer a successful posting
+    // from a toast, a printable HTML page, or the client-side bill state.
+    public async Task<decimal?> PostedRoomChargeAsync(string hotel, string reg, string room,
+        string bill, CancellationToken ct)
+    {
+        await using var con = new SqlConnection(_con);
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand(@"SELECT TOP (1)
+          TRY_CONVERT(decimal(18,2),p.totalamount)
+        FROM dbo.payments p
+        WHERE p.hotel_id=@hotel AND p.reg_id=@reg
+          AND CONVERT(varchar(80),p.room_no)=@room
+          AND CONVERT(varchar(80),p.VoucherNumber)=@bill
+          AND p.descr='Extras' AND p.deductioninfo LIKE 'Resturant Charges%'
+        ORDER BY p.ID DESC",con);
+        cmd.Parameters.AddRange(new[]{P("@hotel",hotel),P("@reg",reg),P("@room",room),P("@bill",bill)});
+        var value=await cmd.ExecuteScalarAsync(ct);
+        return value is null or DBNull ? null : D(value);
     }
 
     public async Task<List<RestaurantRoomBillLink>> RoomBillLinksAsync(string hotel,string reg,CancellationToken ct)
@@ -565,7 +961,9 @@ ORDER BY p.ID DESC",con);
         await using(var cmd=new SqlCommand(@"SELECT TOP (1)
  ISNULL(TRY_CONVERT(decimal(18,2),p.GST),0) gst,
  ISNULL(TRY_CONVERT(decimal(18,2),p.discount),0) discount,
- ISNULL(TRY_CONVERT(decimal(18,2),p.totalamount),0) total,p.currentdate,p.payment_status
+ ISNULL(TRY_CONVERT(decimal(18,2),p.totalamount),0) total,p.currentdate,p.payment_status,
+ ISNULL(CONVERT(varchar(80),p.room_no),'') room_no,
+ ISNULL(p.guestname,'') guest_name
  FROM dbo.payments p
  WHERE p.hotel_id=@hotel AND p.reg_id=@reg AND CONVERT(varchar(80),p.VoucherNumber)=@bill
  AND p.descr='Extras' AND p.deductioninfo LIKE 'Resturant Charges%' ORDER BY p.ID DESC",con))
@@ -573,11 +971,16 @@ ORDER BY p.ID DESC",con);
             cmd.Parameters.AddRange(new[]{P("@hotel",hotel),P("@reg",reg),P("@bill",bill)});
             await using var rd=await cmd.ExecuteReaderAsync(ct);
             if(!await rd.ReadAsync(ct))throw new InvalidOperationException("No linked restaurant charge found.");
+            model.RoomNo=S(rd["room_no"]);
+            model.RoomRegId=reg;
+            model.GuestName=S(rd["guest_name"]);
             model.Tax=new RestaurantTaxInfo{Name="Tax",Amount=D(rd["gst"])};
             model.Complimentary=S(rd["payment_status"]).Equals("Paid",StringComparison.OrdinalIgnoreCase) && D(rd["total"])==0;
             model.Discount=model.Complimentary?0:D(rd["discount"]);
             if(rd["currentdate"]!=DBNull.Value)model.PrintedAt=Convert.ToDateTime(rd["currentdate"]);
         }
+        if (string.IsNullOrWhiteSpace(model.GuestName))
+            model.GuestName=await RoomGuestNameAsync(con,null,hotel,reg,ct);
         await using(var cmd=new SqlCommand(@"SELECT ISNULL(itemname,'') itemname,
  ISNULL(subitemname,'') subitemname,ISNULL(subsubitemname,'') subsubitemname,
  ISNULL(TRY_CONVERT(decimal(18,2),qty),0) qty,

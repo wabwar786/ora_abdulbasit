@@ -1,0 +1,157 @@
+@model Orapmshms.Models.Restaurant.RestaurantItemSalesViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Restaurant Item Sales";
+    Layout = "_PmsLayout";
+    var fromValue = Model.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var toValue = Model.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var serial = 0;
+    var categoryOptions = Model.Categories.Concat(Model.Rows.Select(r => r.Category))
+        .Append("Uncategorised")
+        .Where(name => !string.IsNullOrWhiteSpace(name))
+        .Distinct(StringComparer.Ordinal)
+        .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+        .ToList();
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/restaurant-item-sales.css" asp-append-version="true" />
+}
+<section class="ris-page" aria-labelledby="ris-title">
+    <header class="ris-header">
+        <h1 id="ris-title">Restaurant Item Sales</h1>
+        @if (string.IsNullOrEmpty(Model.Error))
+        {
+            <div class="ris-actions">
+                <a class="ris-btn" asp-action="Export" asp-route-from="@fromValue" asp-route-to="@toValue" asp-route-billType="@Model.BillType" asp-route-search="@Model.Search" asp-route-category="@Model.Category"><i class="fa-solid fa-file-csv" aria-hidden="true"></i> Export CSV</a>
+                <button type="button" class="ris-btn" onclick="window.print()"><i class="fa-solid fa-print" aria-hidden="true"></i> Print</button>
+            </div>
+        }
+    </header>
+    <form method="get" asp-action="Index" class="ris-filters" id="risDateFilter">
+        <div class="ris-date-field">
+            <label for="inventoryRangeDisplay">Date range</label>
+            <div class="inventory-range-picker" id="inventoryRangePicker">
+                <input type="hidden" id="risStartDate" name="from" value="@fromValue" />
+                <input type="hidden" id="risEndDate" name="to" value="@toValue" />
+                <button type="button" class="inventory-range-display" id="inventoryRangeDisplay" aria-label="Select date range" aria-expanded="false" aria-controls="inventoryRangePopover" aria-haspopup="dialog">
+                    <span id="inventoryRangeText">@Model.From.ToString("dd/MM/yyyy") - @Model.To.ToString("dd/MM/yyyy")</span>
+                    <span class="inventory-calendar-icon"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i></span>
+                </button>
+                <div class="inventory-range-popover inventory-calendar-popover" id="inventoryRangePopover" role="dialog" aria-label="Select sales date range" hidden>
+                    <div class="inventory-calendar-popover-head">
+                        <div><strong>Select date range</strong></div>
+                        <button type="button" class="inventory-calendar-close" id="rangeCloseButton" aria-label="Close date picker">×</button>
+                    </div>
+                    <div class="inventory-calendar-months">
+                        <section class="inventory-calendar-month">
+                            <div class="inventory-calendar-month-head">
+                                <button type="button" class="inventory-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                                <strong id="leftMonthLabel"></strong>
+                                <button type="button" class="inventory-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                            </div>
+                            <div class="inventory-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                            <div class="inventory-calendar-grid" id="leftCalendarGrid"></div>
+                        </section>
+                        <section class="inventory-calendar-month">
+                            <div class="inventory-calendar-month-head">
+                                <button type="button" class="inventory-calendar-nav" data-calendar-shift="-1" aria-label="Previous month">‹</button>
+                                <strong id="rightMonthLabel"></strong>
+                                <button type="button" class="inventory-calendar-nav" data-calendar-shift="1" aria-label="Next month">›</button>
+                            </div>
+                            <div class="inventory-calendar-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+                            <div class="inventory-calendar-grid" id="rightCalendarGrid"></div>
+                        </section>
+                    </div>
+                    <div id="risRangeError" class="ris-range-error" role="alert" hidden></div>
+                    <div class="inventory-calendar-footer">
+                        <span id="selectedRangeText">@Model.From.ToString("dd/MM/yyyy") - @Model.To.ToString("dd/MM/yyyy")</span>
+                        <div>
+                            <button type="button" class="inventory-range-clear" id="rangeClearButton">Clear</button>
+                            <button type="button" class="inventory-range-apply" id="rangeApplyButton">Apply</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <label>Bill type<select name="billType">
+            <option value="" selected="@(Model.BillType == "")">All types</option>
+            <option value="Dine In" selected="@(Model.BillType == "Dine In")">Walk-in / Takeaway</option>
+            <option value="Room" selected="@(Model.BillType == "Room")">Room Bill</option>
+        </select></label>
+        <label class="ris-category">Category<select name="category">
+            <option value="" selected="@(Model.Category == "")">All categories</option>
+            @foreach (var category in categoryOptions)
+            {
+                <option value="@category" selected="@(Model.Category == category)">@category</option>
+            }
+            @if (!string.IsNullOrEmpty(Model.Category) && !categoryOptions.Contains(Model.Category))
+            {
+                <option value="@Model.Category" selected="selected">@Model.Category</option>
+            }
+        </select></label>
+        <label class="ris-search">Item<input type="search" name="search" value="@Model.Search" maxlength="100" placeholder="Search items" /></label>
+        <button class="ris-btn ris-primary" type="submit"><i class="fa-solid fa-filter" aria-hidden="true"></i> Show Report</button>
+        <a asp-action="Index" class="ris-btn">Reset</a>
+    </form>
+    
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="ris-error" role="alert">@Model.Error</div>
+    }
+    else
+    {
+        <div class="ris-summary">
+            <div class="ris-metric ris-metric-qty"><div class="ris-metric-value"><span>Quantity sold</span><strong>@Model.SoldQuantity.ToString("#,##0.##")</strong></div></div>
+            <div class="ris-metric ris-metric-comp"><div class="ris-metric-value"><span>Complimentary qty</span><strong>@Model.ComplimentaryQuantity.ToString("#,##0.##")</strong></div></div>
+            <div class="ris-metric ris-metric-sales" title="Before bill-level discounts and additional VAT/GST"><div class="ris-metric-value"><span>Gross sales</span><strong>@Model.Money(Model.GrossSales)</strong></div></div>
+        </div>
+        <div class="ris-table-card">
+            <div class="ris-table-head">
+                <div class="ris-report-heading">
+                    <h2>Sales by item</h2>
+                    <span>@Model.From.ToString("dd MMM yyyy") – @Model.To.ToString("dd MMM yyyy") · @Model.Rows.Count.ToString("N0") records</span>
+                    @if (!string.IsNullOrWhiteSpace(Model.BillType) || !string.IsNullOrWhiteSpace(Model.Search) || !string.IsNullOrWhiteSpace(Model.Category))
+                    {
+                        <span>@Model.BillTypeLabel · @(Model.Category.Length == 0 ? "All categories" : Model.Category) · @(Model.Search.Length == 0 ? "All items" : Model.Search)</span>
+                    }
+                </div>
+                <div class="ris-property"><strong>@Model.UserName</strong></div>
+            </div>
+            <div class="ris-table-wrap">
+                <table class="ris-table">
+                    <thead><tr><th scope="col" class="ris-serial">Sr #</th><th scope="col" title="Recorded POS item date, not bill closing date">Date</th><th scope="col">Item</th><th scope="col">Category</th><th scope="col" class="ris-num">Unit price</th><th scope="col" class="ris-num">Sold qty</th><th scope="col" class="ris-num">Comp. qty</th><th scope="col" class="ris-num" title="Sold quantity × saved unit price, before bill-level discounts and additional VAT/GST">Gross sales</th></tr></thead>
+                    <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr><td colspan="8" class="ris-empty">No sales found.</td></tr>
+                    }
+                    @foreach (var day in Model.Rows.GroupBy(r => r.SaleDate))
+                    {
+                        foreach (var row in day)
+                        {
+                            <tr>
+                                <td class="ris-serial">@(++serial)</td>
+                                <td class="ris-date">@row.SaleDate.ToString("dd MMM yyyy")</td>
+                                <td><strong>@row.ItemName</strong><small>@string.Join(" · ", new[] { row.Variant, row.Side }.Where(s => !string.IsNullOrWhiteSpace(s)))</small></td>
+                                <td>@row.Category</td><td class="ris-num">@Model.Money(row.UnitPrice)</td>
+                                <td class="ris-num">@row.SoldQuantity.ToString("#,##0.##")</td><td class="ris-num">@row.ComplimentaryQuantity.ToString("#,##0.##")</td>
+                                <td class="ris-num"><strong>@Model.Money(row.GrossSales)</strong></td>
+                            </tr>
+                        }
+                        <tr class="ris-day-total"><td colspan="5">Total · @day.Key.ToString("dd MMM yyyy")</td><td class="ris-num">@day.Sum(r => r.SoldQuantity).ToString("#,##0.##")</td><td class="ris-num">@day.Sum(r => r.ComplimentaryQuantity).ToString("#,##0.##")</td><td class="ris-num">@Model.Money(day.Sum(r => r.GrossSales))</td></tr>
+                    }
+                    </tbody>
+                    @if (Model.Rows.Count > 0)
+                    {
+                        <tfoot><tr><th colspan="5" scope="row">Grand total</th><td class="ris-num">@Model.SoldQuantity.ToString("#,##0.##")</td><td class="ris-num">@Model.ComplimentaryQuantity.ToString("#,##0.##")</td><td class="ris-num">@Model.Money(Model.GrossSales)</td></tr></tfoot>
+                    }
+                </table>
+            </div>
+           
+        </div>
+    }
+</section>
+
+@section Scripts {
+    <script src="~/js/restaurant-item-sales.js" asp-append-version="true"></script>
+}

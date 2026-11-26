@@ -42,6 +42,9 @@ namespace Orapmshms.Services.AvailabilityJobs
             string originPage = "",
             string originFunction = "")
         {
+            if (start.Year < 1753 || end.Year < 1753 || end.Date < start.Date)
+                return;
+
             var perf = PerformanceLogger.Start(
                 operationName: "Auto Update Availability",
                 hotelId: hotelid,

@@ -10,7 +10,17 @@
      data-side-url="@Url.Action("Sides", "Restaurant")"
      data-preview-url="@Url.Action("PrintPreview", "Restaurant")"
      data-tax-url="@Url.Action("TaxQuote", "Restaurant")"
-     data-bill-panel-url="@Url.Action("BillPanel", "Restaurant")">
+     data-bill-panel-url="@Url.Action("BillPanel", "Restaurant")"
+     data-room-post-status-url="@Url.Action("RoomPostStatus", "Restaurant")"
+     data-inhouse-rooms-url="@Url.Action("InHouseRooms", "Restaurant")"
+     data-room-payment-context-url="@Url.Action("RoomPaymentContext", "Restaurant")"
+     data-checkin-record-payment-url="@Url.Action("RecordPayment", "CheckIn")"
+     data-payment-methods-url="@Url.Action("PaymentMethods", "CheckIn")"
+     data-paynow-link-url="@Url.Action("GenerateLink", "PayNow")"
+     data-restaurant-home-url="@Url.Action("Home", "Restaurant")"
+     data-card-start-url="@Url.Action("StartDineCard", "Restaurant")"
+     data-card-finish-url="@Url.Action("FinalizeDineCard", "Restaurant")"
+     data-current-bill-mode="@(Model.BillType == "Room" ? "room" : "dine-in")">
     @if (ViewBag.Error is string loadError)
     {
         <div class="restaurant-alert error" role="alert">@loadError</div>
@@ -35,6 +45,7 @@
                 </div>
                 <div class="r-classic-tools">
                     <a class="restaurant-btn r-classic-inventory" href="@Url.Action("Inventory", "Restaurant")">Items Management</a>
+                    <a class="restaurant-btn r-classic-inventory" href="@Url.Action("Index", "RestaurantItemSales")" target="_blank" rel="noopener noreferrer" title="Open Restaurant Item Sales in a new tab">Sales Report</a>
                     <form method="get" action="@Url.Action("Home", "Restaurant")" class="r-classic-search">
                         @if (!string.IsNullOrWhiteSpace(Model.Category))
                         {
@@ -88,7 +99,122 @@
 
         @await Html.PartialAsync("_BillPanel", Model)
     </main>
+
+    <!-- Unified cashier checkout for Dine In and Room Charge.
+         Discount and GST are persisted through existing POS endpoints before settlement.
+         Card/PDQ settlements continue to use the verified existing payment routes. -->
+    <div class="r-touch-pay-overlay" id="r-touch-pay-dialog" hidden>
+        <button type="button" class="r-touch-pay-shade" data-touch-pay-close aria-label="Close checkout"></button>
+        <section class="r-touch-pay-window r-unified-checkout" role="dialog" aria-modal="true" aria-labelledby="r-touch-pay-title"
+                 data-dine-pdq="@Model.CanPdqPayment.ToString().ToLowerInvariant()" data-dine-online="@Model.CanOnlineCardPayment.ToString().ToLowerInvariant()">
+            <header class="r-touch-pay-head">
+                <div><h2 id="r-touch-pay-title">Payment — Bill #<b id="r-touch-pay-number">@Model.BillNumber</b></h2><span id="r-unified-context">@(Model.BillType == "Room" ? "Room Bill" : "Walk-in")</span><span id="r-unified-guest">@(Model.BillType == "Room" ? $"{Model.GuestName} · Room {Model.RoomNo} · Reg {Model.RoomRegId}" : "")</span></div>
+                <button type="button" class="r-touch-pay-x" data-touch-pay-close aria-label="Close">×</button>
+            </header>
+            <div class="r-touch-pay-body">
+                <div class="r-unified-top">
+                    <div class="r-unified-due"><small>Total amount</small><strong id="r-touch-pay-amount">@Model.Currency 0.00</strong><span id="r-unified-breakdown"></span></div>
+                </div>
+                <div id="r-unified-editor">
+                <div class="r-unified-section-title"><strong>Bill type</strong></div>
+                <div class="r-order-type" role="group" aria-label="Choose bill type">
+                    <button type="button" data-order-type="counter" aria-pressed="false">Walk-in</button>
+                    <button type="button" data-order-type="takeaway" aria-pressed="false">Takeaway</button>
+                    <button type="button" data-order-type="room" aria-pressed="false">Room Bill</button>
+                </div>
+                <div class="r-selected-room" id="r-selected-room" hidden><div><small>Selected guest</small><strong id="r-selected-room-name"></strong><span id="r-selected-room-detail"></span></div><button type="button" id="r-room-picker-open" class="r-pay-secondary r-change-room">Change</button></div>
+                </div> <!-- bill editor -->
+                <div id="r-unified-notice" class="r-unified-notice" role="status" aria-live="polite" hidden></div>
+                <div id="r-unified-payment-stage" class="r-unified-payment-stage">
+                    <div class="r-unified-section-title r-unified-payment-heading"><strong>Payment method</strong></div>
+                    <div class="r-pay-tabs" role="tablist" aria-label="Payment channel" hidden>
+                        <button class="r-pay-tab active" type="button" role="tab" id="r-pay-tab-manual" aria-controls="r-pay-panel-manual" aria-selected="true" data-checkout-tab="manual"><span class="r-pay-tab-icon">▤</span>Manual payment</button>
+                        <button class="r-pay-tab" type="button" role="tab" id="r-pay-tab-pdq" aria-controls="r-pay-panel-pdq" aria-selected="false" data-checkout-tab="pdq"><span class="r-pay-tab-icon">▣</span>PDQ Terminal</button>
+                        <button class="r-pay-tab" type="button" role="tab" id="r-pay-tab-online" aria-controls="r-pay-panel-online" aria-selected="false" data-checkout-tab="online"><span class="r-pay-tab-icon">◈</span>Online Card</button>
+                    </div>
+                    <div id="r-manual-method-grid" class="r-manual-method-grid" role="group" aria-label="Payment method"></div>
+                    <div class="r-pay-tab-body" id="r-pay-panel-manual" role="tabpanel" aria-labelledby="r-pay-tab-manual">
+                        <div class="r-pay-field" id="r-manual-select-wrap" hidden><label for="r-pay-manual-method">Payment method</label>
+                            <select id="r-pay-manual-method" class="r-pay-control">
+                                <option value="">Select payment method</option>
+                                @foreach (var method in Model.PaymentMethods.Where(m =>
+                                    !m.Equals("PDQ Payment", StringComparison.OrdinalIgnoreCase) &&
+                                    !m.Equals("PDQ Terminal", StringComparison.OrdinalIgnoreCase) &&
+                                    !m.Equals("Online Card", StringComparison.OrdinalIgnoreCase)))
+                                { <option value="@method">@method</option> }
+                            </select>
+                        </div>
+                        <div id="r-cash-tender" hidden>
+                            <div class="r-pay-field"><label for="r-cash-received">Received amount</label><input id="r-cash-received" type="number" class="r-pay-control" min="0" step="0.01" inputmode="decimal" /></div>
+                            <div class="r-cash-quick" role="group" aria-label="Cash received shortcuts"><button type="button" data-cash-exact>Exact</button><button type="button" data-cash-add="10">+10</button><button type="button" data-cash-add="50">+50</button><button type="button" data-cash-add="100">+100</button></div>
+                            <div class="r-cash-change"><span id="r-cash-change-label">Change to return</span><strong id="r-cash-change">—</strong></div>
+                        </div>
+                        <div class="r-pay-field" id="r-pay-card-fields" hidden>
+                            <label for="r-pay-card-type">Card type (external terminal)</label>
+                            <div class="r-pay-two-fields"><select id="r-pay-card-type" class="r-pay-control"><option value="">Choose card type</option><option>Visa</option><option>Mastercard</option><option>Amex</option><option>Other</option></select>
+                            <input class="r-pay-control" id="r-pay-card-ref" type="text" maxlength="100" placeholder="Receipt / transaction reference" autocomplete="off" /></div>
+                        </div>
+                        <div class="r-pay-field" id="r-pay-manual-note-wrap" hidden><label for="r-pay-manual-note">Payment note (optional)</label><input id="r-pay-manual-note" class="r-pay-control" maxlength="200" placeholder="Cashier reference or note" /></div>
+                        <p class="r-pay-tip" id="r-manual-card-tip" hidden>Never enter a full card number or CVV.</p>
+                    </div>
+                    <div class="r-pay-tab-body" id="r-pay-panel-pdq" role="tabpanel" aria-labelledby="r-pay-tab-pdq" hidden>
+                        <div class="r-pay-provider"><strong>Connected PDQ terminal</strong><span>Send amount to your hotel's configured reader. Confirmed card settlement is verified by the payment ledger.</span></div>
+                    </div>
+                    <div class="r-pay-tab-body" id="r-pay-panel-online" role="tabpanel" aria-labelledby="r-pay-tab-online" hidden>
+                        <div class="r-pay-provider"><strong>Secure online card</strong><span>Open the approved payment page. The bill stays pending until the payment is confirmed.</span></div>
+                        <div class="r-pay-link" id="r-pay-link" hidden><input id="r-pay-link-value" class="r-pay-control" readonly aria-label="Payment URL"/><button type="button" id="r-pay-link-copy">Copy link</button></div>
+                    </div>
+                    <div class="r-pay-field r-room-collect-amount" id="r-room-collect-amount" hidden><label for="r-room-pay-amount">Collect now</label><input class="r-pay-control" type="number" min="0.01" step="0.01" id="r-room-pay-amount" inputmode="decimal" /></div>
+                </div>
+                <div class="r-checkout-tools" id="r-checkout-tools" role="group" aria-label="Bill actions">
+                    <button type="button" id="r-hold-btn" class="r-pay-secondary">Hold Bill</button>
+                    <button type="button" id="r-print-btn" class="r-pay-secondary">Preview / Print</button>
+                </div>
+                <div class="r-pay-result" id="r-pay-result" hidden role="status" aria-live="polite">
+                    <span class="r-pay-result-icon">✓</span><div><strong id="r-pay-result-title">Bill posted</strong><p id="r-pay-result-text">The charge has been saved.</p></div>
+                </div>
+                <div class="r-pay-footer">
+                    <p id="r-unified-payment-hint" class="r-touch-pay-safety">Select a method and continue.</p>
+                    <div class="r-pay-footer-actions">
+                        <button type="button" id="r-checkout-cancel" class="r-pay-secondary" data-touch-pay-close>Cancel (Esc)</button>
+                        <button type="button" id="r-unified-folio-only" class="r-pay-secondary" hidden>Post to Folio • Pay Later</button>
+                        <button type="button" id="r-unified-confirm" class="r-touch-pay-record" disabled>Continue</button>
+                    </div>
+                    <button type="button" id="r-pay-verify" class="r-pay-secondary r-pay-full" hidden>Check payment status</button>
+                    <div class="r-pay-finished" id="r-pay-finished" hidden>
+                        <button type="button" class="r-pay-secondary" id="r-pay-print">Print receipt</button>
+                        <button type="button" class="r-touch-pay-record" id="r-pay-done">Done / New bill</button>
+                    </div>
+                </div>
+                @if (Model.CanPdqPayment) { <button type="button" data-dine-gateway="pdq" id="r-unified-dine-pdq" hidden aria-hidden="true" tabindex="-1"></button> }
+                @if (Model.CanOnlineCardPayment) { <button type="button" data-dine-gateway="online" id="r-unified-dine-online" hidden aria-hidden="true" tabindex="-1"></button> }
+            </div>
+        </section>
+    </div>
+
+<div class="r-room-picker-overlay" id="r-room-picker-dialog" hidden>
+    <div class="r-room-picker-shade" data-room-picker-close></div>
+    <section class="r-room-picker-panel" role="dialog" aria-modal="true" aria-labelledby="r-room-picker-title">
+        <header class="r-room-picker-head">
+            <div><span class="r-room-picker-kicker">IN-HOUSE GUESTS</span><h2 id="r-room-picker-title">Select room</h2></div>
+            <button type="button" class="r-room-picker-dismiss" data-room-picker-close aria-label="Close">×</button>
+        </header>
+        <div class="r-room-picker-body">
+            <input id="r-room-picker-search" type="search" autocomplete="off" aria-label="Search room or guest"
+                   placeholder="Search room number or guest name…" />
+            <div class="r-room-picker-list" id="r-room-picker-list" role="listbox" aria-label="Currently occupied rooms"></div>
+            <p class="r-room-picker-status" id="r-room-picker-status" role="status" aria-live="polite"></p>
+        </div>
+        <footer class="r-room-picker-footer r-picker-actions"><span id="r-room-picker-choice" class="r-room-picker-choice">Select a room to continue.</span><button type="button" class="r-room-picker-cancel" data-room-picker-close>Back</button><button type="button" id="r-room-picker-confirm" class="r-room-picker-confirm" disabled>Continue</button></footer>
+        <form asp-controller="Restaurant" asp-action="SelectRoom" method="post" id="r-room-picker-form" hidden>
+            <input type="hidden" name="regId" id="r-room-picker-reg" />
+            <input type="hidden" name="roomNo" id="r-room-picker-number" />
+            <input type="hidden" name="transferBill" id="r-room-picker-transfer" />
+            <input type="hidden" name="continueCheckout" id="r-room-picker-continue" value="false" />
+        </form>
+    </section>
 </div>
+
 
 <div class="restaurant-dialog" id="r-cancel-dialog" hidden>
     <div class="restaurant-dialog-shade" data-close="r-cancel-dialog"></div>
@@ -164,3 +290,7 @@
 }
 <script src="~/js/restaurant.js" asp-append-version="true"></script>
 <script src="~/js/restaurant-pos.js" asp-append-version="true"></script>
+<script src="~/js/restaurant-room-picker.js" asp-append-version="true"></script>
+<script src="~/js/restaurant-room-checkout.js" asp-append-version="true"></script>
+<script src="~/js/restaurant-dine-card-payments.js" asp-append-version="true"></script>
+<script src="~/js/restaurant-touch-ui.js" asp-append-version="true"></script>

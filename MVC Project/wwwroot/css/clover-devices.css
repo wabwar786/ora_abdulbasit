@@ -29,6 +29,7 @@
     width: 100%;
     max-width: 1180px;
     margin: 0 auto;
+    padding-top: 20px; /* Keep the page title and setup actions clear of the main header. */
 
     color: var(--clvdev-ink);
     font-size: 12.5px;
@@ -45,7 +46,7 @@
 
 /* ---------- page header ---------- */
 .clvdev-head {
-    display: flex; align-items: flex-start; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between;
     flex-wrap: wrap; gap: 12px;
     margin-bottom: 14px;
 }

@@ -884,3 +884,727 @@ html.restaurant-print-document .rp-items tr, html.restaurant-print-document .kt-
 html.restaurant-print-document .rp-footer {break-inside:avoid}
 html.restaurant-print-document .print-error {margin:0;box-shadow:none}
 }
+
+
+/* ORA PMS Restaurant: optional in-house room selection, no change to Calendar flow */
+#restaurant-pos .r-room-switchbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 13px;background:#f4f8fc;border-bottom:1px solid #dfe8f2}
+#restaurant-pos .r-room-switchbar-current{display:flex;align-items:center;gap:10px;min-width:0}
+#restaurant-pos .r-room-switchbar-current strong{display:block;font-size:12px;font-weight:750;color:#1d3754}
+#restaurant-pos .r-room-switchbar-current small{display:block;margin-top:2px;font-size:10px;color:#65798e;overflow-wrap:anywhere}
+#restaurant-pos .r-context-dot{width:9px;height:9px;border-radius:50%;background:#6b94c0;box-shadow:0 0 0 4px #e4edf7;flex-shrink:0}
+#restaurant-pos .r-context-dot.r-context-room{background:#229e75;box-shadow:0 0 0 4px #ddf5ec}
+#restaurant-pos .r-room-switchbar-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+#restaurant-pos .r-room-picker-trigger{border:1px solid #276492;border-radius:7px;background:#1e537f;color:white;padding:8px 13px;font-size:11px;font-weight:720;cursor:pointer}
+#restaurant-pos .r-room-picker-trigger:hover{background:#163f64}
+#restaurant-pos .r-room-dinein-link{display:inline-flex;align-items:center;justify-content:center;border:1px solid #cbd9e6;border-radius:7px;background:#fff;color:#2c5372;font-size:11px;font-weight:700;padding:8px 12px}
+.r-room-picker-overlay[hidden]{display:none!important}
+.r-room-picker-overlay{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;padding:18px}
+.r-room-picker-shade{position:absolute;inset:0;background:rgba(13,30,49,.56)}
+.r-room-picker-panel{position:relative;width:min(590px,100%);max-height:min(760px,92vh);display:flex;flex-direction:column;background:#fff;border:1px solid #d5e2ed;border-radius:14px;box-shadow:0 20px 65px #10284045;overflow:hidden}
+.r-room-picker-head{display:flex;justify-content:space-between;gap:15px;padding:21px 23px 14px;border-bottom:1px solid #e5edf4}
+.r-room-picker-kicker{font-size:10px;font-weight:780;color:#62829f;letter-spacing:.1em}
+.r-room-picker-head h2{font-size:20px;color:#1a3553;margin:5px 0 6px;font-weight:780}
+.r-room-picker-head p{font-size:11px;color:#75879b;margin:0;line-height:1.5}
+.r-room-picker-dismiss{align-self:flex-start;flex-shrink:0;border:1px solid #d9e3ed;border-radius:8px;background:#f7f9fc;color:#51667e;font-size:20px;width:31px;height:31px;cursor:pointer}
+.r-room-picker-body{overflow:auto;min-height:100px;padding:15px 22px 17px}
+.r-room-picker-label{display:block;font-size:11px;color:#3d5871;font-weight:700;margin-bottom:6px}
+#r-room-picker-search{display:block;width:100%;min-height:41px;padding:10px 12px;border:1px solid #cddae7;border-radius:8px;font-size:12px;color:#243e57;background:#fff;outline:none}
+#r-room-picker-search:focus{border-color:#3988c2;box-shadow:0 0 0 3px #e0effb}
+.r-room-picker-list{display:grid;gap:7px;max-height:335px;overflow:auto;margin-top:12px}
+.r-room-picker-option{width:100%;border:1px solid #e0e9f2;background:#fff;border-radius:9px;padding:10px 13px;cursor:pointer;display:grid;grid-template-columns:105px minmax(0,1fr) auto;align-items:center;gap:12px;color:#233d56;text-align:left}
+.r-room-picker-option:hover,.r-room-picker-option:focus-visible{border-color:#5c9bc9;background:#f3f9fe;outline:none}
+.r-room-picker-option.is-selected{border-color:#26896c;background:#ecf9f3;box-shadow:inset 0 0 0 1px #26896c}
+.r-room-picker-number{font-size:12px;font-weight:800;color:#245b83}
+.r-room-picker-guest{font-size:12px;font-weight:650;overflow-wrap:anywhere}
+.r-room-picker-option small{font-size:10px;color:#75889b}
+.r-room-picker-status{font-size:11px;color:#73849a;margin:12px 1px 0}
+.r-room-picker-status.is-error{color:#a83f3d}
+.r-room-picker-footer{padding:12px 22px;border-top:1px solid #e2ebf3;background:#f9fbfd;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.r-room-picker-choice{margin-right:auto;font-size:11px;color:#416078;font-weight:650;flex:1;min-width:125px}
+.r-room-picker-cancel,.r-room-picker-confirm{min-height:36px;border-radius:7px;padding:8px 12px;border:1px solid #c8d6e3;background:white;color:#365671;font-weight:700;font-size:11px;cursor:pointer}
+.r-room-picker-confirm{background:#117655;color:white;border-color:#117655}
+.r-room-picker-confirm:hover:not(:disabled){background:#0a6044}
+.r-room-picker-confirm:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:560px){
+  #restaurant-pos .r-room-switchbar{padding:10px;gap:8px}
+  .r-room-picker-overlay{padding:9px}
+  .r-room-picker-head{padding:16px 15px 12px}
+  .r-room-picker-body{padding:13px 14px}
+  .r-room-picker-option{grid-template-columns:90px 1fr;gap:4px 9px}
+  .r-room-picker-option small{grid-column:2}
+  .r-room-picker-footer{padding:12px 14px}
+  .r-room-picker-choice{width:100%;flex-basis:100%}
+}
+
+/* === 23 Nov 2026: POS bill-type room selection and guest-folio payments === */
+#restaurant-pos.r-pos-modern .r-context-help{
+  max-width:250px;color:#59728a;font-size:10.5px;line-height:1.35;text-align:right;
+}
+#restaurant-pos.r-pos-modern .r-classic-selects #r-bill-type{
+  cursor:pointer;font-weight:650;color:#173a58;border-color:#b6cbdc;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary{
+  margin:2px 12px 9px;padding:10px 12px;border:1px solid #c8e0ec;
+  border-radius:10px;background:linear-gradient(120deg,#eff8fd 0%,#f7fbff 100%);
+  color:#1c405e;min-width:0;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-head{
+  display:flex;justify-content:space-between;align-items:center;gap:7px;margin-bottom:5px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-head span{
+  font-size:9.5px;font-weight:750;letter-spacing:.045em;text-transform:uppercase;color:#376984;
+}
+#restaurant-pos.r-pos-modern .r-guest-change{
+  border:1px solid #b8d2e7;border-radius:6px;padding:4px 8px;background:#fff;
+  font-size:10px;font-weight:750;color:#1d577e;cursor:pointer;white-space:nowrap;
+}
+#restaurant-pos.r-pos-modern .r-guest-change:hover{background:#e8f3fb;}
+#restaurant-pos.r-pos-modern .r-guest-name{display:block;font-size:14px;line-height:1.35;overflow-wrap:anywhere;}
+#restaurant-pos.r-pos-modern .r-guest-summary-grid{
+  display:flex;flex-wrap:wrap;gap:6px 15px;margin-top:6px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-grid span{font-size:10.5px;color:#526f87;}
+#restaurant-pos.r-pos-modern .r-guest-summary-grid b{margin-left:4px;color:#1b405f;}
+#restaurant-pos.r-pos-modern .r-guest-summary>small{
+  display:block;margin-top:7px;font-size:10px;color:#627e94;line-height:1.35;
+}
+#restaurant-pos.r-pos-modern .r-guest-payments{
+  margin:10px 0 2px;padding:11px;border:1px solid #dde7ee;border-radius:9px;
+  background:#f9fbfd;
+}
+#restaurant-pos.r-pos-modern .r-guest-payments-title{display:grid;gap:2px;margin-bottom:9px;}
+#restaurant-pos.r-pos-modern .r-guest-payments-title strong{font-size:12px;color:#193a56;}
+#restaurant-pos.r-pos-modern .r-guest-payments-title small{font-size:10px;color:#657a8b;}
+#restaurant-pos.r-pos-modern .r-guest-payments-buttons{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;
+}
+#restaurant-pos.r-pos-modern .r-guest-payments-buttons button{
+  border:1px solid #c7d9e7;border-radius:7px;background:#fff;color:#18476a;
+  min-width:0;min-height:35px;padding:7px 5px;font-size:10.5px;font-weight:750;
+  cursor:pointer;line-height:1.2;
+}
+#restaurant-pos.r-pos-modern .r-guest-payments-buttons button:hover:not(:disabled){
+  background:#eaf5fd;border-color:#8bbad9;
+}
+#restaurant-pos.r-pos-modern .r-guest-payments-buttons button:disabled{
+  opacity:.48;cursor:not-allowed;background:#f2f5f7;
+}
+#restaurant-pos.r-pos-modern .r-guest-payment-hint{
+  margin:7px 0 0;font-size:9px;color:#6a7d8d;line-height:1.45;
+}
+#restaurant-pos.r-pos-modern #r-post-and-collect{
+  background:#0f785f;color:#fff;border-color:#0f785f;font-weight:760;
+}
+#restaurant-pos.r-pos-modern #r-post-and-collect:hover:not(:disabled){background:#0b604b;}
+@media(max-width:1050px){
+  #restaurant-pos.r-pos-modern .r-context-help{display:none;}
+}
+@media(max-width:550px){
+  #restaurant-pos.r-pos-modern .r-guest-payments-buttons{grid-template-columns:1fr;}
+  #restaurant-pos.r-pos-modern .r-guest-payments-buttons button{min-height:34px;}
+}
+
+/* ---------------------------------------------------------------
+   Restaurant POS compact bill & instant room selection, 23 Nov 2026
+   Works with Calendar guest-token links; no database or Calendar edits.
+   --------------------------------------------------------------- */
+#restaurant-pos.r-pos-modern .r-main { gap:7px; }
+#restaurant-pos.r-pos-modern .r-menu { overflow:hidden; }
+#restaurant-pos.r-pos-modern .r-classic-menu-heading { padding-top:11px; }
+#restaurant-pos.r-pos-modern .r-classic-bill-heading { padding:10px 12px 7px; }
+#restaurant-pos.r-pos-modern .r-classic-bill-heading p { display:none; }
+#restaurant-pos.r-pos-modern .r-classic-sale-info { padding:7px 10px 6px; }
+#restaurant-pos.r-pos-modern .r-classic-sale-info .r-classic-direct { display:none; }
+#restaurant-pos.r-pos-modern .r-guest-summary-top {
+  order:0; flex-shrink:0; padding:8px 10px; margin:2px 10px 6px;
+  background:#eef7fb; border:1px solid #cadde9; border-radius:8px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-summary-line {
+  display:flex; align-items:center; gap:7px; min-width:0; min-height:24px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-name {
+  min-width:0; flex:1; font-size:12.5px; font-weight:780;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-change {
+  padding:3px 8px; min-height:25px; background:#fff; font-size:10px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-summary-meta {
+  justify-content:flex-start; gap:7px 11px; flex-wrap:wrap;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-summary-meta span {
+  color:#526e83; font-size:10px; white-space:nowrap;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-summary-meta b { color:#1f455e; }
+#restaurant-pos.r-pos-modern .r-folio-balance-link {
+  color:#1a6580; border:0; background:transparent; padding:0; font-size:9.5px;
+  font-weight:750; cursor:pointer; margin-left:auto; text-decoration:underline; text-underline-offset:2px;
+}
+#restaurant-pos.r-pos-modern .r-folio-balance-link:hover { color:#174d67; }
+
+/* Exactly two compact rows for primary bill actions. */
+#restaurant-pos.r-pos-modern .r-action-grid {
+  display:flex!important; flex-direction:column; gap:5px; margin-top:6px;
+}
+#restaurant-pos.r-pos-modern .r-action-grid .r-action-row {
+  display:grid; gap:5px; width:100%; grid-template-columns:repeat(2,minmax(0,1fr));
+}
+#restaurant-pos.r-pos-modern .r-action-grid.r-actions-dine .r-action-row-tools {grid-template-columns:repeat(4,minmax(0,1fr));}
+#restaurant-pos.r-pos-modern .r-action-grid.r-actions-dine .r-action-row-primary {grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr));}
+#restaurant-pos.r-pos-modern .r-action-grid .r-action-row .r-action,
+#restaurant-pos.r-pos-modern .r-action-grid .r-action-row .r-action-close {
+  grid-column:auto!important; width:100%; min-height:33px; height:33px;
+  padding:5px 4px; margin:0; font-size:10px; line-height:1.15; border-radius:7px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+#restaurant-pos.r-pos-modern .r-actions-room #r-kitchen-btn {background:#edf3f9;border-color:#bfd2e1;color:#2b4b67;}
+#restaurant-pos.r-pos-modern .r-actions-room #r-post-and-collect {
+  background:#0f7964; color:white; border-color:#0f7964;
+}
+#restaurant-pos.r-pos-modern .r-actions-dine .r-dine-gateway {
+  background:#f0f6fc; border-color:#b9d2e5; color:#234e75;
+}
+#restaurant-pos.r-pos-modern .r-actions-dine .r-dine-gateway:hover:not(:disabled) {background:#deecf9;}
+#restaurant-pos.r-pos-modern .r-bill-bottom {padding:7px 10px 10px;}
+#restaurant-pos.r-pos-modern .r-amounts {margin-top:4px;}
+#restaurant-pos.r-pos-modern .r-modern-adjustment-options {margin-bottom:3px;}
+#restaurant-pos.r-pos-modern .r-dine-card-pending {
+  display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  border:1px solid #aedbcf; background:#f0fbf6; color:#20654f;
+  border-radius:7px; padding:8px 9px; font-size:10px; line-height:1.4;
+}
+#restaurant-pos.r-pos-modern .r-dine-card-pending[hidden] { display:none!important; }
+#restaurant-pos.r-pos-modern .r-dine-card-pending.is-error {background:#fff6ed;border-color:#f3d5bb;color:#914e25;}
+#restaurant-pos.r-pos-modern .r-dine-card-pending button {
+  border:1px solid currentColor; padding:4px 8px; border-radius:5px;
+  background:white; color:inherit; cursor:pointer; font-size:10px; font-weight:750;
+}
+
+/* Compact room picker: one click selects the guest. No footer, selection confirmation
+   or redundant text, and the active search stays visible while scrolling. */
+.r-room-picker-overlay {padding:12px;}
+.r-room-picker-panel {
+  width:min(510px,100%); max-height:min(570px,90dvh); border-radius:11px;
+  box-shadow:0 22px 60px rgba(13,37,61,.26);
+}
+.r-room-picker-head {padding:13px 16px 11px;align-items:center;}
+.r-room-picker-head h2 {margin:3px 0 0;font-size:16px;}
+.r-room-picker-kicker {font-size:9px;}
+.r-room-picker-body {padding:11px 15px 14px;}
+#r-room-picker-search {min-height:37px;padding:8px 11px;font-size:12px;}
+.r-room-picker-list {gap:5px;margin-top:9px;max-height:min(390px,55dvh);}
+.r-room-picker-option {
+  grid-template-columns:82px minmax(0,1fr) auto;gap:8px;
+  min-height:39px;padding:7px 10px;border-radius:7px;
+}
+.r-room-picker-option:hover {background:#eef8f4;border-color:#65ad92;}
+.r-room-picker-option:active {background:#dff5e8;}
+.r-room-picker-number,.r-room-picker-guest {font-size:11px;}
+.r-room-picker-option small {font-size:9px;}
+.r-room-picker-status {margin:7px 0 0;font-size:10px;}
+.r-room-picker-status[hidden] {display:none;}
+.r-room-picker-footer {display:none!important;}
+@media(max-width:600px){
+  #restaurant-pos.r-pos-modern .r-actions-dine .r-action-row-tools {grid-template-columns:repeat(4,minmax(0,1fr));}
+  #restaurant-pos.r-pos-modern .r-action-grid .r-action-row .r-action {font-size:9.5px;}
+  .r-room-picker-panel{max-height:86dvh;}
+  .r-room-picker-option{grid-template-columns:80px minmax(0,1fr);gap:2px 8px;}
+  .r-room-picker-option small{grid-column:2;}
+  .r-room-picker-head{padding:12px 13px;}
+  .r-room-picker-body{padding:10px 12px;}
+  #restaurant-pos.r-pos-modern .r-folio-balance-link {margin-left:0;}
+}
+
+
+/* 23 Nov 2026 — compact current bill heading and selected guest summary.
+   Does not affect bills, totals, room selection or payment behaviours. */
+#restaurant-pos.r-pos-modern .r-classic-bill-heading {
+    min-height: 0;
+    padding: 7px 10px 4px;
+    align-items: center;
+    gap: 5px;
+}
+#restaurant-pos.r-pos-modern .r-classic-bill-heading h2 {
+    margin: 0;
+    line-height: 1.2;
+}
+#restaurant-pos.r-pos-modern .r-classic-bill-badges {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+#restaurant-pos.r-pos-modern .r-classic-bill-badges span {
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+#restaurant-pos.r-pos-modern .r-classic-sale-info {
+    padding: 3px 9px 4px;
+    border-bottom: 0;
+}
+#restaurant-pos.r-pos-modern .r-classic-selects label { gap: 2px; }
+#restaurant-pos.r-pos-modern .r-classic-selects .restaurant-input {
+    height: 29px;
+    min-height: 29px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top {
+    padding: 5px 8px;
+    margin: 2px 9px 5px;
+    border-radius: 6px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-summary-line {
+    min-height: 19px;
+    gap: 6px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-summary-meta {
+    gap: 5px 10px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-name {
+    font-size: 11.5px;
+}
+#restaurant-pos.r-pos-modern .r-guest-summary-top .r-guest-change {
+    padding: 2px 7px;
+    min-height: 22px;
+}
+
+
+/* ORA PMS / touchscreen category board and simplified cashier panel — 24 Nov 2026 */
+#restaurant-pos.r-touch-enabled .r-menu-categories { display:none!important; }
+#restaurant-pos .r-touch-category-header {display:none;}
+#restaurant-pos.r-touch-enabled .r-touch-category-header {display:flex;align-items:center;gap:10px;min-height:40px;padding:5px 11px;border-bottom:1px solid #e4eaf0;background:#f6f9fc;}
+#restaurant-pos .r-touch-category-header button {display:inline-flex;align-items:center;gap:9px;border:1px solid #c4d7e7;border-radius:7px;padding:8px 13px;background:#fff;color:#244c72;font-size:12px;font-weight:750;cursor:pointer;}
+#restaurant-pos .r-touch-category-header button span {border-left:1px solid #dbe7f1;padding-left:9px;font-size:11px;font-weight:550;color:#637d93;}
+#restaurant-pos .r-touch-category-help {font-size:10px;color:#708297;}
+#restaurant-pos .r-touch-category-board[hidden],
+#restaurant-pos .r-touch-pay-overlay[hidden] {display:none!important;}
+#restaurant-pos .r-touch-category-board {display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:7px;padding:10px;background:#fafdff;border-bottom:1px solid #e5edf4;}
+#restaurant-pos .r-touch-category-tile {min-height:65px;text-align:left;padding:11px 13px;border:1px solid #cee0ea;border-radius:9px;background:#eaf5f8;color:#22425a;font-family:inherit;font-size:13px;font-weight:750;line-height:1.22;cursor:pointer;transition:transform .1s,filter .12s;}
+#restaurant-pos .r-touch-category-tile small {display:block;margin-top:5px;color:#60768b;font-size:10px;font-weight:500;}
+#restaurant-pos .r-touch-category-tile:nth-child(6n+2){background:#eaf1ff;border-color:#ceddf4;}
+#restaurant-pos .r-touch-category-tile:nth-child(6n+3){background:#e7f5ed;border-color:#c9e5d7;}
+#restaurant-pos .r-touch-category-tile:nth-child(6n+4){background:#fff1e5;border-color:#f2ddc5;}
+#restaurant-pos .r-touch-category-tile:nth-child(6n+5){background:#f0eaff;border-color:#ddd3f2;}
+#restaurant-pos .r-touch-category-tile:nth-child(6n+6){background:#fcebf0;border-color:#f4d5df;}
+#restaurant-pos .r-touch-category-tile:hover {filter:brightness(.975);transform:translateY(-1px);}
+#restaurant-pos .r-touch-category-tile.active {border:2px solid #245982;box-shadow:0 0 0 2px rgba(36,89,130,.11);padding:10px 12px;}
+#restaurant-pos .r-touch-category-tile:focus-visible, #restaurant-pos .r-touch-category-header button:focus-visible,
+#restaurant-pos .r-touch-payment-methods button:focus-visible,#restaurant-pos .r-touch-gateways button:focus-visible {outline:3px solid #298bba;outline-offset:2px;}
+#restaurant-pos.r-pos-modern .r-product-grid {grid-template-columns:repeat(auto-fill,minmax(151px,1fr));}
+#restaurant-pos.r-pos-modern .r-product-photo-add {height:104px;}
+#restaurant-pos.r-pos-modern .r-classic-add{min-height:30px;}
+#restaurant-pos.r-touch-pay-enabled .r-action-grid.r-actions-dine .r-touch-pay-action-row{display:grid;grid-template-columns:1fr;}
+#restaurant-pos.r-touch-pay-enabled .r-touch-pay-fallback{display:none!important;}
+#restaurant-pos .r-touch-pay-overlay {position:fixed;inset:0;z-index:11010;display:grid;place-items:center;padding:15px;}
+#restaurant-pos .r-touch-pay-shade{position:absolute;inset:0;background:rgba(10,26,45,.57);border:0;cursor:default;}
+#restaurant-pos .r-touch-pay-window{position:relative;width:min(100%,465px);max-height:min(88vh,800px);overflow:auto;background:#fff;border:1px solid #d5e2ed;border-radius:15px;box-shadow:0 22px 70px rgba(12,31,50,.28);font-family:inherit;}
+#restaurant-pos .r-touch-pay-head {display:flex;justify-content:space-between;align-items:center;padding:17px 19px 11px;border-bottom:1px solid #e6edf3;}
+#restaurant-pos .r-touch-pay-head span {display:block;color:#788b9f;font-size:10px;letter-spacing:.08em;font-weight:750;}
+#restaurant-pos .r-touch-pay-head h2 {margin:3px 0 0;font-size:20px;line-height:1.2;color:#182f46;font-weight:800;}
+#restaurant-pos .r-touch-pay-x {height:32px;width:32px;border-radius:7px;border:1px solid #dae5ee;background:#fff;font-size:20px;color:#60768a;cursor:pointer;}
+#restaurant-pos .r-touch-pay-total{display:flex;flex-direction:column;align-items:center;gap:3px;padding:16px;background:#f2f7fb;color:#5e7286;}
+#restaurant-pos .r-touch-pay-total small{font-size:11px;}
+#restaurant-pos .r-touch-pay-total strong{color:#163d60;font-size:32px;letter-spacing:-.04em;font-weight:850;}
+#restaurant-pos .r-touch-pay-body{padding:16px 19px 19px;}
+#restaurant-pos .r-touch-pay-section-title{font-size:11px;font-weight:700;color:#485e75;margin:0 0 9px;}
+#restaurant-pos .r-touch-payment-methods {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+#restaurant-pos .r-touch-method {min-height:56px;border:1px solid #d3e0ea;border-radius:9px;background:#fff;color:#25465f;cursor:pointer;font-family:inherit;font-size:13px;font-weight:650;padding:10px;}
+#restaurant-pos .r-touch-method:hover{background:#f4f9fb;}
+#restaurant-pos .r-touch-method.active{border:2px solid #267d68;background:#e6f5f0;color:#11644c;padding:9px;}
+#restaurant-pos .r-touch-pay-safety{margin:10px 0;color:#728397;font-size:10px;line-height:1.45;}
+#restaurant-pos .r-touch-pay-record {width:100%;padding:12px;border:0;border-radius:9px;color:#fff;background:#176c56;cursor:pointer;font-family:inherit;font-size:13px;font-weight:750;}
+#restaurant-pos .r-touch-pay-record:disabled {opacity:.45;cursor:not-allowed;}
+#restaurant-pos .r-touch-pay-or {position:relative;text-align:center;margin:15px 0 12px;color:#75899b;font-size:10px;}
+#restaurant-pos .r-touch-pay-or:before{content:"";position:absolute;top:50%;left:0;right:0;border-top:1px solid #e5ebf2;}
+#restaurant-pos .r-touch-pay-or span{position:relative;background:white;padding:0 10px;}
+#restaurant-pos .r-touch-pay-gateways{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}
+#restaurant-pos .r-touch-gateway{padding:11px 9px;border:1px solid #b7d3e8;border-radius:9px;background:#eaf4fc;color:#215a87;font-family:inherit;font-size:12px;font-weight:750;cursor:pointer;}
+#restaurant-pos .r-touch-gateway small{display:block;margin-top:4px;font-size:9px;font-weight:500;color:#607a91;}
+body.r-touch-pay-open{overflow:hidden;}
+@media(max-width:600px){
+ #restaurant-pos .r-touch-category-board{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:8px;}
+ #restaurant-pos .r-touch-category-tile{min-height:64px;font-size:12px;}
+ #restaurant-pos .r-touch-category-help{display:none;}
+ #restaurant-pos.r-pos-modern .r-product-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+ #restaurant-pos .r-touch-pay-overlay{padding:8px;}
+ #restaurant-pos .r-touch-pay-window{max-height:95dvh;}
+ #restaurant-pos .r-touch-pay-head{padding:13px;}
+ #restaurant-pos .r-touch-pay-body{padding:13px;}
+}
+
+/* ============================================================
+   ORA PMS Restaurant | Unified checkout, 24 November 2026
+   Returns the left menu to the previous horizontal category tabs.
+   Shared checkout sheet for Dine In and Guest Room billing.
+   ============================================================ */
+#restaurant-pos.r-pos-modern .r-touch-category-header,
+#restaurant-pos.r-pos-modern .r-touch-category-board {display:none!important;}
+#restaurant-pos.r-pos-modern .r-menu-categories {display:flex!important;flex-wrap:nowrap;align-items:center;gap:6px;padding:7px 10px 9px;background:#f8fbfe;border-bottom:1px solid #e4edf5;overflow-x:auto;scrollbar-width:thin;}
+#restaurant-pos.r-pos-modern .r-menu-categories a {padding:6px 11px;border-radius:999px;white-space:nowrap;background:#fff;border:1px solid #d9e5ef;color:#425b72;font-weight:650!important;}
+#restaurant-pos.r-pos-modern .r-menu-categories a.active {background:#204b73!important;border-color:#204b73!important;color:white!important;}
+#restaurant-pos.r-pos-modern .r-product-grid {grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:7px;}
+#restaurant-pos.r-pos-modern .r-product-photo-add {height:91px;}
+#restaurant-pos.r-pos-modern .r-classic-add{min-height:28px;}
+#restaurant-pos .r-hidden-payment-select {display:none!important;}
+#restaurant-pos.r-pos-modern .r-classic-selects{grid-template-columns:1fr;}
+#restaurant-pos.r-pos-modern .r-modern-adjustment-options {height:0;min-height:0;padding:0;margin:0;overflow:hidden;}
+#restaurant-pos.r-pos-modern .r-unified-action-row{grid-template-columns:1fr!important;}
+#restaurant-pos.r-pos-modern .r-unified-enabled .r-unified-fallback,
+#restaurant-pos.r-unified-enabled .r-unified-fallback{display:none!important;}
+#restaurant-pos.r-pos-modern .r-unified-action-row #r-touch-pay-open {
+  width:100%;min-height:37px;background:#19765d!important;border:1px solid #19765d!important;
+  color:#fff!important;font-size:12px!important;font-weight:750!important;border-radius:7px;
+}
+#restaurant-pos.r-pos-modern .r-unified-action-row #r-touch-pay-open:hover{background:#135b49!important;border-color:#135b49!important;}
+#restaurant-pos.r-pos-modern .r-action-grid .r-action-row-tools .r-action{background:#f4f8fc;border:1px solid #cbddeb;color:#264b70;}
+#restaurant-pos.r-pos-modern .r-action-grid #r-kitchen-btn{background:#204568!important;border-color:#204568!important;color:#fff;}
+#restaurant-pos.r-pos-modern .r-action-grid .r-action:focus-visible,
+#restaurant-pos.r-pos-modern .r-unified-checkout button:focus-visible,
+#restaurant-pos.r-pos-modern .r-unified-checkout input:focus-visible,
+#restaurant-pos.r-pos-modern .r-unified-checkout select:focus-visible{outline:3px solid rgba(37,112,164,.35);outline-offset:2px;}
+
+#restaurant-pos .r-unified-checkout {width:min(94vw,610px);max-height:min(92dvh,850px);border-radius:12px;box-shadow:0 22px 75px #091f3650;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head {padding:13px 18px 11px;background:#fff;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head h2 {font-size:19px;font-weight:750;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head span {font-size:9px;letter-spacing:.085em;color:#708398;}
+#restaurant-pos .r-unified-top {display:flex;justify-content:space-between;align-items:center;gap:14px;padding:13px 18px;background:#f1f6fa;border-bottom:1px solid #e1eaf3;}
+#restaurant-pos .r-unified-top>div:first-child {display:grid;gap:3px;min-width:0;}
+#restaurant-pos .r-unified-top small {font-size:10px;color:#70839a;}
+#restaurant-pos .r-unified-top strong {font-size:13px;color:#1f4466;font-weight:750;}
+#restaurant-pos #r-unified-guest {max-width:350px;overflow-wrap:anywhere;font-size:10px;color:#57738b;}
+#restaurant-pos .r-unified-due{text-align:right;white-space:nowrap;}
+#restaurant-pos .r-unified-due strong {display:block;font-size:25px;font-weight:800;color:#153f62;letter-spacing:-.03em;line-height:1.2;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-body {padding:15px 18px 17px;}
+#restaurant-pos .r-unified-section-title {display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 9px;}
+#restaurant-pos .r-unified-section-title strong {font-size:12px;color:#254663;font-weight:800;}
+#restaurant-pos .r-unified-section-title small {font-size:10px;color:#7a8fa1;}
+#restaurant-pos .r-unified-adjustments {display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+#restaurant-pos .r-unified-field {min-width:0;display:grid;gap:5px;}
+#restaurant-pos .r-unified-field>label {font-size:10px;font-weight:750;color:#5b7186;}
+#restaurant-pos .r-unified-input-row {display:flex;gap:5px;align-items:center;min-width:0;}
+#restaurant-pos .r-unified-input-row input,
+#restaurant-pos .r-unified-input-row select {min-width:0;height:35px;border:1px solid #cbdbe9;border-radius:7px;background:#fff;padding:6px 7px;font:inherit;font-size:12px;color:#1c3d5a;}
+#restaurant-pos .r-unified-input-row input {flex:1 1 45px;width:75px;}
+#restaurant-pos .r-unified-input-row select {width:76px;flex:0 0 76px;}
+#restaurant-pos .r-unified-apply,
+#restaurant-pos .r-unified-default {flex:0 0 auto;min-height:35px;border-radius:7px;padding:6px 9px;cursor:pointer;font:inherit;font-weight:750;font-size:10px;}
+#restaurant-pos .r-unified-apply {background:#e7f1f9;color:#24537a;border:1px solid #b6d3e8;}
+#restaurant-pos .r-unified-apply:hover{background:#d9eaf7;}
+#restaurant-pos .r-unified-default {background:#f6f8fa;color:#577189;border:1px solid #d8e3eb;}
+#restaurant-pos .r-unified-complimentary{margin:11px 0 0;display:flex;align-items:center;gap:6px;color:#506a80;font-size:11px;font-weight:600;cursor:pointer;}
+#restaurant-pos .r-unified-complimentary input{accent-color:#19765d;}
+#restaurant-pos .r-unified-payment-heading {margin:14px 0 9px;padding-top:12px;border-top:1px solid #e7eef4;}
+#restaurant-pos .r-unified-checkout .r-touch-payment-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+#restaurant-pos .r-unified-checkout .r-touch-method {min-height:48px;border-radius:8px;padding:8px 10px;background:#fff;color:#244e6c;border:1px solid #d1e0ec;font-size:12px;font-weight:700;}
+#restaurant-pos .r-unified-checkout .r-touch-method:hover {background:#f3f8fc;border-color:#9fc2de;}
+#restaurant-pos .r-unified-checkout .r-touch-method.active{background:#e7f4ef;border:2px solid #19765d;color:#145941;padding:7px 9px;}
+#restaurant-pos .r-unified-checkout .r-touch-method small{display:block;font-size:9px;margin-top:2px;color:#628677;font-weight:500;}
+#restaurant-pos .r-checkout-dine-mode .r-unified-folio-choice {display:none!important;}
+#restaurant-pos .r-unified-notice {margin:10px 0 2px;padding:7px 9px;border-radius:7px;background:#eff7fc;border:1px solid #d1e7f3;color:#235e7c;font-size:11px;}
+#restaurant-pos .r-unified-notice.error{background:#fff3f2;border-color:#f1d5d0;color:#a23532;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-safety {margin:11px 0 9px;font-size:10px;line-height:1.4;color:#72859a;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-record{background:#18755c;border:1px solid #18755c;border-radius:8px;min-height:43px;font-size:13px;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-record:hover:not(:disabled){background:#105841;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-record:disabled{opacity:.52;cursor:not-allowed;}
+#restaurant-pos .r-unified-checkout [hidden]{display:none!important;}
+@media(max-width:670px){
+ #restaurant-pos.r-pos-modern .r-product-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+ #restaurant-pos .r-unified-checkout{width:100%;max-height:96dvh;}
+ #restaurant-pos .r-unified-top{padding:11px 13px;gap:7px;}
+ #restaurant-pos .r-unified-due strong{font-size:19px;}
+ #restaurant-pos .r-unified-checkout .r-touch-pay-body {padding:12px;}
+ #restaurant-pos .r-unified-adjustments {grid-template-columns:1fr;gap:10px;}
+ #restaurant-pos .r-unified-checkout .r-touch-payment-methods{grid-template-columns:repeat(2,minmax(0,1fr));}
+ #restaurant-pos .r-unified-checkout .r-unified-field{width:100%;}
+}
+
+/* ================================================================
+   ORA Restaurant Checkout v4 — cashier-optimized three-tab payment screen
+   Manual method dropdown + PDQ / Online Card tabs; no RecordPayment partial.
+   ================================================================ */
+#restaurant-pos .r-unified-checkout{
+  width:min(96vw,590px);max-height:min(94dvh,860px);
+  border-radius:16px;border:1px solid #d8e5ef;
+  background:#fff;box-shadow:0 28px 90px rgba(11,31,55,.35);overflow:auto;
+}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head{
+  padding:14px 19px;border-bottom:1px solid #e1eaf3;
+  background:linear-gradient(114deg,#f7fbfe 0%,#eff7f5 100%);
+}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head h2{font-size:20px;letter-spacing:-.03em;color:#153854;}
+#restaurant-pos .r-unified-top{padding:13px 19px;background:#eff5fb;}
+#restaurant-pos .r-unified-due strong{font-size:26px;letter-spacing:-.04em;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-body{padding:15px 19px 17px;}
+#restaurant-pos .r-unified-checkout .r-unified-payment-heading{margin:13px 0 9px;padding-top:13px;}
+#restaurant-pos .r-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:4px;
+  background:#f0f5f9;border:1px solid #deebf3;border-radius:11px;}
+#restaurant-pos .r-pay-tabs .r-pay-tab{display:flex;align-items:center;justify-content:center;gap:5px;
+  min-height:43px;padding:7px 6px;border:1px solid transparent;border-radius:8px;
+  background:transparent;color:#547087;font:inherit;font-size:11px;font-weight:750;cursor:pointer;white-space:normal;}
+#restaurant-pos .r-pay-tabs .r-pay-tab:hover{color:#1e4a70;background:#e8f1f7;}
+#restaurant-pos .r-pay-tabs .r-pay-tab.active{background:#fff;color:#13553f;
+  border:1px solid #b8d9ce;box-shadow:0 2px 8px #0f513115;}
+#restaurant-pos .r-pay-tab-icon{font-size:17px;line-height:1;color:inherit;}
+#restaurant-pos .r-pay-tab-body{margin-top:11px;padding:13px;
+  border-radius:10px;border:1px solid #e2eaf1;background:#fbfdff;}
+#restaurant-pos .r-pay-field{display:grid;gap:5px;margin:0 0 10px;}
+#restaurant-pos .r-pay-field:last-child{margin-bottom:0;}
+#restaurant-pos .r-pay-field>label{font-size:10px;font-weight:750;color:#506b83;}
+#restaurant-pos .r-pay-control{width:100%;min-width:0;min-height:40px;padding:8px 11px;
+  border:1px solid #cbdce9;background:#fff;border-radius:8px;color:#1a3854;font:inherit;font-size:12px;font-weight:600;}
+#restaurant-pos .r-pay-control:focus{outline:3px solid #1f81bc22;border-color:#67a4cf;}
+#restaurant-pos .r-pay-two-fields{display:grid;grid-template-columns:40% 1fr;gap:8px;}
+#restaurant-pos .r-pay-tip{margin:5px 0 0;font-size:10px;line-height:1.5;color:#6a7e91;}
+#restaurant-pos .r-pay-provider{display:grid;gap:5px;padding:1px 0 2px;}
+#restaurant-pos .r-pay-provider strong{font-size:12px;font-weight:800;color:#1b4968;}
+#restaurant-pos .r-pay-provider span{font-size:11px;line-height:1.5;color:#60788d;}
+#restaurant-pos .r-pay-link{display:flex;gap:6px;margin-top:9px;}
+#restaurant-pos .r-pay-link button{padding:6px 10px;background:#e9f2fa;color:#235777;
+  border:1px solid #bad5e7;border-radius:7px;font-weight:750;font-size:11px;cursor:pointer;}
+#restaurant-pos .r-unified-payment-stage .r-room-collect-amount{margin-top:11px;padding:11px 13px;
+  border:1px solid #d9e8dd;border-radius:9px;background:#f3faf6;}
+#restaurant-pos .r-unified-payment-stage .r-room-collect-amount input{max-width:200px;}
+#restaurant-pos .r-unified-notice{margin:10px 0;padding:9px 10px;}
+#restaurant-pos .r-pay-footer{margin-top:13px;padding-top:10px;border-top:1px solid #e5edf3;}
+#restaurant-pos .r-pay-footer .r-touch-pay-safety{margin:0 0 8px;line-height:1.4;}
+#restaurant-pos .r-pay-footer-actions{display:grid;grid-template-columns:1fr;gap:8px;}
+#restaurant-pos .r-pay-footer-actions:has(#r-unified-folio-only:not([hidden])){grid-template-columns:1fr 1.2fr;}
+#restaurant-pos .r-pay-secondary{padding:10px 12px;border-radius:8px;min-height:42px;
+  background:#eaf3fa;color:#225372;border:1px solid #bad6e8;
+  font:inherit;font-size:11px;font-weight:750;cursor:pointer;}
+#restaurant-pos .r-pay-secondary:hover:not(:disabled){background:#e0edf8;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-record{min-height:43px;border-radius:8px;
+  background:#1c775d;border-color:#1c775d;color:white;font-weight:800;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-record:hover:not(:disabled){background:#115a43;}
+#restaurant-pos .r-pay-full{width:100%;margin-top:8px;}
+#restaurant-pos .r-pay-result{display:flex;align-items:flex-start;gap:12px;margin-top:13px;
+  padding:14px;border:1px solid #adddca;border-radius:11px;background:#eff9f4;}
+#restaurant-pos .r-pay-result.pending{border-color:#ecd69c;background:#fff9ec;}
+#restaurant-pos .r-pay-result.error{border-color:#efd1d1;background:#fff3f3;}
+#restaurant-pos .r-pay-result-icon{display:grid;place-items:center;width:28px;height:28px;
+  border-radius:50%;flex:none;background:#18795b;color:#fff;font-size:16px;font-weight:800;}
+#restaurant-pos .r-pay-result.pending .r-pay-result-icon{background:#af7c24;}
+#restaurant-pos .r-pay-result.error .r-pay-result-icon{background:#b65c58;}
+#restaurant-pos .r-pay-result strong{display:block;font-size:13px;color:#174d3d;}
+#restaurant-pos .r-pay-result p{font-size:11px;line-height:1.5;color:#486d63;margin:4px 0 0;}
+#restaurant-pos .r-pay-finished{display:grid;grid-template-columns:1fr 1.2fr;gap:9px;margin-top:9px;}
+#restaurant-pos .r-unified-checkout [hidden],
+#restaurant-pos .r-unified-checkout .r-pay-tab-body[hidden]{display:none!important;}
+#restaurant-pos .r-unified-checkout button:disabled{cursor:not-allowed;opacity:.52;}
+@media(max-width:560px){
+ #restaurant-pos .r-unified-checkout{width:100%;max-height:96dvh;border-radius:13px;}
+ #restaurant-pos .r-unified-top{padding:11px 13px;}
+ #restaurant-pos .r-unified-checkout .r-touch-pay-body{padding:12px 13px 14px;}
+ #restaurant-pos .r-pay-tabs{gap:3px;}
+ #restaurant-pos .r-pay-tabs .r-pay-tab{min-height:42px;font-size:10px;gap:3px;padding:6px 3px;}
+ #restaurant-pos .r-pay-tab-icon{font-size:13px;}
+ #restaurant-pos .r-pay-tab-body{padding:10px;}
+ #restaurant-pos .r-unified-adjustments{gap:8px;}
+ #restaurant-pos .r-pay-footer-actions:has(#r-unified-folio-only:not([hidden])){grid-template-columns:1fr;}
+}
+
+/* Checkout VAT: compact quick zero/default controls and live pre-save amount. */
+#restaurant-pos .r-unified-tax-shortcuts {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 1px;
+}
+#restaurant-pos .r-unified-tax-shortcuts button {
+    min-height: 26px; padding: 4px 9px; font-size: 10px; font-weight: 700;
+    border-radius: 7px; cursor: pointer; line-height: 1.2;
+}
+#restaurant-pos .r-unified-tax-shortcuts .r-unified-tax-shortcut {
+    color: #18644e; border: 1px solid #c0dfd1; background: #ebf7f1;
+}
+#restaurant-pos .r-unified-tax-shortcuts .r-unified-default {
+    color: #49657e; border: 1px solid #d8e3eb; background: #f5f8fb;
+}
+#restaurant-pos .r-unified-tax-preview {
+    margin: 8px 0 0; padding: 7px 10px; border-radius: 8px;
+    background: #f1f7fb; border: 1px solid #deebf4;
+    color: #355b75; font-size: 10.5px; line-height: 1.4; font-weight: 650;
+}
+#restaurant-pos .r-unified-tax-preview.invalid {
+    background: #fff3f2; border-color: #efd2cc; color: #a13d35;
+}
+@media (max-width: 560px) {
+    #restaurant-pos .r-unified-tax-preview {font-size: 10px; padding: 7px 8px;}
+}
+
+/* ==============================================================
+   ORA PMS Restaurant checkout — Discount / GST-VAT alignment
+   Layout-only refinement; no tax, discount or payment logic changes.
+   ============================================================== */
+#restaurant-pos .r-unified-checkout .r-unified-adjustments {
+    align-items: start;
+}
+
+/* The GST field has a third row (0% / Hotel default). Using a
+   top-aligned column prevents the shorter Discount column from
+   stretching its input row downwards to the last row of GST. */
+#restaurant-pos .r-unified-checkout .r-unified-adjustments > .r-unified-field {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+    min-width: 0;
+}
+
+#restaurant-pos .r-unified-checkout .r-unified-adjustments > .r-unified-field > label {
+    display: flex;
+    align-items: center;
+    min-height: 16px;
+    margin: 0;
+    line-height: 16px;
+}
+
+#restaurant-pos .r-unified-checkout .r-unified-adjustments .r-unified-input-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    height: 36px;
+    flex: 0 0 36px;
+}
+
+#restaurant-pos .r-unified-checkout .r-unified-adjustments .r-unified-input-row input,
+#restaurant-pos .r-unified-checkout .r-unified-adjustments .r-unified-input-row select,
+#restaurant-pos .r-unified-checkout .r-unified-adjustments .r-unified-input-row .r-unified-apply {
+    height: 36px;
+    min-height: 36px;
+    margin: 0;
+}
+
+#restaurant-pos .r-unified-checkout .r-unified-tax-shortcuts {
+    justify-content: flex-start;
+    margin-top: 0;
+    gap: 6px;
+}
+
+#restaurant-pos .r-unified-checkout .r-unified-tax-shortcuts button {
+    min-height: 25px;
+    padding: 4px 8px;
+    white-space: nowrap;
+}
+
+#restaurant-pos .r-unified-checkout .r-unified-adjustments .r-unified-input-row input,
+#restaurant-pos .r-unified-checkout .r-unified-adjustments .r-unified-input-row select,
+#restaurant-pos .r-unified-checkout .r-unified-adjustments .r-unified-input-row button {
+    box-sizing: border-box;
+}
+
+/* POS checkout layout: adjustment editors remain separate from payment. */
+#restaurant-pos .r-classic-sale-info[hidden]{display:none!important;}
+#restaurant-pos.r-pos-modern .r-modern-adjustment-options{height:auto;min-height:0;padding:4px 0;margin:0;overflow:visible;}
+#restaurant-pos .r-adjustment-label{display:inline-flex;align-items:center;gap:6px;}
+#restaurant-pos .r-summary-edit{font:inherit;font-size:10px;font-weight:650;border:1px solid #d1dfeb;background:#f1f6fa;color:#24577d;padding:2px 7px;border-radius:5px;cursor:pointer;}
+#restaurant-pos .r-summary-edit:disabled{opacity:.45;cursor:not-allowed;}
+#restaurant-pos.r-pos-modern .r-unified-action-row.r-two-actions{grid-template-columns:1fr 1fr!important;gap:7px;}
+#restaurant-pos.r-pos-modern .r-two-actions #r-kitchen-btn{min-height:37px;border-radius:7px;white-space:normal;}
+#restaurant-pos .r-order-type,#restaurant-pos .r-checkout-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0 12px;}
+#restaurant-pos .r-order-type button{border:1px solid #d3e1eb;border-radius:7px;background:white;color:#234764;min-height:38px;padding:6px 8px;font-weight:700;cursor:pointer;}
+#restaurant-pos .r-order-type button[aria-pressed="true"]{background:#204b73;color:white;border-color:#204b73;}
+#restaurant-pos .r-checkout-tools button{min-height:34px;font-size:11px;}
+#restaurant-pos .r-change-room{width:100%;margin-bottom:6px;}
+#restaurant-pos .r-pending-check-proxy{display:none!important;}
+
+/* Compact checkout: use existing ORA theme, reference-style payment layout. */
+#restaurant-pos .r-unified-checkout{width:min(100%,440px);max-height:94dvh;border-radius:15px;border:0;}
+#restaurant-pos .r-touch-pay-shade{background:rgba(19,36,42,.52);backdrop-filter:blur(3px);}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head{background:#fff;padding:14px 16px 12px;align-items:flex-start;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head h2{font-size:17px;letter-spacing:-.02em;margin:0 0 4px;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head h2 b{font-weight:inherit;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head span{font-size:11px;letter-spacing:0;font-weight:500;line-height:1.5;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-body{padding:14px 16px 13px;}
+#restaurant-pos .r-unified-checkout .r-unified-top{display:block;padding:13px 14px;margin:0 0 14px;background:#193c5a;border:0;border-radius:10px;}
+#restaurant-pos .r-unified-checkout .r-unified-due{text-align:left;white-space:normal;display:grid;gap:4px;}
+#restaurant-pos .r-unified-checkout .r-unified-due small{color:#d3e3ef;text-transform:uppercase;font-size:10px;font-weight:700;}
+#restaurant-pos .r-unified-checkout .r-unified-due strong{color:#fff;font-size:28px;line-height:1.15;}
+#restaurant-pos #r-unified-breakdown{font-size:10px;line-height:1.4;color:#e0e9f0;overflow-wrap:anywhere;}
+#restaurant-pos .r-unified-checkout .r-unified-section-title{margin:0 0 6px;}
+#restaurant-pos .r-unified-checkout .r-unified-section-title strong{font-size:10px;text-transform:uppercase;letter-spacing:.035em;}
+#restaurant-pos .r-unified-checkout .r-order-type{margin:0 0 12px;gap:6px;}
+#restaurant-pos .r-unified-checkout .r-order-type button{min-height:34px;font-size:11px;}
+#restaurant-pos .r-unified-checkout .r-change-room{min-height:30px;margin-bottom:8px;}
+#restaurant-pos .r-unified-checkout .r-unified-payment-heading{padding:0;border:0;margin:0 0 6px;}
+#restaurant-pos .r-unified-checkout .r-pay-tabs{gap:5px;padding:0;background:transparent;border:0;}
+#restaurant-pos .r-unified-checkout .r-pay-tabs .r-pay-tab{min-height:35px;padding:5px 4px;border:1px solid #d8e4ea;background:#fff;font-size:10px;}
+#restaurant-pos .r-unified-checkout .r-pay-tabs .r-pay-tab.active{background:#19765d;color:white;border-color:#19765d;box-shadow:none;}
+#restaurant-pos .r-unified-checkout .r-pay-tab-icon{display:none;}
+#restaurant-pos .r-unified-checkout .r-pay-tab-body{margin-top:10px;padding:0;background:none;border:0;}
+#restaurant-pos .r-unified-checkout .r-pay-field{margin:0 0 9px;}
+#restaurant-pos .r-unified-checkout .r-pay-field>label{text-transform:uppercase;font-size:10px;}
+#restaurant-pos .r-manual-method-grid,#restaurant-pos .r-cash-quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;}
+#restaurant-pos .r-manual-method-grid button,#restaurant-pos .r-cash-quick button{min-height:33px;border:1px solid #d7e3e8;border-radius:7px;background:#fff;color:#244663;font:inherit;font-size:11px;font-weight:700;cursor:pointer;overflow-wrap:anywhere;}
+#restaurant-pos .r-manual-method-grid button[aria-pressed="true"]{background:#19765d;color:#fff;border-color:#19765d;}
+#restaurant-pos .r-cash-quick{grid-template-columns:repeat(4,minmax(0,1fr));margin:0 0 9px;}
+#restaurant-pos .r-cash-quick button{background:#f3f7fa;min-height:29px;}
+#restaurant-pos .r-cash-change{display:flex;align-items:center;justify-content:space-between;padding:10px 11px;background:#edf7f2;border:1px solid #c2e3d3;border-radius:8px;color:#185e48;font-size:11px;}
+#restaurant-pos .r-cash-change strong{font-size:14px;font-weight:800;}
+#restaurant-pos .r-cash-change.short{background:#fff5ed;border-color:#efd6c4;color:#9c4e22;}
+#restaurant-pos .r-unified-checkout .r-checkout-tools{margin:12px 0 0;gap:5px;}
+#restaurant-pos .r-unified-checkout .r-checkout-tools button{min-height:31px;font-size:10px;padding:5px 4px;background:#f2f6f8;border-color:#dce7ee;}
+#restaurant-pos .r-unified-checkout .r-pay-tip{font-size:10px;line-height:1.35;margin:6px 0 0;}
+#restaurant-pos .r-unified-checkout .r-pay-footer{margin-top:12px;padding-top:10px;}
+#restaurant-pos .r-unified-checkout .r-pay-footer-actions:has(#r-checkout-cancel:not([hidden])){grid-template-columns:1fr 1.5fr;}
+#restaurant-pos .r-unified-checkout .r-pay-footer-actions:has(#r-unified-folio-only:not([hidden])){grid-template-columns:1fr 1fr;}
+#restaurant-pos .r-unified-checkout .r-pay-footer-actions:has(#r-unified-folio-only:not([hidden])) #r-checkout-cancel{grid-column:1/-1;grid-row:2;}
+#restaurant-pos .r-unified-checkout #r-checkout-cancel{background:#fff;border-color:#d5e2ea;}
+#restaurant-pos .r-unified-checkout .r-pay-footer-actions button{min-height:39px;padding:8px 6px;}
+@media(max-width:480px){#restaurant-pos .r-unified-checkout{width:100%;max-height:95dvh;}#restaurant-pos .r-unified-checkout .r-touch-pay-body{padding:12px;}}
+
+/* Checkout refinement: one payment grid; no duplicate channel/method headings. */
+#restaurant-pos .r-unified-checkout{width:min(100%,510px);max-height:94dvh;overscroll-behavior:contain;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head{padding:13px 18px 11px;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-head h2{font-size:18px;}
+#restaurant-pos .r-unified-checkout #r-unified-guest:empty{display:none;}
+#restaurant-pos .r-unified-checkout .r-touch-pay-body{padding:14px 18px 16px;}
+#restaurant-pos .r-unified-checkout .r-unified-top{margin-bottom:14px;padding:12px 15px;}
+#restaurant-pos .r-unified-checkout .r-unified-due strong{font-size:29px;}
+#restaurant-pos .r-unified-checkout .r-unified-section-title strong{font-size:11px;letter-spacing:.02em;}
+#restaurant-pos .r-unified-checkout .r-order-type{gap:6px;margin-bottom:13px;}
+#restaurant-pos .r-unified-checkout .r-order-type button,#restaurant-pos .r-unified-checkout .r-manual-method-grid button{min-height:36px;font-size:12px;font-weight:650;padding:6px;}
+#restaurant-pos .r-unified-checkout .r-manual-method-grid{gap:6px;grid-template-columns:repeat(3,minmax(0,1fr));}
+#restaurant-pos .r-unified-checkout .r-manual-method-grid .r-gateway-choice:not([aria-pressed="true"]){background:#f1f6fb;color:#234f74;}
+#restaurant-pos .r-unified-checkout .r-pay-tab-body{margin-top:10px;}
+#restaurant-pos .r-unified-checkout .r-pay-tab-body:has(> #r-manual-select-wrap[hidden]):not(:has(> :not([hidden]))){display:none;}
+#restaurant-pos .r-unified-checkout .r-pay-field>label{font-size:11px;}
+#restaurant-pos .r-unified-checkout .r-pay-control{min-height:38px;font-size:13px;}
+#restaurant-pos .r-unified-checkout .r-cash-quick{margin-bottom:7px;}
+#restaurant-pos .r-unified-checkout .r-checkout-tools{grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-top:12px;}
+#restaurant-pos .r-unified-checkout .r-checkout-tools button{font-size:11px;}
+#restaurant-pos .r-unified-checkout .r-pay-footer{margin-top:12px;padding-top:11px;}
+#restaurant-pos .r-unified-checkout .r-pay-footer-actions button{font-size:12px;min-height:40px;}
+#restaurant-pos .r-selected-room{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#f2f7fb;border:1px solid #dce7ef;border-radius:8px;margin:0 0 13px;}
+#restaurant-pos .r-selected-room>div{min-width:0;display:grid;gap:3px;}
+#restaurant-pos .r-selected-room small{font-size:10px;color:#627c91;}
+#restaurant-pos .r-selected-room strong{font-size:13px;color:#1e4565;overflow-wrap:anywhere;}
+#restaurant-pos .r-selected-room span{font-size:11px;color:#597386;overflow-wrap:anywhere;}
+#restaurant-pos .r-selected-room .r-change-room{width:auto;min-height:30px;margin:0;padding:5px 10px;flex:none;}
+.r-room-picker-panel .r-picker-actions{display:flex!important;gap:8px;padding:11px 15px;}
+.r-room-picker-panel .r-room-picker-choice{overflow-wrap:anywhere;}
+.r-room-picker-panel .r-room-picker-option{min-height:48px;grid-template-columns:90px minmax(0,1fr) auto;}
+.r-room-picker-panel .r-room-picker-option.is-selected{background:#e9f6ef;border-color:#25866a;box-shadow:inset 0 0 0 1px #25866a;}
+@media(max-width:480px){#restaurant-pos .r-unified-checkout .r-touch-pay-body{padding:12px;}#restaurant-pos .r-unified-checkout .r-manual-method-grid{grid-template-columns:repeat(2,minmax(0,1fr));} .r-room-picker-panel .r-room-picker-option{grid-template-columns:70px minmax(0,1fr);} .r-room-picker-panel .r-picker-actions{flex-wrap:wrap;}.r-room-picker-panel .r-room-picker-choice{flex-basis:100%;}}
+/* Equal-width choices within each row; seven methods fit into two rows. */
+#restaurant-pos .r-unified-checkout .r-manual-method-grid{display:flex;flex-wrap:wrap;gap:6px;}
+#restaurant-pos .r-unified-checkout .r-manual-method-grid button{flex:1 1 calc(25% - 6px);min-width:0;}
+#restaurant-pos .r-unified-checkout button:focus-visible{outline:2px solid #4c91bf;outline-offset:2px;}
+@media(max-width:480px){#restaurant-pos .r-unified-checkout .r-manual-method-grid button{flex-basis:calc(50% - 6px);}}
+
+/* Compact bill management toolbar, above Current Bill. */
+#restaurant-pos.r-pos-modern .r-bill-toolbar {
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px;
+  padding:8px 10px 3px; flex:0 0 auto;
+}
+#restaurant-pos.r-pos-modern .r-bill-tool {
+  display:flex; align-items:center; justify-content:center; gap:5px;
+  min-height:32px; padding:5px 6px; font-size:11px; font-weight:650;
+  border:1px solid #cbdcea; border-radius:6px; background:#f3f7fb;
+  color:#244868; cursor:pointer; line-height:1.2;
+}
+#restaurant-pos.r-pos-modern .r-bill-tool:hover:not(:disabled) {background:#e6eff8;}
+#restaurant-pos.r-pos-modern .r-held-count {
+  padding:1px 5px; border-radius:9px; background:#dce8f3; font-size:10px; font-weight:700;
+}
+#restaurant-pos.r-pos-modern .r-bill-tool-new {background:#204b73; color:#fff; border-color:#204b73;}
+#restaurant-pos.r-pos-modern .r-bill-tool-new:hover:not(:disabled) {background:#193c5a;}
+#restaurant-pos.r-pos-modern .r-bill-tool:disabled {opacity:.45; cursor:not-allowed;}
+#restaurant-pos.r-pos-modern .r-two-actions #r-touch-pay-open:disabled {opacity:.42; cursor:not-allowed;}
