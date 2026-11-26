@@ -31,11 +31,11 @@
         var isMovement = row.Status.Equals("refund", StringComparison.OrdinalIgnoreCase) || row.Status.StartsWith("deduct", StringComparison.OrdinalIgnoreCase);
         var isCard = !string.IsNullOrWhiteSpace(row.PaymentIntentId) || !string.IsNullOrWhiteSpace(row.ChargeId) ||
                      pm.Contains("card", StringComparison.OrdinalIgnoreCase) || pm.Contains("pdq", StringComparison.OrdinalIgnoreCase) || pm.Contains("stripe", StringComparison.OrdinalIgnoreCase);
-        if (isMovement) return isCard ? "Card" : "Cash";
+        if (isMovement) return isCard ? "Card" : (string.IsNullOrWhiteSpace(pm) ? "Not recorded" : pm);
         var isPreAuth = pm.Contains("pre-authorization", StringComparison.OrdinalIgnoreCase) || pm.Contains("pre-auth", StringComparison.OrdinalIgnoreCase);
         if (isPreAuth) return string.IsNullOrWhiteSpace(row.Last4) ? "Card Pre-Auth" : $"Card Pre-Auth (*** {row.Last4})";
         if (isCard) return string.IsNullOrWhiteSpace(row.Last4) ? "Card Terminal Hold" : $"Card Terminal (*** {row.Last4})";
-        return "Cash";
+        return string.IsNullOrWhiteSpace(pm) ? "Not recorded" : pm;
     }
 }
 <div id="reservationStatePayload" data-reg-id="@Model.ReservationId" data-visit-id="@Model.VisitId">

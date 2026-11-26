@@ -142,7 +142,7 @@
 
 
 
-        if (isMovement) return isCard ? "Card" : "Cash";
+        if (isMovement) return isCard ? "Card" : (string.IsNullOrWhiteSpace(pm) ? "Not recorded" : pm);
 
 
 
@@ -158,7 +158,7 @@
 
 
 
-        return "Cash";
+        return string.IsNullOrWhiteSpace(pm) ? "Not recorded" : pm;
 
 
 
