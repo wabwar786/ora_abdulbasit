@@ -124,6 +124,42 @@
                        
                     </dl>
                 </section>
+                <section class="na-section na-ratings" aria-labelledby="na-rating-heading">
+                    <div class="na-section-head">
+                        <h2 id="na-rating-heading">&#9733; Online Ratings</h2><span>@dayText</span>
+                    </div>
+                    @if (Model.RatingsTableReady)
+                    {
+                        <form asp-controller="NightAudit" asp-action="SaveRatings" method="post" asp-antiforgery="true">
+                            <input type="hidden" name="ReportDate" value="@Model.ReportDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" />
+                            <div class="na-rating-row">
+                                <label for="na-rating-booking">Booking.com <small>/ 10</small></label>
+                                <input id="na-rating-booking" name="Booking" type="number" min="0" max="10" step="0.01" placeholder="—" value="@(Model.Ratings.Booking?.ToString("0.##", CultureInfo.InvariantCulture))" />
+                            </div>
+                            <div class="na-rating-row">
+                                <label for="na-rating-google">Google <small>/ 5</small></label>
+                                <input id="na-rating-google" name="Google" type="number" min="0" max="5" step="0.01" placeholder="—" value="@(Model.Ratings.Google?.ToString("0.##", CultureInfo.InvariantCulture))" />
+                            </div>
+                            <div class="na-rating-row">
+                                <label for="na-rating-trip">Trip.com <small>/ 10</small></label>
+                                <input id="na-rating-trip" name="Trip" type="number" min="0" max="10" step="0.01" placeholder="—" value="@(Model.Ratings.Trip?.ToString("0.##", CultureInfo.InvariantCulture))" />
+                            </div>
+                            <div class="na-rating-row">
+                                <label for="na-rating-agoda">Agoda <small>/ 10</small></label>
+                                <input id="na-rating-agoda" name="Agoda" type="number" min="0" max="10" step="0.01" placeholder="—" value="@(Model.Ratings.Agoda?.ToString("0.##", CultureInfo.InvariantCulture))" />
+                            </div>
+                            <button type="submit" class="na-button na-primary">Save Ratings</button>
+                            @if (Model.Ratings.LastSavedAtUtc.HasValue)
+                            {
+                                <p class="na-saved">Saved by @Model.Ratings.LastSavedBy · @Model.Ratings.LastSavedAtUtc.Value.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture) UTC</p>
+                            }
+                        </form>
+                    }
+                    else
+                    {
+                        <p class="na-saved" style="padding-top:8px">Ratings storage is not installed. Contact the system administrator.</p>
+                    }
+                </section>
             </aside>
         </div>
     }

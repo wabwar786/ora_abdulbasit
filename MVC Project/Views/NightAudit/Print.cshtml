@@ -121,6 +121,19 @@ else
                 <div class="fact"><span>Blocked / OOS</span><b>@Model.BlockedNextDay</b></div>
                
             </section>
+            <section><h2>Online Ratings</h2>
+                @if (Model.RatingsTableReady)
+                {
+                    <div class="fact"><span>Booking.com</span><b>@(Model.Ratings.Booking.HasValue ? Model.Ratings.Booking.Value.ToString("0.##", CultureInfo.InvariantCulture) + " / 10" : "—")</b></div>
+                    <div class="fact"><span>Google</span><b>@(Model.Ratings.Google.HasValue ? Model.Ratings.Google.Value.ToString("0.##", CultureInfo.InvariantCulture) + " / 5" : "—")</b></div>
+                    <div class="fact"><span>Trip.com</span><b>@(Model.Ratings.Trip.HasValue ? Model.Ratings.Trip.Value.ToString("0.##", CultureInfo.InvariantCulture) + " / 10" : "—")</b></div>
+                    <div class="fact"><span>Agoda</span><b>@(Model.Ratings.Agoda.HasValue ? Model.Ratings.Agoda.Value.ToString("0.##", CultureInfo.InvariantCulture) + " / 10" : "—")</b></div>
+                }
+                else
+                {
+                    <div class="fact"><span>Ratings unavailable</span></div>
+                }
+            </section>
         </div>
     </div>
 </div>

@@ -1,0 +1,90 @@
+@model Orapmshms.Controllers.DatabaseManagementController.Page
+@{
+    ViewData["Title"] = "Database Management";
+    Layout = "~/Views/Shared/_PmsLayout.cshtml";
+    var latest = Model.Rows.FirstOrDefault(x => x.State != "Pruned");
+    var schedule = Model.Schedule;
+    var total = Model.Rows.Sum(x => (decimal)x.Bytes);
+    var fresh = latest != null && Model.ServerNow.HasValue && latest.Finished <= Model.ServerNow.Value && (Model.ServerNow.Value - latest.Finished).TotalHours <= Model.FreshnessHours;
+    string TableSize(decimal bytes) => (bytes / 1048576m).ToString("N2") + " MB";
+    string Size(decimal bytes) => bytes >= 1073741824m ? (bytes / 1073741824m).ToString("N2") + " GB" : (bytes / 1048576m).ToString("N1") + " MB";
+}
+<link rel="stylesheet" href="~/css/database-management.css" asp-append-version="true" />
+<section class="dbm" data-progress-url="@Url.Action("BackupProgress", "DatabaseManagement")">
+    <header class="dbm-head"><div><div class="dbm-title"><span class="dbm-title-icon"><i class="fa-solid fa-database" aria-hidden="true"></i></span><div><h1>Database Management</h1><p>Backup, storage and recovery</p></div></div></div><div class="dbm-actions"><a class="dbm-btn" href="@Url.Action("Index", "DatabaseManagement")"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh</a><form asp-action="Backup" method="post" class="dbm-backup"><button class="dbm-btn primary" type="submit" disabled="@(!Model.Ready)"><i class="fa-solid fa-database" aria-hidden="true"></i> Backup Now</button></form></div></header>
+    @if (TempData["DatabaseMessage"] is string message) { <div class="dbm-alert good" role="status">@message</div> }
+    @if (TempData["DatabaseError"] is string error) { <div class="dbm-alert bad" role="alert">@error</div> }
+    @if (Model.Error != null) { <div class="dbm-alert bad" role="alert">@Model.Error</div> }
+    <div class="dbm-cards">
+        <div><div class="dbm-card-label"><i class="fa-solid fa-database" aria-hidden="true"></i><span>Live database</span></div><strong>@Model.Database</strong><small class="@(Model.Connected ? "good-text" : "bad-text")"><i class="fa-solid fa-circle" aria-hidden="true"></i> @(Model.Connected ? "Connected" : "Unavailable")</small></div>
+        <div><div class="dbm-card-label"><i class="fa-solid fa-table-cells" aria-hidden="true"></i><span>Current table size</span></div><strong>@(Model.TableReservedBytes.HasValue ? TableSize(Model.TableReservedBytes.Value) : "Unavailable")</strong><small>@(Model.TableUsedBytes.HasValue && Model.TableReservedBytes.HasValue ? "Used " + TableSize(Model.TableUsedBytes.Value) + " · Unused " + TableSize(Model.TableReservedBytes.Value - Model.TableUsedBytes.Value) : "User tables + indexes (DMV access required)")</small></div>
+        <div><div class="dbm-card-label"><i class="fa-solid fa-hard-drive" aria-hidden="true"></i><span>Allocated database size</span></div><strong>@(Model.DatabaseBytes.HasValue ? Size(Model.DatabaseBytes.Value) : "Unavailable")</strong><small>@(Model.DataFileBytes.HasValue && Model.LogFileBytes.HasValue ? "Data " + Size(Model.DataFileBytes.Value) + " · Log " + Size(Model.LogFileBytes.Value) : "Allocated data + log files")</small></div>
+        <div><div class="dbm-card-label"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Latest backup</span></div><strong>@(latest?.Finished.ToString("dd MMM yyyy") ?? (Model.HistoryAvailable ? "No backups" : "Unavailable"))</strong><small>@(latest?.Finished.ToString("HH:mm:ss") ?? "—") · SQL Server time</small><small class="@(fresh ? "good-text" : "bad-text")">@(fresh ? "Recent backup recorded" : "Attention required") · @Model.FreshnessHours h target</small></div>
+    </div>
+    <div class="dbm-panel dbm-storage">
+        <div class="dbm-storage-path">
+            <h2><i class="fa-solid fa-folder-open" aria-hidden="true"></i> Backup storage</h2>
+            <form asp-action="SaveFolder" method="post" class="dbm-folder-edit">
+                <div class="dbm-folder-input"><i class="fa-solid fa-server" aria-hidden="true"></i><input name="backupFolder" aria-label="SQL Server backup folder" value="@Model.Folder" maxlength="260" required placeholder="SQL Server backup folder" disabled="@(!Model.Connected || !Model.ScheduleAvailable)" /></div>
+                <button type="submit" class="dbm-btn primary" disabled="@(!Model.Connected || !Model.ScheduleAvailable)"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save</button>
+            </form>
+            <small class="dbm-folder-hint">Enter a private folder on SQL Server. Saved in the database.</small>
+        </div>
+        <div class="dbm-storage-settings"><div><span>Scope</span><b>All hotels</b></div><div><span>Backup type</span><b>Full · Copy-only (.bak)</b></div><div><span>Checksum</span><b><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Enabled</b></div><div><span>Compression</span><b>@(Model.Compression ? "Requested" : "Server default")</b></div></div>
+    </div>
+    <div class="dbm-panel dbm-schedule">
+        <div class="dbm-section-head">
+            <div><h2><i class="fa-solid fa-calendar-check" aria-hidden="true"></i> Automatic Database Backup</h2><p>Built-in scheduler · SQL Server local time</p></div>
+            <span class="dbm-status @(schedule?.Enabled == true && Model.SchedulerConfigured ? "good" : "neutral")">@(schedule?.Enabled == true ? (Model.SchedulerConfigured ? "Enabled" : "Worker disabled") : "Disabled")</span>
+        </div>
+        @if (!Model.ScheduleAvailable || schedule == null)
+        {
+            <p class="dbm-schedule-note">Automatic backup settings unavailable. Run the scheduler SQL migration and check permissions. Manual backup remains available.</p>
+        }
+        else
+        {
+            <form asp-action="SaveSchedule" method="post">
+                <fieldset class="dbm-schedule-fields">
+                    <label class="dbm-schedule-toggle"><input type="checkbox" name="enabled" value="true" checked="@schedule.Enabled" /> Enable automatic backup</label>
+                    <input type="hidden" name="enabled" value="false" />
+                    <div class="dbm-schedule-grid">
+                        <label>Backup frequency<select name="frequency">
+                            <option value="6h" selected="@(schedule.Frequency == "6h")">Every 6 hours</option>
+                            <option value="12h" selected="@(schedule.Frequency == "12h")">Every 12 hours</option>
+                            <option value="Daily" selected="@(schedule.Frequency == "Daily")">Daily</option>
+                            <option value="Weekly" selected="@(schedule.Frequency == "Weekly")">Weekly (Monday)</option>
+                        </select></label>
+                        <label>Backup time (24-hour)<input type="time" name="backupTime" step="60" required value="@(schedule.BackupTime.ToString(@"hh\:mm"))" /></label>
+                        <input type="hidden" name="retentionDays" value="@schedule.RetentionDays" />
+                    </div>
+                    <div class="dbm-schedule-meta">
+                        <div><span><i class="fa-solid fa-calendar-day" aria-hidden="true"></i> Next scheduled backup</span><b>@(schedule.Enabled && Model.SchedulerConfigured ? schedule.NextDueLocal?.ToString("dd MMM yyyy HH:mm") ?? "Not scheduled" : "Disabled")</b></div>
+                        <div><span><i class="fa-solid fa-clock" aria-hidden="true"></i> Last automatic attempt</span><b>@(schedule.LastState ?? "No attempts")</b>@if(schedule.LastRunUtc.HasValue) { <small>@schedule.LastRunUtc.Value.ToString("dd MMM yyyy HH:mm") UTC</small> }</div>
+                    </div>
+                    @if (!Model.SchedulerConfigured) { <p class="dbm-schedule-note">Enable the internal backup worker in server configuration and register it in Program.cs.</p> }
+                    @if (!string.IsNullOrWhiteSpace(schedule.LastError)) { <p class="dbm-schedule-note">Last attempt: @schedule.LastError</p> }
+                    <div class="dbm-section-head dbm-schedule-foot"><p>Runs while ORA PMS is online.</p><button class="dbm-btn primary" type="submit"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save Settings</button></div>
+                </fieldset>
+            </form>
+        }
+    </div>
+    <div class="dbm-panel dbm-history"><div class="dbm-section-head"><div><h2><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Backup History</h2><p>@(Model.HistoryAvailable ? Model.Rows.Count + " recorded · " + Size(total) + " (metadata, not disk usage)" : "History unavailable") · Latest 100 records</p></div>@if (Model.HistoryAvailable) { <a class="dbm-btn" href="@Url.Action("HistoryCsv", "DatabaseManagement")"><i class="fa-solid fa-file-csv" aria-hidden="true"></i> Export CSV</a> }</div>
+        <div class="dbm-filters"><label>Search backup<input type="search" id="dbm-search" placeholder="File name or backup ID" /></label><label>From<input type="date" id="dbm-from" /></label><label>To<input type="date" id="dbm-to" /></label><button type="button" id="dbm-clear" class="dbm-btn">Clear</button></div>
+        <div class="dbm-table-wrap"><table><thead><tr><th>Sr #</th><th>Backup file</th><th>Completed</th><th>Size</th><th>Duration</th><th>Status</th></tr></thead><tbody>
+        @for (var i=0; i<Model.Rows.Count; i++) { var b=Model.Rows[i]; var seconds = Math.Max(0, (b.Finished-b.Started).TotalSeconds); <tr data-backup="@b.FileName @b.Id" data-date="@b.Finished.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)"><td>@(i+1)</td><td><div class="dbm-file"><i class="fa-solid fa-file-zipper" aria-hidden="true"></i><div><b>@b.FileName</b><small>ID @b.Id · @b.Source</small></div></div></td><td>@b.Finished.ToString("dd MMM yyyy HH:mm:ss")</td><td>@Size(b.Bytes)</td><td>@TimeSpan.FromSeconds(seconds).ToString(@"d\.hh\:mm\:ss")</td><td><span class="dbm-status @(b.State == "Verified" ? "good" : b.State == "VerificationFailed" || b.State == "Unconfirmed" ? "warn" : "neutral")">@b.State</span></td></tr> }
+        <tr id="dbm-empty" hidden="@(Model.Rows.Count != 0)"><td colspan="6" class="dbm-empty">@(Model.HistoryAvailable ? "No matching backup records." : "Backup history is unavailable.")</td></tr>
+        </tbody></table></div><div class="dbm-table-foot"><span id="dbm-count">@Model.Rows.Count records</span><span>SQL Server local time</span></div>
+    </div>
+    <div class="dbm-panel dbm-recovery"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><div><h2>Database recovery</h2><p>History does not prove recoverability. Test restores in an isolated database; live recovery requires DBA approval.</p></div><span class="dbm-status neutral">Live restore locked</span></div>
+    <dialog id="dbm-progress" class="dbm-progress" aria-labelledby="dbm-progress-title" aria-describedby="dbm-progress-detail">
+        <div class="dbm-progress-head"><span class="dbm-title-icon"><i id="dbm-progress-icon" class="fa-solid fa-database" aria-hidden="true"></i></span><div><h2 id="dbm-progress-title">Creating database backup</h2><p>@Model.Database · Full database (.bak)</p></div></div>
+        <div class="dbm-progress-body">
+            <div class="dbm-progress-label"><strong id="dbm-progress-stage" role="status">Preparing backup…</strong><strong id="dbm-progress-pct">—</strong></div>
+            <progress id="dbm-progress-bar" max="100" aria-label="SQL Server backup progress"></progress>
+            <div class="dbm-progress-meta"><span><i class="fa-solid fa-clock" aria-hidden="true"></i> Elapsed <b id="dbm-elapsed">00:00</b></span><span>SQL Server progress</span></div>
+            <p id="dbm-progress-detail" aria-live="polite">Keep this page open until SQL Server confirms the result.</p>
+        </div>
+        <div class="dbm-progress-footer"><a id="dbm-progress-done" class="dbm-btn primary" href="@Url.Action("Index", "DatabaseManagement")" hidden><i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh history</a><span id="dbm-progress-wait"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Backup in progress</span></div>
+    </dialog>
+</section>
+<script src="~/js/database-management.js" asp-append-version="true" defer></script>
